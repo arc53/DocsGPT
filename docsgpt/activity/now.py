@@ -16,7 +16,15 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from docsgpt.activity.common import as_datetime, query_rows
+from docsgpt.activity.common import (
+    as_datetime,
+    in_workspace_sql,
+    owner_team_sql,
+    query_rows,
+    schedule_team_sql,
+    workflow_run_team_sql,
+    workspace_params,
+)
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.labels import tool_labels
 from docsgpt.activity.syncs import LATE_GRACE, due_batches, next_sync_times
@@ -24,6 +32,10 @@ from docsgpt.agents.scheduler_utils import ScheduleValidationError, cron_runs
 from docsgpt.background.service import job_summary
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.workflow_runs import run_reach_sql
+from docsgpt.workspaces.context import Workspace
+from docsgpt.workspaces.principal import canonical_team_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +52,10 @@ PER_KIND_LIMIT = 50
 #: Occurrences counted per recurring schedule inside the window.
 MAX_OCCURRENCES = 500
 
+#: A background job's workspace team (as text): its chat's, else its agent's
+#: (``c`` and ``a`` joined on the job's conversation and agent).
+_JOB_TEAM = f"(CASE WHEN c.id IS NOT NULL THEN c.team_id::text ELSE {owner_team_sql('a.user_id')} END)"
+
 
 def _iso(value: Any) -> Optional[str]:
     """A timestamp as ISO text; any other value as text, ``None`` kept."""
@@ -53,8 +69,8 @@ def _str(value: Any) -> Optional[str]:
     return str(value) if value is not None else None
 
 
-def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    """Answers being written in the user's listed chats.
+def _running_chats(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Answers being written in the user's listed chats of one workspace (``team_id``, None for Personal).
 
     A row counts while its heartbeat (or, before the first one, its start) is
     fresh, so an answer whose stream died without ending drops off. An answer
@@ -71,6 +87,7 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         WHERE m.user_id = :user_id
           AND m.status IN ('pending', 'streaming')
           AND c.visibility = 'listed'
+          AND {chat_in_workspace}
           AND NOT EXISTS (
               SELECT 1 FROM pending_tool_state p
               WHERE p.conversation_id = m.conversation_id AND p.user_id = m.user_id
@@ -83,8 +100,8 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
               ) > now() - make_interval(secs => :fresh)
         ORDER BY m.timestamp ASC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "fresh": CHAT_FRESH_SECONDS, "limit": PER_KIND_LIMIT},
+        """.format(chat_in_workspace=in_workspace_sql("c.team_id::text")),
+        {"user_id": user_id, "fresh": CHAT_FRESH_SECONDS, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     return [
         {
@@ -105,6 +122,9 @@ def _running_chats(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
 
 def _running_api(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     """Answers being written through the API on the user's agents, one row per agent.
+
+    ``user_id`` is the agents' owner: the caller in Personal, the team's
+    principal in a team workspace.
 
     API, OpenAI-compatible and shared-agent calls write hidden conversations,
     some under the caller's user id; a busy agent would flood the list, so
@@ -171,8 +191,11 @@ def _job_fraction(progress: Any) -> Optional[float]:
     return min(max(percent / 100, 0.0), 1.0)
 
 
-def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    """Background jobs still working, with their tool's label and the job's progress."""
+def _running_jobs(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Background jobs still working in one workspace, with their tool's label and the job's progress.
+
+    A job belongs to its chat's workspace, or with no chat to its agent's.
+    """
     rows = query_rows(
         conn,
         """
@@ -181,10 +204,11 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
         LEFT JOIN conversations c ON c.id = j.conversation_id
         LEFT JOIN agents a ON a.id = j.agent_id
         WHERE j.user_id = :user_id AND j.status = 'working'
+          AND {job_in_workspace}
         ORDER BY j.created_at ASC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+        """.format(job_in_workspace=in_workspace_sql(_JOB_TEAM)),
+        {"user_id": user_id, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     labels = tool_labels(conn, user_id, [r.get("tool_name") for r in rows])
     out = []
@@ -214,8 +238,8 @@ def _running_jobs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
     return out
 
 
-def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    """Scheduled runs pending or running, oldest slot first."""
+def _running_schedule_runs(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Scheduled runs pending or running in one workspace, oldest slot first."""
     rows = query_rows(
         conn,
         """
@@ -226,10 +250,11 @@ def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any
         JOIN schedules s ON s.id = sr.schedule_id
         LEFT JOIN agents a ON a.id = s.agent_id
         WHERE sr.user_id = :user_id AND sr.status IN ('pending', 'running')
+          AND {schedule_in_workspace}
         ORDER BY sr.scheduled_for ASC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+        """.format(schedule_in_workspace=in_workspace_sql(schedule_team_sql())),
+        {"user_id": user_id, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     return [
         {
@@ -250,8 +275,8 @@ def _running_schedule_runs(conn: Connection, user_id: str) -> List[Dict[str, Any
     ]
 
 
-def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
-    """Workflow runs still going, with the step they are on.
+def _running_workflows(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Workflow runs still going in one workspace (the one each was started in), with the step they are on.
 
     Most are folded into the chat, scheduled run or webhook that started them
     (``_fold_workflows``); the agent is the one that ran it (several can share
@@ -274,10 +299,16 @@ def _running_workflows(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
             ORDER BY created_at ASC LIMIT 1
         ) a ON TRUE
         WHERE r.user_id = :user_id AND r.status = 'running'
+          AND {workflow_in_workspace}
+          AND {in_reach}
         ORDER BY r.started_at ASC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+        """.format(
+            workflow_in_workspace=in_workspace_sql(workflow_run_team_sql("r", "w")),
+            # Only while the runner may still read it (the run-access rule).
+            in_reach=run_reach_sql("r", "w", ":user_id"),
+        ),
+        {"user_id": user_id, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     return [
         {
@@ -307,6 +338,9 @@ def _marker_started(marker: Dict[str, Any]) -> Optional[str]:
 
 def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Knowledge being indexed: each source's marker and its chunk progress.
+
+    ``user_id`` owns the sources (the caller, or a team's principal);
+    ``markers`` are already the workspace's (``_workspace_markers``).
 
     The marker (set when the ingest is queued) gives the start, the name and
     what kind of ingest it is; it is the only trace of a new upload, which has
@@ -378,6 +412,65 @@ def _running_ingests(conn: Connection, user_id: str, markers: List[Dict[str, Any
                 "started_at": _marker_started(marker),
             }
         )
+    return out
+
+
+def _workspace_markers(
+    conn: Connection, user_id: str, team_id: Optional[str], agents_owner: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """The Redis run markers that belong in one workspace's Now.
+
+    The caller's own markers, plus (``agents_owner``) the webhook runs of a
+    team's agents, whose markers sit under the team's principal. A marker
+    whose source or agent is known and lives in another workspace is left
+    out. An ingest with no row yet (a new upload still being read) is placed
+    by the ``team_id`` its marker carries, Personal when it has none.
+
+    Args:
+        conn: A read-only connection.
+        user_id: The caller.
+        team_id: The workspace's team, None for Personal.
+        agents_owner: The team's principal when the caller may see its agents' traffic.
+
+    Returns:
+        Marker dicts, oldest first, each once.
+    """
+    markers = list_runs(user_id)
+    if agents_owner:
+        markers += [m for m in list_runs(agents_owner) if m.get("kind", "webhook") == "webhook"]
+    refs: Dict[str, str] = {}
+    for marker in markers:
+        ref = marker.get("source_id") if marker.get("kind") == "ingest" else marker.get("agent_id")
+        if ref and looks_like_uuid(str(ref)):
+            refs[str(id(marker))] = str(ref).lower()
+    owners: Dict[str, Any] = {}
+    if refs:
+        ids = sorted(set(refs.values()))
+        for row in conn.execute(
+            text(
+                "SELECT id::text, user_id FROM sources WHERE id = ANY(CAST(:ids AS uuid[])) "
+                "UNION ALL SELECT id::text, user_id FROM agents WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"ids": ids},
+        ).fetchall():
+            owners[str(row[0]).lower()] = row[1]
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+    team_id = canonical_team_id(team_id)
+    for marker in sorted(markers, key=lambda item: item.get("started_at") or 0):
+        ref = refs.get(str(id(marker)))
+        if ref in owners:
+            if team_of_principal(owners[ref]) != team_id:
+                continue
+        elif marker.get("kind") == "ingest" and canonical_team_id(marker.get("team_id")) != team_id:
+            # A new upload, no row yet: its marker names the workspace it runs
+            # in (one set before the field existed has none: Personal).
+            continue
+        key = (marker.get("kind"), marker.get("id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(marker)
     return out
 
 
@@ -463,7 +556,7 @@ def _fold_workflows(running: List[Dict[str, Any]], workflows: List[Dict[str, Any
 _PAUSE_TYPES = {"approval": "awaiting_approval", "question": "awaiting_answer"}
 
 
-def _paused_turns(conn: Connection, user_id: str, kind: str) -> List[Dict[str, Any]]:
+def _paused_turns(conn: Connection, user_id: str, kind: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Paused turns waiting on the user, soonest to expire first.
 
     An ``approval`` waits for the user to approve a tool call and lists the
@@ -474,6 +567,7 @@ def _paused_turns(conn: Connection, user_id: str, kind: str) -> List[Dict[str, A
         conn: A read-only connection.
         user_id: Whose turns.
         kind: ``approval`` or ``question``.
+        team_id: The workspace (its chats only); None for Personal.
 
     Returns:
         ``kind`` items, ``id`` ``<kind>:<conversation_id>``.
@@ -490,14 +584,15 @@ def _paused_turns(conn: Connection, user_id: str, kind: str) -> List[Dict[str, A
         WHERE p.user_id = :user_id
           AND p.status = 'pending'
           AND p.expires_at > now()
+          AND {chat_in_workspace}
           AND EXISTS (
               SELECT 1 FROM json_array_elements(p.pending_tool_calls) e
               WHERE e ->> 'pause_type' = :pause_type
           )
         ORDER BY p.expires_at ASC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "pause_type": pause_type, "limit": PER_KIND_LIMIT},
+        """.format(chat_in_workspace=in_workspace_sql("c.team_id::text")),
+        {"user_id": user_id, "pause_type": pause_type, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     out = []
     for r in rows:
@@ -524,7 +619,7 @@ def _paused_turns(conn: Connection, user_id: str, kind: str) -> List[Dict[str, A
     return out
 
 
-def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]]:
+def _autopaused_schedules(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Schedules the scheduler paused after repeated failures, with their last error.
 
     Only a paused schedule at or past ``SCHEDULE_AUTOPAUSE_FAILURES``
@@ -549,10 +644,11 @@ def _autopaused_schedules(conn: Connection, user_id: str) -> List[Dict[str, Any]
           AND s.status = 'paused'
           AND s.trigger_type <> 'monitor'
           AND s.consecutive_failure_count >= :threshold
+          AND {schedule_in_workspace}
         ORDER BY s.updated_at DESC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "threshold": threshold, "limit": PER_KIND_LIMIT},
+        """.format(schedule_in_workspace=in_workspace_sql(schedule_team_sql())),
+        {"user_id": user_id, "threshold": threshold, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     return [
         {
@@ -605,8 +701,8 @@ def _occurrences(row: Dict[str, Any], start: datetime, end: datetime) -> int:
         return 1
 
 
-def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, Any]]:
-    """Active schedules due in the next ``UP_NEXT_WINDOW``, with how often each fires in it."""
+def _up_next(conn: Connection, user_id: str, now: datetime, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Active schedules of one workspace due in the next ``UP_NEXT_WINDOW``, with how often each fires in it."""
     end = now + UP_NEXT_WINDOW
     rows = query_rows(
         conn,
@@ -622,10 +718,11 @@ def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, An
           AND s.trigger_type <> 'monitor'
           AND s.next_run_at IS NOT NULL
           AND s.next_run_at < :end
+          AND {schedule_in_workspace}
         ORDER BY s.next_run_at ASC
         LIMIT :limit
-        """,
-        {"user_id": user_id, "end": end, "limit": PER_KIND_LIMIT},
+        """.format(schedule_in_workspace=in_workspace_sql(schedule_team_sql())),
+        {"user_id": user_id, "end": end, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     )
     out = []
     for r in rows:
@@ -649,26 +746,35 @@ def _up_next(conn: Connection, user_id: str, now: datetime) -> List[Dict[str, An
     return out
 
 
-def _failed_last_day(conn: Connection, user_id: str) -> int:
-    """How many scheduled runs and background jobs failed in the last 24 hours."""
+def _failed_last_day(conn: Connection, user_id: str, team_id: Optional[str] = None) -> int:
+    """How many scheduled runs and background jobs of one workspace failed in the last 24 hours."""
     scalar = conn.execute(
         text(
             """
             SELECT
-              (SELECT COUNT(*) FROM schedule_runs
-               WHERE user_id = :user_id AND status IN ('failed', 'timeout')
-                 AND COALESCE(finished_at, scheduled_for) > now() - interval '24 hours')
-            + (SELECT COUNT(*) FROM background_jobs
-               WHERE user_id = :user_id AND status IN ('failed', 'lost')
-                 AND COALESCE(finished_at, last_updated_at) > now() - interval '24 hours')
-            """
+              (SELECT COUNT(*) FROM schedule_runs sr
+               JOIN schedules s ON s.id = sr.schedule_id
+               LEFT JOIN agents a ON a.id = s.agent_id
+               WHERE sr.user_id = :user_id AND sr.status IN ('failed', 'timeout')
+                 AND COALESCE(sr.finished_at, sr.scheduled_for) > now() - interval '24 hours'
+                 AND {schedule_in_workspace})
+            + (SELECT COUNT(*) FROM background_jobs j
+               LEFT JOIN conversations c ON c.id = j.conversation_id
+               LEFT JOIN agents a ON a.id = j.agent_id
+               WHERE j.user_id = :user_id AND j.status IN ('failed', 'lost')
+                 AND COALESCE(j.finished_at, j.last_updated_at) > now() - interval '24 hours'
+                 AND {job_in_workspace})
+            """.format(
+                schedule_in_workspace=in_workspace_sql(schedule_team_sql()),
+                job_in_workspace=in_workspace_sql(_JOB_TEAM),
+            )
         ),
-        {"user_id": user_id},
+        {"user_id": user_id, **workspace_params(team_id)},
     ).scalar()
     return int(scalar or 0)
 
 
-def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
+def _failed_conversations(conn: Connection, user_id: str, team_id: Optional[str] = None) -> List[str]:
     """Unread chats whose latest answer, or latest background job, failed.
 
     An answer its user ended before it wrote anything (stopped it, or left
@@ -684,6 +790,7 @@ def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
             SELECT c.id FROM conversations c
             WHERE c.user_id = :user_id
               AND c.unread_at IS NOT NULL
+              AND {chat_in_workspace}
               AND (
                 (SELECT CASE
                             WHEN c.read_at IS NULL
@@ -703,20 +810,28 @@ def _failed_conversations(conn: Connection, user_id: str) -> List[str]:
                     ORDER BY m.position DESC LIMIT 1) = 'failed'
               )
             LIMIT :limit
-            """
+            """.format(chat_in_workspace=in_workspace_sql("c.team_id::text"))
         ),
-        {"user_id": user_id, "limit": PER_KIND_LIMIT},
+        {"user_id": user_id, "limit": PER_KIND_LIMIT, **workspace_params(team_id)},
     ).fetchall()
     return [str(r[0]) for r in rows]
 
 
-def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Collect what runs now, what waits for the user, and what runs next.
+def build_now(
+    conn: Connection, user_id: str, *, now: Optional[datetime] = None, workspace: Optional[Workspace] = None
+) -> Dict[str, Any]:
+    """Collect what runs now, what waits for the user, and what runs next, in one workspace.
+
+    In a team workspace the caller sees their own chats, jobs and schedule
+    runs there, the team's ingests and knowledge syncs, and (Editors and up,
+    who may read the agents' logs) the API and webhook traffic on the team's
+    agents. Personal shows nothing of any team.
 
     Args:
         conn: A read-only connection.
         user_id: Whose activity.
         now: The current time (tests).
+        workspace: From ``current_workspace``; None means Personal.
 
     Returns:
         ``{running, needs_you, up_next, approval_conversations,
@@ -727,22 +842,30 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
         alone knows (answers started since, connections to sign in to).
     """
     current = now or datetime.now(timezone.utc)
+    team_id = workspace.team_id if workspace is not None and workspace.is_team else None
+    # Whose agents and sources: the caller's in Personal, the team's in a team.
+    owner = workspace.owner_id if team_id else user_id
+    sees_agent_traffic = team_id is None or role_at_least(workspace.role, "editor")
     running: List[Dict[str, Any]] = []
-    running += _running_chats(conn, user_id)
-    running += _running_api(conn, user_id)
-    running += _running_jobs(conn, user_id)
-    running += _running_schedule_runs(conn, user_id)
-    markers = list_runs(user_id)
+    running += _running_chats(conn, user_id, team_id)
+    if sees_agent_traffic:
+        running += _running_api(conn, owner)
+    running += _running_jobs(conn, user_id, team_id)
+    running += _running_schedule_runs(conn, user_id, team_id)
+    if team_id is None:
+        markers = _workspace_markers(conn, user_id, None)
+    else:
+        markers = _workspace_markers(conn, user_id, team_id, owner if sees_agent_traffic else None)
     running += _running_webhooks(markers)
-    running += _fold_workflows(running, _running_workflows(conn, user_id))
-    running += _running_ingests(conn, user_id, markers)
+    running += _fold_workflows(running, _running_workflows(conn, user_id, team_id))
+    running += _running_ingests(conn, owner, markers)
 
-    approvals = _paused_turns(conn, user_id, "approval")
-    questions = _paused_turns(conn, user_id, "question")
-    needs_you = approvals + questions + _autopaused_schedules(conn, user_id)
-    up_next = _up_next(conn, user_id, current)
+    approvals = _paused_turns(conn, user_id, "approval", team_id)
+    questions = _paused_turns(conn, user_id, "question", team_id)
+    needs_you = approvals + questions + _autopaused_schedules(conn, user_id, team_id)
+    up_next = _up_next(conn, user_id, current, team_id)
     # Knowledge syncs join the schedules: one batch per frequency due today.
-    syncs = due_batches(conn, user_id, current, current + UP_NEXT_WINDOW, next_sync_times())
+    syncs = due_batches(conn, owner, current, current + UP_NEXT_WINDOW, next_sync_times())
     for batch in syncs:
         # As on the calendar: a time more than LATE_GRACE late (beat behind or
         # stopped) plans nothing. It is still listed, as overdue.
@@ -757,9 +880,9 @@ def build_now(conn: Connection, user_id: str, *, now: Optional[datetime] = None)
         # or on clarifying questions both wait for the user. A turn paused on
         # both is listed under each, but its chat is marked once.
         "approval_conversations": list(dict.fromkeys(item["conversation_id"] for item in approvals + questions)),
-        "failed_conversations": _failed_conversations(conn, user_id),
+        "failed_conversations": _failed_conversations(conn, user_id, team_id),
         "stats": {
             "next_24h": sum(item["runs_in_window"] for item in up_next),
-            "failed_24h": _failed_last_day(conn, user_id),
+            "failed_24h": _failed_last_day(conn, user_id, team_id),
         },
     }

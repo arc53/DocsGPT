@@ -376,6 +376,17 @@ describe('activitySlice', () => {
       ).toBe(1);
       expect(await after(job('completed'))).toBe(1);
     });
+
+    it('reloads after a scheduled run is skipped for its payer', async () => {
+      // The run was announced as started; without a reload it stays running.
+      expect(
+        await after({
+          id: 'e',
+          type: 'schedule.run.skipped',
+          payload: { schedule_id: 's1', run_id: 'r1', status: 'skipped' },
+        } as SSEEvent),
+      ).toBe(1);
+    });
   });
 
   it('reads as empty in a store without the slice', () => {

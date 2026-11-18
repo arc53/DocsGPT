@@ -1,33 +1,58 @@
 import { envVar } from '@/env';
+import type { TFunction } from 'i18next';
 import { focusRing } from '@/lib/utils';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import ApiWriteAllowlist, {
   type GetSavedConfig,
 } from '../agents/ApiWriteAllowlist';
+import {
+  outsideAccessOn,
+  outsidePauseReason,
+  rememberOutsideAccess,
+} from '../agents/OwnerInactiveNotice';
 import { Agent, type AgentConfig } from '../agents/types';
+import payerService from '../api/services/payerService';
 import userService from '../api/services/userService';
 import CopyButton from '../components/CopyButton';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Modal } from '../components/ui/modal';
 import { SectionHeader } from '../components/ui/section-header';
 import { ActiveState } from '../models/misc';
+import { showActionToast } from '../notifications/actionToastSlice';
+import { paidByText } from '../payer/pauseReason';
+import TakeOverModal from '../payer/TakeOverModal';
+import type { OutsideAccess } from '../payer/types';
 import { selectToken } from '../preferences/preferenceSlice';
 import { isOwner } from '../utils/accessUtils';
+import { readerIdFromToken } from '../utils/personLabel';
 import ConfirmationModal from './ConfirmationModal';
 
 const baseURL = envVar('VITE_BASE_URL');
 // The public and webhook URLs are raw links in running text.
 const linkFocus = `${focusRing} rounded-sm outline-none`;
 
-/** The backend's `message` on a refused call, else null. */
-const errorMessage = async (response: Response): Promise<string | null> => {
+/**
+ * What to say about a refused call: the app's words for a refusal over a
+ * team's account (naming the tools that keep the agent inside the team),
+ * else the backend's `message`, else null.
+ */
+const errorMessage = async (
+  response: Response,
+  t: TFunction,
+): Promise<string | null> => {
   try {
     const body = await response.json();
+    if (connectionErrorCode(body))
+      return connectionErrorMessage(t, body, { status: response.status });
     return typeof body?.message === 'string' && body.message.trim()
       ? body.message
       : null;
@@ -35,6 +60,118 @@ const errorMessage = async (response: Response): Promise<string | null> => {
     return null;
   }
 };
+
+/**
+ * Who pays for an agent's key, public link and webhook ("Paid by Dana"), or
+ * why they are paused, with Take over for a reader the server lets take it
+ * over. Shown only while something is on.
+ *
+ * Args:
+ *   agent: The agent.
+ *   outside: Its `outside_access`.
+ *   onChange: Receives the block a Take over answered with.
+ */
+function OutsidePayer({
+  agent,
+  outside,
+  onChange,
+}: {
+  agent: Agent;
+  outside: OutsideAccess;
+  onChange: (access: OutsideAccess) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const dispatch = useDispatch();
+  const token = useSelector(selectToken);
+  const teamId =
+    agent.workspace?.kind === 'team' ? agent.workspace.team_id : null;
+  const teamName = useSelector(
+    (state: {
+      workspace?: { workspaces?: { id: string; name?: string | null }[] };
+    }) =>
+      (teamId &&
+        state.workspace?.workspaces?.find((row) => row.id === teamId)?.name) ||
+      null,
+  );
+  const me = readerIdFromToken(token);
+  const [takeOverState, setTakeOverState] = useState<ActiveState>('INACTIVE');
+
+  const handleTakeOver = async () => {
+    if (!agent.id) return;
+    const result = await payerService.takeOverOutsideAccess(agent.id, token);
+    onChange(result.outside_access);
+    rememberOutsideAccess(agent.id, result.outside_access);
+    dispatch(
+      showActionToast({
+        variant: 'success',
+        message: t('payer.access.takenOver'),
+      }),
+    );
+  };
+
+  const pauseReason = outsidePauseReason(t, agent, outside, {
+    me,
+    teamName,
+    language: i18n?.language,
+  });
+  const paidBy = paidByText(t, outside.paid_by, me);
+  const takeOverLabel = t('payer.common.takeOver.submit');
+  const openTakeOver = () => setTakeOverState('ACTIVE');
+
+  return (
+    <>
+      {outside.paused_for ? (
+        <Alert variant="warning">
+          <AlertDescription>
+            <p>
+              {pauseReason
+                ? t('payer.access.notice', {
+                    reason: pauseReason,
+                    interpolation: { escapeValue: false },
+                  })
+                : t('payer.access.noticeUnknown')}
+              {outside.can_take_over ? (
+                <>
+                  {' '}
+                  <AlertAction onClick={openTakeOver}>
+                    {takeOverLabel}
+                  </AlertAction>
+                </>
+              ) : null}
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : paidBy ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
+            <Wallet className="size-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">{paidBy}</span>
+          </p>
+          {outside.can_take_over ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              shape="pill"
+              className="shrink-0"
+              onClick={openTakeOver}
+            >
+              {takeOverLabel}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      <TakeOverModal
+        kind="outside_access"
+        name={agent.name}
+        payer={outside.paid_by}
+        modalState={takeOverState}
+        setModalState={setTakeOverState}
+        onConfirm={handleTakeOver}
+      />
+    </>
+  );
+}
 
 type AgentDetailsModalProps = {
   agent: Agent;
@@ -62,6 +199,29 @@ export default function AgentDetailsModal({
 }: AgentDetailsModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
+  // The agent's team row: its name and whether it is locked.
+  const teamId =
+    agent.workspace?.kind === 'team' ? agent.workspace.team_id : null;
+  const teamRow = useSelector(
+    (state: {
+      workspace?: {
+        workspaces?: {
+          id: string;
+          name?: string | null;
+          outside_policy?: string | null;
+        }[];
+      };
+    }) =>
+      (teamId &&
+        state.workspace?.workspaces?.find((row) => row.id === teamId)) ||
+      null,
+  );
+
+  // Who pays for the key, link and webhook, and why they are paused: only
+  // for a reader who manages them (the server leaves it out otherwise).
+  const [outside, setOutside] = useState<OutsideAccess | null>(
+    agent.outside_access ?? null,
+  );
 
   const [sharedToken, setSharedToken] = useState<string | null>(
     agent.shared_token ?? null,
@@ -109,7 +269,7 @@ export default function AgentDetailsModal({
       if (response.ok) onSuccess(await response.json());
       else
         failure =
-          (await errorMessage(response)) ??
+          (await errorMessage(response, t)) ??
           t('modals.agentDetails.actionFailed');
     } catch {
       failure = t('modals.agentDetails.actionFailed');
@@ -119,18 +279,43 @@ export default function AgentDetailsModal({
     if (failure !== null) onFailure(failure);
   };
 
+  /**
+   * Reads who pays again once something was turned on: on a team agent the
+   * Admin who turns it on pays for it, which may end a pause.
+   */
+  const refreshOutside = async () => {
+    if (!outside || !agent.id) return;
+    try {
+      const response = await userService.getAgent(agent.id, token);
+      if (!response.ok) return;
+      const body = (await response.json()) as Partial<Agent>;
+      if (body.outside_access) {
+        setOutside(body.outside_access);
+        rememberOutsideAccess(agent.id, body.outside_access);
+      }
+    } catch {
+      // The line keeps what it said; the next open reads it again.
+    }
+  };
+
   const handleGeneratePublicLink = () =>
     run(
       'publicLink',
       () => userService.shareAgent({ id: agent.id ?? '', shared: true }, token),
-      (data) => setSharedToken(data.shared_token),
+      (data) => {
+        setSharedToken(data.shared_token);
+        void refreshOutside();
+      },
     );
 
   const handleGenerateWebhook = () =>
     run(
       'webhook',
       () => userService.getAgentWebhook(agent.id ?? '', token),
-      (data) => setWebhookUrl(data.webhook_url),
+      (data) => {
+        setWebhookUrl(data.webhook_url);
+        void refreshOutside();
+      },
     );
 
   const handleRegenerateKey = () =>
@@ -140,6 +325,7 @@ export default function AgentDetailsModal({
       (data) => {
         setApiKey(data.key);
         onKeyRegenerated?.(data.key);
+        void refreshOutside();
       },
       // The reset confirm stays open and shows the failure itself.
       (message) => {
@@ -151,7 +337,18 @@ export default function AgentDetailsModal({
   useEffect(() => {
     setSharedToken(agent.shared_token ?? null);
     setApiKey(agent.key ?? null);
+    setOutside(agent.outside_access ?? null);
   }, [agent]);
+
+  // A locked team's agents are reached from nowhere outside it: nothing can
+  // be turned on, and what is on is paused (the payer notice says so then).
+  const teamLocked =
+    teamRow?.outside_policy === 'locked' ||
+    outside?.paused_for?.reason === 'team_locked';
+  const pauseSaysLocked =
+    !!outside &&
+    outsideAccessOn(outside) &&
+    outside.paused_for?.reason === 'team_locked';
 
   return (
     <>
@@ -167,6 +364,26 @@ export default function AgentDetailsModal({
             </Alert>
           )}
           <div className="mt-8 flex flex-col gap-6">
+            {teamLocked && !pauseSaysLocked ? (
+              <Alert variant="info" role="note">
+                <AlertDescription>
+                  {teamRow?.name
+                    ? t('modals.agentDetails.teamLocked', {
+                        team: teamRow.name,
+                        interpolation: { escapeValue: false },
+                      })
+                    : t('modals.agentDetails.teamLockedNoTeam')}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {/* Who pays for all three ways in, or why they are paused. */}
+            {outside && outsideAccessOn(outside) ? (
+              <OutsidePayer
+                agent={agent}
+                outside={outside}
+                onChange={setOutside}
+              />
+            ) : null}
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 <SectionHeader
@@ -208,7 +425,7 @@ export default function AgentDetailsModal({
                     </a>
                   </Button>
                 </div>
-              ) : (
+              ) : teamLocked ? null : (
                 <Button
                   type="button"
                   variant="outline-primary"
@@ -257,7 +474,7 @@ export default function AgentDetailsModal({
                         </a>
                       </Button>
                     )}
-                    {apiKey.includes('...') && (
+                    {apiKey.includes('...') && !teamLocked && (
                       <Button
                         type="button"
                         onClick={() => setResetKeyConfirmState('ACTIVE')}
@@ -272,7 +489,7 @@ export default function AgentDetailsModal({
                     )}
                   </div>
                 </div>
-              ) : agent.status === 'draft' ? (
+              ) : teamLocked ? null : agent.status === 'draft' ? (
                 // A draft has no key yet: the first one is minted on publish.
                 <p className="text-muted-foreground text-sm">
                   {t('modals.agentDetails.apiKeyAfterPublish')}
@@ -332,7 +549,7 @@ export default function AgentDetailsModal({
                     </a>
                   </Button>
                 </div>
-              ) : (
+              ) : teamLocked ? null : (
                 <Button
                   type="button"
                   variant="outline-primary"

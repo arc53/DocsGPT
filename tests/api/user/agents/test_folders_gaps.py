@@ -30,19 +30,22 @@ def _patch_folders_db(conn):
 
 
 def _seed_folder(pg_conn, user, name="F", parent_id=None):
-    from docsgpt.storage.db.repositories.agent_folders import (
-        AgentFoldersRepository,
-    )
-    return AgentFoldersRepository(pg_conn).create(user, name, parent_id=parent_id)
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+    return FoldersRepository(pg_conn).create(user, name, parent_id=parent_id)
 
 
 def _seed_agent(pg_conn, user, folder_id=None):
     from docsgpt.storage.db.repositories.agents import AgentsRepository
-    repo = AgentsRepository(pg_conn)
-    agent = repo.create(user, "test-agent", "published", description="x")
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+    agent = AgentsRepository(pg_conn).create(user, "test-agent", "published", description="x")
     if folder_id:
-        repo.set_folder(str(agent["id"]), user, folder_id)
+        FolderItemsRepository(pg_conn).file(user, "agent", str(agent["id"]), str(folder_id))
     return agent
+
+
+def _filing(pg_conn, user, agent_id):
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+    return FolderItemsRepository(pg_conn).filing(user, "agent", str(agent_id))
 
 
 class TestAgentFoldersGet:
@@ -398,6 +401,7 @@ class TestMoveAgentToFolder:
             request.decoded_token = {"sub": user}
             response = MoveAgentToFolder().post()
         assert response.status_code == 200
+        assert _filing(pg_conn, user, agent["id"]) == str(folder["id"])
 
     def test_returns_404_folder_not_found(self, app, pg_conn):
         from docsgpt.api.user.agents.folders import MoveAgentToFolder
@@ -434,6 +438,7 @@ class TestMoveAgentToFolder:
             request.decoded_token = {"sub": user}
             response = MoveAgentToFolder().post()
         assert response.status_code == 200
+        assert _filing(pg_conn, user, agent["id"]) is None
 
 
 class TestBulkMoveAgents:
@@ -483,6 +488,7 @@ class TestBulkMoveAgents:
             request.decoded_token = {"sub": user}
             response = BulkMoveAgents().post()
         assert response.status_code == 200
+        assert _filing(pg_conn, user, a1["id"]) == _filing(pg_conn, user, a2["id"]) == str(folder["id"])
 
     def test_returns_404_when_folder_not_found(self, app, pg_conn):
         from docsgpt.api.user.agents.folders import BulkMoveAgents
@@ -522,3 +528,4 @@ class TestBulkMoveAgents:
             request.decoded_token = {"sub": user}
             response = BulkMoveAgents().post()
         assert response.status_code == 200
+        assert response.json["skipped"] == ["00000000-0000-0000-0000-000000000000"]

@@ -6,6 +6,7 @@ import {
 
 import userService from '../api/services/userService';
 import { setToken } from '../preferences/preferenceSlice';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 import type { UserToolType } from '../settings/types';
 import { readerIdFromToken } from '../utils/personLabel';
 import { isChatPickerToolVisible } from '../utils/toolUtils';
@@ -153,7 +154,12 @@ export const chatToolsSlice = createSlice({
         const principal = principalOf(action.payload);
         if (principal === state.principal) return;
         return { ...initialState, principal };
-      });
+      })
+      // Another workspace has other tools; a load still out is dropped.
+      .addCase(switchWorkspace, (state) => ({
+        ...initialState,
+        principal: state.principal,
+      }));
   },
 });
 

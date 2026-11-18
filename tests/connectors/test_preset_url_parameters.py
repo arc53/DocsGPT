@@ -312,13 +312,15 @@ class TestMcpRoutes:
 
 @pytest.mark.usefixtures("public_host")
 class TestToolRoutes:
-    def test_creating_a_tool_on_the_plain_url_is_refused(self, scoped, app):
+    def test_creating_a_tool_on_the_plain_url_is_refused(self, scoped, app, pg_conn):
         from docsgpt.api.user.tools.routes import CreateTool
 
-        response = _post(app, CreateTool, "/api/create_tool", {
-            "name": "mcp_tool", "displayName": "Example", "description": "", "status": True,
-            "config": {"server_url": _URL, "auth_type": "none"},
-        })
+        # The route reads the workspace and the folder the tool lands in first.
+        with _tools_db(pg_conn):
+            response = _post(app, CreateTool, "/api/create_tool", {
+                "name": "mcp_tool", "displayName": "Example", "description": "", "status": True,
+                "config": {"server_url": _URL, "auth_type": "none"},
+            })
 
         assert response.status_code == 400
         assert response.json["message"] == "Example needs a Project ref"

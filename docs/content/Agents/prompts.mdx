@@ -38,7 +38,7 @@ Over the API, `GET /api/user/preferences` returns the pick as `chat_prompt_id` (
 
 1. To write a new prompt, choose **Add prompt**, enter a name and the prompt text, and choose **Save**.
 2. To change a prompt you can edit, click its card, or choose **Edit** from its **⋯** menu. The included prompts, and shared prompts you can only view, open read-only (**View**); **Duplicate** makes an editable copy.
-3. The **⋯** menu also has **Share with team** and **Delete** when your access allows them; by default only the owner shares or deletes.
+3. The **⋯** menu also has **Share** and **Delete** when your access allows them; by default only the owner shares or deletes.
 
 A template prompt (one with `{{ }}`) that won't run shows an error under the text, and **Save** stays off until you fix it: a tag, variable or comment left open (`{{ variable }`, `{% if x %`), or block tags that don't pair up, such as an `{% if %}` without its `{% endif %}`. Chats with such a prompt would fail. Accepting only some of a DocsGPT review's changes can leave a template this way.
 

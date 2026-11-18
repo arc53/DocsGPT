@@ -34,10 +34,24 @@ class PromptsRepository:
         content: str,
         *,
         legacy_mongo_id: str | None = None,
+        created_by: str | None = None,
     ) -> dict:
+        """Insert a prompt.
+
+        Args:
+            user_id: The owner: a person, or a team's principal.
+            name: Its name.
+            content: Its text.
+            legacy_mongo_id: The Mongo id it was migrated from, if any.
+            created_by: The person who added it. None lets the ``fill_created_by`` trigger take the owner,
+                which it does only for a person; a team's prompt must pass it.
+
+        Returns:
+            dict: The new row.
+        """
         sql = """
-            INSERT INTO prompts (user_id, name, content, legacy_mongo_id)
-            VALUES (:user_id, :name, :content, :legacy_mongo_id)
+            INSERT INTO prompts (user_id, name, content, legacy_mongo_id, created_by)
+            VALUES (:user_id, :name, :content, :legacy_mongo_id, :created_by)
             RETURNING *
         """
         result = self._conn.execute(
@@ -47,6 +61,7 @@ class PromptsRepository:
                 "name": name,
                 "content": content,
                 "legacy_mongo_id": legacy_mongo_id,
+                "created_by": created_by,
             },
         )
         return row_to_dict(result.fetchone())

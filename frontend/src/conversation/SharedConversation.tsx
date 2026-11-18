@@ -25,6 +25,11 @@ import {
   updateQuery,
 } from './sharedConversationSlice';
 import { selectSendableAttachments } from '../upload/uploadSlice';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import {
+  selectWorkspaceId,
+  switchWorkspace,
+} from '../workspace/workspaceSlice';
 import { Head as DocumentHead } from '../components/Head';
 
 export const SharedConversation = () => {
@@ -38,6 +43,7 @@ export const SharedConversation = () => {
   const apiKey = useSelector(selectClientAPIKey);
   const status = useSelector(selectStatus);
   const sendableAttachments = useSelector(selectSendableAttachments);
+  const workspaceId = useSelector(selectWorkspaceId);
 
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -64,6 +70,11 @@ export const SharedConversation = () => {
   useEffect(() => {
     if (!identifier) return;
     let cancelled = false;
+    // A shared chat lives in Personal for whoever opens its link: the app
+    // goes there before any request. The page has no app chrome, so it
+    // switches without a notice.
+    if (workspaceId !== PERSONAL_WORKSPACE)
+      dispatch(switchWorkspace(PERSONAL_WORKSPACE, { reason: 'link' }));
     // The page stays mounted from one share to the next: drop the last
     // share's chat rather than show it until this one arrives.
     dispatch(resetSharedConversation());

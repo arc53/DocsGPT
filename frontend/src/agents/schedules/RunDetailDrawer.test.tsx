@@ -153,6 +153,49 @@ describe('RunDetailDrawer', () => {
     );
   });
 
+  it('words a pause skip as a reason, not an error, with no detail block', async () => {
+    await act(async () =>
+      root.render(
+        <RunDetailDrawer
+          run={{
+            ...run,
+            status: 'skipped',
+            error_type: 'payer_out_of_allowance',
+            error: 'payer_out_of_allowance',
+            prompt_tokens: 0,
+            generated_tokens: 0,
+          }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const [heading] = Array.from(content()!.querySelectorAll('h3'));
+    expect(heading.textContent).toBe(
+      'Skipped (its payer was out of allowance)',
+    );
+    expect(content()!.querySelector('pre')).toBeNull();
+  });
+
+  it('keeps the detail of a run stopped mid-way at the allowance', async () => {
+    await act(async () =>
+      root.render(
+        <RunDetailDrawer
+          run={{
+            ...run,
+            error_type: 'payer_out_of_allowance',
+            error: 'Token quota exceeded for the payer',
+          }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const [heading] = Array.from(content()!.querySelectorAll('h3'));
+    expect(heading.textContent).toBe('Error (its payer was out of allowance)');
+    expect(content()!.querySelector('pre')!.textContent).toBe(
+      'Token quota exceeded for the payer',
+    );
+  });
+
   it('closes from the X', async () => {
     const onClose = vi.fn();
     await act(async () =>

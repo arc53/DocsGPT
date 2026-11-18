@@ -1,0 +1,257 @@
+import type { WorkspaceRow } from '../../workspace/workspaceSlice';
+import { workspaceHeader } from '../../workspace/requestWorkspace';
+import apiClient from '../client';
+import endpoints from '../endpoints';
+
+/** What can be moved between workspaces. */
+export type MoveItemType = 'agent' | 'source' | 'tool' | 'prompt' | 'folder';
+
+/** A move's request body, for the plan and for applying it. */
+export type MoveRequest = {
+  to: { workspace: string; folder_id?: string | null };
+  items: { type: MoveItemType; id: string }[];
+  /** The plan's fingerprint; apply only. */
+  fingerprint?: string;
+};
+
+/** An item a plan names; `name` is null for one the caller can't open. */
+type Named = {
+  type: MoveItemType | 'model';
+  id: string;
+  name: string | null;
+};
+
+export type MoveWithReason = 'used_by_agent' | 'in_folder' | 'same_workflow';
+
+export type CannotMoveReason =
+  | 'connection_account'
+  | 'connector_synced'
+  | 'custom_model'
+  | 'remote_device'
+  | 'not_yours'
+  | 'in_knowledge_folder'
+  | 'credentials_unreadable';
+
+export type CannotMoveEffect = 'removed_from_holder' | 'stays';
+
+export type PersonRef = { user_id: string; label?: string | null };
+
+export type OutsideAccess = {
+  api_key: boolean;
+  public_link: boolean;
+  webhook: boolean;
+  paid_by?: PersonRef | string | null;
+};
+
+/** The plan `POST /api/workspace_moves/plan` answers with. */
+export type MovePlan = {
+  to: {
+    workspace: {
+      kind: 'personal' | 'team';
+      team_id: string | null;
+      name: string;
+    };
+    /** The folder in the target tree, with its trail from the top level. */
+    folder: {
+      id: string;
+      name: string;
+      path: { id: string; name: string }[];
+    } | null;
+  };
+  items: Named[];
+  moves_with: (Named & {
+    via: { type: MoveItemType; id: string };
+    reason: MoveWithReason;
+  })[];
+  cannot_move: (Named & {
+    reason: CannotMoveReason;
+    effect: CannotMoveEffect;
+  })[];
+  access: {
+    gains: { total: number; viewers: number; editors: number; admins: number };
+    loses: { user_id: string; label?: string | null; via?: string | null }[];
+  };
+  kept: {
+    schedules: { id: string; agent_id: string; paid_by?: PersonRef | null }[];
+    outside_access?: OutsideAccess | null;
+  };
+  /**
+   * Agents left behind that use a moving item. Moving in, a published one
+   * refuses the move; moving out, any one does.
+   */
+  borrowing_agents: { id: string; name: string | null; published?: boolean }[];
+  borrowing_others?: number;
+  needs_admin: { id: string; name: string }[];
+  /**
+   * Moving in to a locked team: agents with outside access, which refuse
+   * the move (no role may bring them in). `needs_admin` is empty then.
+   */
+  team_locked_agents?: { id: string; name: string | null }[];
+  /** Refs the moved agents keep because another team shares them with the target team. */
+  shared_refs?: (Named & {
+    shared_from: { team_id: string; name: string | null };
+  })[];
+  /** Moving out: the team's shares of the moving items with other teams, which the move ends. */
+  dropped_shares?: (Named & { team_id: string; team_name: string | null })[];
+  conversations_switched: number;
+  /**
+   * Custom models swapped for the new owner's with the same endpoint and
+   * upstream model (sorted by `from_name`); a model without a match is in
+   * `cannot_move` with reason `custom_model`.
+   */
+  model_remaps?: {
+    from_id: string;
+    from_name: string | null;
+    to_id: string;
+    to_name: string | null;
+  }[];
+  renames: {
+    type: MoveItemType;
+    id: string;
+    from: string;
+    to: string;
+    field?: string;
+  }[];
+  fingerprint: string;
+};
+
+/** The codes a refused plan or move answers with. */
+export type MoveErrorCode =
+  | 'move_plan_changed'
+  | 'team_locked'
+  | 'move_would_borrow'
+  | 'move_needs_admin'
+  | 'credentials_unreadable'
+  | 'credentials_unavailable'
+  | 'nothing_to_move'
+  | 'fingerprint_required'
+  | 'folder_too_deep'
+  | 'already_in_workspace'
+  | 'invalid_request'
+  | 'workspace_role_required'
+  | 'not_a_person'
+  | 'workspace_not_found'
+  | 'not_found'
+  | 'folder_not_found'
+  | 'move_failed';
+
+/**
+ * A refusal's whole body: `plan` on a changed plan, `agents`/`others`/`tools`
+ * on the others (`team_locked` names the `agents` with outside access).
+ */
+export type MoveErrorBody = {
+  success?: false;
+  error?: string;
+  message?: string;
+  plan?: MovePlan;
+  agents?: { id: string; name: string }[];
+  others?: number;
+  tools?: { id: string; name: string }[];
+  [key: string]: unknown;
+};
+
+export type MoveResult =
+  | { ok: true; status: number; plan: MovePlan }
+  | {
+      ok: false;
+      status: number;
+      error: MoveErrorCode | string;
+      message: string;
+      body: MoveErrorBody;
+    };
+
+const readBody = async (
+  response: Response,
+): Promise<(MoveErrorBody & { moved?: MovePlan }) | null> => {
+  try {
+    const body: unknown = await response.json();
+    return body && typeof body === 'object' ? (body as MoveErrorBody) : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * A plan or apply response as data: the plan on success, else the refusal's
+ * code (`move_failed` when the body says none) and its body.
+ */
+const moveResult = async (
+  response: Response,
+  key: 'plan' | 'moved',
+): Promise<MoveResult> => {
+  const body = await readBody(response);
+  if (response.ok && body?.success !== false) {
+    return {
+      ok: true,
+      status: response.status,
+      plan: body?.[key] as MovePlan,
+    };
+  }
+  return {
+    ok: false,
+    status: response.status,
+    error: typeof body?.error === 'string' ? body.error : 'move_failed',
+    message: typeof body?.message === 'string' ? body.message : '',
+    body: body ?? {},
+  };
+};
+
+const workspacesService = {
+  /**
+   * Personal and every team the caller is in, with the caller's role in each.
+   * Rejects when the list can't be read.
+   */
+  list: async ({
+    token,
+  }: {
+    token: string | null;
+  }): Promise<WorkspaceRow[]> => {
+    const response: Response = await apiClient.get(
+      endpoints.USER.WORKSPACES,
+      token,
+    );
+    if (!response.ok)
+      throw new Error(`Failed to load workspaces (${response.status})`);
+    const body = await response.json();
+    return Array.isArray(body?.workspaces) ? body.workspaces : [];
+  },
+
+  /**
+   * Plans a move: what comes along, what can't, who gains or loses access.
+   * Changes nothing.
+   *
+   * Args:
+   *   body: The target and the items.
+   *   options.token: The session token.
+   *   options.workspace: Send the request for this workspace instead of the
+   *     current one.
+   */
+  planMove: async (
+    body: MoveRequest,
+    { token, workspace }: { token: string | null; workspace?: string },
+  ): Promise<MoveResult> =>
+    moveResult(
+      await apiClient.post(
+        endpoints.USER.WORKSPACE_MOVE_PLAN,
+        body,
+        token,
+        workspace ? workspaceHeader(workspace) : {},
+      ),
+      'plan',
+    ),
+
+  /**
+   * Applies a planned move; `body.fingerprint` must be the plan's. A changed
+   * plan answers `move_plan_changed` with the fresh one in `body.plan`.
+   */
+  applyMove: async (
+    body: MoveRequest,
+    { token }: { token: string | null },
+  ): Promise<MoveResult> =>
+    moveResult(
+      await apiClient.post(endpoints.USER.WORKSPACE_MOVES, body, token),
+      'moved',
+    ),
+};
+
+export default workspacesService;

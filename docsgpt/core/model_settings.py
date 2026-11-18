@@ -82,7 +82,8 @@ class AvailableModel:
     # Sent in the API call's ``model`` field; falls back to ``self.id``
     # for built-ins where id IS the upstream name.
     upstream_model_id: Optional[str] = None
-    # "builtin" for catalog YAMLs, "user" for BYOM records.
+    # "builtin" for catalog YAMLs, "user" for a person's BYOM records,
+    # "team" for a team's (owned by its principal).
     source: str = "builtin"
     # Decrypted/resolved at registry-merge time. Never serialized.
     api_key: Optional[str] = field(default=None, repr=False, compare=False)

@@ -322,10 +322,11 @@ class TestLists:
 
     def test_folder_listing(self, app, pg_conn):
         from docsgpt.api.user.agents.folders import AgentFolder
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 
-        folder = AgentFoldersRepository(pg_conn).create(OWNER, "F")
-        agent_id = _agent(pg_conn, share=False, starters=STARTERS, folder_id=str(folder["id"]))
+        folder = FoldersRepository(pg_conn).create(OWNER, "F")
+        agent_id = _agent(pg_conn, share=False, starters=STARTERS)
+        FolderItemsRepository(pg_conn).file(OWNER, "agent", agent_id, str(folder["id"]))
         data = _json(_call(app, pg_conn, AgentFolder, "get", f"/api/agents/folders/{folder['id']}", OWNER,
                            args=(str(folder["id"]),)))
         assert {a["id"]: a for a in data["agents"]}[agent_id]["starters"] == STARTERS

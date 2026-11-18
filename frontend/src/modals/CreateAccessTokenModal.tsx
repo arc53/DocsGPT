@@ -7,7 +7,8 @@ import patService, {
   AccessTokenScope,
   CreateAccessTokenResponse,
 } from '../api/services/patService';
-import userService from '../api/services/userService';
+import apiClient from '../api/client';
+import endpoints from '../api/endpoints';
 import { Spinner } from '@/components/ui/spinner';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -26,6 +27,10 @@ import {
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { selectToken } from '../preferences/preferenceSlice';
+import {
+  PERSONAL_WORKSPACE,
+  workspaceHeader,
+} from '../workspace/requestWorkspace';
 import {
   buildResourceFilter,
   defaultExpiry,
@@ -51,14 +56,19 @@ type ResourceState =
   | { status: 'error' }
   | { status: 'ready'; options: ResourceOption[] };
 
-const RESOURCE_FETCHERS: Record<
+// A token acts as the person, so its pickers list Personal's items whatever
+// workspace the app is in.
+const personal = () => workspaceHeader(PERSONAL_WORKSPACE);
+
+export const RESOURCE_FETCHERS: Record<
   string,
   (token: string | null) => Promise<Response>
 > = {
-  agents: (token) => userService.getAgents(token),
-  sources: (token) => userService.getDocs(token),
-  prompts: (token) => userService.getPrompts(token),
-  tools: (token) => userService.getUserTools(token),
+  agents: (token) => apiClient.get(endpoints.USER.AGENTS, token, personal()),
+  sources: (token) => apiClient.get(endpoints.USER.DOCS, token, personal()),
+  prompts: (token) => apiClient.get(endpoints.USER.PROMPTS, token, personal()),
+  tools: (token) =>
+    apiClient.get(endpoints.USER.GET_USER_TOOLS, token, personal()),
 };
 
 interface CreateAccessTokenModalProps {

@@ -29,6 +29,11 @@ type PromptDetailOptions = {
   prompts: Prompt[];
   /** A save went through: the prompt's id and name. */
   onSaved: (saved: { id: string; name: string }) => void;
+  /**
+   * The folder of the workspace's tree a new prompt (Add, a copy) is filed
+   * in: the one the page has open. None files it nowhere.
+   */
+  folderId?: string | null;
 };
 
 /**
@@ -38,7 +43,8 @@ type PromptDetailOptions = {
  * else's newer edit is refused (409) instead of overwriting it.
  *
  * Args:
- *   options: The listed prompts and the save callback.
+ *   options: The listed prompts, the save callback and the folder a new
+ *     prompt goes in.
  *
  * Returns:
  *   The open `target` (null for none) and a `key` that changes with every
@@ -49,7 +55,11 @@ type PromptDetailOptions = {
  *   save was refused over someone's newer edit, when only a copy can keep
  *   the changes (`save({ asCopy: true })`).
  */
-export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
+export function usePromptDetail({
+  prompts,
+  onSaved,
+  folderId = null,
+}: PromptDetailOptions) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
@@ -270,7 +280,11 @@ export function usePromptDetail({ prompts, onSaved }: PromptDetailOptions) {
       if (target.kind === 'new' || asCopy) {
         if (target.kind === 'edit') savedName = copyName(name.trim(), prompts);
         const response = await userService.createPrompt(
-          { name: savedName, content },
+          {
+            name: savedName,
+            content,
+            ...(folderId && { folder_id: folderId }),
+          },
           token,
         );
         if (response.ok) {

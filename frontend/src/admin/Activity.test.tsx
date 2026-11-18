@@ -116,6 +116,38 @@ describe('Activity toolbar', () => {
     expect(texts).toContain('sub-user');
   });
 
+  it('names a team by its label, which a team id has instead of an email', async () => {
+    feed.current = [
+      {
+        feed: 'auth',
+        id: '1',
+        event: 'team.item_moved_in',
+        category: 'access',
+        actor_id: 'sub-admin',
+        actor_email: 'admin@example.com',
+        actor_label: 'admin@example.com',
+        target_id: 'team:ops',
+        target_email: null,
+        target_label: 'Team Operations',
+        ip: null,
+        user_agent: null,
+        outcome: null,
+        detail: {},
+        created_at: '2026-01-01T00:00:00Z',
+      },
+    ];
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render();
+    for (let i = 0; i < 3; i += 1) await act(async () => Promise.resolve());
+    const texts = Array.from(container.querySelectorAll('tbody tr td')).map(
+      (td) => td.textContent,
+    );
+    expect(texts).toContain('Item moved into team');
+    expect(texts).toContain('admin@example.comsub-admin');
+    expect(texts).toContain('Team Operationsteam:ops');
+  });
+
   const row = (id: string, actorId: string | null) => ({
     feed: 'auth',
     id,

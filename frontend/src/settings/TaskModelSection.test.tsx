@@ -181,6 +181,32 @@ describe('Task model row', () => {
     ]);
   });
 
+  it("never offers a team's model, even if the list carried one", async () => {
+    getPreferences.mockResolvedValue(
+      json({
+        success: true,
+        task_model_id: null,
+        instance_task_model_id: null,
+      }),
+    );
+    getModels.mockResolvedValue(
+      json({
+        models: [
+          ...MODELS,
+          {
+            id: 'ops',
+            display_name: 'Ops',
+            provider: 'openai',
+            source: 'team',
+          },
+        ],
+      }),
+    );
+    await act(async () => root.render(<TaskModelSection />));
+    expect(item('gpt-a')).not.toBeNull();
+    expect(container.querySelector('[data-item="ops"]')).toBeNull();
+  });
+
   it('shows the stored pick', async () => {
     await render({ task_model_id: 'mine', instance_task_model_id: 'gpt-b' });
     expect(select()?.dataset.value).toBe('mine');

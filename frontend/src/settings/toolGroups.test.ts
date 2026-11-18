@@ -96,6 +96,43 @@ describe('groupTools', () => {
   });
 });
 
+describe("a team tool on each person's own account", () => {
+  const teamCatalog = [
+    {
+      key: 'telegram',
+      name: 'Telegram',
+      icon: 'tool_telegram',
+      publisher: 'built_in',
+      tool_templates: ['telegram'],
+      mcp_url: null,
+    },
+  ] as unknown as ConnectorDefinition[];
+  const member = tool('tg-member', {
+    name: 'telegram',
+    credential_mode: 'member',
+    connector_key: 'telegram',
+  });
+
+  it('groups with the tools on an account for its service', () => {
+    const groups = groupTools(
+      [tool('tg', { name: 'telegram', connection_id: 'c-tg' }), member],
+      connections,
+      teamCatalog,
+    );
+    expect(groups.map((g) => [g.key, g.tools.map((t) => t.id)])).toEqual([
+      ['service:Telegram', ['tg', 'tg-member']],
+    ]);
+    expect(toolKindOf(member, connections, teamCatalog)).toBe('service');
+  });
+
+  it('gets its own service group when no account is connected for it', () => {
+    const groups = groupTools([member], [], teamCatalog);
+    expect(groups.map((g) => [g.kind, g.service?.name])).toEqual([
+      ['service', 'Telegram'],
+    ]);
+  });
+});
+
 describe('toolGroupLabel', () => {
   const t = ((key: string) => key) as never;
 

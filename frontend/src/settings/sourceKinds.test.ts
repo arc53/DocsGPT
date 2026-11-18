@@ -146,7 +146,7 @@ describe('sourceKindOf', () => {
     expect(sourceKindOf(doc(fields))).toBe(expected);
   });
 
-  it('counts each kind; Shared cuts across them', () => {
+  it('counts each kind; a shared source counts as its kind', () => {
     const docs = Object.values(library).map((fields) => doc(fields));
     expect(kindCounts(docs)).toEqual({
       all: 9,
@@ -154,16 +154,13 @@ describe('sourceKindOf', () => {
       websites: 2,
       synced: 2,
       wikis: 1,
-      shared: 1,
     });
   });
 
-  it('matches a filter: All, a content kind, or Shared of any kind', () => {
-    const teamWiki = doc({ type: 'wiki', ownership: 'team' });
-    expect(matchesKind('all', teamWiki)).toBe(true);
-    expect(matchesKind('wikis', teamWiki)).toBe(true);
-    expect(matchesKind('shared', teamWiki)).toBe(true);
-    expect(matchesKind('files', teamWiki)).toBe(false);
-    expect(matchesKind('shared', doc({ type: 'wiki' }))).toBe(false);
+  it('matches a filter: All or a content kind, whoever owns it', () => {
+    const sharedWiki = doc({ type: 'wiki', origin: 'shared' });
+    expect(matchesKind('all', sharedWiki)).toBe(true);
+    expect(matchesKind('wikis', sharedWiki)).toBe(true);
+    expect(matchesKind('files', sharedWiki)).toBe(false);
   });
 });

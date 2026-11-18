@@ -89,7 +89,7 @@ describe('AgentPanel model picker', () => {
     container.remove();
   });
 
-  const groupLabels = (modelsFromOwner?: boolean) => {
+  const groupLabels = (modelsFromOwner?: boolean, models = MODELS) => {
     act(() => {
       root.render(
         <AgentPanel
@@ -97,7 +97,7 @@ describe('AgentPanel model picker', () => {
           onUpdate={vi.fn()}
           nodes={[node]}
           edges={[]}
-          availableModels={MODELS}
+          availableModels={models}
           modelsFromOwner={modelsFromOwner}
           availableTools={[]}
           documentOptions={[]}
@@ -116,6 +116,27 @@ describe('AgentPanel model picker', () => {
 
   it("groups the caller's custom models under My Models", () => {
     expect(groupLabels()).toContain('settings.customModels.modelsGroup.user');
+  });
+
+  it("groups a team's models under Team models, apart from the catalog", () => {
+    const teamModel = {
+      ...MODELS[0],
+      id: 'ops',
+      value: 'ops',
+      display_name: 'Ops model',
+      source: 'team',
+    } as Model;
+    // A team workflow: the catalog from the list, the team's models as the owner's.
+    const labels = groupLabels(true, [MODELS[0], teamModel]);
+    expect(labels).toEqual([
+      'settings.customModels.modelsGroup.builtin',
+      'settings.customModels.team.pickerGroup',
+    ]);
+    const groups = Array.from(
+      container.querySelectorAll('[data-testid="group"]'),
+    ).map((group) => group.textContent);
+    expect(groups[0]).not.toContain('Ops model');
+    expect(groups[1]).toContain('Ops model');
   });
 
   it("names a team editor's custom models as the owner's", () => {

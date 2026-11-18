@@ -131,7 +131,7 @@ class TestDiscover:
 
     def test_api_key_connection_supplies_its_credentials(self):
         connection = {"id": "c1", "auth_kind": "api_key", "status": "connected"}
-        with patch.object(service, "get_credentials", return_value={"bearer_token": "tok"}), \
+        with patch.object(service, "access_credentials", return_value={"bearer_token": "tok"}), \
                 patch("docsgpt.agents.tools.mcp_tool.MCPTool") as tool_cls:
             mcp._discover("alice", connection, {"config": {"server_url": "https://m.example.com/mcp"}})
         assert tool_cls.call_args.args[0]["auth_credentials"] == {"bearer_token": "tok"}

@@ -329,6 +329,42 @@ class TestLinkCreate:
         )
         assert good["status"] == "active" and "interval" not in good
 
+    def test_ingest_on_a_team_source_needs_membership(self, mon_db, conversation_id, events):
+        """A team's source is watched by its members; another team's source and a person's
+        source lent to the caller's team stay refused (their events reach only their owner)."""
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.principal import create_principal
+
+        with mon_db.begin() as conn:
+            teams = TeamsRepository(conn)
+            ops = str(teams.create("Ops", "ops-mon", "alice")["id"])
+            other = str(teams.create("Other", "other-mon", "alice")["id"])
+            TeamMembersRepository(conn).add_member(ops, "u1", "team_viewer")
+            ops_principal = create_principal(conn, ops)["user_id"]
+            other_principal = create_principal(conn, other)["user_id"]
+            sources_repo = SourcesRepository(conn)
+            team_source = sources_repo.create("team docs", user_id=ops_principal)
+            outside = sources_repo.create("other docs", user_id=other_principal)
+            lent = sources_repo.create("lent docs", user_id="u2")
+            TeamResourceGrantsRepository(conn).grant(ops, "source", str(lent["id"]), "u2", "u2")
+        args = {"description": "Docs re-indexed", "on_match": "tell me"}
+
+        def create(source):
+            return service.create(
+                _caller(conversation_id), {**args, "source": {"type": "ingest", "source_id": str(source["id"])}}
+            )
+
+        assert "not one of the user's sources" in create(outside)["error"]
+        assert "not one of the user's sources" in create(lent)["error"]
+        made = create(team_source)
+        assert made["status"] == "active"
+        with mon_db.connect() as conn:
+            watching = MonitorsRepository(conn).find_ingest_monitors_by_source(str(team_source["id"]))
+        assert [str(m["id"]) for m in watching] == [made["monitor_id"]]
+
 
 class TestManage:
     def test_list_end_and_resume(self, mon_db, conversation_id, page, events, public_url):

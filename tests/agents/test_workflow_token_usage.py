@@ -187,6 +187,43 @@ class TestWorkflowNodeTokenUsage:
 
 
 @pytest.mark.unit
+class TestWorkflowStepsAreOneRequest:
+    """A chat turn's steps write their usage rows under the turn's request id, so the agent limit counts one request."""
+
+    def test_each_steps_llm_takes_the_turns_request_id(self, monkeypatch):
+        steps = [_MeteredNodeAgent(1, 1), _MeteredNodeAgent(1, 1)]
+        _nodes_answer(monkeypatch, *steps)
+        engine = _chain(_agent_node("fetch"), _agent_node("summarize"))
+        engine.agent.request_id = "turn-7"
+        engine.agent.llm._request_id = "turn-7"
+
+        list(engine.execute({}, "go"))
+
+        assert [step.llm._request_id for step in steps] == ["turn-7", "turn-7"]
+        assert [step.request_id for step in steps] == ["turn-7", "turn-7"]
+
+    def test_a_step_keeps_a_request_id_of_its_own(self, monkeypatch):
+        step = _MeteredNodeAgent(1, 1)
+        step.llm._request_id = "own"
+        _nodes_answer(monkeypatch, step)
+        engine = _chain(_agent_node("fetch"))
+        engine.agent.request_id = "turn-7"
+
+        list(engine.execute({}, "go"))
+
+        assert step.llm._request_id == "own"
+
+    def test_a_run_without_one_leaves_its_steps_alone(self, monkeypatch):
+        # A headless run's steps take the run's id from its billing scope instead.
+        step = _MeteredNodeAgent(1, 1)
+        _nodes_answer(monkeypatch, step)
+
+        list(_chain(_agent_node("fetch")).execute({}, "go"))
+
+        assert getattr(step.llm, "_request_id", None) is None
+
+
+@pytest.mark.unit
 class TestWorkflowAgentTokenUsage:
     def _agent(self, own: Dict[str, int], nodes: Dict[str, int] | None) -> WorkflowAgent:
         agent = WorkflowAgent.__new__(WorkflowAgent)

@@ -8,47 +8,59 @@ import { Callout } from 'nextra/components'
 
 # Teams and Sharing
 
-A team is a group of people on the same DocsGPT instance who share agents, sources, prompts and tools. Any signed-in user can create a team. Sharing never changes who owns something: you stay the owner, and people you share with get **Viewer** or **Editor** access.
+A team is a group of people on the same DocsGPT instance who work on agents, sources, prompts and tools together. Any signed-in user can create a team. A team gets two things:
 
-Teams are useful on an instance where each person signs in with their own account, which in practice means [SSO with OIDC](/Deploying/OIDC-SSO). This page covers the web app. For the roles model, the team API and exactly what runs with whose access, see [Access Control & Teams](/Deploying/Access-Control#teams).
+- **A team workspace**, which owns the agents, knowledge, tools and prompts made in it or moved into it. Everyone in the team reaches them by their team role. See [Team workspaces](/Using/team-workspaces).
+- **Sharing** for your personal items: you stay the owner, and the teams or people you share with get **Viewer** or **Editor** access to that one item.
+
+Teams are useful on an instance where each person signs in with their own account, which in practice means [SSO with OIDC](/Deploying/OIDC-SSO). This page covers creating a team, its members and sharing personal items. For the roles model, the team API and exactly what runs with whose access, see [Access Control & Teams](/Deploying/Access-Control#teams).
 
 ## Create a team
 
-1. Open **Settings → Teams**, or open the team switcher at the top of the sidebar and choose **Create team**.
+1. Open **Settings → Teams**, or open the workspace switcher at the top of the sidebar and choose **Create team**.
 2. Choose **New team**, enter a **Team name**, then choose **Create**. To add a description, open the team and choose **Edit**.
 
 You are the team's owner and one of its admins.
 
 ## Add members
 
-1. In **Settings → Teams**, select the team and choose **Add member**.
-2. Enter the person's email under **Member email**, pick a **Role** (**member** or **admin**), and choose **Add**.
+1. In **Settings → Teams**, open the team. On its **Members** tab, choose **Add member**.
+2. Enter the person's email under **Member email**, pick a **Role** (**Viewer**, the default, **Editor** or **Admin**), and choose **Add**.
 
 The person must have signed in to DocsGPT at least once. Otherwise DocsGPT can't find them and shows "No user with that email — they must sign in once first." New members get an **Added to a team** notification.
 
 ## Roles
 
-| Role | Can |
-| --- | --- |
-| **member** | See the team, its members and what is shared with it, and use what is shared with them. |
-| **admin** | Everything a member can, plus **Edit** the team's name and description, add and remove members, change roles, and unshare anything shared with the team. |
-| **owner** | The person who created the team. An admin who can also **Delete team**. |
+A team has four roles: **Viewer**, **Editor**, **Admin** and **Owner**. They decide what each member can do in the team's workspace; see [Team roles](/Using/team-workspaces#team-roles). Admins can also remove anything shared with the team.
 
-Admins change a member's role from the drop-down next to their name and remove them with **Remove**. A team always keeps at least one admin, and the owner can't be demoted or removed. The web app has no button to leave a team or to transfer ownership; use the [team API](/Deploying/Access-Control#managing-a-team) for those.
+A team's page has four tabs:
 
-## Switch teams
+- **Members**: Admins change a member's role from the drop-down next to their name and remove them with **Remove**. The removal dialog says that the team items they added stay with the team, lists the personal items they share with it, and says which schedules and outside access they pay for would pause.
+- **Personal items shared**: the personal items members share with the team. They belong to the people who shared them, not to the team. The tab also lists **Shared outside the team**, the team's items shared with other teams and its agents reachable from outside, and **Shared from other teams**, other teams' items this team can use; see [See and stop sharing](/Using/team-workspaces#see-and-stop-sharing).
+- **Usage** (Admins): what the team workspace used this period or the last, by person and by agent, and what is paused for its payer. It is a report, not a limit; see [Usage](/Using/team-workspaces#usage).
+- **Settings** (Admins): the team's name and description, **Who can take this team's items outside** (see [Taking items outside the team](/Using/team-workspaces#taking-items-outside-the-team)), **Transfer ownership** (the Owner only), the chat export when the operator turned it on (see [Export the team's chats](/Using/team-workspaces#export-the-teams-chats)), and **Delete team** (the Owner, once the team owns nothing).
 
-The name at the top of the sidebar is the team switcher. It lists your teams and **Create team**; while a team is selected it also shows **Manage team** and **Personal account**, to switch back. Switching changes only the header and which team **Manage team** opens. It doesn't filter your agents, sources or chats: you always see everything you own plus everything shared with you.
+A team always keeps at least one Admin, and the Owner can't be demoted or removed. The web app has no button to leave a team; use the [team API](/Deploying/Access-Control#managing-a-team) for that.
+
+Leaving a team, or losing a role, pauses what you pay for there: the schedules you set on the team's agents pause when you leave or drop to Viewer, outside access you pay for pauses when you leave or drop below the role the team's setting for taking items outside asks for, Admin by default, and the accounts you [connected for the team](/Using/team-workspaces#team-connections) pause when you leave or drop below Admin. The team's Owner and Admins are notified, and anyone with the right role can [take it over](/Using/team-workspaces#take-over), or, for an account, [reconnect it](/Using/team-workspaces#pauses-and-reconnect) with their own. If you're added back with the role, it runs again on your allowance. Your chats in Personal and your own agents are unaffected. See [Who pays](/Using/team-workspaces#who-pays).
+
+## Switch workspace
+
+The name at the top of the sidebar is the workspace switcher. It lists **Personal** and your teams, with **Manage teams** and **Create team**. Switching changes what the app shows: the Agents, Knowledge, Tools and Prompts pages, chats, Activity and pins all follow the workspace. See [Switch workspace](/Using/team-workspaces#switch-workspace).
 
 ## Share with a team or a teammate
 
-1. Open the menu of the item and choose **Share with team**:
+Sharing is for your personal items. A team's own items need no sharing: everyone in the team reaches them by their role. To share a team's item with another team, see [Share an item with another team](/Using/team-workspaces#share-an-item-with-another-team).
+
+1. Open the menu of the item and choose **Share**:
    - an agent: on its card in **Agents**, or in the agent editor,
    - a source: in **Settings → Knowledge**,
    - a tool: in **Settings → Tools**,
    - a prompt: on its card in **Settings → Prompts**.
 2. Under **Add people or teams…**, pick a whole team or one person from your teams.
 3. Choose **Viewer** or **Editor**, then **Done**.
+
+Each row in the dialog says where that access comes from: **Added by you**, **via** a team, or **Shared, not owned by the team**. For each team you're an Editor or above in, the dialog also asks whether the team should own the item and offers **Move to team…**; see [Move to team and back](/Using/team-workspaces#move-to-team-and-back).
 
 | Item | Viewers | Editors |
 | --- | --- | --- |
@@ -57,28 +69,43 @@ The name at the top of the sidebar is the team switcher. It lists your teams and
 | Tool | Use it inside the owner's agents and, by default, in their own agents | Change actions and approvals, and by default its credentials |
 | Prompt | Read it, use it in their agents and, by default, duplicate it | Change the text |
 
-As the owner, you can change this under **Access settings** in the same dialog. Some switches are off by default and widen access, such as **Editors can share**, **Editors can delete** and **Viewers can see logs**; by default, only the owner shares or deletes. Others are on by default and narrow access when you turn them off:
+As the owner, you can change this under **Access settings** in the same dialog. Some switches are off by default and widen access, such as **Editors can share**, **Editors can delete**, **Editors can manage access details** and **Viewers can see logs**; by default, only the owner shares, deletes, or creates an agent's API key, public link and webhook. Others are on by default and narrow access when you turn them off:
 
-- agents: **Editors can manage access details**,
 - sources: **Viewers can see settings**,
 - tools: **Editors can change credentials and connection** and **Viewers can use it in their own agents**,
 - prompts: **Viewers can duplicate**.
 
+A tool or source someone shared with you works in your own agents and chats, but not beyond them: an agent that uses one can't have an API key, public link or webhook, and you can't add one to an agent that has any of them. Publishing such an agent makes it available in your own chats without creating an API key. See [Agents that use someone else's tools or sources](/Deploying/Access-Control#agents-that-use-someone-elses-tools-or-sources).
+
 Sharing an agent doesn't share the tools, sources and prompt it uses; people reach them only through the agent, with the access the dialog lists under **What this agent uses**. Shared tools run with the owner's saved credentials, and nobody you share with can read them. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
+
+### A personal agent that uses a team's items
+
+A personal agent of yours can use a team's sources, tools, prompts and knowledge folders while you're in that team. Those items stay with the people who reach them, so:
+
+- **It can be shared only with people and teams who already reach each of them**: the team that owns them, or a person who can use them. The dialog suggests only those. Sharing it with anyone else is refused, and the refusal names the items and their team.
+- **It can't get an API key, public link or webhook**, and a team's item can't be added to an agent that has one.
+- **A team's item can't be added to it while it is shared with someone who can't use that item.** Use the item in an agent that isn't shared that way, or stop that share first.
+- If someone you shared it with can't use one of the items any more, for example after leaving the team, their runs leave that item out.
+
+When you're an Editor or above in a team that owns or receives every team item it uses, the refusal offers **Move to** that team, for example **Move to Operations**, so the team owns the agent and everyone in it can use it; see [Move to team and back](/Using/team-workspaces#move-to-team-and-back).
 
 ## Where shared items appear
 
-- **Agents**: under the **Team** filter ("Agents your teammates shared with you"). The **Discovered** filter is different: it lists public agents you opened from a link.
-- **Sources**: in **Settings → Knowledge**, and under **Shared with team** when you pick sources for a chat or an agent.
-- **Tools**: in **Settings → Tools**, and in the chat's tool menu with a **Shared by** line naming the team.
-- **Prompts**: under **Shared with team** in **Settings → Prompts** and in the agent form's **Prompt** field.
+Items shared with you are in your Personal workspace. The **Agents**, **Knowledge**, **Tools** and **Prompts** pages list them under **Shared with you**, after your own items, and the pickers in chats and the agent builder offer them too. The **Discovered** agents are different: they are public agents you opened from a link.
 
-The cards of shared agents, sources, tools and prompts name your role, **Viewer** or **Editor**, in their last line. Each share also sends a **Shared with you** notification.
+The cards of shared agents, sources, tools and prompts name the owner and your role, **Viewer** or **Editor**, in their last line. Each share also sends a **Shared with you** notification.
+
+### Your folders
+
+Your personal folders belong to you; they aren't shared with a team. You can file items teammates share with you in your own folders, with **Move to folder** on the item's menu, the same as your own. Filing an item doesn't change it, and nobody else sees where you filed it. A team's own items go in the team's folders, which are the same for everyone in it; see [Folders](/Using/team-workspaces#folders).
+
+You can give an agent a whole Knowledge folder of yours, including an agent a teammate shared with you as an editor. Teammates who open the agent see the folder by name, with whose it is. Adding it to a teammate's agent asks you to confirm first, because sources you file in it later run with your access too. Its editors can remove it but can't change what's in it; only you choose what you file there. On a teammate's agent, your folder gives it only the sources the agent's owner can use and the sources you own or edit; once you can no longer edit the agent, the folder stops and gives the agent nothing. See [Pick a whole folder](/Sources/adding-knowledge#pick-a-whole-folder).
 
 ## Stop sharing
 
-- To remove one grant, open **Share with team** on the item and choose **Remove access** next to the team or person.
-- In **Settings → Teams**, a team's **Shared resources** list shows everything shared with it. Open an item to see who has access in that team and choose **Remove access**, or choose **Manage sharing** to open its share dialog.
+- To remove one grant, open **Share** on the item and choose **Remove access** next to the team or person.
+- On a team's **Personal items shared** tab, open an item to see who has access in that team and choose **Remove access**, or choose **Manage sharing** to open its share dialog.
 
 Only the owner, an editor allowed to share, or a team admin can remove a share.
 
@@ -88,5 +115,6 @@ Only the owner, an editor allowed to share, or a team admin can remove a share.
 
 ## Related
 
+- [Team workspaces](/Using/team-workspaces): what a team owns, team roles, folders, and moving items into a team and back.
 - [Access Control & Teams](/Deploying/Access-Control): roles, the team and sharing API, sponsors, and what happens when a resource stops working.
 - [Usage Quotas](/Deploying/Usage-Quotas#teams): per-member team allowances.

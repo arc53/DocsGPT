@@ -68,7 +68,7 @@ class LLMCreator:
             ValueError: ``type`` is not a dispatchable provider, or a custom
                 model cannot be dispatched safely.
         """
-        from docsgpt.core.model_registry import ModelRegistry
+        from docsgpt.core.model_registry import ModelRegistry, is_custom_source
         from docsgpt.security.safe_url import (
             UnsafeUserUrlError,
             pinned_httpx_client,
@@ -141,12 +141,9 @@ class LLMCreator:
                 # Forward registry caps so the LLM enforces them at
                 # dispatch (built-in classes hard-code True otherwise).
                 capabilities = getattr(model, "capabilities", None)
-                # SECURITY: refuse user-source dispatch without its own
-                # api_key (would leak settings.API_KEY to base_url).
-                if (
-                    getattr(model, "source", "builtin") == "user"
-                    and not model.api_key
-                ):
+                # SECURITY: refuse a custom model (a person's or a team's)
+                # without its own api_key (would leak settings.API_KEY to base_url).
+                if is_custom_source(model) and not model.api_key:
                     raise ValueError(
                         f"Custom model {model_id!r} has no usable API key "
                         "(decryption may have failed). Re-save the model "
@@ -169,7 +166,7 @@ class LLMCreator:
                 # for pre-guard rows / YAML-supplied entries). The
                 # pinned httpx.Client below is what actually closes the
                 # DNS-rebinding TOCTOU window.
-                if base_url and getattr(model, "source", "builtin") == "user":
+                if base_url and is_custom_source(model):
                     try:
                         validate_user_base_url(base_url)
                     except UnsafeUserUrlError as e:
@@ -220,8 +217,8 @@ class LLMCreator:
         # run through the OpenAI client, so the class alone cannot name them
         # in traces (see ``docsgpt.tracing.llm.llm_provider``).
         llm._provider_plugin = plugin.name
-        # Calls to a user's own model are recorded at $0 (see ``docsgpt/usage.py``).
-        llm._is_byom = model is not None and getattr(model, "source", "builtin") == "user"
+        # Calls to a custom model (a person's or a team's own key) are recorded at $0 (see ``docsgpt/usage.py``).
+        llm._is_byom = is_custom_source(model)
         return llm
 
 

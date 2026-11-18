@@ -627,3 +627,39 @@ class TestRunningTurns:
         from docsgpt.drafter.service import CANCEL_RATE_PER_MINUTE
 
         limiter.assert_called_once_with("drafter_cancel", "alice", CANCEL_RATE_PER_MINUTE)
+
+
+@pytest.mark.unit
+class TestTeamWorkspace:
+    def test_a_new_agent_drafted_in_a_team_reads_the_teams_items_not_personal_ones(self, client, pg_conn):
+        """The workspace is read on the stream's thread, after the request: it must still be the team's."""
+        import uuid
+
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.context import WORKSPACE_HEADER
+        from docsgpt.workspaces.principal import create_principal
+
+        team = TeamsRepository(pg_conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "alice")
+        tid = str(team["id"])
+        TeamMembersRepository(pg_conn).add_member(tid, "alice", role="team_admin")
+        principal = create_principal(pg_conn, tid)["user_id"]
+        SourcesRepository(pg_conn).create("Team handbook", user_id=principal, type="local")
+        SourcesRepository(pg_conn).create("Alice private notes", user_id="alice", type="local")
+        fake = FakeLLM(calls(tool_call("ask_user", QUESTIONS)))
+
+        @contextmanager
+        def _same():
+            yield pg_conn
+
+        with _db(pg_conn), _session(), patch("docsgpt.workspaces.context.db_readonly", _same), patch(
+            "docsgpt.drafter.service.drafter_model", return_value=MODEL
+        ), patch("docsgpt.drafter.runner.build_llm", fake.factory):
+            response = client.post("/api/drafter/stream", json=_body(), buffered=True,
+                                   headers={WORKSPACE_HEADER: tid})
+        events = _events(response)
+        assert "questions" in _types(events)
+        sent = json.dumps(fake.calls[0]["messages"])
+        assert "Team handbook" in sent
+        assert "Alice private notes" not in sent

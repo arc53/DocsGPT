@@ -14,6 +14,10 @@ import ActionParameters, {
   ActionParametersToggle,
   type ParameterValue,
 } from './ActionParameters';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from './connectionErrors';
 import { actionTitle } from './i18n';
 import { InjectionFlagBadge, injectionFlagged } from './injectionWarning';
 import PermissionGroup, {
@@ -136,6 +140,10 @@ export default function ToolPermissions({
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [actions, setActions] = useState<ConnectionToolAction[]>(tool.actions);
+  // A refusal about a team's account (only its Admins change its tools, and
+  // not while it is paused) says so; anything else is the generic line.
+  const refusalText = (data: unknown, fallback: string) =>
+    connectionErrorCode(data) ? connectionErrorMessage(t, data) : t(fallback);
   // A refreshed tool brings its new list of actions.
   useEffect(() => setActions(tool.actions), [tool.actions]);
 
@@ -148,48 +156,55 @@ export default function ToolPermissions({
           : action,
       ),
     );
+    const refuse = (data: unknown) => {
+      setActions(previous);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: refusalText(
+            data,
+            'settings.connectors.permission.saveFailed',
+          ),
+        }),
+      );
+    };
     connectorsService
       .setToolPermissions(connectionId, tool.id, changes, token)
       .then((data) => {
-        if (!data?.success) throw new Error('save failed');
-        onChange?.(data.tool);
+        if (!data?.success) refuse(data);
+        else onChange?.(data.tool);
       })
-      .catch(() => {
-        setActions(previous);
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: t('settings.connectors.permission.saveFailed'),
-          }),
-        );
-      });
+      .catch(() => refuse(null));
   };
 
   const setParameters = async (
     actionName: string,
     changes: Record<string, ParameterValue>,
   ) => {
+    let data: { success?: boolean; tool?: ConnectionTool } | null;
     try {
-      const data = await connectorsService.setToolParameters(
+      data = await connectorsService.setToolParameters(
         connectionId,
         tool.id,
         actionName,
         changes,
         token,
       );
-      if (!data?.success) throw new Error('save failed');
+    } catch {
+      data = null;
+    }
+    if (data?.success && data.tool) {
       setActions(data.tool.actions);
       onChange?.(data.tool);
       return true;
-    } catch {
-      dispatch(
-        showActionToast({
-          variant: 'destructive',
-          message: t('settings.connectors.parameters.saveFailed'),
-        }),
-      );
-      return false;
     }
+    dispatch(
+      showActionToast({
+        variant: 'destructive',
+        message: refusalText(data, 'settings.connectors.parameters.saveFailed'),
+      }),
+    );
+    return false;
   };
 
   const groups = (['read', 'write'] as const)

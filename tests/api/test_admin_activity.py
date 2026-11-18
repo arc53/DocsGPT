@@ -35,6 +35,7 @@ def _users(emails: dict | None = None) -> Mock:
     users.emails_for.side_effect = lambda ids: {
         uid: email for uid, email in (emails or {}).items() if uid in set(ids)
     }
+    users.principal_labels.return_value = {}
     return users
 
 

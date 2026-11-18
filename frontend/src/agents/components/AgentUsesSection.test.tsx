@@ -422,6 +422,31 @@ describe('AgentUsesSection', () => {
     expect(rowOf('Fine')?.textContent).not.toContain(`${K}.stopped`);
   });
 
+  it('marks an item another team stopped sharing, or whose team is locked', async () => {
+    await render(
+      agentWith([
+        item({
+          id: 't1',
+          name: 'Ended',
+          state: 'stopped',
+          reason: 'team_share_ended',
+        }),
+        item({
+          id: 't2',
+          name: 'Locked',
+          state: 'stopped',
+          reason: 'team_locked',
+        }),
+      ]),
+    );
+    expect(rowOf('Ended')?.textContent).toContain(
+      `${K}.reasonShort.teamShareEnded`,
+    );
+    expect(rowOf('Locked')?.textContent).toContain(
+      `${K}.reasonShort.teamLocked`,
+    );
+  });
+
   it('flags writes outside callers cannot make until they are allowed', async () => {
     await render(
       agentWith(

@@ -71,6 +71,7 @@ Event types:
 | `monitor.updated` | monitor | A [monitor](/Tools/monitors) was checked, woke the agent, paused or ended. | `monitor_id`, `status`, `wakes_left`, `last_checked_at`, `conversation_id`, `check_count`, `last_error`, `paused_reason` |
 | `schedule.run.started` | schedule | A scheduled run started. | `run_id`, `schedule_id`, `agent_id`, `trigger_type`, `status` (`running`) |
 | `schedule.run.completed`, `schedule.run.failed` | schedule | A scheduled run finished. | `run_id`, `schedule_id`, `agent_id`, `status`, and `error_type`/`error` on failure |
+| `schedule.run.skipped` | schedule | A run that had already started was refused before it did anything: its payer ran out of allowance, or it has nobody to pay for it. | `run_id`, `schedule_id`, `agent_id`, `status` (`skipped`), `error_type` (`payer_out_of_allowance` or `no_payer`) |
 | `schedule.autopaused` | schedule | A schedule paused itself after repeated failures. | `run_id`, `schedule_id`, `consecutive_failure_count` |
 | `schedule.completed`, `schedule.resumed`, `schedule.cancelled` | schedule | A schedule's status changed. | `schedule_id`, `status` |
 | `schedule.message.appended` | conversation | A scheduled run added a message to a conversation. | `conversation_id`, `message_id`, `schedule_id`, `run_id` |

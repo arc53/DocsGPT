@@ -298,7 +298,7 @@ def _turn_frames(draft: DraftRequest, recipe: Recipe, model: dict,
     if recipe.reads_workspace:
         yield _frame({"type": "status", "step": "reading"})
     try:
-        workspace = recipe.load_workspace(draft.user_id, draft.context)
+        workspace = recipe.load_workspace(draft.user_id, draft.context, team_id=draft.team_id)
     except BadDraftRequest as err:
         yield _frame(bad_request(err).event())
         return

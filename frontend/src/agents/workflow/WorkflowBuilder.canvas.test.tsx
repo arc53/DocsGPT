@@ -2,10 +2,16 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
+// The caller's role in the current workspace (null reads as Personal).
+const mockWorkspace: { role: string | null } = { role: null };
 vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
   useSelector: (selector: { name?: string }) =>
-    selector.name === 'selectToken' ? 'token' : [],
+    selector.name === 'selectToken'
+      ? 'token'
+      : selector.name === 'selectWorkspaceRoleOrNull'
+        ? mockWorkspace.role
+        : [],
 }));
 
 const mockT = (key: string) => key;
@@ -760,6 +766,29 @@ describe('WorkflowBuilder canvas', () => {
       expect(unsaved()).toBe(false);
       expect(container.textContent).toContain('agents.card.draft');
       expect(button('agents.form.buttons.publish')).toBeDefined();
+    });
+
+    it("makes Save draft the main button for a team's Editor, who can't publish", async () => {
+      mockWorkspace.role = 'editor';
+      try {
+        await render(NEW);
+        expect(button('agents.form.buttons.publish')).toBeUndefined();
+        expect(button('agents.form.buttons.saveDraft')?.dataset.variant).toBe(
+          'default',
+        );
+      } finally {
+        mockWorkspace.role = null;
+      }
+    });
+
+    it("keeps Publish for a team's Admin", async () => {
+      mockWorkspace.role = 'admin';
+      try {
+        await render(NEW);
+        expect(button('agents.form.buttons.publish')).toBeDefined();
+      } finally {
+        mockWorkspace.role = null;
+      }
     });
 
     it('asks before a new workflow runs something with the caller access, then creates it', async () => {

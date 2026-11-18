@@ -15,6 +15,7 @@ import {
   type SSEEvent,
 } from '../notifications/notificationsSlice';
 import * as preferenceApi from '../preferences/preferenceApi';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import { type Preference, prefSlice } from '../preferences/preferenceSlice';
 import { type ConversationState } from './conversationModels';
 import { handleFetchAnswer } from './conversationHandlers';
@@ -79,6 +80,7 @@ const makeStore = (
     prompts: [],
     chunks: '2',
     selectedDocs: [],
+    selectedFolders: [],
     sourceDocs: null,
     sourceDocsFailed: false,
     conversations: { data: null, loading: false },
@@ -92,7 +94,6 @@ const makeStore = (
     selectedModel: null,
     availableModels: [],
     modelsLoading: false,
-    agentFolders: null,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,
@@ -809,6 +810,45 @@ describe('conversation listener — a new chat in the sidebar', () => {
     expect(store.getState().preference.conversations.data?.[0].name).toBe(
       'second',
     );
+  });
+
+  it("drops a refresh that answers after a workspace switch: the old workspace's chats stay out of the new sidebar", async () => {
+    const store = makeStore('conv-open');
+    store.dispatch(listed(['conv-open']));
+    const pending: Array<(id: string) => void> = [];
+    (preferenceApi.getConversations as unknown as Mock).mockImplementation(
+      () =>
+        new Promise((resolve) =>
+          pending.push((id) =>
+            resolve({ data: [{ id, name: id }], loading: false }),
+          ),
+        ),
+    );
+    setRequestWorkspace('t1', 1);
+    try {
+      store.dispatch(sseEventReceived(finished('conv-a', 'evt-switch-1')));
+      await flush();
+      expect(pending).toHaveLength(1);
+      // The user switches to Personal; its list loads on its own.
+      setRequestWorkspace('personal', 2);
+      store.dispatch(listed(['personal-chat']));
+      pending[0]('team-chat');
+      await flush();
+      expect(
+        store.getState().preference.conversations.data?.map((c) => c.id),
+      ).toEqual(['personal-chat']);
+
+      // A refresh asked for after the switch reads the new workspace.
+      store.dispatch(sseEventReceived(finished('conv-b', 'evt-switch-2')));
+      await flush();
+      pending[1]('personal-new');
+      await flush();
+      expect(
+        store.getState().preference.conversations.data?.map((c) => c.id),
+      ).toEqual(['personal-new']);
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
   });
 
   const renamed = (conversationId: string, previous?: string) =>

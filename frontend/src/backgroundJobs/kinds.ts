@@ -27,7 +27,9 @@ export const WAKE_SOURCES = [
  * `schedule_paused` / `schedule_failed` (a recurring schedule that paused
  * itself, or started failing: its name as the title, the last error as the
  * body) and `docs_gaps` (an agent's weekly docs-gap digest: the agent's name
- * as the title, the top gaps as the body). Others read generically. Mirrors
+ * as the title, the top gaps as the body) and `payer_left` (a team's admins:
+ * a member who left or lost the role pays for schedules or outside access
+ * that are now paused). Others read generically. Mirrors
  * `docsgpt/notifications/kinds.py`.
  */
 export const NOTIFICATION_KINDS = [
@@ -36,6 +38,7 @@ export const NOTIFICATION_KINDS = [
   'schedule_paused',
   'schedule_failed',
   'docs_gaps',
+  'payer_left',
 ] as const;
 
 const isIn = (list: readonly string[], value: unknown): value is string =>

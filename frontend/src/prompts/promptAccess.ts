@@ -1,5 +1,5 @@
 import type { Prompt } from '../models/misc';
-import { can } from '../utils/accessUtils';
+import { can, canOpenShare } from '../utils/accessUtils';
 
 // Presets (`public`) carry no access fields and are never edited in place.
 
@@ -22,9 +22,12 @@ export const canEditPrompt = (prompt: Prompt) =>
 export const canDeletePrompt = (prompt: Prompt) =>
   prompt.type !== 'public' && can(prompt, 'delete');
 
-/** Whether the caller may share the prompt with a team. */
+/**
+ * Whether the prompt's ⋯ offers Share: the caller may share it, or it is a
+ * team's, whose dialog shows any member where its access comes from.
+ */
 export const canSharePrompt = (prompt: Prompt) =>
-  prompt.type !== 'public' && can(prompt, 'share');
+  prompt.type !== 'public' && canOpenShare(prompt);
 
 /**
  * A copy's name that no listed prompt has: "Support copy", then "Support

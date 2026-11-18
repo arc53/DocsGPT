@@ -24,7 +24,7 @@ Everything the DocsGPT web app does goes through its HTTP API, so the same API l
 | **Session token** | a JWT | `Authorization: Bearer <token>` | Everything the signed-in user can do in the web app | Depends on `AUTH_TYPE`; see below |
 | **Webhook URL** | a URL with a secret token in its path | Call the URL | Start one run of one agent | **Access Details → Webhook URL**. See [Agent webhooks](/API/webhooks) |
 
-An **agent API key** acts as the agent: its prompt, sources, tools and model come from the agent, and the conversation and its usage are recorded under the agent's owner. A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts and saved credentials are refused unless the owner allows them (see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes)).
+An **agent API key** acts as the agent: its prompt, sources, tools and model come from the agent, and the conversation is recorded under the agent's owner. Its usage counts against whoever pays for the agent's outside access: the owner of a personal agent, or the Admin who turned it on for a team agent (see [Who pays](/Using/team-workspaces#who-pays)). A key holder can't approve anything on the owner's behalf, so write actions on the owner's connected accounts and saved credentials are refused unless the owner allows them (see [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes)).
 
 A **personal access token** is for automation: create and update agents, upload sources, edit prompts and tools. Each token has scopes, and an endpoint that isn't mapped to a scope can't be called with a token at all. The [REST API reference](/API/reference) lists the scope every endpoint needs. Tokens work only when `AUTH_TYPE` is unset or `oidc`.
 
@@ -34,6 +34,25 @@ A **session token** is what the web app sends. How you get one depends on `AUTH_
 - **`simple_jwt`**: the one shared token that the API prints at startup, or that `docsgpt token` prints for a `docsgpt up` install.
 - **`session_jwt`**: `GET /api/generate_token` returns a new token with a new, empty identity.
 - **`oidc`**: the token DocsGPT issues after a sign-in with your identity provider. For scripts, use a personal access token instead.
+
+## Work in a team workspace
+
+A session token or a personal access token works in your Personal workspace unless the request names a [team workspace](/Using/team-workspaces):
+
+- Send the `X-DocsGPT-Workspace` header with a team id, or with `personal`.
+- Where a client can't set headers, such as an `EventSource` or a download link, send the `workspace` query parameter instead. The header wins when both are sent.
+
+Only lists, creates and new conversations read it: `GET /api/get_agents` lists the team's agents, `POST /api/create_agent` creates one the team owns, and a new chat lives in the team. A request about one item, such as `PUT /api/update_agent/<agent_id>`, goes by that item's own workspace. A team you're not in answers `404` with `"error": "workspace_not_found"`, the same as a team that doesn't exist, and a create from a Viewer answers `403` with `"error": "workspace_role_required"`.
+
+`GET /api/workspaces` lists where you can work: Personal first, then each team with its `id`, `name`, your `role` (`owner`, `admin`, `editor` or `viewer`) and `member_count`. With a personal access token it needs `teams:read`.
+
+```bash
+curl -H "Authorization: Bearer $DOCSGPT_TOKEN" \
+     -H "X-DocsGPT-Workspace: <team id>" \
+     "$DOCSGPT_URL/api/get_agents"
+```
+
+An agent API key doesn't need either: it always runs its own agent, wherever that agent lives. Moving items between workspaces (`/api/workspace_moves`) needs a signed-in session; see [Personal access tokens](/API/personal-access-tokens#team-workspaces).
 
 ## Which page covers what
 

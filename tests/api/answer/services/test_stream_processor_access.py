@@ -77,7 +77,7 @@ class TestAgentPrompt:
 
         monkeypatch.setattr(
             StreamProcessor, "_get_data_from_api_key",
-            lambda self, key: {"prompt_id": prompt_id, "user": agent_owner, "_id": None},
+            lambda self, key, **_kw: {"prompt_id": prompt_id, "user": agent_owner, "_id": None},
         )
         proc = _processor({"question": "q", "api_key": "k"}, caller)
         proc._configure_agent()

@@ -7,7 +7,7 @@ from flask_restx import fields, Resource
 from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
-from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
+from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource, UsageRefused
 
 from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_CODE,
@@ -18,7 +18,9 @@ from docsgpt.api.answer.services.continuation_service import (
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
+from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.api.answer.services.stream_processor import (
+    ChatWorkspaceError,
     StreamProcessor,
     UnfinishedWorkflowError,
     flush_trace_after_request,
@@ -60,6 +62,14 @@ class AnswerResource(Resource, BaseAnswerResource):
             "agent_id": fields.String(required=False, description="Agent ID"),
             "active_docs": fields.String(
                 required=False, description="Active documents"
+            ),
+            "active_folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Agentless chats only: the caller's own source folders to search as a whole, every source "
+                    "filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers"
+                ),
             ),
             "isNoneDoc": fields.Boolean(
                 required=False, description="Flag indicating if no document is used"
@@ -155,14 +165,19 @@ class AnswerResource(Resource, BaseAnswerResource):
                 )
             else:
                 # ---- Normal mode ----
+                # Limits are checked as soon as the caller and agent are
+                # known, before setup reaches a model.
+                processor.setup_gate = self.setup_gate
                 agent = processor.build_agent(data.get("question", ""))
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
 
-                if error := self.check_usage(
-                    processor.agent_config,
-                    processor.decoded_token,
-                    agent_id=processor.agent_id,
+                if processor.setup_gate_passed is not True and (
+                    error := self.check_usage(
+                        processor.agent_config,
+                        processor.decoded_token,
+                        agent_id=processor.agent_id,
+                    )
                 ):
                     return error
 
@@ -187,6 +202,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     request_id=processor.request_id,
                     trace=processor.trace,
                     passthrough=processor.passthrough,
+                    workspace_team_id=processor.workspace_team_id,
                 )
 
             stream_result = self.process_response_stream(stream)
@@ -213,6 +229,9 @@ class AnswerResource(Resource, BaseAnswerResource):
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
+        except UsageRefused as refused:
+            # A limit used up, found before setup reached a model.
+            return refused.response
         except ContextOverflowError as e:
             # A turn too big for the window, found before any provider call.
             logger.info("/api/answer - turn does not fit the context window: %s", bounded_error_text(e))
@@ -224,6 +243,12 @@ class AnswerResource(Resource, BaseAnswerResource):
         except UnfinishedWorkflowError as e:
             # A draft workflow agent whose stored graph isn't finished. Nothing ran.
             return make_response({"error": e.message, "code": e.code}, 400)
+        except AgentPausedError as e:
+            # The agent's owner is deactivated: its link and key are paused. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, 403)
+        except ChatWorkspaceError as e:
+            # A team the caller is not in, or an agent from another workspace. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, e.status)
         except ContinuationNotPendingError:
             # A decision for a pause that is over (decided, moved past by a new
             # turn, or expired). Nothing ran.

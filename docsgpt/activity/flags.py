@@ -252,7 +252,8 @@ def mark_ingest_running(user_id: str, payload: Dict[str, Any]) -> None:
     Args:
         user_id: The source's owner.
         payload: The ``queued`` payload: ``source_id``, a name (``name``,
-            ``job_name`` or ``filename``) and ``operation``.
+            ``job_name`` or ``filename``), ``operation`` and ``team_id`` (the
+            workspace, None or missing for Personal).
     """
     source_id = payload.get("source_id") if isinstance(payload, dict) else None
     if not source_id:
@@ -265,6 +266,8 @@ def mark_ingest_running(user_id: str, payload: Dict[str, Any]) -> None:
             "source_id": str(source_id),
             "name": payload.get("name") or payload.get("job_name") or payload.get("filename"),
             "operation": payload.get("operation"),
+            # Where Now shows it while the source has no row yet.
+            "team_id": payload.get("team_id"),
         },
         ttl_seconds=INGEST_MARKER_TTL_SECONDS,
     )

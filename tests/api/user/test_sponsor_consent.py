@@ -586,6 +586,7 @@ class TestWorkflowNodeRefDetails:
         assert data["ref_details"] == {
             "tools": [{"id": tool, "name": "api_tool", "display_name": "Owner API"}],
             "sources": [{"id": source, "name": "owner-src"}],
+            "folders": [],
         }
 
 
