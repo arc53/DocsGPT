@@ -379,3 +379,46 @@ class TestTheSourcesQuery:
         assert listed == {rid}
         facets = {str(r["id"]) for r in repo.list_facets_for_user(world["dev_p"], received_ids=[rid, mine])}
         assert facets == {rid}
+
+
+class TestReceivedQueryCount:
+    """Listing what other teams share reads each owning team's policy with the shares, not once per item."""
+
+    @staticmethod
+    def _statements(conn, team_id, kind):
+        from sqlalchemy import event
+
+        from docsgpt.api.user.received_shares import received_into
+        from docsgpt.workspaces.context import Workspace
+
+        statements: list[str] = []
+
+        def _count(_conn, _cursor, statement, *args):
+            statements.append(statement)
+
+        workspace = Workspace("team", team_id, f"__team__{team_id}", "viewer", "admins")
+        event.listen(conn, "before_cursor_execute", _count)
+        try:
+            received = received_into(conn, workspace, kind)
+        finally:
+            event.remove(conn, "before_cursor_execute", _count)
+        return received, statements
+
+    @pytest.mark.parametrize("kind", KINDS)
+    def test_the_same_queries_for_one_item_or_many(self, pg_conn, world, kind):
+        _share(pg_conn, world, kind)
+        one, few = self._statements(pg_conn, world["dev"], kind)
+        for i in range(5):
+            TeamItemSharesRepository(pg_conn).share(
+                world["ops"], world["dev"], kind, _MAKERS[kind](pg_conn, world["ops_p"], f"more {i}"), "adam"
+            )
+        many, more = self._statements(pg_conn, world["dev"], kind)
+        assert len(one) == 1 and len(many) == 6
+        assert len(more) == len(few) == 2
+        assert not any("outside_policy FROM teams" in s for s in more)
+
+    def test_a_locked_owning_team_still_lists_nothing(self, pg_conn, world):
+        for kind in KINDS:
+            _share(pg_conn, world, kind)
+        _policy(pg_conn, world["ops"], "locked")
+        assert all(self._statements(pg_conn, world["dev"], kind)[0] == {} for kind in KINDS)

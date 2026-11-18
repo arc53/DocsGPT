@@ -115,7 +115,10 @@ class TeamItemSharesRepository:
         return [row_to_dict(r) for r in rows]
 
     def list_into(self, team_id: str, resource_type: Optional[str] = None) -> list[dict]:
-        """Every share a team received, newest first, each with the owning team's ``owner_team_name``.
+        """Every share a team received, newest first, each with the owning team's name and outside policy.
+
+        Each row carries ``owner_team_name`` and ``owner_team_policy`` (``teams.outside_policy`` as stored),
+        so a listing that skips the shares of a locked team reads no team row per item.
 
         Args:
             team_id: The receiving team.
@@ -124,8 +127,8 @@ class TeamItemSharesRepository:
         if not looks_like_uuid(str(team_id)):
             return []
         sql = (
-            "SELECT s.*, t.name AS owner_team_name FROM team_item_shares s JOIN teams t ON t.id = s.owner_team_id "
-            "WHERE s.team_id = CAST(:team AS uuid)"
+            "SELECT s.*, t.name AS owner_team_name, t.outside_policy AS owner_team_policy "
+            "FROM team_item_shares s JOIN teams t ON t.id = s.owner_team_id WHERE s.team_id = CAST(:team AS uuid)"
         )
         params: dict = {"team": str(team_id)}
         if resource_type is not None:

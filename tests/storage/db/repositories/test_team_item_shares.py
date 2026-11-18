@@ -54,6 +54,8 @@ class TestTeamItemSharesRepository:
         into = repo.list_into(dev)
         assert {r["resource_id"] for r in into} == {source, tool}
         assert {r["owner_team_name"] for r in into} == {"Ops"}
+        # The owning team's outside policy comes with each row, so a listing reads no team row per item.
+        assert {r["owner_team_policy"] for r in into} == {"admins"}
         assert [r["resource_id"] for r in repo.list_into(dev, "tool")] == [tool]
         assert [r["team_name"] for r in repo.teams_for("source", source)] == ["Dev", "QA"]
         assert repo.list_into(ops) == [] and repo.list_from("nope") == []

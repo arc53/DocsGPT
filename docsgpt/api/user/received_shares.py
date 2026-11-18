@@ -17,7 +17,7 @@ from sqlalchemy import Connection, text
 from docsgpt.api.user.resource_access import ResourceAccess, receiver_payload, team_item_reach
 from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
 from docsgpt.workspaces.context import Workspace, parse_workspace_ref
-from docsgpt.workspaces.outside import POLICY_LOCKED, team_policy
+from docsgpt.workspaces.outside import outside_minimum
 from docsgpt.workspaces.principal import team_of_principal
 
 _TABLES = {"agent": "agents", "source": "sources", "tool": "user_tools", "prompt": "prompts"}
@@ -52,8 +52,9 @@ def received_into(conn: Connection, workspace: Workspace, resource_type: str) ->
     for share in shares:
         rid = str(share["resource_id"]).lower()
         owner_team = str(share["owner_team_id"])
-        # The item must still be the sharing team's, and that team not locked.
-        if team_of_principal(owners.get(rid)) != owner_team or team_policy(conn, owner_team) == POLICY_LOCKED:
+        # The item must still be the sharing team's, and that team not locked. The policy comes with the
+        # share row; ``outside_minimum`` reads an unknown value as locked, as ``team_policy`` does.
+        if team_of_principal(owners.get(rid)) != owner_team or outside_minimum(share.get("owner_team_policy")) is None:
             continue
         out[rid] = receiver_payload(resource_type, workspace.team_id, owner_team, share.get("owner_team_name"))
     return out
