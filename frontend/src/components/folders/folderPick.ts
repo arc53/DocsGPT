@@ -72,6 +72,62 @@ export type FolderPickState = {
 };
 
 /**
+ * What a pick covers in every folder at once: one pass over the sources,
+ * each counted into its folder and every folder above it, so a list of
+ * folders reads its checkboxes from here instead of rescanning the sources
+ * for each folder.
+ */
+export type FolderPickCounts = {
+  /** Picked and total sources across each folder's subtree, by folder id. */
+  sources: Map<string, { picked: number; total: number }>;
+  /** Folders with a picked folder in their subtree, themselves included. */
+  holdsPickedFolder: Set<string>;
+};
+
+/**
+ * Counts a pick across the tree, for `folderPickState`. A source counts as
+ * picked when it is picked itself or a picked folder brings it in.
+ *
+ * Args:
+ *   tree: The source folder tree.
+ *   docs: Every source the picker lists.
+ *   pick: The current pick.
+ *
+ * Returns:
+ *   The subtree counts of every folder holding a source, and the folders
+ *   that hold a picked folder.
+ */
+export function folderPickCounts(
+  tree: FolderTree,
+  docs: Doc[],
+  pick: KnowledgePick,
+): FolderPickCounts {
+  const pickedFolders = new Set(pick.folders);
+  const pickedSources = new Set(pick.sources);
+  const sources = new Map<string, { picked: number; total: number }>();
+  for (const doc of docs) {
+    const home = docFolderId(tree, doc);
+    if (home === null) continue;
+    // The trail is the folder and every folder above it: the folders whose
+    // subtree holds this source.
+    const trail = folderPath(tree, home);
+    const picked =
+      pickedSources.has(sourceItemId(doc)) ||
+      trail.some((folder) => pickedFolders.has(folder.id));
+    for (const folder of trail) {
+      const counts = sources.get(folder.id) ?? { picked: 0, total: 0 };
+      counts.total += 1;
+      if (picked) counts.picked += 1;
+      sources.set(folder.id, counts);
+    }
+  }
+  const holdsPickedFolder = new Set<string>();
+  for (const id of pickedFolders)
+    for (const folder of folderPath(tree, id)) holdsPickedFolder.add(folder.id);
+  return { sources, holdsPickedFolder };
+}
+
+/**
  * How much of a folder is picked. `all` when the folder or a folder above it
  * is picked; `some` when a source or a subfolder inside it is; else `none`.
  *
@@ -80,6 +136,8 @@ export type FolderPickState = {
  *   docs: Every source the picker lists.
  *   pick: The current pick.
  *   folderId: The folder.
+ *   counts: `folderPickCounts` for this tree, sources and pick, when the
+ *     caller asks about many folders; counted here when left out.
  *
  * Returns:
  *   The state, the folder above that includes it, and the picked and total
@@ -90,28 +148,19 @@ export function folderPickState(
   docs: Doc[],
   pick: KnowledgePick,
   folderId: string,
+  counts: FolderPickCounts = folderPickCounts(tree, docs, pick),
 ): FolderPickState {
   const pickedFolders = new Set(pick.folders);
   const trail = folderPath(tree, folderId);
   const includedBy =
     trail.slice(0, -1).find((f) => pickedFolders.has(f.id)) ?? null;
-  const subtree = subtreeIds(tree, folderId);
-  const pickedSources = new Set(pick.sources);
-  let picked = 0;
-  let total = 0;
-  for (const doc of docs) {
-    const home = docFolderId(tree, doc);
-    if (home === null || !subtree.has(home)) continue;
-    total += 1;
-    if (
-      pickedSources.has(sourceItemId(doc)) ||
-      coveringFolder(tree, home, pickedFolders) !== null
-    )
-      picked += 1;
-  }
+  const { picked, total } = counts.sources.get(folderId) ?? {
+    picked: 0,
+    total: 0,
+  };
   if (pickedFolders.has(folderId) || includedBy)
     return { state: 'all', includedBy, picked: total, total };
-  const subfolderPicked = [...subtree].some((id) => pickedFolders.has(id));
+  const subfolderPicked = counts.holdsPickedFolder.has(folderId);
   return {
     state: picked > 0 || subfolderPicked ? 'some' : 'none',
     includedBy: null,

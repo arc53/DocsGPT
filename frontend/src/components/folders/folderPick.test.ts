@@ -135,3 +135,107 @@ describe('togglePick', () => {
     ).toEqual(pick());
   });
 });
+
+describe('folderPickState on a mixed tree', () => {
+  // ops ─ carriers ─ rates ; ops ─ hubs ; legal ; orphan (parent missing) ;
+  // a ⇄ b (a parent loop: both read as top-level)
+  const mixed = buildFolderTree([
+    f('ops', null, 'Operations'),
+    f('carriers', 'ops', 'Carriers'),
+    f('rates', 'carriers', 'Rates'),
+    f('hubs', 'ops', 'Hubs'),
+    f('legal', null, 'Legal'),
+    f('orphan', 'missing', 'Orphan'),
+    f('a', 'b', 'A'),
+    f('b', 'a', 'B'),
+  ]);
+  const mixedDocs = [
+    doc('o1', 'ops'),
+    doc('c1', 'carriers'),
+    doc('c2', 'carriers'),
+    doc('r1', 'rates'),
+    doc('r2', 'rates'),
+    doc('r3', 'rates'),
+    doc('h1', 'hubs'),
+    doc('l1', 'legal'),
+    doc('or1', 'orphan'),
+    doc('a1', 'a'),
+    doc('b1', 'b'),
+    doc('loose'),
+    doc('stray', 'gone'),
+  ];
+  const ids = [...mixed.byId.keys(), 'deleted'];
+  const table = (p: KnowledgePick) =>
+    ids.map((id) => {
+      const s = folderPickState(mixed, mixedDocs, p, id);
+      return `${id}: ${s.state} by=${s.includedBy?.id ?? '-'} ${s.picked}/${s.total}`;
+    });
+
+  it('keeps every state, cover and count', () => {
+    expect([
+      table(pick()),
+      table(pick(['r1', 'h1', 'loose', 'stray'])),
+      table(pick(['c1'], ['rates'])),
+      table(pick(['l1'], ['carriers', 'a', 'deleted'])),
+      table(pick(['r2'], ['ops', 'rates'])),
+    ]).toMatchInlineSnapshot(`
+      [
+        [
+          "ops: none by=- 0/7",
+          "carriers: none by=- 0/5",
+          "rates: none by=- 0/3",
+          "hubs: none by=- 0/1",
+          "legal: none by=- 0/1",
+          "orphan: none by=- 0/1",
+          "a: none by=- 0/1",
+          "b: none by=- 0/1",
+          "deleted: none by=- 0/0",
+        ],
+        [
+          "ops: some by=- 2/7",
+          "carriers: some by=- 1/5",
+          "rates: some by=- 1/3",
+          "hubs: some by=- 1/1",
+          "legal: none by=- 0/1",
+          "orphan: none by=- 0/1",
+          "a: none by=- 0/1",
+          "b: none by=- 0/1",
+          "deleted: none by=- 0/0",
+        ],
+        [
+          "ops: some by=- 4/7",
+          "carriers: some by=- 4/5",
+          "rates: all by=- 3/3",
+          "hubs: none by=- 0/1",
+          "legal: none by=- 0/1",
+          "orphan: none by=- 0/1",
+          "a: none by=- 0/1",
+          "b: none by=- 0/1",
+          "deleted: none by=- 0/0",
+        ],
+        [
+          "ops: some by=- 5/7",
+          "carriers: all by=- 5/5",
+          "rates: all by=carriers 3/3",
+          "hubs: none by=- 0/1",
+          "legal: some by=- 1/1",
+          "orphan: none by=- 0/1",
+          "a: all by=- 1/1",
+          "b: none by=- 0/1",
+          "deleted: all by=- 0/0",
+        ],
+        [
+          "ops: all by=- 7/7",
+          "carriers: all by=ops 5/5",
+          "rates: all by=ops 3/3",
+          "hubs: all by=ops 1/1",
+          "legal: none by=- 0/1",
+          "orphan: none by=- 0/1",
+          "a: none by=- 0/1",
+          "b: none by=- 0/1",
+          "deleted: none by=- 0/0",
+        ],
+      ]
+    `);
+  });
+});

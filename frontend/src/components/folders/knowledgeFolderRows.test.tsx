@@ -274,3 +274,45 @@ describe('buildKnowledgeRows searching inside a picked folder', () => {
     expect(list.every((row) => row.muted && row.checked === true)).toBe(true);
   });
 });
+
+describe('buildKnowledgeRows counting a large tree', () => {
+  /**
+   * The rows for `folderCount` top-level folders (each with a subfolder) and
+   * the same 200 sources, counting how often a source's folder is read:
+   * the picked counts are worked out once for every folder, so that work
+   * follows the sources and not folders × sources.
+   */
+  const folderReads = (folderCount: number) => {
+    const folders: Folder[] = [];
+    for (let i = 0; i < folderCount; i += 1) {
+      folders.push(f(`top${i}`, null, `Top ${i}`, 1, 1));
+      folders.push(f(`sub${i}`, `top${i}`, `Sub ${i}`, 1));
+    }
+    let reads = 0;
+    const counted = Array.from({ length: 200 }, (_, i) => {
+      const home = i % 2 ? `sub${i % folderCount}` : `top${i % folderCount}`;
+      const item = doc(`d${i}`);
+      Object.defineProperty(item, 'folder_id', {
+        get: () => {
+          reads += 1;
+          return home;
+        },
+      });
+      return item;
+    });
+    const list = rows({
+      tree: buildFolderTree(folders),
+      docs: counted,
+      shownDocs: counted,
+      pick: pick(['d1', 'd2'], ['sub3']),
+    });
+    expect(list.filter((row) => row.checked === 'indeterminate')).toHaveLength(
+      3,
+    );
+    return reads;
+  };
+
+  it('reads each source a fixed number of times, however many folders', () => {
+    expect(folderReads(40)).toBe(folderReads(10));
+  });
+});

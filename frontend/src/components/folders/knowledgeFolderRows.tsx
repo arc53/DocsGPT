@@ -8,6 +8,7 @@ import { isReceivedSource, receivedSourcesLabel } from '../sourcePickerItems';
 import { folderCount, folderCountLine } from './folderCopy';
 import {
   docFolderId,
+  folderPickCounts,
   folderPickState,
   folderRowId,
   sourceIncludedBy,
@@ -114,6 +115,8 @@ export function buildKnowledgeRows({
   const flat = needle !== '' || kindFiltered;
   const placeFolder = place ? (tree.byId.get(place) ?? null) : null;
   const pickedSources = new Set(pick.sources);
+  // Every folder row's checkbox reads these, counted once per pick.
+  const pickCounts = folderPickCounts(tree, docs, pick);
 
   /** The trail of folders a folder sits in, below the open place. */
   const trailBelowPlace = (folderId: string | null): string | null => {
@@ -147,7 +150,7 @@ export function buildKnowledgeRows({
       pinnedOnly?: boolean;
     },
   ): MultiSelectPopoverItem => {
-    const state = folderPickState(tree, docs, pick, folder.id);
+    const state = folderPickState(tree, docs, pick, folder.id, pickCounts);
     const countLine = folderCountLine(t, folder, 'source', { also: false });
     // A flat list leads with the trail, which already names the folder
     // that brings it in; the muted box says it is included.
@@ -259,7 +262,7 @@ export function buildKnowledgeRows({
   }
 
   if (placeFolder) {
-    const state = folderPickState(tree, docs, pick, placeFolder.id);
+    const state = folderPickState(tree, docs, pick, placeFolder.id, pickCounts);
     const all = folderRow(placeFolder, { group: '', opener: false });
     const allRow: MultiSelectPopoverItem = {
       ...all,
