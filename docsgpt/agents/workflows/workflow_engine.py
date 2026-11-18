@@ -10,7 +10,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
 from docsgpt.agents.cannot_complete import cannot_complete_reason
@@ -879,8 +879,19 @@ class WorkflowEngine:
         })
 
         self._node_search_outcome = None
+        # The node's sources and folders are resolved once: its prefetch and its
+        # on-demand search read the same ones. A failed resolution is retried.
+        resolved: Dict[str, list] = {}
+
+        def _node_sources() -> list:
+            if "ids" not in resolved:
+                resolved["ids"] = self._node_source_ids(node_config)
+            return list(resolved["ids"])
+
         node_docs = (
-            self._retrieve_node_sources(node_config) if node_config.sources or node_config.folders else []
+            self._retrieve_node_sources(node_config, source_ids=_node_sources)
+            if node_config.sources or node_config.folders
+            else []
         )
 
         if node_config.prompt_template:
@@ -979,7 +990,7 @@ class WorkflowEngine:
         if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
             factory_kwargs["retriever_config"] = {
                 "source": (
-                    {"active_docs": self._node_source_ids(node_config)}
+                    {"active_docs": _node_sources()}
                     if node_config.sources or node_config.folders
                     else {}
                 ),
@@ -2507,7 +2518,9 @@ class WorkflowEngine:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
 
-    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
+    def _retrieve_node_sources(
+        self, node_config: AgentNodeConfig, source_ids: Optional[Callable[[], list]] = None
+    ) -> list:
         """Retrieve this node's source documents.
 
         The node's own retriever searches every source at once; each source's
@@ -2516,6 +2529,8 @@ class WorkflowEngine:
 
         Args:
             node_config: The node's resolved configuration.
+            source_ids: Returns the node's source ids (the node's one
+                resolution); :meth:`_node_source_ids` when None.
 
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
@@ -2531,7 +2546,7 @@ class WorkflowEngine:
 
         sources: list = []
         try:
-            sources = self._node_source_ids(node_config)
+            sources = source_ids() if source_ids is not None else self._node_source_ids(node_config)
             if not sources:
                 # Nothing left to search: no outcome, so the node isn't told it searched.
                 return []

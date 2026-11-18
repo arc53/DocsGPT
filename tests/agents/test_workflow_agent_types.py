@@ -314,6 +314,52 @@ class TestWorkflowEngineAgenticNode:
         assert rc["retriever_name"] == "semantic"
         assert rc["chunks"] == 4
 
+    @pytest.mark.parametrize("agent_type", ["agentic", "research"])
+    def test_a_node_resolves_its_sources_and_folders_once(self, monkeypatch, agent_type):
+        """The node's prefetch and its on-demand search get the same sources from one resolution."""
+        engine = create_engine()
+        engine.state["query"] = "q"
+        calls = {"authorized": 0, "folders": 0}
+
+        def _authorized(self, sources):
+            calls["authorized"] += 1
+            return list(sources or [])
+
+        def _with_folders(self, source_ids, folders):
+            calls["folders"] += 1
+            return list(source_ids) + ["folder-source"]
+
+        monkeypatch.setattr(type(engine), "_authorized_node_sources", _authorized)
+        monkeypatch.setattr(type(engine), "_with_folder_sources", _with_folders)
+        searched = []
+
+        class _R:
+            def search(self, q):
+                return []
+
+        def _create_retriever(*_a, **kwargs):
+            searched.append(kwargs["source"])
+            return _R()
+
+        monkeypatch.setattr("docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever", _create_retriever)
+        node = create_agent_node(node_id="agent_once", agent_type=agent_type, sources=["source-abc"])
+        node.config["folders"] = ["folder-1"]
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        expected = {"active_docs": ["source-abc", "folder-source"]}
+        assert searched == [expected]
+        assert captured["retriever_config"]["source"] == expected
+        assert calls == {"authorized": 1, "folders": 1}
+
     def test_agentic_node_empty_sources_gives_empty_source_dict(self, monkeypatch):
         engine = create_engine()
         node = create_agent_node(
@@ -729,7 +775,7 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         engine = create_engine()
         outcome = SearchOutcome.of(["s1"], ["s1"])
 
-        def retrieve(self, node_config):
+        def retrieve(self, node_config, source_ids=None):
             self._node_search_outcome = outcome
             return []
 
