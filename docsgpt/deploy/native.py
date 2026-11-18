@@ -1,7 +1,9 @@
 """Running DocsGPT without Docker, supervised by the system's own service manager.
 
 The API and the worker each become one service: a launchd agent on macOS, a
-systemd user unit on Linux. Both run the ``docsgpt`` command of this
+systemd user unit on Linux. Where the worker runs Celery's solo pool (macOS), a
+third service, ``docsgpt worker --analytics``, takes the analytics queue the
+worker leaves alone. Both run the ``docsgpt`` command of this
 installation with the stack directory as their data home, so a native install
 keeps its settings in the same ``.env`` a Docker install would.
 
@@ -27,7 +29,9 @@ from docsgpt.deploy.docker import DeployError
 
 API_SERVICE = "docsgpt-api"
 WORKER_SERVICE = "docsgpt-worker"
+ANALYTICS_SERVICE = "docsgpt-analytics"
 LABEL_PREFIX = "cloud.docsgpt"
+INSTALL_HINT = "`docsgpt upgrade` (or `docsgpt up`) adds it."
 
 
 @dataclass
@@ -41,18 +45,49 @@ class Unit:
     log_file: str
 
 
-def service_names(stack_directory: Path, default_directory: Path) -> tuple[str, str]:
-    """This install's two service names: the plain pair for the default install, suffixed for others.
+def service_names(stack_directory: Path, default_directory: Path, platform: Optional[str] = None) -> tuple[str, ...]:
+    """This install's service names: the plain ones for the default install, suffixed for others.
 
     Service managers keep one namespace for the whole user, so two installs in different directories
     would write over each other's units. These names show up in launchctl and systemctl output, so
     the usual install keeps the readable ones and only a second install carries a digest.
+
+    Args:
+        stack_directory: The install's directory.
+        default_directory: Where the default install lives.
+        platform: A ``sys.platform`` value; this machine's when omitted.
+
+    Returns:
+        The API and the worker, then the analytics worker where the worker runs the solo pool.
     """
+    from docsgpt.cli import needs_analytics_worker
+
+    # Installed whether or not DECISION_ANALYTICS_ENABLED is on, unlike ``docsgpt dev``'s child: turning it on
+    # later is a .env edit and ``docsgpt restart``, which restarts the installed services and installs none, so
+    # the sweeps beat then schedules would wait on a queue nobody consumes. Off, it idles on an empty queue.
+    plain = (API_SERVICE, WORKER_SERVICE) + ((ANALYTICS_SERVICE,) if needs_analytics_worker(platform) else ())
     resolved = stack_directory.expanduser().resolve()
     if resolved == default_directory.expanduser().resolve():
-        return (API_SERVICE, WORKER_SERVICE)
+        return plain
     digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()[:8]
-    return (f"{API_SERVICE}-{digest}", f"{WORKER_SERVICE}-{digest}")
+    return tuple(f"{name}-{digest}" for name in plain)
+
+
+def not_installed(name: str) -> str:
+    """Why ``name`` was left alone: a service a newer version added, whose unit an older install lacks.
+
+    Args:
+        name: The service name.
+
+    Returns:
+        The note to show, with the command that installs the unit.
+    """
+    return f"{name} is not installed yet; {INSTALL_HINT}"
+
+
+def log_name(name: str) -> str:
+    """The short name of a service, which names its log file (``docsgpt-worker-1a2b3c4d`` -> ``worker``)."""
+    return name.removeprefix("docsgpt-").split("-")[0]
 
 
 def label_for(name: str) -> str:
@@ -191,6 +226,17 @@ class LaunchdServices:
         result = self._print(name)
         return result.returncode == 0 and "state = running" in (result.stdout or "")
 
+    def is_installed(self, name: str) -> bool:
+        """Whether ``name`` has a plist to start from.
+
+        Args:
+            name: The service name.
+
+        Returns:
+            True once ``install`` has written its plist.
+        """
+        return self._plist(name).is_file()
+
 
 class SystemdServices:
     """systemd user units in ~/.config/systemd/user (Linux)."""
@@ -241,6 +287,17 @@ class SystemdServices:
     def is_running(self, name: str) -> bool:
         return self._systemctl("is-active", "--quiet", f"{name}.service").returncode == 0
 
+    def is_installed(self, name: str) -> bool:
+        """Whether ``name`` has a unit file to start from.
+
+        Args:
+            name: The service name.
+
+        Returns:
+            True once ``install`` has written its unit file.
+        """
+        return self._unit_file(name).is_file()
+
 
 def services_for_platform(platform: str = sys.platform):
     """The service manager for this machine, or a DeployError saying what to do instead."""
@@ -255,26 +312,32 @@ def services_for_platform(platform: str = sys.platform):
 
 
 def units_for(stack_directory: Path, launcher: list[str], port: int, home: Path,
-              names: tuple[str, str]) -> list[Unit]:
-    """The API and worker services for a native install in ``stack_directory``.
+              names: tuple[str, ...]) -> list[Unit]:
+    """The services for a native install in ``stack_directory``, one per name in ``names``.
 
-    ``launcher`` is how DocsGPT is started: the ``docsgpt`` command, or an interpreter and ``-m``.
+    Args:
+        stack_directory: The install's directory; logs go to its ``logs`` folder.
+        launcher: How DocsGPT is started: the ``docsgpt`` command, or an interpreter and ``-m``.
+        port: The loopback port the API listens on.
+        home: The data home the services run with.
+        names: From :func:`service_names`: the API, the worker, and maybe the analytics worker.
+
+    Returns:
+        The units, in the order of ``names``.
     """
     environment = {"DOCSGPT_HOME": str(home)}
-    api_name, worker_name = names
+    commands = {
+        "api": [*launcher, "api", "--host", "127.0.0.1", "--port", str(port)],
+        "worker": [*launcher, "worker"],
+        "analytics": [*launcher, "worker", "--analytics"],
+    }
     return [
         Unit(
-            name=api_name,
-            arguments=[*launcher, "api", "--host", "127.0.0.1", "--port", str(port)],
+            name=name,
+            arguments=commands[log_name(name)],
             environment=dict(environment),
             working_directory=str(stack_directory),
-            log_file=str(stack_directory / "logs" / "api.log"),
-        ),
-        Unit(
-            name=worker_name,
-            arguments=[*launcher, "worker"],
-            environment=dict(environment),
-            working_directory=str(stack_directory),
-            log_file=str(stack_directory / "logs" / "worker.log"),
-        ),
+            log_file=str(stack_directory / "logs" / f"{log_name(name)}.log"),
+        )
+        for name in names
     ]

@@ -239,6 +239,40 @@ describe('ScheduleFormModal editing', () => {
     expect(payload.run_at).not.toBe(savedOnce.run_at);
   });
 
+  it('keeps a timing the form cannot show when only the name changes', async () => {
+    // Weekdays at 9 came from the API; the form would read it as daily 09:00.
+    const onSubmit = vi.fn();
+    await render(onSubmit, { ...saved, cron: '0 9 * * 1-5' } as Schedule);
+    expect(document.body.textContent).toContain(
+      'agents.schedules.modal.customTiming',
+    );
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('cron');
+  });
+
+  it('replaces a custom timing once the timing is changed', async () => {
+    const onSubmit = vi.fn();
+    await render(onSubmit, { ...saved, cron: '0 9 * * 1-5' } as Schedule);
+    await setTime('11:30');
+    expect(document.body.textContent).not.toContain(
+      'agents.schedules.modal.customTiming',
+    );
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    expect(onSubmit.mock.calls[0][0].cron).toBe('30 11 * * *');
+  });
+
+  it('replaces a custom timing with the one the form fell back to, once picked', async () => {
+    // Weekdays at 9 loads as daily 09:00; changing the time and back picks
+    // daily 09:00, which must replace the weekdays-only cron.
+    const onSubmit = vi.fn();
+    await render(onSubmit, { ...saved, cron: '0 9 * * 1-5' } as Schedule);
+    await setTime('11:30');
+    await setTime('09:00');
+    await act(async () => button('agents.schedules.modal.save')!.click());
+    expect(onSubmit.mock.calls[0][0].cron).toBe('0 9 * * *');
+  });
+
   it('keeps a one-time task one-time and a recurring schedule recurring', async () => {
     await render(vi.fn(), savedOnce);
     expect(

@@ -21,30 +21,51 @@ lastUpdated: 2026-10-01
 `lastUpdated` is the date a reader would say the page last changed. It is shown at the
 bottom of the page ("Last updated on …") and becomes the sitemap's `<lastmod>` and the
 page's JSON-LD `dateModified`, so search engines and AI answer engines read it as a
-freshness signal. It is set by hand, never from git.
+freshness signal.
 
-- **Bump it** (to today, `YYYY-MM-DD`) when you change what the page tells the reader:
-  new or changed steps, settings, defaults, behavior, examples, or a section added or
-  removed.
-- **Leave it** for edits a reader would not notice: typos, wording polish, formatting, a
-  link target renamed across many pages.
-- **New pages** get today's date.
-- Two generated pages date themselves, so don't edit their date by hand:
-  `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`
-  keeps the date while the content is unchanged and sets today's date when it changes) and
-  `content/API/reference.mdx` (`python -m docsgpt.api.reference --write` sets today's date when
-  the Swagger snapshot changes).
+- **New pages** get today's date (`YYYY-MM-DD`).
+- **Leave it alone on a page that already exists**, whatever you changed. The "Generated
+  docs" workflow (`../.github/workflows/generated-docs.yml`) runs `scripts/sync-dates.mjs` on
+  `main` after the merge and dates the page with the day its content changed. Only the body
+  counts, and whitespace in it does not: a change to the frontmatter (`title`,
+  `description`) or one that only reflows lines leaves the date alone by itself. Two pull
+  requests that each bumped the same page used to conflict on this one line; `npm run
+  dates:check` now fails a pull request that changes it.
+- **For an edit a reader would not notice** (a typo, wording polish, a link target renamed
+  across many pages), put `[keep-date]` in the pull request title, or in the subject line
+  (the first line) of every commit that changes the page. A commit body does not count. With
+  a squash merge of several commits only the pull request title counts: the squash commit's
+  body lists every commit, so one commit's marker cannot speak for the rest. A rebase merge
+  leaves no pull request title on `main`, so there only the commit subjects count.
 
-`npm run dates:check` fails on a missing, malformed or future date. In CI on a pull
-request it also warns about pages whose content changed while `lastUpdated` did not;
-treat that warning as a question to answer, not something to silence.
+`npm run dates:check` fails on a missing, malformed or future date, and in CI on a pull
+request on an existing page whose date changed. On a pull request it also lists, as a notice
+that never fails, each existing page whose body changed without the marker: the page will be
+dated with the day of the merge. `npm run dates:check -- --base "$(git merge-base HEAD origin/main)"`
+shows the same notices locally (it reads the commit subjects; set `PR_TITLE` to include the
+title).
+
+## Generated files
+
+Don't change these in a pull request; CI fails if you do (`npm run generated:check -- --base origin/main` is the same check). The
+"Generated docs" workflow rebuilds them on `main` after the merge and opens its own pull
+request, which is the only place they change:
+
+- `data/swagger.json` (`python -m docsgpt.api.reference --write`)
+- `data/mcp-presets.json` (`python -m docsgpt.connectors.reference --write`, which also moves
+  `content/Sources/Connectors/index.mdx`'s `lastUpdated` to today when the list changes)
+- `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`)
+- `public/llms.txt` (`npm run llms`)
+
+If one shows up in your diff, restore it: `git checkout origin/main -- <file>`. Run a
+command without `--write` (or `npm run llms -- --print`) to preview its output.
 
 ## Before you finish
 
 From `docs/`:
 
 ```bash
-npm run llms           # after adding, moving or removing a page, or changing a description
+npm test               # the docs scripts' own tests
 npm run dates:check    # every page has a valid lastUpdated
 npm run build          # fails on broken MDX
 node scripts/check-links.mjs   # after the build: internal links and #anchors
@@ -52,8 +73,6 @@ node scripts/check-links.mjs   # after the build: internal links and #anchors
 
 - Moving or deleting a page: add a permanent redirect from the old URL in
   `next.config.js`, and update the folder's `_meta.js`.
-- Don't hand-edit generated files: `public/llms.txt`, `data/swagger.json`,
-  `content/Deploying/Settings-Reference.mdx`.
 - Prose follows the Vale rules in `../.github/styles`; run `vale --minAlertLevel=error docs`
   from the repository root when Vale is installed.
 

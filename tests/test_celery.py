@@ -43,6 +43,17 @@ def test_celeryconfig_durability_defaults():
 
 
 @pytest.mark.unit
+def test_a_bare_worker_consumes_the_analytics_queue():
+    """The sweep and the digest run on ``ANALYTICS_QUEUE``, which is declared, so a worker with no ``-Q`` takes it."""
+    from docsgpt import celeryconfig
+
+    assert "docsgpt.analytics.tasks" in celeryconfig.imports
+    assert settings.ANALYTICS_QUEUE in {queue.name for queue in celeryconfig.task_queues}
+    for task in ("analytics_sweep", "analytics_gap_digest"):
+        assert celeryconfig.task_routes[f"docsgpt.analytics.tasks.{task}"] == {"queue": settings.ANALYTICS_QUEUE}
+
+
+@pytest.mark.unit
 def test_durable_task_retry_envelope_spans_a_multi_minute_outage():
     """``retry_backoff`` is a FACTOR, not a boolean toggle.
 
@@ -201,13 +212,68 @@ def test_every_durable_task_carries_the_parse_failure_guard():
         "reembed_wiki_page",
         "convert_source_to_wiki",
         "extract_graph",
-        "process_agent_webhook",
         "ingest_connector_task",
+        # Not built from DURABLE_TASK, but it autoretries the same way.
+        "sync_connector_source",
         "store_attachment",
     )
     for name in durable:
         task = getattr(user_tasks, name)
         assert DocumentParseError in getattr(task, "dont_autoretry_for", ()), name
+
+
+@pytest.mark.unit
+def test_a_sync_whose_workbook_has_no_reader_runs_once(tmp_path, monkeypatch):
+    """A missing workbook reader is the same on every attempt, so the sync is not rerun (ledger #90).
+
+    Each rerun walked a whole drive again: about 5.5 hours, three more times.
+    """
+    import shutil
+    import sys
+    from pathlib import Path
+    from unittest.mock import MagicMock
+
+    from celery.app.autoretry import add_autoretry_behaviour
+
+    from docsgpt.api.user import tasks as user_tasks
+    from docsgpt.parser.file.base_parser import DocumentParseError
+    from docsgpt.parser.file.bulk import SimpleDirectoryReader
+    from docsgpt.parser.file.tabular_parser import ExcelParser
+
+    monkeypatch.setitem(sys.modules, "python_calamine", None)
+    fixture = Path(__file__).parent / "parser" / "file" / "fixtures" / "legacy.xls"
+    shutil.copy(fixture, tmp_path / "budget.xls")
+    registered = user_tasks.sync_connector_source
+    attempts: list[int] = []
+    retried: list[dict] = []
+
+    class _Task:
+        max_retries = registered.max_retries
+
+        def __init__(self) -> None:
+            self.request = MagicMock()
+            self.request.retries = 0
+
+        def run(self):
+            attempts.append(1)
+            SimpleDirectoryReader(input_dir=str(tmp_path), file_extractor={".xls": ExcelParser()}).load_data()
+
+        def retry(self, **kwargs):
+            retried.append(dict(kwargs))
+            return RuntimeError("retry-sentinel")
+
+    task = _Task()
+    add_autoretry_behaviour(
+        task,
+        autoretry_for=registered.autoretry_for,
+        dont_autoretry_for=registered.dont_autoretry_for,
+        retry_kwargs={"max_retries": registered.max_retries},
+        retry_backoff=registered.retry_backoff,
+    )
+
+    with pytest.raises(DocumentParseError, match="python-calamine"):
+        task.run()
+    assert (len(attempts), retried) == (1, [])
 
 
 @pytest.mark.unit
@@ -350,3 +416,22 @@ class TestInWorker:
             type(celery), "current_worker_task", new_callable=PropertyMock, return_value=object()
         ):
             assert in_worker() is True
+
+
+@pytest.mark.unit
+def test_a_github_rate_limit_is_not_retried_by_celery():
+    """Retrying in 60/120/240 s cannot help before the hour-long reset; the user is told when instead."""
+    from docsgpt.api.user import tasks as user_tasks
+    from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+    assert GitHubRateLimited in user_tasks.ingest_remote.dont_autoretry_for
+
+
+@pytest.mark.unit
+def test_a_rejected_connector_sign_in_is_not_retried_by_celery():
+    """The account has to be reconnected; a retry would fail the same way."""
+    from docsgpt.api.user import tasks as user_tasks
+    from docsgpt.parser.connectors.base import ConnectorAuthError
+
+    assert ConnectorAuthError in user_tasks.ingest_connector_task.dont_autoretry_for
+    assert ConnectorAuthError in user_tasks.sync_connector_source.dont_autoretry_for

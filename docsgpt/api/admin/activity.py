@@ -28,6 +28,7 @@ from docsgpt.storage.db.repositories.activity import (
     ACTIVITY_COLUMNS,
     ActivityRepository,
 )
+from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,37 @@ def _serialize(row: dict) -> dict:
     }
 
 
+def _with_emails(rows: list[dict], conn) -> list[dict]:
+    """Add ``actor_email``/``target_email`` and ``actor_label``/``target_label`` to each feed row.
+
+    One lookup for the page. An id with no stored email (or one that is not a
+    user at all) gets None, and the UI falls back to the id. The label is the
+    email, or ``"Team <name>"`` for a team principal, so a team's id never
+    shows raw. The export keeps :data:`ACTIVITY_COLUMNS` unchanged.
+
+    Args:
+        rows: Feed rows carrying ``actor_id`` and ``target_id``.
+        conn: Open database connection.
+
+    Returns:
+        The rows with the email and label fields set.
+    """
+    ids = {row.get(key) for row in rows for key in ("actor_id", "target_id")} - {None}
+    users = UsersRepository(conn)
+    emails = users.emails_for(ids) if ids else {}
+    labels = {**emails, **users.principal_labels(ids)} if ids else {}
+    return [
+        {
+            **row,
+            "actor_email": emails.get(row.get("actor_id")),
+            "target_email": emails.get(row.get("target_id")),
+            "actor_label": labels.get(row.get("actor_id")),
+            "target_label": labels.get(row.get("target_id")),
+        }
+        for row in rows
+    ]
+
+
 @admin_ns.route("/admin/activity")
 class AdminActivityResource(Resource):
     @admin_required
@@ -151,7 +183,7 @@ class AdminActivityResource(Resource):
         with db_readonly() as conn:
             repo = ActivityRepository(conn)
             total = repo.count(**filters)
-            rows = repo.list(limit=page_size, offset=offset, **filters)
+            rows = _with_emails(repo.list(limit=page_size, offset=offset, **filters), conn)
         return make_response(
             jsonify(
                 {

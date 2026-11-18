@@ -16,6 +16,7 @@ import {
   getJwtRemainingMs,
   isJwtExpired,
 } from '../utils/jwtUtils';
+import { readerIdFromToken } from '../utils/personLabel';
 
 const OIDC_ATTEMPT_KEY = 'oidc_login_attempted';
 const OIDC_RETURN_TO_KEY = 'oidc_return_to';
@@ -269,6 +270,15 @@ export default function useAuth() {
           // making a doomed network call.
           const stored = localStorage.getItem('authToken');
           if (stored !== token) {
+            // Someone else signed in there: this tab still holds the last
+            // person's lists, picks and chats, so it starts over instead.
+            if (
+              stored &&
+              readerIdFromToken(stored) !== readerIdFromToken(token)
+            ) {
+              window.location.reload();
+              return;
+            }
             dispatch(setToken(stored));
             return;
           }

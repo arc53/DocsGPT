@@ -1,7 +1,7 @@
 """Per-request execution traces.
 
-Records agent runs, LLM calls, tool calls, retrieval and embeddings as a tree
-of timed spans. A finished trace is stored in ``request_traces`` (rendered as
+Records agent runs, LLM calls, tool calls, retrieval, embeddings and
+decision-model calls as a tree of timed spans. A finished trace is stored in ``request_traces`` (rendered as
 a waterfall in the Logs UI) and replayed as OpenTelemetry GenAI spans when an
 OTel SDK is configured. See ``docs/content/Deploying/Observability.mdx``.
 
@@ -21,6 +21,7 @@ from docsgpt.tracing.core import (
     BINDABLE_IDS,
     CONTAINER_KINDS,
     KIND_AGENT,
+    KIND_DECISION,
     KIND_EMBEDDING,
     KIND_GUARDRAIL,
     KIND_LLM,
@@ -42,6 +43,7 @@ from docsgpt.tracing.core import (
     activate,
     bind,
     bind_if_unset,
+    carry,
     current_trace,
     first_occurrence,
     mark_content_blocked,
@@ -56,6 +58,7 @@ __all__ = [
     "BINDABLE_IDS",
     "CONTAINER_KINDS",
     "KIND_AGENT",
+    "KIND_DECISION",
     "KIND_EMBEDDING",
     "KIND_GUARDRAIL",
     "KIND_LLM",
@@ -77,6 +80,7 @@ __all__ = [
     "activate",
     "bind",
     "bind_if_unset",
+    "carry",
     "current_trace",
     "discard",
     "first_occurrence",

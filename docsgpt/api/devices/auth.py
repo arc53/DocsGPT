@@ -66,7 +66,8 @@ def authenticate_device(
         method: HTTP method, as the CLI signed it.
         path: Request path without the query string, as the CLI signed it.
         get_body: Returns the raw body; only called when signatures are required.
-        touch: When True, bump ``last_seen_at`` on the device row.
+        touch: When True, bump ``last_seen_at`` on the device row and record
+            the client's ``X-Device-Capabilities``.
 
     Returns:
         tuple: ``(device_row, None)`` on success or ``(None, (code, status))``.
@@ -90,9 +91,14 @@ def authenticate_device(
             return None, failure
 
     if touch:
+        from docsgpt.devices import capabilities
+
+        # What the client can do (cancel, outbox) is recorded from the request it sent.
+        caps = capabilities.from_headers(headers)
+        device["capabilities"] = caps
         try:
             with db_session() as conn:
-                DevicesRepository(conn).touch_last_seen(device["id"])
+                DevicesRepository(conn).touch_last_seen(device["id"], capabilities=caps)
         except Exception:
             logger.exception("touch_last_seen failed for device %s", device["id"])
 

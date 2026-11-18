@@ -21,7 +21,7 @@ from docsgpt.utils import strip_null_bytes
 FINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "lost"})
 
 #: Every runner, for sweeps that do not filter on one.
-ALL_RUNNERS: Tuple[str, ...] = ("inprocess", "celery", "sandbox", "mcp")
+ALL_RUNNERS: Tuple[str, ...] = ("inprocess", "celery", "sandbox", "mcp", "device")
 
 
 def _dump(value: Any) -> Optional[str]:
@@ -178,6 +178,19 @@ class BackgroundJobsRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def list_for_message(self, conversation_id: str, message_id: str, user_id: str) -> list[dict]:
+        """The jobs one turn handed off, oldest first."""
+        if not looks_like_uuid(conversation_id) or not looks_like_uuid(message_id):
+            return []
+        rows = self._conn.execute(
+            text(
+                "SELECT * FROM background_jobs WHERE conversation_id = CAST(:conversation_id AS uuid) "
+                "AND origin_message_id = CAST(:message_id AS uuid) AND user_id = :user_id ORDER BY created_at"
+            ),
+            {"conversation_id": str(conversation_id), "message_id": str(message_id), "user_id": user_id},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     def count_working(self, *, user_id: Optional[str] = None, conversation_id: Optional[str] = None) -> int:
         """Running jobs for a user and/or a conversation."""
         clauses = ["status = 'working'"]
@@ -255,15 +268,37 @@ class BackgroundJobsRepository:
         runner: str,
         external: Optional[dict] = None,
         lease_owner: Optional[str] = None,
+        max_seconds: Optional[int] = None,
     ) -> bool:
-        """Move a running job to another runner, merging its handles into ``external``."""
+        """Move a running job to another runner, merging its handles into ``external``.
+
+        Args:
+            job_id: The job.
+            runner: The runner taking it.
+            external: Handles merged into ``external``.
+            lease_owner: The process holding it, or None for a poll chain.
+            max_seconds: When set, the job's lifetime under the new runner:
+                ``deadline_at`` becomes ``started_at`` plus this many seconds.
+
+        Returns:
+            True when the job was still running and moved.
+        """
+        deadline = (
+            ", deadline_at = started_at + make_interval(secs => :max_seconds)" if max_seconds is not None else ""
+        )
         result = self._conn.execute(
             text(
                 "UPDATE background_jobs SET runner = :runner, lease_owner = :lease_owner, "
                 "external = external || CAST(:external AS jsonb), heartbeat_at = now(), "
-                "last_updated_at = now() WHERE id = CAST(:id AS uuid) AND status = 'working'"
+                f"last_updated_at = now(){deadline} WHERE id = CAST(:id AS uuid) AND status = 'working'"
             ),
-            {"id": str(job_id), "runner": runner, "lease_owner": lease_owner, "external": _dump(external or {})},
+            {
+                "id": str(job_id),
+                "runner": runner,
+                "lease_owner": lease_owner,
+                "external": _dump(external or {}),
+                "max_seconds": int(max_seconds or 0),
+            },
         )
         return (result.rowcount or 0) > 0
 

@@ -28,6 +28,15 @@ class TestAgentCreator:
         with pytest.raises(ValueError, match="No agent class found for type"):
             AgentCreator.create_agent("invalid_agent_type", **agent_base_params)
 
+    @pytest.mark.parametrize("agent_type", [None, "", "   "])
+    def test_create_agent_missing_type_raises_value_error(self, agent_base_params, agent_type):
+        with pytest.raises(ValueError, match="No agent class found for type"):
+            AgentCreator.create_agent(agent_type, **agent_base_params)
+
+    def test_create_agent_ignores_surrounding_whitespace(self, agent_base_params):
+        agent = AgentCreator.create_agent(" classic ", **agent_base_params)
+        assert isinstance(agent, ClassicAgent)
+
     def test_agent_registry_contains_expected_agents(self):
         assert "classic" in AgentCreator.agents
         assert "react" in AgentCreator.agents

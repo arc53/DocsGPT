@@ -2,16 +2,19 @@ import json
 import logging
 import os
 import time
+import uuid
 from typing import Any, Dict, Generator, List, Optional
 
 from docsgpt import tracing
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.base import BaseAgent
-from docsgpt.agents.tool_executor import ToolExecutor, journal_refused_call
+from docsgpt.agents.cannot_complete import cannot_complete_reason, drop_cannot_complete_marker
+from docsgpt.agents.tool_executor import ToolExecutor, record_refused_call, refusal_texts
 from docsgpt.agents.tools.graph_search import add_graph_search_tool
 from docsgpt.agents.tools.internal_search import add_internal_search_tool
 from docsgpt.agents.tools.wiki import add_wiki_tool
 from docsgpt.agents.tools.think import THINK_TOOL_ENTRY, THINK_TOOL_ID
-from docsgpt.llm.handlers.base import take_tool_images
+from docsgpt.llm.handlers.base import ToolCall, _bound_tool_response_for_llm, take_tool_images
 from docsgpt.logging import LogContext
 
 logger = logging.getLogger(__name__)
@@ -186,8 +189,9 @@ class ResearchAgent(BaseAgent):
         self._start_time = time.monotonic()
         tools_dict = self._setup_tools()
 
-        # Phase 0: Clarification (skip if user is responding to a prior clarification)
-        if not self._is_follow_up():
+        # Phase 0: Clarification (skip if user is responding to a prior clarification).
+        # A scheduled run has nobody to answer a question, so it goes straight on.
+        if not self._is_follow_up() and self.endpoint != "schedule":
             with _phase_span("clarify"):
                 clarification = self._clarification_phase(query)
             if clarification:
@@ -343,6 +347,9 @@ class ResearchAgent(BaseAgent):
         ]
 
         try:
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(self.tool_executor, "message_id", None))
             response = self.llm.gen(
                 model=self.upstream_model_id,
                 messages=messages,
@@ -373,6 +380,8 @@ class ResearchAgent(BaseAgent):
             return "\n".join(lines)
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Clarification phase failed: {e}", exc_info=True)
             return None  # proceed with research on failure
 
@@ -421,6 +430,9 @@ class ResearchAgent(BaseAgent):
         ]
 
         try:
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(self.tool_executor, "message_id", None))
             response = self.llm.gen(
                 model=self.upstream_model_id,
                 messages=messages,
@@ -451,6 +463,8 @@ class ResearchAgent(BaseAgent):
             return steps, complexity
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(f"Planning phase failed: {e}", exc_info=True)
             return (
                 [{"query": question, "rationale": "Direct investigation (planning failed)"}],
@@ -516,6 +530,12 @@ class ResearchAgent(BaseAgent):
     ) -> str:
         """Core research loop. Works with any ToolExecutor instance."""
         system_prompt = STEP_PROMPT.replace("{step_query}", step_query)
+        # The steps are what call tools, so they are what can find a step impossible.
+        marks_answer = self.endpoint == "schedule" and not getattr(self, "reports_cannot_complete_by_tool", False)
+        if getattr(self, "reports_cannot_complete_by_tool", False):
+            system_prompt = f"{system_prompt}\n\n{self.CANNOT_COMPLETE_TOOL_NOTE}"
+        elif marks_answer:
+            system_prompt = f"{system_prompt}\n\n{self.CANNOT_COMPLETE_MARKER_NOTE}"
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": step_query},
@@ -537,6 +557,9 @@ class ResearchAgent(BaseAgent):
                 break
 
             try:
+                from docsgpt.activity.flags import check_stream
+
+                check_stream(getattr(self.tool_executor, "message_id", None))
                 response = self.llm.gen(
                     model=self.upstream_model_id,
                     messages=messages,
@@ -544,16 +567,21 @@ class ResearchAgent(BaseAgent):
                 )
                 self._track_tokens(self._snapshot_llm_tokens())
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.error(
                     f"Research step LLM call failed (iteration {iteration}): {e}",
                     exc_info=True,
                 )
                 break
 
-            parsed = self.llm_handler.parse_response(response)
+            # Read the reply with the parser of the model that answered: a
+            # fallback to another provider returns that provider's shape.
+            parsed = self.llm_handler._parse_for_response(self, response)
 
             if not parsed.requires_tool_call:
-                return parsed.content or "No findings for this step."
+                report = parsed.content or "No findings for this step."
+                return self._take_step_marker(report, executor) if marks_answer else report
 
             # Execute tool calls
             messages, last_search_empty = self._execute_step_tools_with_refinement(
@@ -568,14 +596,30 @@ class ResearchAgent(BaseAgent):
             }
         )
         try:
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(self.tool_executor, "message_id", None))
             response = self.llm.gen(
                 model=self.upstream_model_id, messages=messages, tools=None
             )
             self._track_tokens(self._snapshot_llm_tokens())
             text = self._extract_text(response)
-            return text or "Research step completed."
-        except Exception:
+            report = text or "Research step completed."
+            return self._take_step_marker(report, executor) if marks_answer else report
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             return "Research step completed."
+
+    @staticmethod
+    def _take_step_marker(report: str, executor: ToolExecutor) -> str:
+        """Note a marked step report on the executor, as the tool would, and return it unmarked."""
+        reason = cannot_complete_reason(report)
+        if reason is None:
+            return report
+        if not getattr(executor, "cannot_complete", None):
+            executor.cannot_complete = reason
+        return drop_cannot_complete_marker(report) or report
 
     def _execute_step_tools_with_refinement(
         self,
@@ -591,6 +635,14 @@ class ResearchAgent(BaseAgent):
         """
         search_returned_empty = False
 
+        # One assistant message carries the whole parallel batch, followed by
+        # one tool message per call, as in the chat loop. Gemini 3 rejects the
+        # interleaved "call, result, call, result" layout with a 400: only the
+        # batch's first call carries a thought signature.
+        batch_assistant: Dict[str, Any] = {"role": "assistant", "content": None, "tool_calls": []}
+        if tool_calls:
+            messages.append(batch_assistant)
+
         for call in tool_calls:
             # A step runs inside one turn and nobody can answer a pause here,
             # so a call that would pause (approval, a connection, the client,
@@ -599,24 +651,7 @@ class ResearchAgent(BaseAgent):
             if refusal is not None:
                 result, call_id = refusal
             else:
-                gen = executor.execute(
-                    tools_dict, call, self.llm.__class__.__name__
-                )
-                result = None
-                call_id = None
-                while True:
-                    try:
-                        event = next(gen)
-                        # Log tool_call status events instead of discarding them
-                        if isinstance(event, dict) and event.get("type") == "tool_call":
-                            logger.debug(
-                                "Tool %s status: %s",
-                                event.get("data", {}).get("action_name", ""),
-                                event.get("data", {}).get("status", ""),
-                            )
-                    except StopIteration as e:
-                        result, call_id = e.value
-                        break
+                result, call_id = self._run_step_tool(tools_dict, call, executor)
 
             # Detect empty search results for refinement
             is_search = "search" in (call.name or "").lower()
@@ -639,18 +674,64 @@ class ResearchAgent(BaseAgent):
                 if isinstance(call.arguments, dict)
                 else call.arguments
             )
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [{
-                    "id": call_id,
-                    "type": "function",
-                    "function": {"name": call.name, "arguments": args_str},
-                }],
-            })
-            tool_message = self.llm_handler.create_tool_message(call, result)
+            tool_call_obj = {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": call.name, "arguments": args_str},
+            }
+            # Gemini 3 rejects a function call sent back without its signature.
+            if call.thought_signature:
+                tool_call_obj["thought_signature"] = call.thought_signature
+            batch_assistant["tool_calls"].append(tool_call_obj)
+            # Answer the id declared above, not the raw ``call.id``, which a
+            # provider may leave empty (the executor then mints one).
+            resolved_call = ToolCall(id=call_id, name=call.name, arguments=call.arguments)
+            # As in the chat loop: every later iteration re-sends this result,
+            # so the model gets a bounded copy (the journal keeps it whole).
+            result = _bound_tool_response_for_llm(result)
+            tool_message = self.llm_handler.create_tool_message(resolved_call, result)
             messages.append(take_tool_images(executor, tool_message))
         return messages, search_returned_empty
+
+    def _run_step_tool(self, tools_dict: Dict, call, executor: ToolExecutor) -> tuple[Any, str]:
+        """Run one tool call for a research step, turning a raised error into its result.
+
+        As in the chat handler, a failing tool answers its call with the error
+        so the model can work around it, instead of ending the whole run.
+
+        Args:
+            tools_dict: The step's tools.
+            call: The model's tool call.
+            executor: The run's executor.
+
+        Returns:
+            ``(tool result, call id)``.
+        """
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(getattr(self, "tool_executor", None), "message_id", None))
+        gen = executor.execute(tools_dict, call, self.llm.__class__.__name__)
+        try:
+            while True:
+                try:
+                    event = next(gen)
+                except StopIteration as e:
+                    return e.value
+                # Log tool_call status events instead of discarding them
+                if isinstance(event, dict) and event.get("type") == "tool_call":
+                    logger.debug(
+                        "Tool %s status: %s",
+                        event.get("data", {}).get("action_name", ""),
+                        event.get("data", {}).get("status", ""),
+                    )
+        except Exception as e:
+            if is_budget_exhausted(e):
+                raise
+            logger.error(f"Research step tool {call.name} failed: {e}", exc_info=True)
+            # As in the chat loop: images the call queued before it failed
+            # must not ride on its error result.
+            take_tool_images(executor, {})
+            return f"Error executing tool: {e}", call.id or str(uuid.uuid4())
 
     def _refuse_paused_call(
         self, tools_dict: Dict, call, executor: ToolExecutor
@@ -674,22 +755,25 @@ class ResearchAgent(BaseAgent):
         if pause_type == "headless_denied":
             reason = pause_info.get("deny_reason") or "This tool can't run here."
             result = f"Tool denied: {reason}"
-            journal_error = f"headless: {reason}" if executor.headless else f"denied: {reason}"
+            _, journal_error = refusal_texts(executor, reason)
             if executor.headless:
                 executor.headless_denials.append(pause_info)
         elif pause_info.get("connection_required"):
+            reason = "Its service needs to be connected first, and a research step can't wait for that."
             result = (
                 "Tool not run: its service needs to be connected first, and a "
                 "research step can't wait for that."
             )
             journal_error = "research: connection required"
         elif pause_type == "requires_client_execution":
+            reason = "It runs in the user's app, which a research step can't reach."
             result = (
                 "Tool not run: it runs in the user's app, which a research step "
                 "can't reach."
             )
             journal_error = "research: client-side tool"
         else:
+            reason = "This action needs the user's approval, which a research step can't ask for."
             result = (
                 "Tool not run: this action needs the user's approval, which a "
                 "research step can't ask for. Tell the user it needs their "
@@ -703,7 +787,9 @@ class ResearchAgent(BaseAgent):
                 "pause_type": pause_type,
             },
         )
-        journal_refused_call(executor, pause_info, journal_error)
+        record_refused_call(
+            executor, pause_info, reason=reason, model_text=result, journal_error=journal_error
+        )
         return result, pause_info["call_id"]
 
     def _collect_step_sources(self):
@@ -752,6 +838,9 @@ class ResearchAgent(BaseAgent):
             {"role": "user", "content": f"Please write the research report for: {question}"},
         ]
 
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(self.tool_executor, "message_id", None))
         llm_response = self.llm.gen_stream(
             model=self.upstream_model_id, messages=messages, tools=None
         )
@@ -772,16 +861,22 @@ class ResearchAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _extract_text(self, response) -> str:
-        """Extract text content from a non-streaming LLM response."""
+        """Extract the text of a non-streaming LLM reply.
+
+        Reads it with the handler of the model that answered, as the chat
+        loop does: a fallback to another provider returns that provider's
+        shape. A provider that was asked for no tools may hand back the
+        text itself.
+
+        Args:
+            response: The reply ``self.llm.gen`` returned.
+
+        Returns:
+            The reply's text, or an empty string when it has none.
+        """
+        if response is None:
+            return ""
         if isinstance(response, str):
             return response
-        if hasattr(response, "message") and hasattr(response.message, "content"):
-            return response.message.content or ""
-        if hasattr(response, "choices") and response.choices:
-            choice = response.choices[0]
-            if hasattr(choice, "message") and hasattr(choice.message, "content"):
-                return choice.message.content or ""
-        if hasattr(response, "content") and isinstance(response.content, list):
-            if response.content and hasattr(response.content[0], "text"):
-                return response.content[0].text or ""
-        return str(response) if response else ""
+        content = self.llm_handler._parse_for_response(self, response).content
+        return content if isinstance(content, str) else ""

@@ -49,6 +49,20 @@ class TestBindTurn:
         assert executor.background is context
         assert context.origin_message_id == "m"
 
+    def test_a_poll_only_turn_binds_without_a_message(self):
+        """A /v1 round resumed from a pause that has no row of its own still hands calls off.
+
+        Its jobs are poll-only, so they never report back to a message; without
+        a context the round would offer no check_job and no background params,
+        and its tools would differ from the paused round's.
+        """
+        executor = self._executor()
+        context = bind_turn(executor, conversation_id="c", message_id=None, decoded_token={"sub": "u"}, api_route=True)
+        assert isinstance(context, BackgroundContext)
+        assert context.origin_message_id is None
+        assert context.api_route is True
+        assert context.auto_resume() is False
+
     def test_skips_what_cannot_hand_off(self, monkeypatch):
         assert bind_turn(self._executor(), conversation_id=None, message_id="m", decoded_token={"sub": "u"}) is None
         assert bind_turn(self._executor(), conversation_id="c", message_id=None, decoded_token={"sub": "u"}) is None

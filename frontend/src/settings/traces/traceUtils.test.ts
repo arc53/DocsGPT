@@ -117,6 +117,7 @@ const HEADLINES: Record<string, string> = {
   'settings.logs.trace.headline.chunks': '{{count}} chunks',
   'settings.logs.trace.headline.hits': '{{count}} hits',
   'settings.logs.trace.headline.cached': 'cached',
+  'settings.logs.trace.headline.answered': '{{answered}}/{{total}} answered',
 };
 
 const t = (key: string, options: Record<string, unknown> = {}) =>
@@ -156,5 +157,32 @@ describe('spanHeadline', () => {
     expect(
       spanHeadline(span({ attributes: { 'docsgpt.cache_hit': true } }), t),
     ).toBe('cached');
+  });
+
+  it('summarises a decision-model call by the states it answered', () => {
+    const decision = (attributes: Record<string, unknown>) =>
+      spanHeadline(span({ kind: 'decision', attributes }), t);
+    expect(
+      decision({
+        'docsgpt.decision.states': 3,
+        'docsgpt.decision.answered': 2,
+        'docsgpt.decision.cached': 0,
+      }),
+    ).toBe('2/3 answered');
+    expect(
+      decision({
+        'docsgpt.decision.states': 1,
+        'docsgpt.decision.answered': 0,
+        'docsgpt.decision.cached': 0,
+      }),
+    ).toBe('0/1 answered');
+    expect(
+      decision({
+        'docsgpt.decision.states': 2,
+        'docsgpt.decision.answered': 2,
+        'docsgpt.decision.cached': 2,
+      }),
+    ).toBe('cached');
+    expect(decision({})).toBe('');
   });
 });

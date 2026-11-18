@@ -1,0 +1,174 @@
+{
+  "heads": {
+    "noul": {
+      "tokens": [
+        9834,
+        902
+      ],
+      "bias": 0.0012515024282038212
+    },
+    "score:4": {
+      "tokens": [
+        15,
+        16,
+        17,
+        18
+      ],
+      "bias": [
+        0.0031790027860552073,
+        -0.005675514228641987,
+        0.0009620477794669569,
+        0.0025524271186441183
+      ]
+    },
+    "score:3": {
+      "tokens": [
+        20,
+        21,
+        22
+      ],
+      "bias": [
+        0.00550613459199667,
+        0.0031515166629105806,
+        -0.014491165988147259
+      ]
+    },
+    "choice": {
+      "tokens": [
+        362,
+        425,
+        356,
+        422,
+        468,
+        434,
+        479,
+        472,
+        358,
+        619,
+        730,
+        444,
+        386,
+        451,
+        506,
+        393
+      ],
+      "bias": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "source": "checkpoints/p8-v02",
+  "base_model": "Qwen/Qwen3-0.6B-Base",
+  "prompt_hash": "78cfb276f93a",
+  "temperature": {
+    "noul": 1.0000000000000004,
+    "score": 0.9958365752606795,
+    "choice": 1.4125375446227555,
+    "by_question": {
+      "frustrated": 0.3831186849557289,
+      "asks_human": 0.7356422544596417,
+      "injection": 1.0000000000000004,
+      "relevant": 0.926118728128794,
+      "goal_met": 0.5843414133735179,
+      "answer": 1.995262314968881,
+      "supported": 0.9623506263980889,
+      "tag": 0.926118728128794,
+      "needs_retrieval": 1.0391223038351698,
+      "needs_clarification": 0.9623506263980889,
+      "tool_needed": 1.0391223038351698,
+      "right_tool": 0.9623506263980889,
+      "tool_succeeded": 1.0391223038351698,
+      "result_used": 0.926118728128794,
+      "induced_by_untrusted": 1.0391223038351698,
+      "sentiment": 0.6072021956909888,
+      "severity": 1.0000000000000004,
+      "grade": 1.0000000000000004,
+      "complexity": 0.9623506263980889,
+      "reaction": 0.7644222742526006,
+      "answer_status": 0.7644222742526006,
+      "unanswered_reason": 0.7079457843841382,
+      "request_type": 0.6556418494179792,
+      "intent": 1.4125375446227555,
+      "topic": 0.9623506263980889
+    },
+    "fit_sets": {
+      "intent": {
+        "path": "train/massive/temperature_fit.jsonl",
+        "rows": 897
+      },
+      "answer_status": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 3091
+      },
+      "unanswered_reason": {
+        "path": "train/an-calib-realistic-v01/rows.jsonl",
+        "rows": 816
+      },
+      "reaction": {
+        "path": "train/an-calib-realistic-v01/rows.jsonl",
+        "rows": 818
+      },
+      "frustrated": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1268
+      },
+      "asks_human": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1518
+      },
+      "sentiment": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1454
+      },
+      "request_type": {
+        "path": "train/an-calib-realistic-v01/rows.jsonl",
+        "rows": 1899
+      },
+      "goal_met": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 1645
+      },
+      "topic": {
+        "path": "train/an-calib-v01/rows.jsonl",
+        "rows": 444
+      },
+      "tool_needed": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1327
+      },
+      "right_tool": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1322
+      },
+      "tool_succeeded": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1327
+      },
+      "result_used": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1322
+      },
+      "induced_by_untrusted": {
+        "path": "train/tools-calib-v01/rows.jsonl",
+        "rows": 1327
+      }
+    }
+  },
+  "max_state_tokens": 2048,
+  "choices": 16
+}

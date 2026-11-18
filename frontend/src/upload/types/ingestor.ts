@@ -1,6 +1,6 @@
-import { BookOpen, Globe, Link, Upload, type LucideIcon } from 'lucide-react';
+import { BookOpen, Globe, Upload, type LucideIcon } from 'lucide-react';
 
-export type IngestorType = 'crawler' | 'github' | 'url' | 'local_file' | 'wiki';
+export type IngestorType = 'website' | 'github' | 'local_file' | 'wiki';
 
 export interface IngestorConfig {
   type: IngestorType | null;
@@ -22,6 +22,8 @@ export interface FormField {
   /** English fallback; the form shows `t(labelKey)` when one is set. */
   label: string;
   labelKey?: string;
+  /** A muted line under the field, as `t(hintKey)`. */
+  hintKey?: string;
   type: FieldType;
   required?: boolean;
 }
@@ -45,8 +47,7 @@ export interface IngestorSchema {
  */
 export const UPLOAD_AND_WEB_INGESTORS: IngestorType[] = [
   'local_file',
-  'url',
-  'crawler',
+  'website',
   'wiki',
 ];
 
@@ -66,34 +67,12 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     ],
   },
   {
-    key: 'crawler',
-    label: 'Crawler',
+    // One page, several pages or a whole site; its fields are WebsiteFields.
+    key: 'website',
+    label: 'Website',
     icon: Globe,
-    heading: 'Add content with Web Crawler',
-    fields: [
-      {
-        name: 'url',
-        label: 'URL',
-        labelKey: 'modals.uploadDoc.fields.url',
-        type: 'string',
-        required: true,
-      },
-    ],
-  },
-  {
-    key: 'url',
-    label: 'Link',
-    icon: Link,
-    heading: 'Add content from URL',
-    fields: [
-      {
-        name: 'url',
-        label: 'URL',
-        labelKey: 'modals.uploadDoc.fields.url',
-        type: 'string',
-        required: true,
-      },
-    ],
+    heading: 'Add a website',
+    fields: [],
   },
   {
     key: 'github',
@@ -117,8 +96,9 @@ export const IngestorFormSchemas: IngestorSchema[] = [
     fields: [
       {
         name: 'initial_content',
-        label: 'Initial content (optional)',
+        label: 'Initial content',
         labelKey: 'modals.uploadDoc.fields.initialContent',
+        hintKey: 'modals.uploadDoc.fields.initialContentHint',
         type: 'textarea',
         required: false,
       },
@@ -130,8 +110,7 @@ export const IngestorDefaultConfigs: Record<
   IngestorType,
   Omit<IngestorConfig, 'type'>
 > = {
-  crawler: { name: '', config: { url: '' } },
-  url: { name: '', config: { url: '' } },
+  website: { name: '', config: {} },
   github: { name: '', config: { repo_url: '' } },
   local_file: { name: '', config: { files: [] } },
   wiki: {

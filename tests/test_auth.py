@@ -46,7 +46,8 @@ class TestHandleAuth:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": False, "require_exp": False},
+            leeway=60,
+            options={"verify_exp": False, "require": []},
         )
 
     def test_returns_error_on_invalid_jwt(self):
@@ -117,11 +118,12 @@ class TestHandleAuthOidc:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": True, "require_exp": True},
+            leeway=60,
+            options={"verify_exp": True, "require": ["exp"]},
         )
 
     def test_expired_token_returns_token_expired(self):
-        from jose.exceptions import ExpiredSignatureError
+        from jwt import ExpiredSignatureError
 
         from docsgpt.auth import handle_auth
 
@@ -158,7 +160,7 @@ class TestHandleAuthOidc:
         # Under oidc, exp is REQUIRED: an exp-less HS256 token signed with the
         # shared secret (e.g. a legacy simple_jwt/session_jwt token) must not
         # authenticate, or it would be valid forever and unrevocable.
-        from jose import jwt as real_jwt
+        import jwt as real_jwt
 
         from docsgpt.auth import handle_auth
 
@@ -173,10 +175,10 @@ class TestHandleAuthOidc:
 
         assert result["error"] == "invalid_token"
 
-    def test_expired_token_real_jose(self):
+    def test_expired_token_real_jwt(self):
         import time
 
-        from jose import jwt as real_jwt
+        import jwt as real_jwt
 
         from docsgpt.auth import handle_auth
 
@@ -195,10 +197,51 @@ class TestHandleAuthOidc:
 
         assert result["error"] == "token_expired"
 
+    def test_oidc_session_minted_by_a_host_with_a_fast_clock_accepted(self):
+        # Another API host whose clock runs a little ahead stamps a future iat;
+        # a small skew must not log the user out.
+        import time
+
+        import jwt as real_jwt
+
+        from docsgpt.auth import handle_auth
+
+        now = int(time.time())
+        token = real_jwt.encode({"sub": "u1", "iat": now + 30, "exp": now + 3600}, "secret", algorithm="HS256")
+        mock_request = Mock()
+        mock_request.headers.get.return_value = f"Bearer {token}"
+
+        with patch("docsgpt.auth.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "oidc"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            result = handle_auth(mock_request)
+
+        assert result["sub"] == "u1"
+
+    @pytest.mark.parametrize(
+        "algorithm,key",
+        [("none", None), ("HS512", "secret")],
+    )
+    def test_token_not_signed_with_hs256_rejected(self, algorithm, key):
+        import jwt as real_jwt
+
+        from docsgpt.auth import handle_auth
+
+        token = real_jwt.encode({"sub": "local"}, key, algorithm=algorithm)
+        mock_request = Mock()
+        mock_request.headers.get.return_value = f"Bearer {token}"
+
+        with patch("docsgpt.auth.settings") as mock_settings:
+            mock_settings.AUTH_TYPE = "simple_jwt"
+            mock_settings.JWT_SECRET_KEY = "secret"
+            result = handle_auth(mock_request)
+
+        assert result["error"] == "invalid_token"
+
     def test_simple_jwt_still_skips_exp_verification(self):
         import time
 
-        from jose import jwt as real_jwt
+        import jwt as real_jwt
 
         from docsgpt.auth import handle_auth
 

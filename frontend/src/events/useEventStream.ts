@@ -68,12 +68,11 @@ export function useEventStream(): void {
         }
         dispatch(setToken(null));
       },
-      // Surface a warning when the non-401 error budget is exhausted so
-      // the connection going dark isn't completely silent. Doesn't block
-      // UI — just observable in devtools.
-      onPermanentFailure: () => {
+      // The non-401 error budget is spent: the client keeps retrying, once
+      // a minute and at once when the tab wakes. Observable in devtools.
+      onErrorBudgetSpent: () => {
         console.warn(
-          '[useEventStream] SSE connection failed permanently after repeated errors',
+          '[useEventStream] SSE connection keeps failing; retrying every minute',
         );
       },
     });

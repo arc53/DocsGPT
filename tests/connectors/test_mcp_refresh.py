@@ -112,7 +112,7 @@ class TestRefresh:
         with _db(pg_conn), patch.object(mcp, "_discover") as discover:
             result = mcp.refresh_mcp_tools("alice", connection)
         discover.assert_not_called()
-        assert result == {"added": [], "removed": [], "tools": []}
+        assert result == {"added": [], "removed": [], "tools": [], "injection": None}
 
 
 class TestDiscover:
@@ -131,7 +131,7 @@ class TestDiscover:
 
     def test_api_key_connection_supplies_its_credentials(self):
         connection = {"id": "c1", "auth_kind": "api_key", "status": "connected"}
-        with patch.object(service, "get_credentials", return_value={"bearer_token": "tok"}), \
+        with patch.object(service, "access_credentials", return_value={"bearer_token": "tok"}), \
                 patch("docsgpt.agents.tools.mcp_tool.MCPTool") as tool_cls:
             mcp._discover("alice", connection, {"config": {"server_url": "https://m.example.com/mcp"}})
         assert tool_cls.call_args.args[0]["auth_credentials"] == {"bearer_token": "tok"}
@@ -227,3 +227,189 @@ def test_token_request_uses_one_client_authentication(method, basic, body_client
     assert headers.get("Authorization", "").startswith("Basic ") is basic
     assert ("client_id" in data) is body_client_id
     assert data["code"] == "c"
+
+
+# api.supabase.com's registration response, as the SDK parses it: a secret is
+# issued, but no token-endpoint auth method is named.
+_REGISTRATION_WITHOUT_A_METHOD = {
+    "client_id": "18ab2f17-c343-4061-bcce-5faf309a94ae",
+    "client_secret": "the-registered-secret",
+    "client_secret_expires_at": 0,
+    "grant_types": ["authorization_code", "refresh_token"],
+    "response_types": ["code"],
+    "redirect_uris": ["https://example.com/callback"],
+    "token_endpoint_auth_method": None,
+}
+
+
+def _oauth_for(pg_conn, client_info):
+    """A DocsGPTOAuth whose stored registration is ``client_info``."""
+    import asyncio
+
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    connection = _connection(pg_conn, secrets={"client_info": client_info})
+    oauth = DocsGPTOAuth(
+        mcp_url="https://mcp.linear.app/mcp",
+        redis_client=MagicMock(),
+        redirect_uri="https://example.com/callback",
+        user_id="alice",
+        connection_id=connection["id"],
+    )
+    with _db(pg_conn):
+        oauth.context.client_info = asyncio.run(oauth.context.storage.get_client_info())
+    return oauth
+
+
+class TestDefaultTokenEndpointAuthMethod:
+    def test_a_secret_without_a_named_method_authenticates_the_token_request(self, pg_conn):
+        """Supabase issues a ``client_secret`` and names no auth method.
+
+        Read as a public client, the token request carried no credentials at
+        all and Supabase answered ``422 {"message":"Required parameter:
+        client_secret"}`` — only after the user had already signed in. RFC 7591
+        §2 makes ``client_secret_basic`` the default whenever the method is
+        omitted, which is the form ``prepare_token_auth`` applies for a secret.
+        """
+        oauth = _oauth_for(pg_conn, _REGISTRATION_WITHOUT_A_METHOD)
+
+        assert oauth.context.client_info.token_endpoint_auth_method == "client_secret_basic"
+
+        data, headers = oauth.context.prepare_token_auth(
+            {"grant_type": "authorization_code", "code": "the-code", "client_id": "18ab2f17"},
+            {"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        # The secret reaches the server, and by one method only (RFC 6749 §2.3).
+        assert headers["Authorization"].startswith("Basic ")
+        assert "client_secret" not in data
+        assert "client_id" not in data
+        assert data["code"] == "the-code"
+
+    def test_a_named_method_is_left_alone(self, pg_conn):
+        """A registration that names its method keeps it — no clobbering."""
+        stored = dict(_REGISTRATION_WITHOUT_A_METHOD, token_endpoint_auth_method="client_secret_post")
+        oauth = _oauth_for(pg_conn, stored)
+
+        assert oauth.context.client_info.token_endpoint_auth_method == "client_secret_post"
+
+        data, headers = oauth.context.prepare_token_auth({"grant_type": "authorization_code"}, {})
+        assert "Authorization" not in headers
+        assert data["client_secret"] == "the-registered-secret"
+
+    def test_a_public_client_stays_unauthenticated(self, pg_conn):
+        """A server that issues no secret registered a public client; the
+        default must not invent credentials for it."""
+        stored = dict(_REGISTRATION_WITHOUT_A_METHOD, client_secret=None)
+        oauth = _oauth_for(pg_conn, stored)
+
+        assert oauth.context.client_info.token_endpoint_auth_method is None
+
+        data, headers = oauth.context.prepare_token_auth({"grant_type": "authorization_code"}, {})
+        assert "Authorization" not in headers
+        assert "client_secret" not in data
+
+    @pytest.mark.parametrize(
+        "registered, basic, secret_in_body",
+        [
+            ({}, True, False),
+            ({"token_endpoint_auth_method": "client_secret_post"}, False, True),
+            ({"client_secret": None}, False, False),
+        ],
+        ids=["secret-without-a-method", "named-method", "public-client"],
+    )
+    def test_a_fresh_registration_authenticates_its_first_token_request(
+        self, pg_conn, registered, basic, secret_in_body
+    ):
+        """A first sign-in registers the client and exchanges the code in one flow.
+
+        The SDK keeps the registration response in memory for that exchange
+        and only hands it to storage to save, so defaulting the saved copy
+        alone left the first token request with no credentials: the first
+        Supabase sign-in failed with 422 and only a second attempt, which
+        reads the saved registration back, got through. A named method and a
+        public client keep the authentication they registered with.
+        """
+        registration = {k: v for k, v in _REGISTRATION_WITHOUT_A_METHOD.items() if k != "token_endpoint_auth_method"}
+        registration.update(registered)
+
+        first = _first_token_request(pg_conn, registration)
+
+        assert first.headers.get("Authorization", "").startswith("Basic ") is basic
+        assert (b"client_secret=" in first.content) is secret_in_body
+
+
+def _first_token_request(pg_conn, registration: dict):
+    """Run a first sign-in whose registration returns ``registration``.
+
+    Args:
+        pg_conn: The test database connection.
+        registration: The registration endpoint's response body.
+
+    Returns:
+        The token request the SDK sent to exchange the authorization code.
+    """
+    import asyncio
+
+    import httpx2
+    from mcp.shared.auth import AuthorizationCodeResult
+
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    token_requests = []
+
+    def server(request: httpx2.Request) -> httpx2.Response:
+        path = request.url.path
+        if path == "/mcp":
+            if request.headers.get("Authorization") == "Bearer the-access-token":
+                return httpx2.Response(200, json={})
+            return httpx2.Response(401, headers={
+                "WWW-Authenticate": 'Bearer resource_metadata="https://mcp.linear.app/.well-known/'
+                                    'oauth-protected-resource/mcp"',
+            })
+        if path == "/.well-known/oauth-protected-resource/mcp":
+            return httpx2.Response(200, json={
+                "resource": "https://mcp.linear.app/mcp",
+                "authorization_servers": ["https://mcp.linear.app"],
+            })
+        if path == "/.well-known/oauth-authorization-server":
+            return httpx2.Response(200, json={
+                "issuer": "https://mcp.linear.app",
+                "authorization_endpoint": "https://mcp.linear.app/authorize",
+                "token_endpoint": "https://mcp.linear.app/token",
+                "registration_endpoint": "https://mcp.linear.app/register",
+                "response_types_supported": ["code"],
+                "code_challenge_methods_supported": ["S256"],
+            })
+        if path == "/register":
+            return httpx2.Response(201, json=registration)
+        if path == "/token":
+            token_requests.append(request)
+            return httpx2.Response(200, json={
+                "access_token": "the-access-token", "token_type": "Bearer", "expires_in": 3600,
+            })
+        return httpx2.Response(404)
+
+    connection = _connection(pg_conn)
+    oauth = DocsGPTOAuth(
+        mcp_url="https://mcp.linear.app/mcp",
+        redis_client=MagicMock(),
+        redirect_uri="https://example.com/callback",
+        user_id="alice",
+        connection_id=connection["id"],
+    )
+
+    async def callback() -> AuthorizationCodeResult:
+        return AuthorizationCodeResult(code="the-code", state=oauth.extracted_state)
+
+    oauth.context.callback_handler = callback
+
+    async def sign_in() -> int:
+        async with httpx2.AsyncClient(auth=oauth, transport=httpx2.MockTransport(server)) as client:
+            return (await client.post("https://mcp.linear.app/mcp", json={})).status_code
+
+    with _db(pg_conn):
+        assert asyncio.run(sign_in()) == 200
+
+    assert len(token_requests) == 1
+    return token_requests[0]

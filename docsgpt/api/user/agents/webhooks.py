@@ -1,5 +1,6 @@
 """Agent management webhook handlers."""
 
+import json
 import secrets
 import uuid
 
@@ -8,6 +9,8 @@ from flask_restx import Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
+from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
+from docsgpt.api.user.agents.sharing import access_payer_fields
 from docsgpt.api.user.base import require_agent
 from docsgpt.api.user.resource_access import AccessDenied, require
 from docsgpt.api.user.tasks import process_agent_webhook
@@ -16,6 +19,7 @@ from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.locks import lock_owner_items
 
 
 agents_webhooks_ns = Namespace(
@@ -86,12 +90,32 @@ class AgentWebhook(Resource):
                 )
             webhook_token = agent.get("incoming_webhook_token")
             if not webhook_token:
-                webhook_token = secrets.token_urlsafe(32)
                 with db_session() as conn:
-                    AgentsRepository(conn).update(
-                        str(agent["id"]), ra.owner_id,
-                        {"incoming_webhook_token": webhook_token},
-                    )
+                    # The checks and the new token share one transaction, so a move of the owner's
+                    # items runs wholly before the checks or after the token.
+                    lock_owner_items(conn, ra.owner_id)
+                    agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+                    if not agent:
+                        return make_response(
+                            jsonify({"success": False, "message": "Agent not found"}), 404
+                        )
+                    webhook_token = agent.get("incoming_webhook_token")
+                    if not webhook_token:
+                        # A new token runs the agent's graph headless: a workflow
+                        # agent's must be a finished one, and it must not use someone
+                        # else's tool or source (the sender never had it shared).
+                        refusal = refuse_unfinished_graph(conn, agent)
+                        if refusal is None:
+                            refusal = refuse_borrowed_outside_access(conn, agent, user)
+                        if refusal is not None:
+                            return refusal
+                        webhook_token = secrets.token_urlsafe(32)
+                        AgentsRepository(conn).update(
+                            str(agent["id"]), ra.owner_id,
+                            # A team Admin who turns the webhook on pays for its runs.
+                            {"incoming_webhook_token": webhook_token,
+                             **access_payer_fields(ra, agent, user, turning_on=True)},
+                        )
             base_url = settings.API_URL.rstrip("/")
             full_webhook_url = f"{base_url}/api/webhooks/agents/{webhook_token}"
         except Exception as err:
@@ -107,6 +131,31 @@ class AgentWebhook(Resource):
         )
 
 
+def _describe_payload(payload) -> str:
+    """The payload's size and shape for a log line, never anything it holds.
+
+    A webhook body can hold whole PR diffs and whatever secrets its sender
+    included, and none of that belongs in the log pipeline. Key names are left
+    out too: the sender chooses them, so one can itself be an email address,
+    a person's name or a token.
+
+    Args:
+        payload: The parsed webhook body or query arguments.
+
+    Returns:
+        str: E.g. ``"1234 characters, 3 keys"`` or ``"80 characters, list of 2"``.
+    """
+    try:
+        size = f"{len(json.dumps(payload))} characters"
+    except (TypeError, ValueError):
+        size = "unknown size"
+    if isinstance(payload, dict):
+        return f"{size}, {len(payload)} keys"
+    if isinstance(payload, list):
+        return f"{size}, list of {len(payload)}"
+    return f"{size}, {type(payload).__name__}"
+
+
 @agents_webhooks_ns.route("/webhooks/agents/<string:webhook_token>")
 class AgentWebhookListener(Resource):
     method_decorators = [require_agent]
@@ -117,7 +166,10 @@ class AgentWebhookListener(Resource):
                 f"Webhook ({source_method}) received for agent {agent_id_str} with empty payload."
             )
         current_app.logger.info(
-            f"Incoming {source_method} webhook for agent {agent_id_str}. Enqueuing task with payload: {payload}"
+            "Incoming %s webhook for agent %s. Enqueuing task with payload: %s",
+            source_method,
+            agent_id_str,
+            _describe_payload(payload),
         )
 
         idempotency_key, key_error = _read_idempotency_key()

@@ -320,9 +320,13 @@ class TestReconnect:
                          body={}, args=[cid])
         assert resp.get_json()["authorization_url"] == "https://accounts.example/auth"
         state = fake_auth.get_authorization_url.call_args.kwargs["state"]
-        import base64
+        import hashlib
 
-        assert json.loads(base64.urlsafe_b64decode(state))["object_id"] == cid
+        flow = pg_conn.execute(
+            text("SELECT user_id, connection_id FROM connector_oauth_flows WHERE state_hash = :h"),
+            {"h": hashlib.sha256(state.encode()).hexdigest()},
+        ).one()
+        assert str(flow.connection_id) == cid
 
     def test_cannot_reconnect_someone_elses(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionReconnect
@@ -342,6 +346,7 @@ class TestPickerToken:
                           secrets={"token_info": {"access_token": "at", "refresh_token": "rt"}})
         fake_auth = MagicMock()
         fake_auth.is_token_expired.return_value = False
+        fake_auth.picker_options.return_value = {}
         with _db(pg_conn), patch("docsgpt.parser.connectors.connector_creator.ConnectorCreator.create_auth",
                                  return_value=fake_auth):
             resp = _call(app, ConnectionPickerToken, "post", f"/api/connections/{cid}/picker-token",
@@ -349,6 +354,23 @@ class TestPickerToken:
         payload = resp.get_json()
         assert payload["access_token"] == "at"
         assert "rt" not in json.dumps(payload)
+
+    def test_says_how_folders_are_read(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionPickerToken
+
+        token_info = {"access_token": "at", "refresh_token": "rt", "scopes": ["drive.file"]}
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth", secrets={"token_info": token_info})
+        fake_auth = MagicMock()
+        fake_auth.is_token_expired.return_value = False
+        fake_auth.picker_options.return_value = {"folders": "service_account", "share_with": "sa@example.com"}
+        with _db(pg_conn), patch("docsgpt.parser.connectors.connector_creator.ConnectorCreator.create_auth",
+                                 return_value=fake_auth):
+            resp = _call(app, ConnectionPickerToken, "post", f"/api/connections/{cid}/picker-token",
+                         args=[cid])
+        payload = resp.get_json()
+        assert payload["folders"] == "service_account"
+        assert payload["share_with"] == "sa@example.com"
+        assert fake_auth.picker_options.call_args.args[0]["access_token"] == "at"
 
     def test_owner_only(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionPickerToken

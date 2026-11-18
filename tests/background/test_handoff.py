@@ -198,6 +198,40 @@ class TestRunCall:
         release.set()
         assert fake_jobs.done.wait(5)
 
+    def test_an_explicit_call_over_the_cap_runs_as_a_foreground_call(self, ctx, fake_jobs):
+        # A tool that detaches reads ``explicit`` to pick a background run's longer limits.
+        class _Detaching:
+            def supports_detached(self):
+                return True
+
+        fake_jobs.caps = False
+        seen = []
+        outcome = handoff.run_call(
+            ctx, _spec(), _Detaching(), lambda: seen.append(handoff.current_call().explicit) or "ran", explicit=True
+        )
+        assert outcome.value == "ran"
+        assert seen == [False]
+        assert fake_jobs.created == []
+
+    def test_an_explicit_call_within_the_cap_keeps_its_background_limits(self, ctx, fake_jobs):
+        class _Detaching:
+            def supports_detached(self):
+                return True
+
+        release = threading.Event()
+        seen = []
+
+        def invoke():
+            seen.append(handoff.current_call().explicit)
+            release.wait(5)
+            return "x"
+
+        outcome = handoff.run_call(ctx, _spec(), _Detaching(), invoke, explicit=True)
+        assert outcome.handed_off is True
+        release.set()
+        assert fake_jobs.done.wait(5)
+        assert seen == [True]
+
     def test_a_full_pool_runs_the_call_inline(self, ctx, fake_jobs, monkeypatch):
         monkeypatch.setattr(pool, "try_submit", lambda fn: None)
         caller = threading.current_thread()
@@ -205,3 +239,50 @@ class TestRunCall:
         outcome = handoff.run_call(ctx, _spec(), object(), lambda: seen.append(threading.current_thread()) or 1)
         assert outcome.value == 1
         assert seen == [caller]
+
+
+class TestStopDuringTheYieldWindow:
+    def test_a_stop_hands_the_call_off_without_waiting_out_the_window(self, ctx, fake_jobs, monkeypatch):
+        """The turn's Stop is only noticed between streamed chunks, so the wait must not hold it back."""
+        stopped = threading.Event()
+        monkeypatch.setattr(handoff, "_STOP_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(handoff, "stop_requested", lambda message_id: message_id == "m1" and stopped.is_set())
+        release = threading.Event()
+
+        def slow():
+            release.wait(5)
+            return "late"
+
+        threading.Timer(0.05, stopped.set).start()
+        started = time.monotonic()
+        outcome = handoff.run_call(ctx, _spec(), object(), slow, yield_seconds=30)
+        assert outcome.handed_off is True
+        assert time.monotonic() - started < 5
+        release.set()
+        assert fake_jobs.done.wait(5)
+
+    def test_without_a_stop_the_call_finishing_in_the_window_returns_its_value(self, ctx, fake_jobs, monkeypatch):
+        monkeypatch.setattr(handoff, "_STOP_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(handoff, "stop_requested", lambda message_id: False)
+
+        def quick():
+            time.sleep(0.05)
+            return "done"
+
+        outcome = handoff.run_call(ctx, _spec(), object(), quick, yield_seconds=5)
+        assert outcome.handed_off is False and outcome.value == "done"
+        assert fake_jobs.created == []
+
+    def test_a_tool_raising_timeout_error_fails_at_once(self, ctx, fake_jobs, monkeypatch):
+        """``TimeoutError`` from the tool is its result, not the wait running out."""
+        monkeypatch.setattr(handoff, "_STOP_POLL_SECONDS", 0.01)
+        monkeypatch.setattr(handoff, "stop_requested", lambda message_id: False)
+
+        def times_out():
+            raise TimeoutError("upstream timed out")
+
+        started = time.monotonic()
+        with pytest.raises(TimeoutError, match="upstream"):
+            handoff.run_call(ctx, _spec(), object(), times_out, yield_seconds=5)
+        assert time.monotonic() - started < 1
+        assert fake_jobs.created == []

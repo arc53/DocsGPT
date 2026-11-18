@@ -31,9 +31,9 @@ PROJECT = "docsgpt"
 DATABASE_VOLUME = f"{PROJECT}_postgres_data"
 _MOVING_TAGS = ("latest", "develop")
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-# Commands that stop or remove services name every profile, so Caddy goes too
-# even when COMPOSE_PROFILES no longer enables it.
-_EVERY_PROFILE = ("--profile", "https")
+# Commands that stop or remove services name every profile, so Caddy and the
+# decider go too even when COMPOSE_PROFILES no longer enables them.
+_EVERY_PROFILE = ("--profile", "https", "--profile", stack.DECIDER_PROFILE)
 
 EXPOSURE_CHOICES = [
     ("local", "Only this computer"),
@@ -296,6 +296,12 @@ def _refuse_docker_only_options(args) -> None:
             'parser engine into this environment instead, with `uv tool install "docsgpt[docling]"` or '
             '`pip install "docsgpt[docling]"`, then run `docsgpt up --native` again.'
         )
+    if getattr(args, "decider", None):
+        raise DeployError(
+            "--decider starts a container, which a native install does not run: its API process holds the "
+            "decision model. To serve it separately, run `docsgpt decide-server` and set "
+            "DECISION_BASE_URL=http://127.0.0.1:7095 in the settings."
+        )
 
 
 def _port_number(value: object, source: str) -> int:
@@ -306,9 +312,32 @@ def _port_number(value: object, source: str) -> int:
     return int(text)
 
 
-def _service_names(directory: Path) -> tuple[str, str]:
+def _service_names(directory: Path) -> tuple[str, ...]:
     """This install's service names; an install elsewhere gets its own, so the two cannot collide."""
     return native.service_names(directory, stack.stack_dir(None))
+
+
+def _installed_names(services, names: tuple[str, ...], report: bool = True) -> tuple[str, ...]:
+    """The services in ``names`` whose unit is installed.
+
+    A newer version can add a service (the analytics worker) that an install made by an older one has
+    no unit for until ``up`` writes it. Starting or stopping that one would fail, so the lifecycle
+    commands work on the installed ones and say what is missing.
+
+    Args:
+        services: The service manager.
+        names: This install's service names, in order.
+        report: Whether to print a note to stderr for each service that is not installed.
+
+    Returns:
+        The installed services, in the order of ``names``.
+    """
+    installed = tuple(name for name in names if services.is_installed(name))
+    if report:
+        for name in names:
+            if name not in installed:
+                print(native.not_installed(name), file=sys.stderr)
+    return installed
 
 
 def _port_is_free(port: int) -> bool:
@@ -321,7 +350,7 @@ def _port_is_free(port: int) -> bool:
     return True
 
 
-def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, str]) -> None:
+def _refuse_busy_port(directory: Path, port: int, services, names: tuple[str, ...]) -> None:
     """Whatever holds the port would answer the health check while these services failed to bind.
 
     The one exception is this install's own API holding the port it is recorded on. Ownership is not
@@ -535,6 +564,7 @@ def up(args, context: Optional[Context] = None) -> int:
             port=args.port,
             provider=provider,
             docling=args.docling,
+            decider=args.decider,
             lan_ip=lan_address,
             written_api_url=_record(directory).get("api_url"),
         )
@@ -549,6 +579,9 @@ def up(args, context: Optional[Context] = None) -> int:
     if stack.exposure(existing) == "domain" and stack.exposure(env) != "domain":
         # With the https profile off, `up --remove-orphans` would leave Caddy running on ports 80 and 443.
         context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "caddy", check=False)
+    if stack.runs_decider(existing) and not stack.runs_decider(env):
+        # The same for the decider: the backend and worker go back to the model in the API process.
+        context.docker.compose(directory, *_EVERY_PROFILE, "rm", "--stop", "--force", "decider", check=False)
     if stack.exposure(env) == "network":
         print(
             "DocsGPT will listen on every interface over plain HTTP: its access token travels as "
@@ -617,7 +650,7 @@ def down(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native":
         services = context.service_manager()
         # The worker goes first: it talks to the API, not the other way round.
-        for name in reversed(_service_names(directory)):
+        for name in reversed(_installed_names(services, _service_names(directory))):
             services.stop(name)
         return 0
     context.docker.compose(directory, *_EVERY_PROFILE, "down")
@@ -638,7 +671,11 @@ def status(args, context: Optional[Context] = None) -> int:
         port = _native_port(env)
         print(f"DocsGPT {_record(directory).get('version', 'unknown')} in {directory} (native, {services.name})")
         print(f"Address: {_native_address(env)}")
+        installed = _installed_names(services, _service_names(directory), report=False)
         for name in _service_names(directory):
+            if name not in installed:
+                print(f"  {name}: not installed yet; {native.INSTALL_HINT}")
+                continue
             print(f"  {name}: {'running' if services.is_running(name) else 'stopped'}")
         healthy = context.wait(f"http://127.0.0.1:{port}/api/health", 0)
         print("API: answering" if healthy else "API: not answering (see `docsgpt logs`)")
@@ -661,7 +698,7 @@ def logs(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         logs_dir = directory / "logs"
-        wanted = args.services or ["api", "worker"]
+        wanted = args.services or [native.log_name(name) for name in _service_names(directory)]
         # Opened before the first read and kept: a line written between printing what is there and
         # starting to follow would otherwise appear in neither.
         handles = {}
@@ -769,7 +806,7 @@ def env(args, context: Optional[Context] = None) -> int:
     if _mode(directory) == "native" and getattr(args, "restart", True):
         context = context or Context.default(args)
         services = context.service_manager()
-        names = _service_names(directory)
+        names = _installed_names(services, _service_names(directory))
         if any(services.is_running(name) for name in names):
             for name in reversed(names):
                 services.stop(name)
@@ -814,7 +851,7 @@ def dev(args, context: Optional[Context] = None) -> int:
     children = dev_module.plan(args, checkout)
     print(f"DocsGPT from {checkout}")
     for child in children:
-        print(f"  {child.name:<6} {' '.join(child.command)}")
+        print(f"  {child.name:<{dev_module.WIDTH}} {' '.join(child.command)}")
     print(f"\nAPI     http://{args.host}:{args.port}")
     if getattr(args, "ui", False):
         print(f"UI      http://localhost:{dev_module.UI_PORT}")
@@ -1082,6 +1119,255 @@ def _redis_to_check(args, env: Mapping[str, str]) -> dict:
     return {key: value for key, value in pairs if value}
 
 
+def _decision_settings(env: Mapping[str, str]):
+    """The settings the services would load from ``env``, and each decision feature's ``(mode, budget, spec)``."""
+    with _service_environment(env):
+        from docsgpt.core.settings import Settings
+        from docsgpt.decisions import features
+
+        _forget_shell_settings(env)
+        settings = Settings(_env_file=None)
+        registered = {
+            spec.name: (features.configured(spec, settings), features.budget(spec, settings), spec)
+            for spec in features.specs()
+        }
+    return settings, registered
+
+
+def _probe_decider(url: str, key: Optional[str], protocol: str) -> tuple[str, str, Any]:
+    """``GET /v1/models`` on a decision server: ``(level, what it said, its SpeedProfile or None)``.
+
+    ``host.docker.internal`` is the host itself here, which is where doctor runs.
+    """
+    import httpx2
+
+    from docsgpt.decisions.backends.http import without_userinfo
+    from docsgpt.decisions.latency import SpeedProfile
+    from docsgpt.decisions.models import lookup, version
+
+    base, auth = without_userinfo(url.rstrip("/").removesuffix("/v1"))
+    parts = urlsplit(base)
+    if parts.hostname == "host.docker.internal":
+        base = urlunsplit(parts._replace(netloc=parts.netloc.replace("host.docker.internal", "127.0.0.1")))
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
+    try:
+        with httpx2.Client(timeout=3.0) as client:
+            response = client.get(f"{base}/v1/models", headers=headers, auth=auth)
+    except httpx2.HTTPError as exc:
+        return "warn", f"{_endpoint(base)} does not answer ({type(exc).__name__})", None
+    if response.status_code in (401, 403):
+        return "warn", f"{_endpoint(base)} refused DECISION_KEY", None
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+    if response.status_code != 200 or not isinstance(data, dict):
+        return "warn", f"{_endpoint(base)} answered HTTP {response.status_code}", None
+    if protocol == "vllm":
+        served = [str(m.get("id")) for m in data.get("data") or [] if isinstance(m, dict)]
+        return "ok", f"vLLM at {_endpoint(base)} serving {', '.join(served) or 'nothing'}", None
+    entries = data.get("models")
+    entry = entries[0] if isinstance(entries, list) and entries and isinstance(entries[0], dict) else {}
+    spec = lookup(str(entry.get("name") or ""))
+    if spec is None or "prompt_hash" not in entry:
+        return "ok", f"{_endpoint(base)} serving {entry.get('name') or 'an unnamed model'}", None
+    status = entry.get("status") or "unknown"
+    detail = (f"{_endpoint(base)} {status}{' (' + entry['reason'] + ')' if entry.get('reason') else ''}, "
+              f"{entry.get('runtime')}, {version(spec, entry.get('calibration'))}")
+    try:
+        profile = SpeedProfile.from_wire(entry["speed"]) if isinstance(entry.get("speed"), dict) else None
+    except (KeyError, TypeError, ValueError):
+        profile = None
+    return ("warn" if status == "unavailable" else "ok"), detail, profile
+
+
+def _check_decisions(env: Mapping[str, str], docker: bool) -> Check:
+    """The decision model: where it runs, what that reports, and every feature's mode and ``auto`` verdict.
+
+    Relevance in retrieval (``DECISION_RELEVANCE_ENABLED``) is the ``rag_rerank`` feature and injection scanning
+    (``DECISION_INJECTION_ENABLED``) is ``injection_input``; a server's measured speed adds each feature's predicted
+    call against its budget (for ``rag_rerank``, DECISION_RELEVANCE_TIMEOUT; for ``injection_input``, the default
+    guardrail stage deadline).
+
+    Decisions fail open, so this is never a failure: a feature that is on with no model behind it is a warning.
+
+    Args:
+        env: The stack's settings file.
+        docker: Whether the services run in this stack's containers: the model is then in the backend
+            container, or in the decider sidecar when ``docsgpt up --decider`` started one.
+    """
+    from docsgpt.decisions import features
+
+    try:
+        settings, registered = _decision_settings(env)
+    except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
+        return Check("decisions", "warn", f"the settings do not load: {_first_error(exc)}")
+    if settings.DECISION_MODE == "none":
+        return Check("decisions", "ok", "off (DECISION_MODE=none)")
+    on = [name for name, (mode, _, _) in registered.items() if mode != "off"]
+    url = settings.DECISION_BASE_URL if settings.DECISION_MODE != "local" else None
+    profile, level = None, "ok"
+    if settings.DECISION_MODE == "api" and not url:
+        level, where = "warn", "DECISION_MODE=api without DECISION_BASE_URL"
+    elif docker and url in (None, stack.DECIDER_URL):
+        if url is None:
+            where = "in the backend container (`docsgpt logs backend`), which the worker calls"
+        elif stack.runs_decider(env):
+            where = "the stack's decider container (`docsgpt logs decider`)"
+        else:
+            level, where = "warn", f"{url}, but no decider runs: start it with `docsgpt up --decider`"
+        if sys.platform == "darwin" and on and level == "ok":
+            level = "warn"
+            where += ("; Docker on a Mac has no GPU, so run `docsgpt decide-server --device mps` on the host and "
+                      "set DECISION_BASE_URL=http://host.docker.internal:7095")
+    elif url:
+        level, where, profile = _probe_decider(url, settings.DECISION_KEY, settings.DECISION_PROTOCOL)
+    else:
+        where = _local_decisions(settings)
+    verdicts = []
+    # A server timed on the ONNX plan runs on a CPU, where relevance scores best-window passages.
+    runtime = "onnx" if profile is not None and profile.plan == "onnx" else None
+    for name, (mode, budget, spec) in registered.items():
+        if mode != "off" and profile is not None:
+            predicted = profile.predict_s(features.shape_of(spec, settings, runtime))
+            if mode == "auto":
+                mode = f"auto, {'on' if predicted <= budget else 'off'}"
+            mode = f"{mode} at {predicted:.2f}s of {budget:g}s"
+        verdicts.append(f"{name} {mode}")
+    if not on:
+        level = "ok"
+    sidecar = stack.runs_decider(env) or settings.DECISION_BASE_URL == stack.DECIDER_URL
+    if docker and sidecar and not settings.DECISION_KEY:
+        # Whatever the features, the decider container does not start without it.
+        level = "warn"
+        where += ("; the decider refuses to start without DECISION_KEY: set one in .env "
+                  "(`docsgpt up --decider` writes one)")
+    return Check("decisions", level, f"{where}; {', '.join(verdicts) or 'no features'}")
+
+
+def _local_decisions(settings: Any) -> str:
+    """The in-process model: whether its files are here and the memory a load would have."""
+    from docsgpt.decisions import files, memory
+    from docsgpt.decisions.models import DEFAULT_FOR_RUNTIME, lookup
+
+    spec = lookup(settings.DECISION_MODEL or DEFAULT_FOR_RUNTIME["onnx"])
+    if spec is None:
+        return f"DECISION_MODEL ({settings.DECISION_MODEL}) is not a known decision model"
+    if settings.DECISION_MODEL_PATH:
+        folder = Path(settings.DECISION_MODEL_PATH).expanduser()
+    else:
+        folder = Path(settings.DECISION_CACHE_DIR) / spec.id / (settings.DECISION_MODEL_REVISION or spec.revision)
+    found = files.onnx_folder(folder)
+    text = f"in the API process, {spec.id} {'in ' + str(found) if found else 'not downloaded yet'}"
+    free = memory.headroom_mb()
+    if free is not None:
+        need = settings.DECISION_MIN_FREE_MB if settings.DECISION_MIN_FREE_MB is not None else spec.min_free_mb
+        text += f", {free:.0f} MB free (a load needs {need})"
+    return text
+
+
+# Beat sends one sweep per ANALYTICS_SWEEP_SECONDS; a worker on the queue takes each within seconds. This many
+# waiting means several intervals went by with nothing taking them, whereas doctor run before the workers start
+# sees one or two at most.
+ANALYTICS_BACKLOG_WARN = 3
+
+
+def _queue_backlog(client: Any, queue: str) -> int:
+    """Messages waiting on a Celery queue in Redis: kombu keeps one list per priority step, the name and its twins.
+
+    Args:
+        client: A redis-py client on the broker's database.
+        queue: The Celery queue name.
+
+    Returns:
+        The total length of the queue's lists; reserved (unacked) messages are not in them.
+    """
+    from kombu.transport.redis import PRIORITY_STEPS, Channel
+
+    keys = [f"{queue}{Channel.sep}{step}" if step else queue for step in PRIORITY_STEPS]
+    return sum(int(client.llen(key) or 0) for key in keys)
+
+
+def _analytics_consumers(url: str, queue: str, timeout: float = 1.0) -> Optional[list[str]]:
+    """The worker nodes that answer a short ``inspect`` and list ``queue``, or None when none answers.
+
+    A solo-pool worker answers only between tasks, so one in the middle of a sweep is silent: an empty answer or
+    none is not evidence that nothing consumes the queue.
+
+    Args:
+        url: The Celery broker URL.
+        queue: The queue to look for.
+        timeout: Seconds to wait for replies.
+
+    Returns:
+        Sorted node names consuming ``queue``, an empty list when workers answered without it, or None.
+    """
+    from celery import Celery
+
+    app = Celery("docsgpt-doctor", broker=url, set_as_current=False)
+    try:
+        replies = app.control.inspect(timeout=timeout).active_queues()
+    except Exception:  # noqa: BLE001 - this is extra detail; the redis row reports a broker that does not answer
+        return None
+    finally:
+        app.close()
+    if not replies:
+        return None
+    return sorted(node for node, queues in replies.items()
+                  if any(isinstance(q, dict) and q.get("name") == queue for q in queues or []))
+
+
+def _check_analytics(env: Mapping[str, str], broker_url: Optional[str]) -> Check:
+    """Whether anything takes the analytics queue, judged by its backlog on the broker; never a failure.
+
+    With ``DECISION_ANALYTICS_ENABLED`` on, beat sends the sweep to ``ANALYTICS_QUEUE``. A worker whose ``-Q``
+    leaves it out, or a solo-pool ``docsgpt worker`` with no ``docsgpt worker --analytics`` beside it, lets the
+    messages pile up in Redis and the Insights pages never fill. Workers are often not running when doctor is, so
+    only a backlog of several intervals warns; a short ``inspect`` adds which workers consume the queue.
+
+    Args:
+        env: The stack's settings file.
+        broker_url: The broker the redis row pinged (``--redis-url`` or ``CELERY_BROKER_URL``); the settings'
+            default when None.
+    """
+    try:
+        with _service_environment(env):
+            from docsgpt.core.settings import Settings
+
+            _forget_shell_settings(env)
+            settings = Settings(_env_file=None)
+    except Exception as exc:  # noqa: BLE001 - the model check reports settings that do not load
+        return Check("analytics", "warn", f"the settings do not load: {_first_error(exc)}")
+    if not settings.DECISION_ANALYTICS_ENABLED:
+        return Check("analytics", "ok", "off (DECISION_ANALYTICS_ENABLED=false)")
+    queue = settings.ANALYTICS_QUEUE
+    url = broker_url or settings.CELERY_BROKER_URL
+    try:
+        import redis
+
+        client = redis.Redis.from_url(url, socket_connect_timeout=3, socket_timeout=3)
+        waiting = _queue_backlog(client, queue)
+    except Exception as exc:  # noqa: BLE001 - the redis row reports a broker that does not answer
+        return Check("analytics", "warn", f"on, but the `{queue}` queue cannot be read on {_endpoint(url)}: "
+                                          f"{_scrub(str(exc).strip(), url)}")
+    consumers = _analytics_consumers(url, queue)
+    held = f"{waiting} message{'' if waiting == 1 else 's'} waiting on the `{queue}` queue"
+    if waiting >= ANALYTICS_BACKLOG_WARN:
+        minutes = waiting * max(60, settings.ANALYTICS_SWEEP_SECONDS) // 60
+        held += f" (about {minutes} min of sweeps)"
+        if consumers:
+            verb = "consumes" if len(consumers) == 1 else "consume"
+            return Check("analytics", "warn", f"{held} although {', '.join(consumers)} {verb} it, so it is behind")
+        nobody = "none of the workers that answered consumes it" if consumers == [] else "no worker takes them"
+        return Check("analytics", "warn", f"{held} and {nobody}, so Insights stay empty: run "
+                                          f"`docsgpt worker --analytics` next to the worker, or add {queue} to its -Q")
+    if consumers:
+        held += f"; consumed by {', '.join(consumers)}"
+    elif consumers == []:
+        held += "; no worker that answered consumes it"
+    return Check("analytics", "ok", f"on; {held}")
+
+
 def doctor(args, context: Optional[Context] = None) -> int:
     """Check what DocsGPT needs on this machine, and say what is missing."""
     from docsgpt.core import paths
@@ -1094,13 +1380,18 @@ def doctor(args, context: Optional[Context] = None) -> int:
         except FileNotFoundError as exc:
             raise DeployError(str(exc)) from exc
     env = envfile.read(env_path)
+    directory = stack.stack_dir(args.dir)
+    docker = _mode(directory) == "docker" and (directory / stack.COMPOSE_FILE).is_file()
+    redis_urls = _redis_to_check(args, env)
     checks = [
         Check("settings", "ok" if env_path.is_file() else "warn",
               f"{env_path}" if env_path.is_file() else f"{env_path} does not exist yet; defaults are in use"),
         _check_postgres(args.postgres_uri or env.get("POSTGRES_URI")),
-        _check_redis(_redis_to_check(args, env)),
+        _check_redis(redis_urls),
         _check_provider(env),
         _check_model(env),
+        _check_decisions(env, docker),
+        _check_analytics(env, redis_urls.get("broker")),
     ]
 
     # The one command that exists to explain a broken setup must not fall over on one.
@@ -1111,13 +1402,16 @@ def doctor(args, context: Optional[Context] = None) -> int:
     else:
         checks.append(Check("port", "warn", f"{port} is in use, which is expected if DocsGPT is running"))
 
-    directory = stack.stack_dir(args.dir)
     if _mode(directory) == "native":
         services = context.service_manager() if context else native.services_for_platform()
-        names = _service_names(directory)
+        every = _service_names(directory)
+        names = _installed_names(services, every, report=False)
         running = [name for name in names if services.is_running(name)]
         level = "ok" if len(running) == len(names) else "warn"
-        checks.append(Check("services", level, f"{len(running)} of {len(names)} running ({', '.join(names)})"))
+        detail = f"{len(running)} of {len(names)} running ({', '.join(names)})"
+        # A service only a newer version runs is a hint, not a fault: the rest work without it.
+        detail += "".join(f"; {native.not_installed(name)}" for name in every if name not in names)
+        checks.append(Check("services", level, detail))
 
     for check in checks:
         print(f"[{MARKS[check.level]}] {check.name:<9} {check.detail}")
@@ -1127,7 +1421,7 @@ def doctor(args, context: Optional[Context] = None) -> int:
     return 1 if failed else 0
 
 
-def _chosen_services(names: tuple[str, str], wanted: list) -> list:
+def _chosen_services(names: tuple[str, ...], wanted: list) -> list:
     """The services the user asked for, given either short names (api) or full ones."""
     if not wanted:
         return list(names)
@@ -1148,7 +1442,14 @@ def restart(args, context: Optional[Context] = None) -> int:
         return 1
     if _mode(directory) == "native":
         services = context.service_manager()
-        chosen = _chosen_services(_service_names(directory), list(args.services))
+        names = _service_names(directory)
+        if args.services:
+            chosen = _chosen_services(names, list(args.services))
+            missing = [name for name in chosen if not services.is_installed(name)]
+            if missing:
+                raise DeployError(" ".join(native.not_installed(name) for name in missing))
+        else:
+            chosen = list(_installed_names(services, names))
         for name in reversed(chosen):
             services.stop(name)
         for name in chosen:

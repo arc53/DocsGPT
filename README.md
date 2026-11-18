@@ -10,6 +10,7 @@
   <a href="https://github.com/arc53/DocsGPT"><img src="https://img.shields.io/github/stars/arc53/docsgpt?style=social" alt="GitHub stars"></a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE"><img src="https://img.shields.io/github/license/arc53/docsgpt" alt="MIT license"></a>
   <a href="https://www.bestpractices.dev/projects/9907"><img src="https://www.bestpractices.dev/projects/9907/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/arc53/DocsGPT"><img src="https://api.scorecard.dev/projects/github.com/arc53/DocsGPT/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://discord.gg/vN7YFfdMpj"><img src="https://img.shields.io/discord/1070046503302877216" alt="Discord"></a>
   <a href="https://x.com/docsgptai"><img src="https://img.shields.io/twitter/follow/docsgptai" alt="Follow on X"></a>
 </p>
@@ -43,11 +44,17 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="DocsGPT in 30 seconds: uploading documents, syncing GitHub, answers with sources, deep research, visual workflows, tools, the chat widget, the OpenAI-compatible API, the MCP server and self-hosting with docsgpt up" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="DocsGPT overview: answers with citations, knowledge, agents, visual workflows, tools and connectors, observability">
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026:** T-shirts for meaningful contributions, all October. See [HACKTOBERFEST.md](HACKTOBERFEST.md).
+
+<p align="center">
+  <sub>Supported by</sub><br>
+  <a href="https://get.neon.com/docsgpt"><picture><source media="(prefers-color-scheme: dark)" srcset="https://neon.com/brand/neon-logo-dark-color.svg"><img height="32" alt="Neon" src="https://neon.com/brand/neon-logo-light-color.svg" /></picture></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Vercel OSS Program" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
 
 ## Why DocsGPT
 
@@ -75,6 +82,8 @@ Just want to try it? Use [DocsGPT Cloud](https://app.docsgpt.cloud/).
 - 🧠 **Any model:** OpenAI, Anthropic, Google, Groq, OpenRouter, or local models through Ollama, vLLM and other OpenAI-compatible servers.
 - 🛡️ **Guardrails:** flag, redact or block PII, secrets, prompt injection and ungrounded answers.
 - ⏰ **Schedules and webhooks:** run agents on a timer or from any system that can send an HTTP request.
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
@@ -189,16 +198,3 @@ Project structure:
 ## License
 
 DocsGPT is [MIT licensed](LICENSE).
-
-## Supported by
-
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>

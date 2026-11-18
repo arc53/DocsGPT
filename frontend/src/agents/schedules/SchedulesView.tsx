@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 
-import userService from '../../api/services/userService';
 import { Plus } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +25,8 @@ import {
 } from '../../utils/dateTimeUtils';
 import AgentPageToolbar, { LastUsedMeta } from '../components/AgentPageToolbar';
 import SectionShell from '../../navigation/SectionShell';
-import type { Agent } from '../types';
+import { ACTIVITY_SCHEDULES_PATH } from '../../activity/paths';
+import { isPausedFor } from '../../payer/types';
 import type {
   Schedule,
   ScheduleCreatePayload,
@@ -36,17 +36,15 @@ import type {
 import RunDetailDrawer from './RunDetailDrawer';
 import ScheduleFormModal from './ScheduleFormModal';
 import ScheduleRow from './ScheduleRow';
-import {
-  approvalGatedTools,
-  type AgentToolSummary,
-  type ApprovalToolInfo,
-} from './toolApproval';
+import useScheduleAgentContext from './useScheduleAgentContext';
+import useScheduleTakeOver from './useScheduleTakeOver';
 import {
   createSchedule,
   deleteSchedule,
   loadSchedulesForAgent,
   runScheduleNow,
   selectSchedulesForAgent,
+  selectSchedulesLoadError,
   setSchedulePaused,
   updateSchedule,
 } from './schedulesSlice';
@@ -65,8 +63,8 @@ export default function SchedulesView() {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
 
-  const [agent, setAgent] = useState<Agent | undefined>();
-  const [loadingAgent, setLoadingAgent] = useState<boolean>(true);
+  const { agent, loadingAgent, approvalTools } =
+    useScheduleAgentContext(agentId);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editing, setEditing] = useState<Schedule | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -80,6 +78,10 @@ export default function SchedulesView() {
 
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
+  );
+  const takeOver = useScheduleTakeOver();
+  const loadError = useSelector((state: RootState) =>
+    selectSchedulesLoadError(state, agentId ?? ''),
   );
   // undefined while loading, null when the stats request failed.
   const [stats, setStats] = useState<ScheduleStats | null | undefined>(
@@ -106,53 +108,12 @@ export default function SchedulesView() {
 
   useEffect(() => {
     if (!agentId) return;
-    const fetchAgent = async () => {
-      setLoadingAgent(true);
-      try {
-        const response = await userService.getAgent(agentId, token);
-        if (!response.ok) throw new Error('Failed to fetch agent');
-        const data = await response.json();
-        setAgent(data);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoadingAgent(false);
-      }
-    };
-    fetchAgent();
-  }, [agentId, token]);
-
-  useEffect(() => {
-    if (!agentId) return;
     dispatch(loadSchedulesForAgent({ agentId, token }));
   }, [dispatch, agentId, token]);
 
-  // The caller's tools with their actions, to tell which of the agent's
-  // tools need approval. A failed read lists every tool as needing it.
-  const [userTools, setUserTools] = useState<ApprovalToolInfo[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    userService
-      .getUserTools(token)
-      .then((response: Response) => (response.ok ? response.json() : null))
-      .then((data: { tools?: ApprovalToolInfo[] } | null) => {
-        if (!cancelled) setUserTools(data?.tools ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setUserTools([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
-
-  const approvalTools = useMemo(() => {
-    if (!agent) return [];
-    const details: AgentToolSummary[] = agent.tool_details?.length
-      ? agent.tool_details
-      : (agent.tools ?? []).map((id) => ({ id, name: id }));
-    return approvalGatedTools(details, userTools);
-  }, [agent, userTools]);
+  const retryLoad = () => {
+    if (agentId) dispatch(loadSchedulesForAgent({ agentId, token }));
+  };
 
   const recurring = useMemo(
     () => schedules.filter((s) => s.trigger_type === 'recurring'),
@@ -210,10 +171,18 @@ export default function SchedulesView() {
     // A refused save rejects to the modal, which keeps it open and shows why.
   };
 
-  const activeCount = schedules.filter((s) => s.status === 'active').length;
-  const pausedCount = schedules.filter((s) => s.status === 'paused').length;
-  const nextRunAt = schedules
-    .filter((s) => s.status === 'active' && s.next_run_at)
+  // A schedule paused for its payer reads Paused on its row: its runs are
+  // skipped, so it neither counts as active nor gives the next run.
+  const running = schedules.filter(
+    (s) => s.status === 'active' && !isPausedFor(s.paused_for),
+  );
+  const activeCount = running.length;
+  const pausedCount = schedules.filter(
+    (s) =>
+      s.status === 'paused' || (s.status === 'active' && !running.includes(s)),
+  ).length;
+  const nextRunAt = running
+    .filter((s) => s.next_run_at)
     .map((s) => s.next_run_at as string)
     .sort()[0];
   // A next run in the past means the scheduler hasn't picked it up yet.
@@ -224,10 +193,17 @@ export default function SchedulesView() {
   const latestFailure = stats?.latest_failure;
 
   const newScheduleButton = (
-    <Button type="button" size="field" shape="pill" onClick={openCreate}>
-      <Plus />
-      {t('agents.schedules.newRecurring')}
-    </Button>
+    <div className="flex flex-wrap gap-2">
+      <Button variant="outline" size="field" shape="pill" asChild>
+        <Link to={ACTIVITY_SCHEDULES_PATH}>
+          {t('agents.schedules.allSchedules')}
+        </Link>
+      </Button>
+      <Button type="button" size="field" shape="pill" onClick={openCreate}>
+        <Plus />
+        {t('agents.schedules.newRecurring')}
+      </Button>
+    </div>
   );
 
   const renderList = (list: Schedule[], emptyKey: string) =>
@@ -274,6 +250,7 @@ export default function SchedulesView() {
               }
               onDelete={requestDelete}
               onSelectRun={(run) => setActiveRun(run)}
+              {...takeOver.rowProps}
             />
           </li>
         ))}
@@ -351,24 +328,36 @@ export default function SchedulesView() {
                 }
               />
             </div>
-            <Tabs defaultValue="recurring">
-              <TabsList>
-                <TabsTrigger value="recurring">
-                  {t('agents.schedules.recurring')}
-                  <Badge variant="neutral">{recurring.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="once">
-                  {t('agents.schedules.oneTime')}
-                  <Badge variant="neutral">{oneTime.length}</Badge>
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="recurring" className="mt-4">
-                {renderList(recurring, 'agents.schedules.noRecurring')}
-              </TabsContent>
-              <TabsContent value="once" className="mt-4">
-                {renderList(oneTime, 'agents.schedules.noOneTime')}
-              </TabsContent>
-            </Tabs>
+            {loadError && (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={t('agents.schedules.loadFailed')}
+                onRetry={retryLoad}
+              />
+            )}
+            {(!loadError || schedules.length > 0) && (
+              <Tabs defaultValue="recurring">
+                <TabsList>
+                  <TabsTrigger value="recurring">
+                    {t('agents.schedules.recurring')}
+                    <Badge variant="neutral">{recurring.length}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="once">
+                    {t('agents.schedules.oneTime')}
+                    <Badge variant="neutral">{oneTime.length}</Badge>
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="recurring" className="mt-4">
+                  {renderList(recurring, 'agents.schedules.noRecurring')}
+                </TabsContent>
+                <TabsContent value="once" className="mt-4">
+                  {renderList(oneTime, 'agents.schedules.noOneTime')}
+                </TabsContent>
+              </Tabs>
+            )}
+            {takeOver.takeOverModal}
             <RunDetailDrawer
               run={activeRun}
               onClose={() => setActiveRun(null)}

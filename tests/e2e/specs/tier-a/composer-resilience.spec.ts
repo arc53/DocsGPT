@@ -81,6 +81,9 @@ test.describe("tier-a · composer resilience", () => {
       );
       await retryButton.click();
       const streamRes = await streamDone;
+      // The response resolves on its headers; the turn is saved before the
+      // stream's closing frames, so wait for the body to finish.
+      await streamRes.finished();
       expect(streamRes.status()).toBe(200);
 
       await expect(page.getByText("Something went wrong")).toBeHidden({
@@ -157,6 +160,9 @@ test.describe("tier-a · composer resilience", () => {
         { timeout: 60_000 },
       );
       const streamRes = await streamDone;
+      // The response resolves on its headers; the turn is saved before the
+      // stream's closing frames, so wait for the body to finish.
+      await streamRes.finished();
       expect(streamRes.status()).toBe(200);
 
       // The flushed payload carried exactly one attachment id.

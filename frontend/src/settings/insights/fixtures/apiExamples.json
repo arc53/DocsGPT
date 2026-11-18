@@ -1,0 +1,580 @@
+{
+  "gaps": {
+    "enabled": true,
+    "group_by": "topic",
+    "previous_labelled": 4,
+    "rows": [
+      {
+        "examples": [
+          {
+            "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
+            "message_id": "9a4d5bf9-0191-4e54-8de4-aa3f4704d0c1",
+            "p": 0.72,
+            "prompt": "that did not work at all!",
+            "timestamp": "2026-10-18T22:28:29.623784Z"
+          },
+          {
+            "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
+            "message_id": "d35dd0f9-f417-4f20-9457-9e7b0537df37",
+            "p": 0.72,
+            "prompt": "How do I install it?",
+            "timestamp": "2026-10-18T22:27:29.623784Z"
+          }
+        ],
+        "expected_gaps": 1.58,
+        "high": 1.0,
+        "key": "installation",
+        "low": 0.0,
+        "name": "installation",
+        "previous_expected": 0.0,
+        "rate": 0.72,
+        "source": null,
+        "turns": 2
+      }
+    ],
+    "success": true
+  },
+  "insights": {
+    "available": true,
+    "backfill_days": 7,
+    "coverage": {
+      "conversations": 2,
+      "failed_turns": 0,
+      "labelled_conversations": 2,
+      "labelled_replies": 2,
+      "labelled_turns": 4,
+      "replies": 2,
+      "turns": 4,
+      "unlabelled_older_turns": 0,
+      "unlabelled_recent_turns": 0
+    },
+    "enabled": true,
+    "labelling_from": "2026-10-12T21:00:00Z",
+    "language_warnings": [
+      "answer_status",
+      "gap_type",
+      "topic_effective"
+    ],
+    "languages": {
+      "en": 2,
+      "ru": 2
+    },
+    "one_pick": [
+      "auth",
+      "installation"
+    ],
+    "overlapping": [
+      {
+        "id": "a1b2c3d4",
+        "name": "Pricing question"
+      }
+    ],
+    "series": [
+      {
+        "bucket": "2026-10-18",
+        "labels": {
+          "answer_status": {
+            "n": 2,
+            "options": {
+              "asked a clarifying question": 0.0,
+              "declined, no information": 0.4,
+              "fully answered": 1.0,
+              "not a request": 0.4,
+              "partially answered": 0.2
+            }
+          },
+          "asks_human": {
+            "n": 1,
+            "options": {
+              "yes": 0.1
+            }
+          },
+          "frustrated": {
+            "n": 1,
+            "options": {
+              "yes": 0.8
+            }
+          },
+          "goal_met": {
+            "n": 1,
+            "options": {
+              "yes": 0.3
+            }
+          },
+          "reaction": {
+            "n": 1,
+            "options": {
+              "clarifies own question": 0.0,
+              "complaint": 0.0,
+              "correction or pushback": 0.6,
+              "follow-up": 0.4,
+              "new question": 0.0,
+              "other": 0.0,
+              "re-ask": 0.0,
+              "thanks or confirmation": 0.0
+            }
+          },
+          "request_type": {
+            "n": 2,
+            "options": {
+              "account or billing": 0.0,
+              "chit-chat": 0.0,
+              "comparison": 0.0,
+              "concept": 0.0,
+              "feature request": 0.0,
+              "how-to": 1.4,
+              "lookup": 0.0,
+              "other": 0.0,
+              "troubleshooting": 0.6
+            }
+          },
+          "sentiment": {
+            "n": 1,
+            "options": {
+              "negative": 0.7,
+              "neutral": 0.2,
+              "positive": 0.1
+            }
+          },
+          "topic_effective": {
+            "n": 2,
+            "options": {
+              "auth": 0.0,
+              "installation": 1.6,
+              "none of these": 0.4
+            }
+          }
+        }
+      },
+      {
+        "bucket": "2026-10-19",
+        "labels": {
+          "answer_status": {
+            "n": 0,
+            "options": {
+              "asked a clarifying question": 0.0,
+              "declined, no information": 0.0,
+              "fully answered": 0.0,
+              "not a request": 0.0,
+              "partially answered": 0.0
+            }
+          },
+          "asks_human": {
+            "n": 0,
+            "options": {
+              "yes": 0.0
+            }
+          },
+          "frustrated": {
+            "n": 0,
+            "options": {
+              "yes": 0.0
+            }
+          },
+          "goal_met": {
+            "n": 0,
+            "options": {
+              "yes": 0.0
+            }
+          },
+          "reaction": {
+            "n": 0,
+            "options": {
+              "clarifies own question": 0.0,
+              "complaint": 0.0,
+              "correction or pushback": 0.0,
+              "follow-up": 0.0,
+              "new question": 0.0,
+              "other": 0.0,
+              "re-ask": 0.0,
+              "thanks or confirmation": 0.0
+            }
+          },
+          "request_type": {
+            "n": 0,
+            "options": {
+              "account or billing": 0.0,
+              "chit-chat": 0.0,
+              "comparison": 0.0,
+              "concept": 0.0,
+              "feature request": 0.0,
+              "how-to": 0.0,
+              "lookup": 0.0,
+              "other": 0.0,
+              "troubleshooting": 0.0
+            }
+          },
+          "sentiment": {
+            "n": 0,
+            "options": {
+              "negative": 0.0,
+              "neutral": 0.0,
+              "positive": 0.0
+            }
+          },
+          "topic_effective": {
+            "n": 0,
+            "options": {
+              "auth": 0.0,
+              "installation": 0.0,
+              "none of these": 0.0
+            }
+          }
+        }
+      }
+    ],
+    "success": true,
+    "totals": {
+      "answer_status": {
+        "n": 3,
+        "n_requests": 3.2,
+        "n_turns": 4,
+        "options": {
+          "asked a clarifying question": {
+            "expected": 0.0,
+            "high": 0.044,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "declined, no information": {
+            "expected": 0.8,
+            "high": 0.7684,
+            "low": 0.0,
+            "rate": 0.25
+          },
+          "fully answered": {
+            "expected": 2.0,
+            "high": 1.0,
+            "low": 0.0506,
+            "rate": 0.625
+          },
+          "not a request": {
+            "expected": 0.8,
+            "high": 0.636,
+            "low": 0.0,
+            "rate": 0.2
+          },
+          "partially answered": {
+            "expected": 0.4,
+            "high": 0.5314,
+            "low": 0.0,
+            "rate": 0.125
+          }
+        },
+        "tier": "dashboard"
+      },
+      "asks_human": {
+        "n": 2,
+        "options": {
+          "yes": {
+            "expected": 0.2,
+            "high": 0.5298,
+            "low": 0.0,
+            "rate": 0.1
+          }
+        },
+        "tier": "dashboard"
+      },
+      "frustrated": {
+        "n": 2,
+        "options": {
+          "yes": {
+            "expected": 1.6,
+            "high": 1.0,
+            "low": 0.2216,
+            "rate": 0.8
+          }
+        },
+        "tier": "dashboard"
+      },
+      "gap_type": {
+        "n": 4,
+        "options": {
+          "ambiguous question": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "answer missed": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "confidently ungrounded": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "docs missing": {
+            "expected": 2.28,
+            "high": 1.0,
+            "low": 0.0,
+            "rate": 0.57
+          },
+          "feature not supported": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "needs account data": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "none": {
+            "expected": 1.6,
+            "high": 1.0,
+            "low": 0.0,
+            "rate": 0.4
+          },
+          "not retrieved": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "other": {
+            "expected": 0.12,
+            "high": 0.3292,
+            "low": 0.0,
+            "rate": 0.03
+          },
+          "out of scope": {
+            "expected": 0.0,
+            "high": 0.132,
+            "low": 0.0,
+            "rate": 0.0
+          }
+        },
+        "tier": "estimated"
+      },
+      "goal_met": {
+        "n": 2,
+        "options": {
+          "yes": {
+            "expected": 0.6,
+            "high": 1.0,
+            "low": 0.0,
+            "rate": 0.3
+          }
+        },
+        "tier": "dashboard"
+      },
+      "reaction": {
+        "n": 2,
+        "options": {
+          "clarifies own question": {
+            "expected": 0.0,
+            "high": 0.1,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "complaint": {
+            "expected": 0.0,
+            "high": 0.1,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "correction or pushback": {
+            "expected": 1.2,
+            "high": 1.0,
+            "low": 0.0,
+            "rate": 0.6
+          },
+          "follow-up": {
+            "expected": 0.8,
+            "high": 1.0,
+            "low": 0.0,
+            "rate": 0.4
+          },
+          "new question": {
+            "expected": 0.0,
+            "high": 0.1,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "other": {
+            "expected": 0.0,
+            "high": 0.1,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "re-ask": {
+            "expected": 0.0,
+            "high": 0.1,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "thanks or confirmation": {
+            "expected": 0.0,
+            "high": 0.1,
+            "low": 0.0,
+            "rate": 0.0
+          }
+        },
+        "tier": "estimated"
+      },
+      "request_type": {
+        "n": 4,
+        "options": {
+          "account or billing": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "chit-chat": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "comparison": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "concept": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "feature request": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "how-to": {
+            "expected": 2.8,
+            "high": 1.0,
+            "low": 0.0969,
+            "rate": 0.7
+          },
+          "lookup": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "other": {
+            "expected": 0.0,
+            "high": 0.154,
+            "low": 0.0,
+            "rate": 0.0
+          },
+          "troubleshooting": {
+            "expected": 1.2,
+            "high": 0.9031,
+            "low": 0.0,
+            "rate": 0.3
+          }
+        },
+        "tier": "estimated"
+      },
+      "sentiment": {
+        "n": 2,
+        "options": {
+          "negative": {
+            "expected": 1.4,
+            "high": 1.0,
+            "low": 0.0359,
+            "rate": 0.7
+          },
+          "neutral": {
+            "expected": 0.4,
+            "high": 0.7834,
+            "low": 0.0,
+            "rate": 0.2
+          },
+          "positive": {
+            "expected": 0.2,
+            "high": 0.5448,
+            "low": 0.0,
+            "rate": 0.1
+          }
+        },
+        "tier": "dashboard"
+      },
+      "tag:a1b2c3d4": {
+        "n": 2,
+        "options": {
+          "yes": {
+            "expected": 1.8,
+            "high": 1.0,
+            "low": 0.4622,
+            "rate": 0.9
+          }
+        },
+        "tier": "dashboard"
+      },
+      "topic_effective": {
+        "n": 4,
+        "options": {
+          "auth": {
+            "expected": 1.4,
+            "high": 0.9194,
+            "low": 0.0,
+            "rate": 0.35
+          },
+          "installation": {
+            "expected": 2.2,
+            "high": 1.0,
+            "low": 0.0,
+            "rate": 0.55
+          },
+          "none of these": {
+            "expected": 0.4,
+            "high": 0.496,
+            "low": 0.0,
+            "rate": 0.1
+          }
+        },
+        "tier": "experimental"
+      }
+    }
+  },
+  "logs": {
+    "has_more": false,
+    "logs": [
+      {
+        "action": "stream_answer",
+        "agent_id": "83d73e9c-f280-4933-b342-bdee1faa1f71",
+        "attachments": null,
+        "conversation_id": "a16e1e68-3cce-49a9-b05c-f97807748cd3",
+        "error": null,
+        "event_type": "chat",
+        "id": "chat-2",
+        "labels": [
+          "docs_gap",
+          "negative_reaction",
+          "frustrated",
+          "tag:a1b2c3d4"
+        ],
+        "level": "info",
+        "message_id": "9a4d5bf9-0191-4e54-8de4-aa3f4704d0c1",
+        "passthrough": null,
+        "question": "q",
+        "request_id": null,
+        "response": null,
+        "sources": null,
+        "timestamp": "2026-10-19T01:27:29.623784+01:00",
+        "tool_calls": null,
+        "user": "owner"
+      }
+    ],
+    "page": 1,
+    "page_size": 10,
+    "success": true,
+    "tag_names": {
+      "a1b2c3d4": "Pricing question"
+    }
+  }
+}

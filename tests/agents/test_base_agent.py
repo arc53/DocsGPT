@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from unittest.mock import Mock, call, patch
 
 import pytest
+from docsgpt.agents.agentic_agent import AgenticAgent
 from docsgpt.agents.classic_agent import ClassicAgent
 from docsgpt.llm.anthropic import AnthropicLLM
 from docsgpt.llm.docsgpt_provider import DocsGPTAPILLM
@@ -216,6 +217,120 @@ class TestBaseAgentBuildMessages:
         agent = ClassicAgent(**agent_base_params)
 
         agent._build_messages("System prompt", "query")
+
+    def test_scheduled_run_is_told_it_is_the_scheduled_run(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # A reminder firing on time used to answer "I can't send scheduled
+        # reminders": nothing told the model the turn was the schedule itself.
+        agent_base_params["endpoint"] = "schedule"
+        agent = ClassicAgent(**agent_base_params)
+
+        messages = agent._build_messages("System prompt", "Remind me: call Anil at 5pm")
+
+        system = messages[0]["content"]
+        assert system.startswith("System prompt")
+        assert "scheduled run" in system
+        assert "firing now" in system
+        # The task itself is left as the user's message, untouched.
+        assert messages[-1]["content"] == "Remind me: call Anil at 5pm"
+
+    @pytest.mark.parametrize("agent_class", [ClassicAgent, AgenticAgent])
+    def test_a_scheduled_run_with_tools_reports_a_task_it_cannot_do_with_a_call(
+        self, agent_class, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Without a report the worker can't tell "no tool for this" from a
+        # result, so a schedule that can never work runs forever as a success.
+        # An agent with no tools of its own gets the call too.
+        agent_base_params["endpoint"] = "schedule"
+        agent = agent_class(**agent_base_params)
+        tools_dict = {}
+
+        agent._prepare_tools(tools_dict)
+        system = agent._build_messages("System prompt", "open the site and email me")[0]["content"]
+
+        assert "report_cannot_complete" in tools_dict
+        assert [t["function"]["name"] for t in agent.tools] == ["report_cannot_complete"]
+        assert "call report_cannot_complete" in system
+        assert "CANNOT_COMPLETE:" not in system
+
+    def test_a_model_without_tool_calling_opens_its_answer_with_the_marker(
+        self, agent_base_params, mock_llm, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["endpoint"] = "schedule"
+        agent = ClassicAgent(**agent_base_params)
+        agent.llm._supports_tools = False
+        tools_dict = {}
+
+        agent._prepare_tools(tools_dict)
+        system = agent._build_messages("System prompt", "open the site")[0]["content"]
+
+        assert tools_dict == {}
+        assert "begin your answer with CANNOT_COMPLETE:" in system
+
+    def test_a_json_answer_with_no_other_tools_gets_neither(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # Some providers refuse tools beside a response schema, and a JSON
+        # answer can't open with a marker.
+        agent_base_params["endpoint"] = "schedule"
+        agent_base_params["json_schema"] = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+        agent = ClassicAgent(**agent_base_params)
+        tools_dict = {}
+
+        agent._prepare_tools(tools_dict)
+        system = agent._build_messages("System prompt", "check the site")[0]["content"]
+
+        assert tools_dict == {}
+        assert "report_cannot_complete" not in system
+        assert "CANNOT_COMPLETE:" not in system
+        assert "This turn is a scheduled run" in system
+
+    def test_a_json_answer_beside_other_tools_gets_the_call(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        agent_base_params["endpoint"] = "schedule"
+        agent_base_params["json_schema"] = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+        agent = ClassicAgent(**agent_base_params)
+        tools_dict = {
+            "1": {
+                "name": "custom_tool",
+                "actions": [{"name": "fetch", "description": "Fetch", "active": True, "parameters": {"properties": {}}}],
+            }
+        }
+
+        agent._prepare_tools(tools_dict)
+
+        assert "report_cannot_complete" in tools_dict
+
+    def test_only_a_scheduled_run_gets_the_call(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        for endpoint in ("stream", "webhook", "headless", "continuation"):
+            agent_base_params["endpoint"] = endpoint
+            agent = ClassicAgent(**agent_base_params)
+            tools_dict = {}
+            agent._prepare_tools(tools_dict)
+            assert tools_dict == {}
+
+    def test_scheduled_run_note_needs_no_system_prompt(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        # A workflow agent node may have no system prompt of its own.
+        agent_base_params["endpoint"] = "schedule"
+        agent = ClassicAgent(**agent_base_params)
+
+        system = agent._build_messages("", "check the chart")[0]["content"]
+
+        assert system.lstrip().startswith("This turn is a scheduled run")
+
+    def test_other_runs_get_no_scheduled_run_note(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        for endpoint in ("stream", "webhook", "headless"):
+            agent_base_params["endpoint"] = endpoint
+            agent = ClassicAgent(**agent_base_params)
+            assert agent._build_messages("System prompt", "q")[0]["content"] == "System prompt"
 
 
 @pytest.mark.unit
@@ -1598,6 +1713,118 @@ class TestBaseAgentDocumentBudgetOrdering:
         with pytest.raises(ContextOverflowError) as info:
             agent._build_messages("short system", "please explain this in detail " * 900)
         assert info.value.stage == "build"
+
+
+def _scored(name, relevance=None, words=5):
+    doc = {"title": f"{name}.md", "source": f"{name}.md", "filename": f"{name}.md", "text": f"{name} " * words}
+    if relevance is not None:
+        doc["relevance"] = relevance
+    return doc
+
+
+@pytest.mark.unit
+class TestDropLeastRelevant:
+    """The prompt budget sheds the least relevant document first when the model scored them all."""
+
+    def test_all_scored_drops_the_lowest_and_keeps_the_order(self):
+        from docsgpt.agents.base import drop_least_relevant
+
+        docs = [_scored("a", 0.9), _scored("b", 0.1), _scored("c", 0.5)]
+        assert [d["title"] for d in drop_least_relevant(docs)] == ["a.md", "c.md"]
+        assert len(docs) == 3, "the input list is not changed"
+
+    def test_a_tie_drops_the_later_one(self):
+        from docsgpt.agents.base import drop_least_relevant
+
+        docs = [_scored("a", 0.2), _scored("b", 0.9), _scored("c", 0.2)]
+        assert [d["title"] for d in drop_least_relevant(docs)] == ["a.md", "b.md"]
+
+    @pytest.mark.parametrize("relevance", [[0.9, None, 0.1], [None, None, None], [0.9, True, 0.1], [0.9, "0.1", 0.5]])
+    def test_partly_scored_drops_the_tail(self, relevance):
+        from docsgpt.agents.base import drop_least_relevant
+
+        docs = [_scored(name, p) for name, p in zip("abc", relevance)]
+        assert drop_least_relevant(docs) == docs[:-1]
+
+    def test_empty_stays_empty(self):
+        from docsgpt.agents.base import drop_least_relevant
+
+        assert drop_least_relevant([]) == []
+
+
+@pytest.mark.unit
+class TestRelevanceShedding:
+    """A middle drop keeps the prompt's indices, the citation registry and the sources in one numbering."""
+
+    @staticmethod
+    def _agent(params, monkeypatch, docs, limit=1500):
+        params["retrieved_docs"] = docs
+        agent = ClassicAgent(**params)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_token_limit", lambda *a, **k: limit)
+        return agent
+
+    def test_the_least_relevant_document_goes_first(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        docs = [_scored("a", 0.9), _scored("big", 0.05, words=1200), _scored("c", 0.6)]
+        agent = self._agent(agent_base_params, monkeypatch, docs)
+        user = agent._build_messages("short system", "Q?")[-1]["content"]
+
+        assert [d["title"] for d in agent.retrieved_docs] == ["a.md", "c.md"]
+        assert '<document index="1">\n<source>a.md</source>' in user
+        assert '<document index="2">\n<source>c.md</source>' in user
+        assert "big.md" not in user and 'index="3"' not in user
+
+    def test_citations_and_sources_follow_the_documents_the_model_saw(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        from docsgpt.agents.citations import register_citation
+
+        docs = [_scored("a", 0.9), _scored("big", 0.05, words=1200), _scored("c", 0.6)]
+        agent = self._agent(agent_base_params, monkeypatch, docs)
+        agent._build_messages("short system", "Q?")
+        agent._attach_citation_registry()
+        registry = agent.tool_executor.citation_registry
+        assert [d["title"] for d in registry] == ["a.md", "c.md"]
+
+        # A search-tool hit continues the numbering: [2] is still c, the new hit is [3].
+        assert register_citation(registry, _scored("c", 0.6)) == 2
+        assert register_citation(registry, _scored("hit", 0.7)) == 3
+        agent._collect_internal_sources()
+
+        # The ``sources`` event lists ``retrieved_docs``: the n-th source is the n-th document.
+        assert [d["title"] for d in agent.retrieved_docs] == ["a.md", "c.md", "hit.md"]
+
+    def test_unscored_documents_shed_from_the_tail_as_before(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        docs = [_scored("a"), _scored("big", words=1200), _scored("c")]
+        agent = self._agent(agent_base_params, monkeypatch, [dict(d) for d in docs])
+        agent._build_messages("short system", "Q?")
+
+        # Tail first: c goes, then big, exactly as ``retrieved_docs[:-1]`` did.
+        assert agent.retrieved_docs == docs[:1]
+
+    def test_the_attachment_reservation_still_counts(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        from docsgpt.agents.context_overflow import turn_message_budget
+        from docsgpt.utils import num_tokens_from_string
+
+        docs = [_scored("a", 0.9), _scored("b", 0.1, words=40), _scored("c", 0.6, words=40)]
+        agent = self._agent(agent_base_params, monkeypatch, docs)
+        full = num_tokens_from_string(agent._compose_user_turn(agent._build_document_block(), "Q?"))
+        agent._build_messages("short system", "Q?")
+        assert len(agent.retrieved_docs) == 3, "everything fits without a reservation"
+
+        # Files hold one token more than the documents leave: the least relevant one makes room.
+        reserve = turn_message_budget(1500, num_tokens_from_string("short system")) - full + 1
+        agent = self._agent(agent_base_params, monkeypatch, [dict(d) for d in docs])
+        monkeypatch.setattr(agent, "_plan_attachments", lambda **_: SimpleNamespace(reserved_tokens=reserve))
+        agent._build_messages("short system", "Q?")
+        assert [d["title"] for d in agent.retrieved_docs] == ["a.md", "c.md"]
 
 
 # ---------------------------------------------------------------------------

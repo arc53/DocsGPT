@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import en from '../locale/en.json';
 import { AnswerSegment } from './answerSegments';
 import AnswerFlow from './AnswerFlow';
+import { ToolCallDetail } from './StepGroup';
 import { ToolCallsType } from './types';
 
 const testI18n = i18n.createInstance();
@@ -181,6 +182,49 @@ describe('AnswerFlow', () => {
   });
 });
 
+describe('calls that never ran', () => {
+  const detail = (toolCall: ToolCallsType): string =>
+    renderToStaticMarkup(
+      <I18nextProvider i18n={testI18n}>
+        <ToolCallDetail toolCall={toolCall} />
+      </I18nextProvider>,
+    );
+
+  it('marks a call the user moved past as not run, not as ran', () => {
+    const html = render({
+      toolCalls: [search({ status: 'denied', not_run: 'moved_on' })],
+      segments: [{ kind: 'tool', call_id: 'c1' }],
+    });
+    expect(html).not.toContain('APPROVAL_BAR');
+    expect(html).toContain('not run');
+  });
+
+  it('says why it never ran', () => {
+    expect(detail(search({ status: 'denied', not_run: 'moved_on' }))).toContain(
+      'Not run: the conversation moved on before this was approved.',
+    );
+    expect(detail(search({ status: 'denied', not_run: 'expired' }))).toContain(
+      'Not run: the approval request expired.',
+    );
+    expect(detail(search({ status: 'denied' }))).toContain('Denied by user');
+  });
+
+  it('shows a refused call as failed with the reason, after a reload too', () => {
+    const refused = search({
+      status: 'error',
+      error: 'memory never receives secrets.',
+      result: 'Tool denied: memory never receives secrets.' as never,
+    });
+    expect(
+      render({
+        toolCalls: [refused],
+        segments: [{ kind: 'tool', call_id: 'c1' }],
+      }),
+    ).toContain('failed');
+    expect(detail(refused)).toContain('memory never receives secrets.');
+  });
+});
+
 describe('AnswerFlow activity indicator', () => {
   const thoughtThenCall: AnswerSegment[] = [
     { kind: 'thought', text: 'reasoning here' },
@@ -337,5 +381,51 @@ describe('AnswerFlow step groups', () => {
       segments: [{ kind: 'tool', call_id: 'b' }],
     });
     expect(html).toContain('failed');
+  });
+});
+
+describe('AnswerFlow, clarifying questions', () => {
+  const ask = (overrides: Partial<ToolCallsType> = {}): ToolCallsType => ({
+    tool_name: 'ask_user',
+    action_name: 'ask_user',
+    call_id: 'ask-1',
+    arguments: {},
+    status: 'awaiting_answer',
+    message: 'Two things change what goes in it:',
+    questions: [
+      {
+        id: 'q1',
+        text: 'Which quarter?',
+        note: null,
+        multi: false,
+        options: [
+          { id: 'a', label: 'Q3 2026' },
+          { id: 'b', label: 'Q4 2026' },
+        ],
+      },
+    ],
+    ...overrides,
+  });
+
+  it('draws the paused call as its question block, not a step row', () => {
+    const html = render({
+      toolCalls: [ask()],
+      segments: [{ kind: 'tool', call_id: 'ask-1' }],
+    });
+    expect(html).toContain('data-slot="question-block"');
+    expect(html).toContain('Two things change what goes in it:');
+    expect(html).toContain('Which quarter?');
+    expect(html).not.toContain('aria-expanded');
+  });
+
+  it('hides a question round the server refused', () => {
+    const html = render({
+      toolCalls: [ask({ status: 'error', error_type: 'questions_not_asked' })],
+      segments: [{ kind: 'tool', call_id: 'ask-1' }],
+      message: 'Here it is.',
+    });
+    expect(html).not.toContain('question-block');
+    expect(html).not.toContain('Ask');
+    expect(html).toContain('Here it is.');
   });
 });

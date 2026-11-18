@@ -56,13 +56,13 @@ class GuardrailEventsRepository:
             INSERT INTO guardrail_events
                 (user_id, api_key, agent_id, message_id, request_id, stage,
                  check_name, detector_type, action, outcome, category, score,
-                 match_count, matched_value, detail, policy_snapshot)
+                 match_count, matched_value, detail, policy_snapshot, item_ref)
             VALUES
                 (:user_id, :api_key, CAST(:agent_id AS uuid),
                  CAST(:message_id AS uuid), :request_id, :stage,
                  :check_name, :detector_type, :action, :outcome, :category,
                  :score, :match_count, :matched_value, :detail,
-                 CAST(:policy_snapshot AS jsonb))
+                 CAST(:policy_snapshot AS jsonb), :item_ref)
             """
         )
         payload = [
@@ -87,6 +87,7 @@ class GuardrailEventsRepository:
                 "policy_snapshot": _dump_jsonb(row.get("policy_snapshot"))
                 if row.get("policy_snapshot") is not None
                 else None,
+                "item_ref": row.get("item_ref"),
             }
             for row in rows
         ]
@@ -99,7 +100,7 @@ class GuardrailEventsRepository:
     _PUBLIC_COLUMNS = (
         "id, agent_id, message_id, request_id, stage, check_name, "
         "detector_type, action, outcome, category, score, match_count, "
-        "detail, created_at"
+        "detail, item_ref, created_at"
     )
 
     def list_for_agent(

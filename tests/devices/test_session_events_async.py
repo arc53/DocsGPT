@@ -74,7 +74,7 @@ def device(monkeypatch):
         def find_by_token_hash(self, token_hash):
             return row if token_hash == auth_module.hash_session_token(TOKEN) else None
 
-        def touch_last_seen(self, device_id):
+        def touch_last_seen(self, device_id, capabilities=None):
             touched.append(device_id)
 
     monkeypatch.setattr(auth_module, "DevicesRepository", _Repo)
@@ -250,6 +250,16 @@ class TestStream:
         b, _ = broker
         r = _open(_ticket(b))
         assert ": heartbeat\n\n" in r.text
+
+    def test_a_cancel_goes_out_as_its_own_event(self, device, broker):
+        # An old CLI ignores an event name it doesn't know; as an ``invocation`` it would run as a command.
+        b, fake = broker
+        ticket = _ticket(b)
+        b.submit_ack("inv_1", "accepted")
+        assert b.request_cancel("inv_1") == "sent"
+        records = _records(_open(ticket).text)
+        assert [rec["event"] for rec in records] == ["invocation", "cancel", "session_end"]
+        assert records[1]["data"] == {"type": "cancel", "action": "cancel", "invocation_id": "inv_1"}
 
     def test_reaped_invocation_is_not_delivered(self, device, broker):
         b, fake = broker

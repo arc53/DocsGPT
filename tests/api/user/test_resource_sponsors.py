@@ -275,6 +275,8 @@ class TestActiveSponsor:
     def test_sponsor_losing_the_resource_stops(self, pg_conn):
         agent_id, team_id = _agent(pg_conn)
         tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
+        # A grant works only while its owner is in the team.
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
         TeamResourceGrantsRepository(pg_conn).grant(
             team_id, "tool", tool, OTHER, OTHER, access_level="editor", target_user_id=EDITOR
         )
@@ -417,6 +419,8 @@ class TestRunTime:
         shared = str(SourcesRepository(pg_conn).create("shared-src", user_id=OTHER)["id"])
         if not TeamMembersRepository(pg_conn).is_member(OWNER, team_id):
             TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        # A grant works only while its owner is in the team.
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
         TeamResourceGrantsRepository(pg_conn).grant(team_id, "source", shared, OTHER, OTHER)
         AgentsRepository(pg_conn).update_by_id(str(agent["id"]), {"extra_source_ids": [shared]})
 
@@ -434,6 +438,7 @@ class TestRunTime:
         agent, team_id, _, _, source = self._sponsored_agent(app, pg_conn)
         shared = str(SourcesRepository(pg_conn).create("shared-src", user_id=OTHER)["id"])
         TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)  # a grant needs its owner in the team
         TeamResourceGrantsRepository(pg_conn).grant(team_id, "source", shared, OTHER, OTHER)
         foreign = str(SourcesRepository(pg_conn).create("foreign-src", user_id="sp-stranger")["id"])
         AgentsRepository(pg_conn).update_by_id(str(agent["id"]), {"extra_source_ids": [shared, foreign]})
@@ -606,6 +611,125 @@ class TestWorkflows:
         assert _status(self._put(app, pg_conn, wid, EDITOR, _wf_body())) == 200
         assert WorkflowsRepository(pg_conn).get_by_id(wid)["resource_sponsors"] == {}
 
+    @staticmethod
+    def _model_body(model_id, nested=False):
+        body = _wf_body()
+        config = {"agent_type": "classic", "system_prompt": "s", "model_id": model_id}
+        body["nodes"][1]["data"] = {"config": config} if nested else config
+        return body
+
+    @staticmethod
+    def _custom_models(monkeypatch, layers):
+        from docsgpt.core.model_registry import ModelRegistry
+
+        monkeypatch.setattr(ModelRegistry, "_user_models_for", lambda self, user_id: layers.get(user_id, {}))
+
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_editor_cannot_set_their_own_custom_model_on_a_node(self, app, pg_conn, monkeypatch, nested):
+        # A node's model resolves in the owner's account, where the editor's
+        # custom model doesn't exist: the node would fail for everyone.
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {EDITOR: {"editors-model": object()}})
+
+        resp = self._put(app, pg_conn, wid, EDITOR, self._model_body("editors-model", nested))
+
+        assert _status(resp) == 400
+        assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
+
+    def test_editor_cannot_set_their_own_custom_model_through_an_inline_graph(self, app, pg_conn, monkeypatch):
+        wf = WorkflowsRepository(pg_conn).create(OWNER, "wf")
+        agent_id, _ = _agent(pg_conn, agent_type="workflow", workflow_id=str(wf["id"]))
+        self._custom_models(monkeypatch, {EDITOR: {"editors-model": object()}})
+        body = self._model_body("editors-model")
+        graph = {"nodes": body["nodes"], "edges": body["edges"]}
+
+        resp = _put(app, pg_conn, agent_id, EDITOR, {"workflow_graph": graph})
+
+        assert _status(resp) == 400
+        assert any("which the workflow's owner doesn't have" in e for e in resp.get_json()["errors"])
+
+    def test_editor_can_set_the_owners_custom_model_on_a_node(self, app, pg_conn, monkeypatch):
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {OWNER: {"owners-model": object()}})
+
+        resp = self._put(app, pg_conn, wid, EDITOR, self._model_body("owners-model"))
+
+        assert _status(resp) == 200, resp.get_json()
+        nodes = self._get(app, pg_conn, wid, OWNER).get_json()["data"]["nodes"]
+        assert next(n for n in nodes if n["id"] == "a1")["data"]["model_id"] == "owners-model"
+
+    @staticmethod
+    def _byom(model_id, enabled=True):
+        from docsgpt.core.model_settings import AvailableModel, ModelProvider
+
+        return AvailableModel(
+            id=model_id, provider=ModelProvider.OPENAI_COMPATIBLE, display_name=model_id,
+            enabled=enabled, base_url="https://llm.internal.example/v1", source="user",
+        )
+
+    def _get(self, app, pg_conn, wid, user):
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        return _call(app, pg_conn, WorkflowDetail, "get", f"/api/workflows/{wid}", user, args=(wid,))
+
+    def _get_as_token(self, app, pg_conn, wid, user, scopes):
+        from flask import request
+
+        from docsgpt.api.pat.tokens import AUTH_METHOD_PAT
+        from docsgpt.api.user.workflows.routes import WorkflowDetail
+
+        with _patch_db(pg_conn), app.test_request_context(f"/api/workflows/{wid}", method="GET"):
+            request.decoded_token = {"sub": user, "auth_method": AUTH_METHOD_PAT, "scopes": scopes}
+            return WorkflowDetail().get(wid)
+
+    def test_editor_reads_the_owners_custom_models_for_the_node_picker(self, app, pg_conn, monkeypatch):
+        # The picker can only offer what the save accepts: the owner's models, not the editor's.
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {
+            OWNER: {"owners-model": self._byom("owners-model"), "off": self._byom("off", enabled=False)},
+            EDITOR: {"editors-model": self._byom("editors-model")},
+        })
+
+        resp = self._get(app, pg_conn, wid, EDITOR)
+
+        assert _status(resp) == 200, resp.get_json()
+        models = resp.get_json()["data"]["owner_models"]
+        assert [m["id"] for m in models] == ["owners-model"]
+        # Only what the picker shows and checks: the owner's endpoint and settings stay private.
+        assert models == [{
+            "id": "owners-model",
+            "display_name": "owners-model",
+            "provider": "openai_compatible",
+            "source": "user",
+            "supports_structured_output": True,
+            "context_window": 128000,
+        }]
+
+    @pytest.mark.parametrize("scopes,listed", [
+        (["workflows:read"], False),
+        (["workflows:read", "chat:run"], False),
+        (["workflows:read", "models:read"], True),
+    ])
+    def test_a_token_reads_the_owners_custom_models_only_with_models_read(
+        self, app, pg_conn, monkeypatch, scopes, listed
+    ):
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {OWNER: {"owners-model": self._byom("owners-model")}})
+
+        resp = self._get_as_token(app, pg_conn, wid, EDITOR, scopes)
+
+        assert _status(resp) == 200, resp.get_json()
+        assert ("owner_models" in resp.get_json()["data"]) is listed
+
+    def test_owner_reads_no_owner_models(self, app, pg_conn, monkeypatch):
+        wid, _ = self._setup(pg_conn)
+        self._custom_models(monkeypatch, {OWNER: {"owners-model": self._byom("owners-model")}})
+
+        resp = self._get(app, pg_conn, wid, OWNER)
+
+        assert _status(resp) == 200, resp.get_json()
+        assert "owner_models" not in resp.get_json()["data"]
+
     def test_engine_resolves_sponsored_node_refs(self, app, pg_conn):
         from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
 
@@ -621,14 +745,23 @@ class TestWorkflows:
             user=OWNER,
             decoded_token={"sub": OWNER},
         )
+        def _node_tools():
+            from docsgpt.agents.tool_executor import ToolExecutor
+
+            executor = ToolExecutor(user=OWNER)
+            executor.allowed_tool_ids = [tool]
+            executor.tool_owner = OWNER
+            executor.tool_holder = engine.agent.workflow_row
+            return {tid: row["user_id"] for tid, row in executor.get_tools().items()}
+
         with _patch_db(pg_conn):
-            assert engine._node_tool_principals([tool]) == {tool: EDITOR}
+            assert _node_tools() == {tool: EDITOR}
             assert engine._authorized_node_sources([source]) == [source]
             agent_id = str(pg_conn.exec_driver_sql(
                 f"SELECT id FROM agents WHERE workflow_id = '{wid}'"
             ).scalar())
             TeamResourceGrantsRepository(pg_conn).revoke(team_id, "agent", agent_id, target_user_id=EDITOR)
-            assert engine._node_tool_principals([tool]) == {}
+            assert _node_tools() == {}
             assert engine._authorized_node_sources([source]) == []
 
     def _node_executor(self, monkeypatch, pg_conn, wid, caller, tools):

@@ -71,5 +71,9 @@ describe('TraceSheet', () => {
     expect(getTraces).toHaveBeenCalledTimes(2);
     expect(document.body.textContent).toContain('settings.logs.trace.empty');
     expect(document.body.querySelector('[data-tone="destructive"]')).toBeNull();
+    // The empty case is the same EmptyState as the failure, not a bare line.
+    expect(
+      document.body.querySelector('[data-slot="empty-state"]')?.textContent,
+    ).toBe('settings.logs.trace.empty');
   });
 });

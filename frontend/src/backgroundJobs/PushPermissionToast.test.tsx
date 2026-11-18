@@ -66,11 +66,10 @@ describe('PushPermissionToast', () => {
       );
     });
   };
-  // The prompt renders into document.body, outside the bottom toast stack.
   const prompt = () =>
-    document.querySelector('[data-testid="push-permission-prompt"]');
+    container.querySelector('[data-testid="push-permission-prompt"]');
   const button = (text: string) =>
-    Array.from(document.querySelectorAll('button')).find(
+    Array.from(container.querySelectorAll('button')).find(
       (b) => b.textContent === text,
     ) as HTMLButtonElement;
 
@@ -86,20 +85,14 @@ describe('PushPermissionToast', () => {
     expect(push.enablePush).not.toHaveBeenCalled();
   });
 
-  it('sits at the top right, out of the bottom stack over the composer', async () => {
+  it('renders its card in place, in the shared bottom-right toast stack', async () => {
     const store = makeStore();
     store.dispatch(requestPushPrompt());
-    const viewport = document.createElement('div');
-    viewport.setAttribute('data-slot', 'toast-viewport');
-    container.appendChild(viewport);
     await render(store);
-    const anchor = document.querySelector(
-      '[data-testid="push-permission-anchor"]',
-    );
-    expect(anchor?.parentElement).toBe(document.body);
-    expect(anchor?.className).toContain('top-20');
-    expect(anchor?.className).not.toContain('bottom-');
-    expect(prompt()?.closest('[data-slot="toast-viewport"]')).toBeNull();
+    expect(container.contains(prompt())).toBe(true);
+    expect(
+      document.querySelector('[data-testid="push-permission-anchor"]'),
+    ).toBeNull();
   });
 
   it('stays hidden when the server has no push', async () => {

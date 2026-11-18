@@ -762,6 +762,58 @@ def test_decorator_omits_cache_bins_when_provider_reports_none(monkeypatch):
     assert llm.emitted[0]["cache_write_tokens"] is None
 
 
+def _run_twice(decorator, llm):
+    """Two calls through ``decorator``, each with the provider usage reported afresh."""
+    if decorator is gen_token_usage:
+
+        @gen_token_usage
+        def wrapped(self, model, messages, stream, tools, **kwargs):
+            _ = (model, messages, stream, tools, kwargs)
+            return "ok"
+
+    else:
+
+        @stream_token_usage
+        def wrapped(self, model, messages, stream, tools, **kwargs):
+            _ = (model, messages, stream, tools, kwargs)
+            yield "ok"
+
+    for _ in range(2):
+        llm._last_usage_claimed = False
+        result = wrapped(llm, "m", [{"role": "user", "content": "hi"}], decorator is stream_token_usage, None)
+        if decorator is stream_token_usage:
+            list(result)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("decorator", [gen_token_usage, stream_token_usage])
+def test_the_running_total_adds_up_the_cache_bins(monkeypatch, decorator):
+    _install_fake_token_repo(monkeypatch)
+    llm = _ReportingLLM({"cached_tokens": 800, "cache_write_tokens": 100})
+    llm.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    _run_twice(decorator, llm)
+
+    assert llm.token_usage == {
+        "prompt_tokens": 2000,
+        "generated_tokens": 20,
+        "cached_tokens": 1600,
+        "cache_write_tokens": 200,
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("decorator", [gen_token_usage, stream_token_usage])
+def test_the_running_total_has_no_cache_bins_the_provider_never_reported(monkeypatch, decorator):
+    _install_fake_token_repo(monkeypatch)
+    llm = _ReportingLLM(None)
+    llm.token_usage = {"prompt_tokens": 0, "generated_tokens": 0}
+
+    _run_twice(decorator, llm)
+
+    assert llm.token_usage == {"prompt_tokens": 2000, "generated_tokens": 20}
+
+
 def _persist_with_cost(monkeypatch, llm, cost_fn):
     from docsgpt.usage import _persist_call_usage
 

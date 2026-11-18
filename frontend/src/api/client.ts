@@ -1,8 +1,15 @@
 import { envVar } from '@/env';
+import {
+  reportWorkspaceRefusal,
+  requestWorkspace,
+  WORKSPACE_HEADER,
+} from '../workspace/requestWorkspace';
 import { withThrottle, type FetchLike } from './throttle';
 
 export const baseURL = envVar('VITE_API_HOST') || 'https://docsapi.arc53.com';
 
+// The workspace goes on every request, Personal included, before the caller's
+// own headers so a call can name another one.
 const getHeaders = (
   token: string | null,
   customHeaders = {},
@@ -10,6 +17,7 @@ const getHeaders = (
 ): HeadersInit => {
   const headers: HeadersInit = {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    [WORKSPACE_HEADER]: requestWorkspace(),
     ...customHeaders,
   };
 
@@ -20,9 +28,34 @@ const getHeaders = (
   return headers;
 };
 
+/** The workspace a request was sent for, read from its headers. */
+const sentWorkspace = (init?: RequestInit): string => {
+  const headers = init?.headers as Record<string, string> | undefined;
+  return headers?.[WORKSPACE_HEADER] ?? '';
+};
+
+/**
+ * Reads a refusal's code from a copy of the body, without holding up the
+ * caller, which still reads the response itself.
+ */
+const watchWorkspaceRefusal = (response: Response, workspace: string) => {
+  if (response?.status !== 404 && response?.status !== 403) return;
+  if (typeof response.clone !== 'function') return;
+  response
+    .clone()
+    .json()
+    .then((body) =>
+      reportWorkspaceRefusal(response.status, body?.error, workspace),
+    )
+    .catch(() => undefined);
+};
+
 const createClient = (transport: FetchLike) => {
-  const request = (url: string, init: RequestInit): Promise<Response> =>
-    transport(`${baseURL}${url}`, init);
+  const request = async (url: string, init: RequestInit): Promise<Response> => {
+    const response = await transport(`${baseURL}${url}`, init);
+    watchWorkspaceRefusal(response, sentWorkspace(init));
+    return response;
+  };
 
   return {
     get: (
@@ -128,8 +161,13 @@ const apiClient = createClient((url, init) => fetch(url, init));
 // Throttled client for endpoints that fan out, are polled, or are commonly
 // requested concurrently from multiple components. Shares a single concurrency
 // budget and de-duplicates identical in-flight GETs.
+// The workspace is part of the dedupe key: a Personal and a team request for
+// the same URL are different lists.
 export const throttledApiClient = createClient(
-  withThrottle((url, init) => fetch(url, init), { debugLabel: 'api' }),
+  withThrottle((url, init) => fetch(url, init), {
+    debugLabel: 'api',
+    dedupeKey: (url, init) => `GET ${url} ${sentWorkspace(init)}`,
+  }),
 );
 
 if (import.meta.env.DEV && typeof window !== 'undefined') {

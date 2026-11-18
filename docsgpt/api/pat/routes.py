@@ -10,16 +10,19 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from sqlalchemy.exc import IntegrityError
 
+from docsgpt.api.pat.agent_tool import build_actions
 from docsgpt.api.pat.tokens import (
     FILTERABLE_FAMILIES,
     SCOPES,
     auth_type_supports_pats,
     generate_token,
+    hash_token,
     is_pat,
     normalize_resource_filter,
     normalize_scopes,
@@ -28,11 +31,13 @@ from docsgpt.api.pat.tokens import (
 )
 from docsgpt.api.user.authz import admin_required
 from docsgpt.core.settings import settings
+from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.personal_access_tokens import (
     PersonalAccessTokensRepository,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 pat_ns = Namespace("tokens", description="Personal access tokens", path="/api")
 
@@ -129,6 +134,9 @@ class PersonalAccessTokens(Resource):
             return _error("Authentication required", 401)
         if not auth_type_supports_pats():
             return _error("Personal access tokens are not available on this server", 403)
+        if is_principal_id(user_id):
+            # Auth already refuses such a session; a token would outlive that check.
+            return _error("A team cannot hold a personal access token", 403)
 
         body = request.get_json(silent=True)
         if body is None:
@@ -276,11 +284,87 @@ class PersonalAccessTokenRegenerate(Resource):
         )
 
 
+@pat_ns.route("/user/tokens/<string:token_id>/tool")
+class PersonalAccessTokenTool(Resource):
+    def post(self, token_id):
+        """Create an API tool that lets agents work in this account with the token.
+
+        The body carries the token's plaintext ``token``, which only the caller
+        holds (it was just shown to them), and ``base_url``, where the API is
+        reached. The tool gets an action for each endpoint the token may call
+        (see ``docsgpt.api.pat.agent_tool``), with the token sealed as their
+        ``Authorization`` header. Deletes, and asking another agent, start
+        switched off; the response names them in ``inactive``.
+        """
+        user_id = _session_user_id()
+        if not user_id:
+            return _error("Authentication required", 401)
+        if not _valid_uuid(token_id):
+            return _error("Token not found", 404)
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return _error("Request body must be a JSON object", 400)
+        token = body.get("token")
+        base_url = body.get("base_url")
+        if not isinstance(token, str) or not token:
+            return _error("token is required", 400)
+        parsed = urlparse(base_url) if isinstance(base_url, str) else None
+        if not parsed or parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return _error("base_url must be an http(s) URL", 400)
+        try:
+            # Agent tools can't reach private addresses, so a tool for one would never work.
+            validate_user_base_url(base_url)
+        except UnsafeUserUrlError:
+            return _error(
+                "Agents can't reach this address: it must be public, not localhost or a private IP. "
+                "An operator can allow a private host by adding it to SAFE_URL_ALLOWED_HOSTS",
+                400,
+            )
+
+        with db_readonly() as conn:
+            row = PersonalAccessTokensRepository(conn).find_active_by_hash(hash_token(token))
+        if not row or str(row["id"]) != token_id or row["user_id"] != user_id:
+            return _error("Token not found", 404)
+        actions = build_actions(
+            f"{parsed.scheme}://{parsed.netloc}{parsed.path}",
+            token,
+            list(row.get("scopes") or []),
+            row.get("resource_filter") or {},
+        )
+        if not actions:
+            return _error("This token cannot call any of the endpoints an agent tool uses", 400)
+
+        # Lazy: the tools routes pull in the agent stack.
+        from docsgpt.api.user.tools.routes import _seal_api_tool_secrets, tool_manager, transform_actions
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        tool_instance = tool_manager.tools["api_tool"]
+        with db_session() as conn:
+            created = UserToolsRepository(conn).create(
+                user_id,
+                "api_tool",
+                config=_seal_api_tool_secrets({"actions": actions}, {}, user_id),
+                custom_name=f"DocsGPT API ({row['name']})",
+                display_name="API Tool",
+                description="Work in this DocsGPT account with a personal access token: what the token's scopes allow.",
+                config_requirements=tool_instance.get_config_requirements(),
+                actions=transform_actions(tool_instance.get_actions_metadata()),
+                status=True,
+            )
+        inactive = sorted(name for name, action in actions.items() if not action["active"])
+        return make_response(
+            jsonify({"success": True, "id": str(created["id"]), "actions": sorted(actions), "inactive": inactive}),
+            201,
+        )
+
+
 @pat_ns.route("/admin/users/<string:user_id>/tokens")
 class AdminUserTokens(Resource):
     @admin_required
     def get(self, user_id):
-        """List a user's tokens, revoked ones included."""
+        """List a user's tokens, revoked ones included. A team principal has none, so it is not found."""
+        if is_principal_id(user_id):
+            return _error("User not found", 404)
         with db_readonly() as conn:
             rows = PersonalAccessTokensRepository(conn).list_for_user(user_id, include_revoked=True)
         return make_response(

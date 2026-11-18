@@ -1,7 +1,11 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
-import type { GuardrailCatalog, GuardrailsConfig } from '../types';
+import type {
+  GuardrailCatalog,
+  GuardrailsConfig,
+  GuardrailStage,
+} from '../types';
 
 const getGuardrailCatalog = vi.fn();
 vi.mock('../../api/services/userService', () => ({
@@ -16,7 +20,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t }),
 }));
 
-import GuardrailsSection from './GuardrailsSection';
+import GuardrailsSection, { GuardrailsEditor } from './GuardrailsSection';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -144,6 +148,30 @@ describe('GuardrailsSection', () => {
     });
   };
 
+  it('opens itself when drafted and marks the on/off row', async () => {
+    const onUndo = vi.fn();
+    await act(async () => {
+      root.render(
+        <GuardrailsSection
+          value={config}
+          onChange={() => undefined}
+          token="tok"
+          drafted
+          onUndo={onUndo}
+        />,
+      );
+    });
+    expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    const row = q('guardrails-enabled')!.closest('[data-slot="setting-row"]')!;
+    expect(row.getAttribute('data-drafted')).toBe('true');
+    await act(async () =>
+      row
+        .querySelector<HTMLButtonElement>('[data-slot="drafted-badge"] button')!
+        .click(),
+    );
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
   it('announces whether the section is open with aria-expanded', async () => {
     await render();
     expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('true');
@@ -153,8 +181,8 @@ describe('GuardrailsSection', () => {
     expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('false');
   });
 
-  // Decision 64: the header is a section-toggle with a leading lucide
-  // chevron; the badges sit beside it and the panel draws the focus ring.
+  // The header is a section-toggle with a leading lucide chevron; the badges
+  // sit beside it and the panel draws the focus ring.
   it('renders the header as a section-toggle with the badges beside it', async () => {
     await render();
     const toggle = q('guardrails-toggle')!;
@@ -194,9 +222,9 @@ describe('GuardrailsSection', () => {
     expect(chevron.getAttribute('class')).not.toContain('rotate-90');
   });
 
-  // Decision 74: the panel spaces header and body with gap-5 like the other
-  // form sections, and the body stacks its rows with a gap-5 flex column
-  // rather than per-child margins.
+  // The panel spaces header and body with gap-5 like the other form
+  // sections, and the body stacks its rows with a gap-5 flex column rather
+  // than per-child margins.
   it('spaces the panel and its body with gap-5, not margins', async () => {
     await render({ disabled: true });
     const panel = q('guardrails-section')!;
@@ -390,7 +418,7 @@ describe('GuardrailsSection', () => {
     expect(q('guardrail-policy-text')?.dataset.slot).toBe('textarea');
   });
 
-  // Decision 63e-b: the monitor-only line is advice, so the field's muted hint.
+  // The monitor-only line is advice, so the field's muted hint.
   it('explains monitor-only mode in the mode field hint', async () => {
     await render();
     const hint = Array.from(container.querySelectorAll('p')).find(
@@ -405,7 +433,7 @@ describe('GuardrailsSection', () => {
     );
   });
 
-  // Decision 63a: each control's name is a 14px semibold sub-heading.
+  // Each control's name is a 14px semibold sub-heading.
   it('titles each check card with an xs section header', async () => {
     await render();
     const title = q('guardrail-check-pii')?.querySelector('h4');
@@ -532,5 +560,236 @@ describe('GuardrailsSection', () => {
 
     expect(getGuardrailCatalog).toHaveBeenCalledTimes(2);
     expect(errorState()).toBeNull();
+  });
+});
+
+const injectionCheck = (available = true) => ({
+  name: 'injection_model',
+  label: 'Prompt injection (model)',
+  description: 'Scores text with the decision model',
+  // The catalog sorts stages alphabetically.
+  stages: [
+    'attachment',
+    'input',
+    'retrieval',
+    'tool_result',
+  ] as GuardrailStage[],
+  supports_redaction: false,
+  latency_hint_ms: 300,
+  remote: true,
+  item_level: true,
+  available,
+});
+
+const injectionCatalog = (available = true): GuardrailCatalog => ({
+  ...catalog,
+  checks: [injectionCheck(available)],
+  actions_by_stage: {
+    ...catalog.actions_by_stage,
+    retrieval: ['flag', 'block'],
+    attachment: ['flag', 'block'],
+  },
+  floor: null,
+});
+
+const injectionConfig = (
+  controls: GuardrailsConfig['controls'] = [],
+): GuardrailsConfig => ({ ...config, controls });
+
+describe('GuardrailsSection: the prompt-injection model', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    getGuardrailCatalog.mockReset();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  const q = (testId: string) =>
+    container.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+
+  const render = async (
+    value: GuardrailsConfig,
+    onChange: (next: GuardrailsConfig) => void = () => undefined,
+    available = true,
+  ) => {
+    getGuardrailCatalog.mockResolvedValue({
+      json: async () => ({ success: true, ...injectionCatalog(available) }),
+    });
+    await act(async () => {
+      root.render(
+        <GuardrailsSection value={value} onChange={onChange} token="tok" />,
+      );
+    });
+    await act(async () => q('guardrails-toggle')?.click());
+  };
+
+  const setNumber = async (input: HTMLInputElement, value: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value',
+      )!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => {
+      input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    });
+  };
+
+  it('lists its stages in the turn order, attachment included', async () => {
+    await render(injectionConfig());
+    const chips = Array.from(
+      q('guardrail-check-injection_model')!.querySelectorAll<HTMLElement>(
+        '[data-slot="toggle-chip"]',
+      ),
+    ).map((chip) => chip.textContent);
+    expect(chips).toEqual([
+      'agents.form.guardrails.stages.input',
+      'agents.form.guardrails.stages.retrieval',
+      'agents.form.guardrails.stages.toolResult',
+      'agents.form.guardrails.stages.attachment',
+    ]);
+  });
+
+  it('starts a new control at the default thresholds', async () => {
+    const onChange = vi.fn();
+    await render(injectionConfig(), onChange);
+    await act(async () =>
+      q('guardrail-stage-injection_model-attachment')?.click(),
+    );
+    const next = onChange.mock.calls[0][0] as GuardrailsConfig;
+    expect(next.controls).toEqual([
+      {
+        check: 'injection_model',
+        stage: 'attachment',
+        action: 'flag',
+        enabled: true,
+        settings: { threshold: 0.9, flag_threshold: 0.5 },
+      },
+    ]);
+  });
+
+  it('says block withholds only the item at item-level stages', async () => {
+    const control = (stage: 'input' | 'retrieval') => ({
+      check: 'injection_model',
+      stage,
+      action: 'block' as const,
+      enabled: true,
+      settings: { threshold: 0.9, flag_threshold: 0.5 },
+    });
+    await render(injectionConfig([control('input'), control('retrieval')]));
+    expect(
+      q('guardrail-item-level-injection_model-retrieval')?.textContent,
+    ).toBe('agents.form.guardrails.itemLevelHint');
+    expect(q('guardrail-item-level-injection_model-input')).toBeNull();
+    const actions = q('guardrail-action-injection_model-retrieval');
+    expect(actions).not.toBeNull();
+  });
+
+  it('keeps the thresholds under Advanced, the flag one never above the action one', async () => {
+    const onChange = vi.fn();
+    await render(
+      injectionConfig([
+        {
+          check: 'injection_model',
+          stage: 'input',
+          action: 'flag',
+          enabled: true,
+          settings: { threshold: 0.9, flag_threshold: 0.5 },
+        },
+      ]),
+      onChange,
+    );
+    const base = 'guardrail-thresholds-injection_model-input';
+    const toggle = q(`${base}-toggle`)!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(toggle.textContent).toBe('agents.form.guardrails.advanced');
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+
+    await setNumber(q(`${base}-threshold`) as HTMLInputElement, '0.4');
+    expect(onChange.mock.calls.at(-1)?.[0].controls[0].settings).toEqual({
+      threshold: 0.4,
+      flag_threshold: 0.4,
+    });
+    onChange.mockClear();
+    await setNumber(q(`${base}-flag`) as HTMLInputElement, '0.95');
+    expect(onChange.mock.calls.at(-1)?.[0].controls[0].settings).toEqual({
+      threshold: 0.9,
+      flag_threshold: 0.9,
+    });
+  });
+
+  it('is not offered while the operator has the model off', async () => {
+    await render(injectionConfig(), () => undefined, false);
+    expect(q('guardrail-check-injection_model')).toBeNull();
+  });
+
+  it('stays, marked, while a control still uses it, so it can be removed', async () => {
+    await render(
+      injectionConfig([
+        {
+          check: 'injection_model',
+          stage: 'input',
+          action: 'flag',
+          enabled: true,
+          settings: { threshold: 0.9, flag_threshold: 0.5 },
+        },
+      ]),
+      () => undefined,
+      false,
+    );
+    const card = q('guardrail-check-injection_model')!;
+    expect(card.textContent).toContain('agents.form.guardrails.notConfigured');
+    expect(q('guardrail-remove-injection_model-input')).not.toBeNull();
+  });
+});
+
+describe('GuardrailsEditor', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  // Admin › Guardrails edits the floor itself, so its controls are not
+  // shown as locked by it there.
+  it('leaves the floor out where the floor is edited', async () => {
+    await act(async () => {
+      root.render(
+        <GuardrailsEditor
+          value={config}
+          onChange={() => undefined}
+          catalog={catalog}
+          showFloor={false}
+          enableLabel="Apply these rules to every agent"
+        />,
+      );
+    });
+    const locked = container.querySelector<HTMLElement>(
+      '[data-testid="guardrail-stage-pii-output"]',
+    )!;
+    expect(locked.getAttribute('aria-disabled')).toBeNull();
+    expect(locked.getAttribute('aria-pressed')).toBe('false');
+    expect(container.textContent).not.toContain(
+      'agents.form.guardrails.floorNotice',
+    );
+    expect(container.textContent).toContain('Apply these rules to every agent');
   });
 });

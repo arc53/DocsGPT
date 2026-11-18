@@ -47,7 +47,7 @@ class ConversationWakesRepository:
         Args:
             user_id: The conversation's owner.
             conversation_id: The conversation to resume.
-            source: ``job``, ``monitor``, ``trigger``, ``approval`` or ``lost``.
+            source: ``job``, ``monitor``, ``trigger``, ``approval``, ``lost`` or ``continuation``.
             dedupe_key: Unique per event; a second report of it is dropped.
             ref_id: What raised it (a job id, a monitor id).
             title: One line naming the event.

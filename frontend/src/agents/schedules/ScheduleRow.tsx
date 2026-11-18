@@ -8,7 +8,9 @@ import {
   Repeat,
   Trash2,
   TriangleAlert,
+  Wallet,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Badge } from '../../components/ui/badge';
@@ -17,6 +19,8 @@ import { Card } from '../../components/ui/card';
 import { ActionMenu, type MenuOption } from '../../components/ui/dropdown-menu';
 import { IconButton } from '../../components/ui/icon-button';
 import { cn } from '@/lib/utils';
+import { paidByText, pauseReasonText, payerOf } from '../../payer/pauseReason';
+import { isPausedFor } from '../../payer/types';
 import { formatDateTime, formatRelative } from '../../utils/dateTimeUtils';
 import type { Schedule, ScheduleRun } from '../types/schedule';
 import RunLog from './RunLog';
@@ -36,7 +40,7 @@ const STATUS_DOT: Record<Schedule['status'], string> = {
 
 export type ScheduleRowProps = {
   schedule: Schedule;
-  /** Whether the run log is open under the row (recurring schedules). */
+  /** Whether the run log is open under the row. */
   expanded: boolean;
   onToggleRuns: (scheduleId: string) => void;
   onEdit: (schedule: Schedule) => void;
@@ -44,13 +48,29 @@ export type ScheduleRowProps = {
   onRunNow: (schedule: Schedule) => void;
   onDelete: (schedule: Schedule) => void;
   onSelectRun: (run: ScheduleRun) => void;
+  /**
+   * Asks to make the reader the schedule's payer. Offered only when the
+   * server says the reader may (`can_take_over`).
+   */
+  onTakeOver?: (schedule: Schedule) => void;
+  /** The reader's user id, so their own payment reads "Paid by you". */
+  viewerId?: string | null;
+  /** The team the page is in, for "Dana left Operations…". */
+  teamName?: string | null;
+  /** A last item on the meta line (the chat an agentless schedule came from). */
+  extraMeta?: ReactNode;
 };
 
 /**
  * One schedule on an agent's Schedules page: a subtle panel with a status dot,
  * the name and status, the instruction, one meta line, the common action as
- * a button (Run now, or Resume while paused) and the rest in a menu. A
- * recurring schedule opens its run log flush under the row.
+ * a button (Run now, or Resume while paused) and the rest in a menu. The
+ * chevron opens the run log flush under the row.
+ *
+ * Who pays shows on the meta line. A schedule paused for its payer (out of
+ * allowance, left the team, nobody pays, account off) reads Paused with the
+ * reason under its instruction, and its button is Take over when the reader
+ * may take it over; otherwise Take over sits in the menu.
  *
  * Args:
  *   schedule: The schedule to show.
@@ -61,6 +81,10 @@ export type ScheduleRowProps = {
  *   onRunNow: Runs the schedule once now.
  *   onDelete: Asks to delete the schedule (or cancel a one-time task).
  *   onSelectRun: Opens a run's details.
+ *   onTakeOver: Asks to take the schedule over.
+ *   viewerId: The reader's user id.
+ *   teamName: The current team's name.
+ *   extraMeta: Appended to the meta line.
  */
 export default function ScheduleRow({
   schedule,
@@ -71,12 +95,39 @@ export default function ScheduleRow({
   onRunNow,
   onDelete,
   onSelectRun,
+  onTakeOver,
+  viewerId,
+  teamName,
+  extraMeta,
 }: ScheduleRowProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const recurring = schedule.trigger_type === 'recurring';
   const active = schedule.status === 'active';
   const paused = schedule.status === 'paused';
   const title = schedule.name || schedule.instruction.slice(0, 80);
+  // Paused for its payer: still active, but each run is skipped until the
+  // reason clears or someone takes it over. The server reports it only on an
+  // active schedule.
+  const payerPause =
+    active && isPausedFor(schedule.paused_for) ? schedule.paused_for : null;
+  const canTakeOver = Boolean(schedule.can_take_over && onTakeOver);
+  const payer = payerOf(schedule.paid_by, viewerId);
+  const paidBy = paidByText(t, schedule.paid_by, viewerId);
+  const pauseReason = payerPause
+    ? pauseReasonText(t, payerPause, payer.label, teamName, {
+        you: payer.you,
+        language: i18n?.language,
+      })
+    : '';
+
+  const takeOver: MenuOption = {
+    label: t('payer.common.takeOver.submit'),
+    icon: Wallet,
+    onClick: () => onTakeOver?.(schedule),
+  };
+  // Take over is the row's button while paused for the payer, else a menu item.
+  const menuTakeOver: MenuOption[] =
+    canTakeOver && !payerPause ? [takeOver] : [];
 
   const edit: MenuOption = {
     label: t('agents.schedules.edit'),
@@ -98,6 +149,7 @@ export default function ScheduleRow({
             icon: Pause,
             onClick: () => onSetPaused(schedule, true),
           },
+          ...menuTakeOver,
           remove,
         ]
       : paused
@@ -108,12 +160,14 @@ export default function ScheduleRow({
               icon: Play,
               onClick: () => onRunNow(schedule),
             },
+            ...menuTakeOver,
             remove,
           ]
         : [remove]
     : active
       ? [
           edit,
+          ...menuTakeOver,
           {
             label: t('agents.schedules.cancelTask'),
             icon: Trash2,
@@ -129,7 +183,8 @@ export default function ScheduleRow({
       icon: Repeat,
       text: `${formatCron(schedule.cron, t)}, ${schedule.timezone}`,
     });
-    if (active && schedule.next_run_at) {
+    // A paused schedule's next run would be skipped, so it isn't promised.
+    if (active && !payerPause && schedule.next_run_at) {
       meta.push({
         icon: Clock,
         text: t('agents.schedules.meta.nextRun', {
@@ -161,6 +216,7 @@ export default function ScheduleRow({
       }),
     });
   }
+  if (paidBy) meta.push({ icon: Wallet, text: paidBy });
 
   return (
     <Card variant="subtle" padding="none" data-schedule-id={schedule.id}>
@@ -170,13 +226,15 @@ export default function ScheduleRow({
             aria-hidden
             className={cn(
               'mt-1.5 size-2 shrink-0 rounded-full',
-              STATUS_DOT[schedule.status],
+              payerPause ? 'bg-warning' : STATUS_DOT[schedule.status],
             )}
           />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium wrap-break-word">{title}</span>
-              <ScheduleStatusBadge status={schedule.status} />
+              <ScheduleStatusBadge
+                status={payerPause ? 'paused' : schedule.status}
+              />
               {schedule.consecutive_failure_count > 0 && (
                 <Badge variant="destructive">
                   <TriangleAlert aria-hidden />
@@ -194,7 +252,19 @@ export default function ScheduleRow({
                 {schedule.instruction}
               </p>
             )}
-            {meta.length > 0 && (
+            {payerPause && pauseReason && (
+              <p
+                className="text-warning flex items-start gap-1.5 text-xs"
+                data-pause-reason={payerPause.reason}
+              >
+                <TriangleAlert
+                  aria-hidden
+                  className="mt-0.5 size-3.5 shrink-0"
+                />
+                <span>{pauseReason}</span>
+              </p>
+            )}
+            {(meta.length > 0 || extraMeta) && (
               <p className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 {meta.map(({ icon: Icon, text }) => (
                   <span key={text} className="inline-flex items-center gap-1">
@@ -202,55 +272,68 @@ export default function ScheduleRow({
                     {text}
                   </span>
                 ))}
+                {extraMeta}
               </p>
             )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1 pl-5 sm:pl-0">
-          {recurring && (active || paused) && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              shape="pill"
-              onClick={() =>
-                active ? onRunNow(schedule) : onSetPaused(schedule, false)
-              }
-            >
-              <Play />
-              {active
-                ? t('agents.schedules.runNow')
-                : t('agents.schedules.resume')}
-            </Button>
-          )}
+          {payerPause
+            ? canTakeOver && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={() => onTakeOver?.(schedule)}
+                >
+                  <Wallet />
+                  {t('payer.common.takeOver.submit')}
+                </Button>
+              )
+            : recurring &&
+              (active || paused) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  shape="pill"
+                  onClick={() =>
+                    active ? onRunNow(schedule) : onSetPaused(schedule, false)
+                  }
+                >
+                  <Play />
+                  {active
+                    ? t('agents.schedules.runNow')
+                    : t('agents.schedules.resume')}
+                </Button>
+              )}
           <ActionMenu
             triggerLabel={t('agents.schedules.actions')}
             options={menu}
           />
-          {recurring && (
-            <IconButton
-              label={
-                expanded
-                  ? t('agents.schedules.hideRuns')
-                  : t('agents.schedules.showRuns')
-              }
-              variant="ghost-muted"
-              size="icon-xs"
-              aria-expanded={expanded}
-              onClick={() => onToggleRuns(schedule.id)}
-            >
-              <ChevronDown
-                aria-hidden
-                className={cn(
-                  'transition-transform duration-200',
-                  expanded && 'rotate-180',
-                )}
-              />
-            </IconButton>
-          )}
+          <IconButton
+            label={
+              expanded
+                ? t('agents.schedules.hideRuns')
+                : t('agents.schedules.showRuns')
+            }
+            variant="ghost-muted"
+            size="icon-xs"
+            aria-expanded={expanded}
+            onClick={() => onToggleRuns(schedule.id)}
+          >
+            <ChevronDown
+              aria-hidden
+              className={cn(
+                'transition-transform duration-200',
+                expanded && 'rotate-180',
+              )}
+            />
+          </IconButton>
         </div>
       </div>
-      {recurring && expanded && (
+      {expanded && (
         <div className="border-border border-t">
           <RunLog scheduleId={schedule.id} onSelect={onSelectRun} />
         </div>

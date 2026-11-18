@@ -53,14 +53,14 @@ async function openSettingsPrompts(
 }
 
 /**
- * Open the prompt picker. It is a Popover + cmdk list (settings/Prompts.tsx),
- * whose trigger carries aria-label="Toggle prompt list". It used to be a bare
- * <button> found by DOM position, which is why this walked up from "Add".
+ * Open the prompt picker. It is the shared Combobox (components/ui/
+ * combobox.tsx, a Popover + cmdk list): its trigger is role="combobox",
+ * labelled "Active prompt" by the settings row it sits in.
  */
 async function openPromptDropdown(
   page: import('@playwright/test').Page,
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Toggle prompt list' }).click();
+  await page.getByRole('combobox', { name: 'Active prompt' }).click();
 }
 
 test.describe('tier-a · prompts CRUD', () => {
@@ -150,17 +150,13 @@ test.describe('tier-a · prompts CRUD', () => {
       const page = await context.newPage();
       await openSettingsPrompts(page);
 
-      // Open the prompt dropdown, then click the pencil icon for our seeded
-      // row. The dropdown trigger is the only button that contains the
-      // placeholder "Select a prompt" (Prompts.tsx line 216).
+      // Open the prompt dropdown, then the seeded entry's "Edit prompt"
+      // action (each cmdk option carries labelled action buttons).
       await openPromptDropdown(page);
 
-      // The dropdown row renders `name` as the clickable text — find the
-      // row, then click the Pencil (lucide icon has no role; scope by the
-      // containing row text).
-      const row = page.locator('div', { hasText: /^e2e-to-edit$/ }).first();
+      const row = page.getByRole('option', { name: /e2e-to-edit/ });
       await expect(row).toBeVisible();
-      await row.locator('button').first().click();
+      await row.getByRole('button', { name: 'Edit prompt' }).click();
 
       const editName = page.getByLabel('Prompt Name').first();
       await expect(editName).toHaveValue('e2e-to-edit');

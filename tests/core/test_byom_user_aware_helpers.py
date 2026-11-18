@@ -13,7 +13,7 @@ P1 #3 — covered indirectly: the route already accepts a user_id; this
 from __future__ import annotations
 
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -206,6 +206,25 @@ class TestHelpersThreadUserId:
             assert caps is not None
             assert caps["supports_tools"] is True
             assert caps["context_window"] == 200_000
+
+    def test_byom_without_the_flag_supports_structured_output(self, pg_conn) -> None:
+        """A BYOM model saved without the flag supports structured output."""
+        row = UserCustomModelsRepository(pg_conn).create(
+            user_id="user-2",
+            upstream_model_id="mistral-small-latest",
+            display_name="No flag",
+            base_url="https://api.mistral.ai/v1",
+            api_key_plaintext="sk-mistral-test",
+            capabilities={"supports_tools": True},
+        )
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.storage.db.session.db_readonly",
+            lambda: _yield(pg_conn),
+        ):
+            ModelRegistry()
+            caps = get_model_capabilities(row["id"], user_id="user-2")
+            assert caps["supports_structured_output"] is True
 
     def test_get_all_available_models_includes_byom_when_authenticated(
         self, pg_conn, byom_model
@@ -537,6 +556,109 @@ class TestSecurityDispatchSSRFGuard:
             "endpoints"
         )
 
+    # A team's custom model is as untrusted as a person's: anyone can make a team and point
+    # its model at a host they control, so every dispatch-time check covers it too.
+
+    _TEAM = "__team__3f6c0a52-8b1e-4f7a-9a43-0d2e6b1c9e11"
+
+    def _seed_team_model(self, reg, uuid, base_url, api_key="sk-team"):
+        from docsgpt.core.model_settings import AvailableModel, ModelProvider
+
+        _seed_user_layer(
+            reg,
+            self._TEAM,
+            {
+                uuid: AvailableModel(
+                    id=uuid,
+                    provider=ModelProvider.OPENAI_COMPATIBLE,
+                    display_name="team",
+                    base_url=base_url,
+                    upstream_model_id="model-x",
+                    source="team",
+                    api_key=api_key,
+                )
+            },
+        )
+
+    def test_dispatch_rejects_team_model_with_unsafe_base_url(self, pg_conn):
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+            uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0201"
+            self._seed_team_model(reg, uuid, "http://169.254.169.254/v1")
+
+            from docsgpt.llm.llm_creator import LLMCreator
+
+            with pytest.raises(ValueError, match="Refusing to dispatch"):
+                LLMCreator.create_llm(
+                    type="openai_compatible",
+                    api_key="some-key",
+                    user_api_key=None,
+                    decoded_token={"sub": "alice"},
+                    model_id=uuid,
+                    model_user_id=self._TEAM,
+                )
+
+    def test_dispatch_injects_pinned_http_client_for_team_model(self, pg_conn):
+        import httpx2
+
+        captured: dict = {}
+
+        class _FakeLLM:
+            def __init__(self, api_key, user_api_key, *a, **kw):
+                captured["http_client"] = kw.get("http_client")
+
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s), patch(
+            "docsgpt.security.safe_url.socket.getaddrinfo"
+        ) as gai:
+            gai.return_value = [(None, None, None, None, ("104.18.0.1", 0))]
+            reg = ModelRegistry()
+            uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0202"
+            self._seed_team_model(reg, uuid, "https://api.mistral.ai/v1")
+
+            from docsgpt.llm.llm_creator import LLMCreator
+            from docsgpt.llm.providers import PROVIDERS_BY_NAME
+
+            with patch.object(PROVIDERS_BY_NAME["openai_compatible"], "llm_class", _FakeLLM):
+                llm = LLMCreator.create_llm(
+                    type="openai_compatible",
+                    api_key="caller-key",
+                    user_api_key=None,
+                    decoded_token={"sub": "alice"},
+                    model_id=uuid,
+                    model_user_id=self._TEAM,
+                )
+
+        client = captured["http_client"]
+        try:
+            assert isinstance(client, httpx2.Client)
+            assert client.follow_redirects is False
+        finally:
+            if client is not None:
+                client.close()
+        # The team brings its own key, so its calls count $0 like a person's custom model.
+        assert llm._is_byom is True
+
+    def test_llmcreator_refuses_team_model_with_no_api_key(self, pg_conn):
+        s = _make_settings()
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+            uuid = "0b7e0f4c-1234-5678-9abc-deadbeef0203"
+            self._seed_team_model(reg, uuid, "https://api.mistral.ai/v1", api_key=None)
+
+            from docsgpt.llm.llm_creator import LLMCreator
+
+            with pytest.raises(ValueError, match="no usable API key"):
+                LLMCreator.create_llm(
+                    type="openai_compatible",
+                    api_key="settings-api-key-DO-NOT-LEAK",
+                    user_api_key=None,
+                    decoded_token={"sub": "alice"},
+                    model_id=uuid,
+                    model_user_id=self._TEAM,
+                )
+
 
 @pytest.mark.unit
 class TestSharedAgentResolvesOwnerBYOM:
@@ -583,7 +705,7 @@ class TestSharedAgentResolvesOwnerBYOM:
         assert sp.model_id == owner_model["id"]
         assert sp.model_user_id == "owner"
 
-    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch):
+    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch, public_dns):
         """ClassicRAG must resolve a BYOM model_id through LLMCreator so
         the rephrase LLM gets the owner's api_key/base_url and dispatches
         the upstream model name (e.g. ``mistral-large-latest``) — not the
@@ -687,6 +809,7 @@ class TestSharedAgentResolvesOwnerBYOM:
             sp.agent_id = None
             sp.agent_key = "agent-key"
             sp._agent_data = None
+            sp.conversation_id = None
 
             agent_record = {
                 "_id": "agent-uuid",
@@ -765,7 +888,7 @@ class TestContinuationPreservesByomScope:
     owner-stored BYOM record."""
 
     def test_resume_forwards_model_user_id_from_agent_config(
-        self, monkeypatch
+        self, monkeypatch, pg_conn
     ):
         """``resume_from_tool_actions`` reads ``model_user_id`` from the
         saved ``agent_config`` and forwards it to LLMCreator so the
@@ -773,6 +896,10 @@ class TestContinuationPreservesByomScope:
         from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has
+        # no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         captured: dict = {}
 
@@ -862,22 +989,23 @@ class TestContinuationPreservesByomScope:
         assert sp.model_user_id == "owner"
 
     def test_save_path_persists_model_user_id_in_agent_config(self):
-        """The save site (``routes/base.py:complete_stream``) must
-        include ``model_user_id`` in the ``agent_config`` dict written
-        to the continuation store."""
+        """The save site (``routes/base.py:_save_pause_state``, called by
+        ``complete_stream``) must include ``model_user_id`` in the
+        ``agent_config`` dict written to the continuation store."""
         import inspect
 
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
-        # complete_stream is the only callsite that constructs the
-        # save dict. Confirm the parameter is in scope and the key is
-        # spelled correctly so a future rename doesn't silently drop it.
+        # _save_pause_state is the only place that constructs the save
+        # dict. Confirm the parameter reaches it and the key is spelled
+        # correctly so a future rename doesn't silently drop it.
         sig = inspect.signature(BaseAnswerResource.complete_stream)
         assert "model_user_id" in sig.parameters
+        assert "model_user_id" in inspect.signature(BaseAnswerResource._save_pause_state).parameters
+        assert "model_user_id=model_user_id" in inspect.getsource(BaseAnswerResource.complete_stream)
 
-        src = inspect.getsource(BaseAnswerResource.complete_stream)
-        # Both: (a) the model_user_id parameter is in scope and (b) the
-        # save dict includes it under the same key the resume side reads.
+        src = inspect.getsource(BaseAnswerResource._save_pause_state)
+        # The save dict includes it under the same key the resume side reads.
         assert '"model_user_id": model_user_id' in src
 
 
@@ -917,7 +1045,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_budget(model_id, user_id=None):
+        def _fake_budget(model_id, user_id=None, context_window_limit=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return 6000
@@ -943,7 +1071,7 @@ class TestStreamProcessorForwardsByomScopeToBudgetCalls:
 
         captured: dict = {}
 
-        def _fake_limit(history, model_id="docsgpt-local", user_id=None):
+        def _fake_limit(history, max_token_limit=None, model_id="docsgpt-local", user_id=None):
             captured["model_id"] = model_id
             captured["user_id"] = user_id
             return history
@@ -1203,7 +1331,7 @@ class TestNonAgentCallSitesUseUpstreamId:
 @pytest.mark.unit
 class TestAgentSendsUpstreamModelId:
     def test_llm_gen_passes_upstream_id_to_provider(
-        self, pg_conn, byom_model
+        self, pg_conn, byom_model, public_dns
     ):
         """End-to-end: ClassicAgent's _llm_gen must put the user's
         upstream model name (``mistral-large-latest``) in the call to

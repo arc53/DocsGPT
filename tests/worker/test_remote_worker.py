@@ -7,46 +7,24 @@ pipeline, and the backend HTTP callback are all mocked — only the PG
 update is real.
 
 ``sync_worker`` reads rows out of ``sources`` whose ``sync_frequency``
-matches and dispatches them through ``sync`` → ``remote_worker``. We
-assert one seeded row is discovered and forwarded.
+matches and queues a ``sync_source`` task for each. We assert one seeded
+row is discovered and queued.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from unittest.mock import MagicMock
 
 import pytest
 
+from docsgpt import worker
+from docsgpt.parser import tokenization
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-
-
-@pytest.fixture
-def _mock_remote_pipeline(monkeypatch):
-    """Stub out the non-PG boundaries used by ``remote_worker``."""
-    from docsgpt import worker
-
-    fake_loader = MagicMock(name="remote_loader")
-    fake_loader.load_data.return_value = [
-        Document(
-            text="page body",
-            extra_info={"file_path": "guides/setup.md", "title": "setup"},
-            doc_id="d1",
-        )
-    ]
-    monkeypatch.setattr(
-        worker.RemoteCreator, "create_loader", lambda loader: fake_loader
-    )
-    monkeypatch.setattr(
-        worker,
-        "embed_and_store_documents",
-        lambda docs, full_path, source_id, task, **kw: None,
-    )
-    monkeypatch.setattr(
-        worker, "upload_index", lambda full_path, file_data: None
-    )
+from tests.parser.counter_fakes import spy_cl100k
 
 
 @pytest.mark.unit
@@ -57,7 +35,7 @@ class TestRemoteWorkerSyncUpdatesDate:
         patch_worker_db,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -107,10 +85,8 @@ class TestSyncWorker:
         task_self,
         monkeypatch,
     ):
-        """``sync_worker`` selects rows by ``sync_frequency`` and passes
-        each to ``sync``. We assert the seeded row is discovered and
-        forwarded with the right doc_id — the nested ``sync`` call is
-        stubbed so we don't re-run the whole remote pipeline here."""
+        """``sync_worker`` selects rows by ``sync_frequency`` and queues a
+        ``sync_source`` for each, with the right doc_id."""
         from docsgpt import worker
 
         src = SourcesRepository(pg_conn).create(
@@ -121,33 +97,25 @@ class TestSyncWorker:
             sync_frequency="weekly",
             remote_data={"url": "http://example.com"},
         )
-
-        captured: list[dict] = []
-
-        def _fake_sync(self, source_data, name_job, user, loader,
-                       sync_frequency, retriever, doc_id=None, directory="temp",
-                       connection_id=None):
-            captured.append({
-                "name_job": name_job,
-                "user": user,
-                "loader": loader,
-                "sync_frequency": sync_frequency,
-                "retriever": retriever,
-                "doc_id": doc_id,
-            })
-            return {"status": "success"}
-
-        monkeypatch.setattr(worker, "sync", _fake_sync)
+        SourcesRepository(pg_conn).create(
+            "daily-feed",
+            user_id="carol",
+            type="url",
+            sync_frequency="daily",
+            remote_data={"url": "http://example.com"},
+        )
+        apply_async = MagicMock(name="sync_source.apply_async")
+        monkeypatch.setattr("docsgpt.api.user.tasks.sync_source.apply_async", apply_async)
 
         result = worker.sync_worker(task_self, "weekly")
 
         assert result["total_sync_count"] == 1
-        assert result["sync_success"] == 1
-        assert len(captured) == 1
-        assert captured[0]["name_job"] == "weekly-feed"
-        assert captured[0]["user"] == "carol"
-        assert captured[0]["loader"] == "url"
-        assert captured[0]["doc_id"] == str(src["id"])
+        assert result["sync_dispatched"] == 1
+        queued = apply_async.call_args.kwargs["kwargs"]
+        assert queued["job_name"] == "weekly-feed"
+        assert queued["user"] == "carol"
+        assert queued["loader"] == "url"
+        assert queued["doc_id"] == str(src["id"])
 
     def test_connector_sources_are_skipped(
         self,
@@ -193,11 +161,11 @@ class TestSyncWorker:
         task_self,
         monkeypatch,
     ):
-        """Regression: remote_data reads back as a dict; sync_worker must
-        hand the loader the URL string, not the raw dict."""
+        """Regression: remote_data reads back as a dict; a sync hands the
+        loader the Website config converted from it, not the raw dict."""
         from docsgpt import worker
 
-        SourcesRepository(pg_conn).create(
+        src = SourcesRepository(pg_conn).create(
             "docs-crawl",
             user_id="erin",
             type="crawler",
@@ -232,14 +200,13 @@ class TestSyncWorker:
             worker, "upload_index", lambda full_path, file_data: None
         )
 
-        result = worker.sync_worker(task_self, "weekly")
-
-        assert result["total_sync_count"] == 1
-        assert result["sync_success"] == 1
-        assert result["sync_failure"] == 0
-        assert received == ["https://example.com"], (
-            "loader must receive the URL string, not the remote_data dict"
+        result = worker.sync(
+            task_self, {}, "docs-crawl", "erin", "crawler", "weekly", "classic", str(src["id"]),
         )
+
+        assert result == {"status": "success"}
+        [config] = received
+        assert [e["url"] for e in config["entries"]] == ["https://example.com"]
 
     def test_unsyncable_remote_data_is_skipped(
         self,
@@ -291,7 +258,7 @@ class TestRemoteWorkerPathTraversal:
         tmp_path,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -349,7 +316,7 @@ class TestRemoteWorkerDeterministicSourceId:
         tmp_path,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -381,7 +348,7 @@ class TestRemoteWorkerDeterministicSourceId:
         tmp_path,
         task_self,
         monkeypatch,
-        _mock_remote_pipeline,
+        remote_pipeline,
     ):
         from docsgpt import worker
 
@@ -404,3 +371,180 @@ class TestRemoteWorkerDeterministicSourceId:
 
         assert len(captured) == 2
         assert captured[0]["id"] != captured[1]["id"]
+
+
+@pytest.mark.unit
+class TestRemoteWorkerWebsite:
+    """A Website ingest reports its pages and names them for the Knowledge tree."""
+
+    def _ingest(self, pg_conn, task_self, tmp_path, remote_pipeline, extra_info, entries=None):
+        """Ingest one page with ``extra_info``; returns its leaf and the source."""
+        remote_pipeline.loader.load_data.return_value = [Document(text="# Page\nBody.", extra_info=extra_info)]
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        config = {"entries": entries or [{"url": "https://docs.x.io/", "mode": "site"}], "skip": []}
+        worker.remote_worker(
+            task_self, config, "Docs", "bob", "website",
+            directory=str(tmp_path / "temp"), operation_mode="upload", source_id=str(source["id"]),
+        )
+        tree = json.loads(remote_pipeline.uploads[0]["directory_structure"])
+        return tree, source
+
+    def test_reports_pages_and_keeps_page_details_in_the_tree(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, remote_pipeline, published,
+    ):
+        remote_pipeline.loader.report = {
+            "pages": 1,
+            "sites": [{"url": "https://docs.x.io/", "found_with": "sitemap", "pages": 1, "limit_reached": True}],
+        }
+        tree, source = self._ingest(pg_conn, task_self, tmp_path, remote_pipeline, {
+            "source": "https://docs.x.io/Deploying/Docker", "title": "Docker Deployment",
+            "file_path": "Deploying/Docker.md",
+        })
+
+        leaf = tree["Deploying"]["Docker.md"]
+        assert leaf["url"] == "https://docs.x.io/Deploying/Docker"
+        assert leaf["title"] == "Docker Deployment"
+        assert leaf["fetched_at"]
+        # Not redirected: no requested address.
+        assert "requested_urls" not in leaf
+
+        completed = next(payload for kind, payload in published if kind == "source.ingest.completed")
+        assert completed["pages"] == 1
+        assert completed["page_limit_reached"] is True
+
+        stored = SourcesRepository(pg_conn).get(str(source["id"]), "bob")["metadata"]["website"]
+        assert stored["sites"] == remote_pipeline.loader.report["sites"]
+        assert stored["fetched_at"] == leaf["fetched_at"]
+
+    def test_a_nul_in_a_page_title_stays_out_of_the_tree(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, remote_pipeline, published,
+    ):
+        # The tree is stored as JSONB, which refuses a NUL.
+        tree, _source = self._ingest(pg_conn, task_self, tmp_path, remote_pipeline, {
+            "source": "https://docs.x.io/p", "title": "Ti\x00tle", "file_path": "p.md",
+        })
+
+        assert "\\u0000" not in remote_pipeline.uploads[0]["directory_structure"]
+        assert tree["p.md"]["title"] == "Title"
+
+    def test_a_page_several_entries_lead_to_keeps_every_address(
+        self, pg_conn, patch_worker_db, tmp_path, task_self, remote_pipeline, published,
+    ):
+        # /old-a and /old-b both redirect to /new: removing the page must find both entries.
+        tree, _source = self._ingest(pg_conn, task_self, tmp_path, remote_pipeline, {
+            "source": "https://docs.x.io/new",
+            "requested_urls": ["https://docs.x.io/old-a", "https://docs.x.io/old-b", "https://docs.x.io/new#x"],
+            "title": "New", "file_path": "new.md",
+        }, entries=[{"url": f"https://docs.x.io/{p}", "mode": "page"} for p in ("old-a", "old-b")])
+
+        leaf = tree["new.md"]
+        assert leaf["url"] == "https://docs.x.io/new"
+        # The page's own address (a fragment of it) is not an alias.
+        assert leaf["requested_urls"] == ["https://docs.x.io/old-a", "https://docs.x.io/old-b"]
+        assert "requested_url" not in leaf
+
+    @pytest.mark.parametrize("report, reached", [
+        # Page entries cut by the page cap: no site reached its own limit.
+        ({"pages": 3, "limit_reached": True, "sites": [{"url": "https://x.io/", "limit_reached": False}]}, True),
+        ({"pages": 3, "sites": [{"url": "https://x.io/", "limit_reached": True}]}, True),
+        ({"pages": 3, "limit_reached": False, "sites": []}, False),
+    ])
+    def test_the_limit_notice_covers_a_cut_made_by_page_entries(self, pg_conn, patch_worker_db, report, reached):
+        source = SourcesRepository(pg_conn).create("Docs", user_id="bob", type="website")
+        summary = worker._record_website_report(str(source["id"]), "bob", report, "2026-01-01T00:00:00+00:00")
+
+        assert summary == {"pages": 3, "page_limit_reached": reached}
+
+
+@pytest.mark.unit
+class TestSyncUsesTheSourcesConfig:
+    def test_sync_chunks_with_the_stored_chunking_settings(
+        self,
+        pg_conn,
+        patch_worker_db,
+        task_self,
+        monkeypatch,
+        remote_pipeline,
+    ):
+        """A scheduled sync or Sync now re-chunks with the source's own
+        chunking settings, not the defaults."""
+        from docsgpt import worker
+
+        src = SourcesRepository(pg_conn).create(
+            "tuned-site",
+            user_id="dora",
+            type="website",
+            retriever="classic",
+            sync_frequency="weekly",
+            remote_data={"entries": [{"url": "https://example.com/", "mode": "page"}]},
+            config={"chunking": {"max_tokens": 400, "min_tokens": 50}},
+        )
+        captured: dict = {}
+        real_create = worker.ChunkerCreator.create_chunker
+
+        def _capture(strategy, **kwargs):
+            captured.update(kwargs)
+            return real_create(strategy, **kwargs)
+
+        monkeypatch.setattr(worker.ChunkerCreator, "create_chunker", _capture)
+
+        result = worker.sync(
+            task_self,
+            {"entries": [{"url": "https://example.com/", "mode": "page"}]},
+            "tuned-site",
+            "dora",
+            "website",
+            "weekly",
+            "classic",
+            str(src["id"]),
+        )
+
+        assert result == {"status": "success"}
+        assert captured["max_tokens"] == 400
+        assert captured["min_tokens"] == 50
+
+
+@pytest.mark.unit
+class TestRemoteWorkerFileTokenCount:
+    def test_long_chunk_is_counted_in_bounded_windows(
+        self,
+        tmp_path,
+        task_self,
+        monkeypatch,
+        remote_pipeline,
+    ):
+        # Mostly whitespace, so the chunker can leave one chunk far longer than a window.
+        text = "a" + " \n\t" * 1_000 + "b"
+        remote_pipeline.loader.load_data.return_value = [
+            Document(text=text, extra_info={"file_path": "big.txt"}, doc_id="d1")
+        ]
+        identity_chunker = MagicMock(name="chunker")
+        identity_chunker.chunk.side_effect = lambda documents: documents
+        monkeypatch.setattr(
+            worker.ChunkerCreator, "create_chunker", lambda *args, **kwargs: identity_chunker
+        )
+        encoding = spy_cl100k(monkeypatch, window=256)
+        expected = tokenization.count_tokens_windowed(text)
+        encoding.encode_lengths.clear()
+
+        token_counts: list[int] = []
+        real_add = worker.add_file_to_structure
+
+        def _spy_add(*args, **kwargs):
+            token_counts.append(kwargs["token_count"])
+            return real_add(*args, **kwargs)
+
+        monkeypatch.setattr(worker, "add_file_to_structure", _spy_add)
+
+        worker.remote_worker(
+            task_self,
+            {"urls": ["http://example.com"]},
+            "feed",
+            "bob",
+            "crawler",
+            directory=str(tmp_path / "temp"),
+            operation_mode="upload",
+        )
+
+        assert token_counts == [expected]
+        assert max(encoding.encode_lengths) <= 2 * 256

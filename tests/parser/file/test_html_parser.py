@@ -58,7 +58,9 @@ def test_html_parser_metadata_unreadable_file(tmp_path):
 
 # --- HTMLMarkdownParser: the anydoc engine's HTML path ---------------------------
 
-from docsgpt.parser.file.html_parser import HTMLMarkdownParser, html_to_markdown  # noqa: E402
+from bs4 import BeautifulSoup  # noqa: E402
+
+from docsgpt.parser.file.html_parser import HTMLMarkdownParser, soup_to_markdown  # noqa: E402
 
 RICH_HTML = """<html><head><title>Doc Title</title>
 <style>.x { color: red }</style><script>var secret = 1;</script></head>
@@ -128,7 +130,7 @@ def test_markdown_parser_init():
 
 
 def test_html_to_markdown_collapses_blank_runs():
-    out = html_to_markdown("<p>a</p><br/><br/><br/><br/><p>b</p>")
+    out = soup_to_markdown(BeautifulSoup("<p>a</p><br/><br/><br/><br/><p>b</p>", "html.parser"))
     assert "\n\n\n" not in out
     assert out.startswith("a") and out.endswith("b")
 
@@ -257,7 +259,7 @@ def test_data_uris_are_stripped_from_images_and_links():
         f'<p>before</p><img src="{payload}" alt="chart"><a href="{payload}">dl</a>'
         f'<img srcset="{payload} 1x" alt="x"><p>after</p>'
     )
-    text = html_to_markdown(html)
+    text = soup_to_markdown(BeautifulSoup(html, "html.parser"))
     assert "AAAA" not in text
     assert "before" in text and "after" in text
     assert len(text) < 200
@@ -276,3 +278,62 @@ def test_utf16_head_keeps_an_even_byte_count(tmp_path, monkeypatch):
     text = HTMLMarkdownParser().parse_file(path)
     assert "Zeile 0 Über Größe" in text
     assert "\x00" not in text
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        # A table written with no <th> at all: what a Word table converted to
+        # HTML looks like, and a great deal of hand-written markup besides.
+        "<table><tr><td>Product</td><td>Spec</td></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        # The same table wrapped in a <tbody>, which is what a browser's DOM has.
+        "<table><tbody><tr><td>Product</td><td>Spec</td></tr>"
+        "<tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_without_th_keeps_its_first_row_as_the_header(html):
+    """Without it the column names are read as data under a blank header."""
+    rows = [line for line in soup_to_markdown(BeautifulSoup(html, "html.parser")).splitlines() if line.startswith("|")]
+
+    assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        "<table><tr><th>Product</th><th>Spec</th></tr><tr><td>Cable</td><td>USB-C</td></tr></table>",
+        "<table><thead><tr><th>Product</th><th>Spec</th></tr></thead>"
+        "<tbody><tr><td>Cable</td><td>USB-C</td></tr></tbody></table>",
+    ],
+)
+def test_a_table_that_marks_its_header_is_unchanged(html):
+    rows = [line for line in soup_to_markdown(BeautifulSoup(html, "html.parser")).splitlines() if line.startswith("|")]
+
+    assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_the_web_extractor_gives_a_crawled_table_the_same_shape():
+    """File and web ingestion are meant to produce the same Markdown."""
+    from docsgpt.parser.remote.page_content import extract_page
+
+    html = (
+        "<html><head><title>T</title></head><body>"
+        "<table><tr><td>Product</td><td>Spec</td></tr>"
+        "<tr><td>Cable</td><td>USB-C</td></tr></table></body></html>"
+    )
+
+    markdown = extract_page(html, "https://example.com/").text
+
+    rows = [line for line in markdown.splitlines() if line.startswith("|")]
+    assert rows == ["| Product | Spec |", "| --- | --- |", "| Cable | USB-C |"]
+
+
+def test_markup_nested_too_deep_to_convert_keeps_its_text():
+    # markdownify converts recursively; a few hundred unclosed tags (which
+    # html.parser nests) used to raise RecursionError and lose the file.
+    html = "<html><body><h1>Changelog</h1>" + "".join(f"<span>entry {i}\n" for i in range(3000)) + "</body></html>"
+
+    text = soup_to_markdown(BeautifulSoup(html, "html.parser"))
+
+    assert "Changelog" in text
+    assert "entry 0" in text and "entry 2999" in text

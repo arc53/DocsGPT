@@ -1,12 +1,16 @@
 import logging
 from datetime import timedelta
-from typing import Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.exc import DataError
 
 from docsgpt.api.user.idempotency import with_idempotency
+from docsgpt.api.user.ingest_slots import with_ingest_slot
 from docsgpt.celery_init import celery
+from docsgpt.parser.connectors.base import ConnectorAuthError
 from docsgpt.parser.file.base_parser import DocumentParseError
+from docsgpt.parser.ingest_limits import IngestTooLarge
+from docsgpt.parser.remote.github_loader import GitHubRateLimited
 from docsgpt.worker import (
     AttachmentRejectedError,
     agent_webhook_worker,
@@ -70,11 +74,14 @@ logger = logging.getLogger(__name__)
 # ``/api/task_status`` (the wiki-convert and GraphRAG-enable modals) just keeps
 # reporting "pending". It is the DEFAULT here so a new durable task cannot
 # forget it; tasks needing a wider set pass their own via ``durable_task()``.
+# A source over ``INGEST_MAX_FILES`` / ``INGEST_MAX_TOKENS`` (``IngestTooLarge``)
+# is the same on every attempt too.
+NO_RETRY = (DocumentParseError, IngestTooLarge)
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    dont_autoretry_for=(DocumentParseError,),
+    dont_autoretry_for=NO_RETRY,
     max_retries=3,
     retry_backoff=60,
 )
@@ -115,15 +122,20 @@ def _emit_ingest_poison_event(task_name, bound):
 
     The guard returns before the worker runs, so the worker's own failed
     event never fires — without this the upload toast spins on "training".
+    It goes out the way the worker's own event would: for a team's source, to
+    the person who started it while they are still in the team, else to the
+    team's admins, and never to the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import _publish_source_event, close_failed_ingest_progress
 
-    publish_user_event(
+    close_failed_ingest_progress(source_id)
+    _publish_source_event(
         user,
+        bound.get("actor_id"),
         "source.ingest.failed",
         {
             "source_id": str(source_id),
@@ -139,7 +151,10 @@ def _emit_ingest_poison_event(task_name, bound):
 # a file that cannot be converted to text fails identically on every attempt,
 # so retrying only multiplies the log noise before the same failure — go
 # straight to the poison/failure path.
+# ``with_ingest_slot`` goes outside ``with_idempotency``: a task waiting for one
+# of its user's ingest slots claims no lease and spends no attempt.
 @celery.task(**DURABLE_TASK)
+@with_ingest_slot
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
@@ -154,7 +169,10 @@ def ingest(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
+    actor_id=None,
 ):
+    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner)."""
     resp = ingest_worker(
         self,
         directory,
@@ -169,17 +187,23 @@ def ingest(
         source_id=source_id,
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
+        **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
 
-@celery.task(**DURABLE_TASK)
+# A GitHub rate limit lasts up to an hour: retrying after 60/120/240 s
+# cannot help, so the failed event tells the user when to try again instead.
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, GitHubRateLimited)))
+@with_ingest_slot
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
     config=None, idempotency_key=None, source_id=None, connection_id=None,
-    sync_frequency="never",
+    sync_frequency="never", folder_id=None, actor_id=None,
 ):
+    """Ingest a remote source; ``actor_id`` is who added it when ``user`` is a team's principal (the owner)."""
     resp = remote_worker(
         self, source_data, job_name, user, loader,
         sync_frequency=sync_frequency,
@@ -187,19 +211,22 @@ def ingest_remote(
         idempotency_key=idempotency_key,
         source_id=source_id,
         connection_id=connection_id,
+        **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
 
 @celery.task(**DURABLE_TASK)
+@with_ingest_slot
 @with_idempotency(
     task_name="reingest_source_task", on_poison=_emit_ingest_poison_event,
 )
-def reingest_source_task(self, source_id, user, idempotency_key=None):
+def reingest_source_task(self, source_id, user, idempotency_key=None, actor_id=None):
+    """Re-ingest a source's stored files; ``actor_id`` (a team editor who asked) hears its events too."""
     from docsgpt.worker import reingest_source_worker
 
-    resp = reingest_source_worker(self, source_id, user)
-    return resp
+    return reingest_source_worker(self, source_id, user, actor_id=actor_id)
 
 
 @celery.task(**DURABLE_TASK)
@@ -213,10 +240,10 @@ def reembed_wiki_page(
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="convert_source_to_wiki")
-def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
+def convert_source_to_wiki(self, source_id, user, idempotency_key=None, actor_id=None):
     from docsgpt.worker import convert_source_to_wiki_worker
 
-    resp = convert_source_to_wiki_worker(self, source_id, user)
+    resp = convert_source_to_wiki_worker(self, source_id, user, actor_id=actor_id)
     return resp
 
 
@@ -224,16 +251,19 @@ def _emit_graph_poison_event(task_name, bound):
     """Publish a terminal ``graph.extract.failed`` when the poison-guard trips.
 
     The guard returns before the worker runs, so the worker's own failed event
-    never fires — without this the build UI spins forever.
+    never fires — without this the build UI spins forever. For a team's source
+    it reaches the person who started the build while they are still in the
+    team, never the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import _publish_source_event
 
-    publish_user_event(
+    _publish_source_event(
         user,
+        bound.get("actor_id"),
         "graph.extract.failed",
         {
             "source_id": str(source_id),
@@ -245,11 +275,18 @@ def _emit_graph_poison_event(task_name, bound):
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None):
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False, actor_id=None):
+    """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks.
+
+    ``sync`` (after a sync re-embedded the source) carries the graph over by
+    chunk content and extracts only new text. ``actor_id`` (who added the
+    knowledge) pays for the extraction's model calls and hears its events.
+    """
     from docsgpt.worker import extract_graph_worker
 
-    resp = extract_graph_worker(self, source_id, user)
-    return resp
+    return extract_graph_worker(
+        self, source_id, user, chunk_ids=chunk_ids, sync=sync, **({"actor_id": actor_id} if actor_id else {}),
+    )
 
 
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
@@ -262,8 +299,9 @@ def schedule_syncs(self, frequency):
     return resp
 
 
+# Each attempt walks the whole selection again, so what fails the same way every time is not retried.
 @celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
-             dont_autoretry_for=(_connection_unavailable(),))
+             dont_autoretry_for=(*NO_RETRY, _connection_unavailable(), ConnectorAuthError))
 def sync_connector_source(self, source_id):
     """Re-sync one connector source from its connection, with no browser involved."""
     from docsgpt.worker import sync_connector_source as run
@@ -272,6 +310,34 @@ def sync_connector_source(self, source_id):
 
 
 @celery.task(bind=True)
+def website_pages(
+    self: Any,
+    source_id: str,
+    user: str,
+    operation: str,
+    urls: Optional[List[str]] = None,
+    file_path: Optional[str] = None,
+    pages: Optional[List[Dict[str, str]]] = None,
+    url: Optional[str] = None,
+    actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Add pages to a Website source, refresh one, or remove some (``website_pages_worker``).
+
+    Not retried: a page that can't be fetched fails the same way again, and
+    the worker has already reported it. A failed removal changes nothing, so
+    it can be asked for again. ``actor_id`` is the user who asked, when not
+    the owner (a team editor): the ``source.ingest.*`` events go to them too.
+    """
+    from docsgpt.worker import website_pages_worker
+
+    return website_pages_worker(
+        self, source_id, user, operation, urls=urls, file_path=file_path, pages=pages, url=url, actor_id=actor_id,
+    )
+
+
+@celery.task(bind=True)
+@with_ingest_slot
+@with_idempotency(task_name="sync_source")
 def sync_source(
     self,
     source_data,
@@ -282,7 +348,16 @@ def sync_source(
     retriever,
     doc_id,
     connection_id=None,
+    actor_id=None,
+    idempotency_key=None,
+    lock_wait_seconds=None,
+    notify_skip=True,
 ):
+    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too.
+
+    A scheduled sync passes ``lock_wait_seconds=0`` and ``notify_skip=False``:
+    a source busy with another job is left to the next schedule, quietly.
+    """
     resp = sync(
         self,
         source_data,
@@ -293,6 +368,9 @@ def sync_source(
         retriever,
         doc_id,
         connection_id=connection_id,
+        actor_id=actor_id,
+        notify_skip=notify_skip,
+        **({"lock_wait_seconds": lock_wait_seconds} if lock_wait_seconds is not None else {}),
     )
     return resp
 
@@ -389,11 +467,24 @@ def store_archive_member(self, member_info, user, idempotency_key=None):
     return archive_member_worker(self, member_info, user)
 
 
-@celery.task(**DURABLE_TASK)
+@celery.task(
+    bind=True,
+    acks_late=True,
+    # Not DURABLE_TASK: agent runs have side effects; blind retry would double them.
+    autoretry_for=(),
+    max_retries=0,
+)
 @with_idempotency(task_name="process_agent_webhook")
 def process_agent_webhook(self, agent_id, payload, idempotency_key=None):
     resp = agent_webhook_worker(self, agent_id, payload)
     return resp
+
+
+# Soft limit ends the run with a "timeout" result; the hard limit is the backstop.
+from docsgpt.core.settings import settings as _webhook_settings  # noqa: E402
+
+process_agent_webhook.soft_time_limit = max(30, int(_webhook_settings.WEBHOOK_RUN_TIMEOUT))
+process_agent_webhook.time_limit = process_agent_webhook.soft_time_limit + 60
 
 
 # Seconds the hard (SIGKILL) limit trails the soft limit, giving the soft handler
@@ -476,7 +567,9 @@ except Exception:
 
 # A revoked or disconnected connection will not heal by retrying; the
 # service has already paused the source and told its owner to reconnect.
-@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, _connection_unavailable())))
+# Neither will a sign-in the provider rejects after a refresh.
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, _connection_unavailable(), ConnectorAuthError)))
+@with_ingest_slot
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )
@@ -497,7 +590,14 @@ def ingest_connector_task(
     idempotency_key=None,
     source_id=None,
     connection_id=None,
+    actor_id=None,
+    folder_id=None,
 ):
+    """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
+
+    ``actor_id`` is the user who asked, when not the owner (a team editor's
+    re-ingest or Sync now): the ``source.ingest.*`` events go to them too.
+    """
     from docsgpt.worker import ingest_connector
 
     resp = ingest_connector(
@@ -517,6 +617,8 @@ def ingest_connector_task(
         config=config,
         idempotency_key=idempotency_key,
         source_id=source_id,
+        actor_id=actor_id,
+        **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
 
@@ -578,13 +680,68 @@ def cleanup_schedule_runs(self):
 
 
 @celery.task(bind=True, acks_late=False)
+def sse_connections_gauge_task(self):
+    """Log a point-in-time gauge of open SSE connections and Celery queues.
+
+    Counts the live leases in the per-user ``user:*:sse_leases`` sorted
+    sets that SSE streams hold and emits a structured ``sse_gauge`` event
+    with ``connected_users`` / ``connections`` attributes. An idle fleet
+    still logs a zero so a chart has continuous data.
+
+    The same event carries the Celery queue gauge
+    (``queue_<name>_depth`` / ``_wait_s`` / ``_in_flight`` for every
+    declared queue, see ``docsgpt/events/queue_gauge.py``). The two are
+    read independently: a cache Redis error drops only the connection
+    counts, a broker error only the queue fields, and the event is
+    skipped only when neither could be read.
+    """
+    from docsgpt.cache import get_redis_instance
+    from docsgpt.events.gauge import measure_sse_connections
+    from docsgpt.events import queue_gauge
+
+    snapshot = None
+    skipped = "redis unavailable"
+    redis_client = get_redis_instance()
+    if redis_client is not None:
+        try:
+            snapshot = measure_sse_connections(redis_client)
+        except Exception:
+            # Transient Redis hiccup — the next minute's sweep will cover it.
+            logging.warning("sse_gauge sweep failed", exc_info=True)
+            skipped = "redis error"
+    queues = None
+    try:
+        broker = queue_gauge.broker_redis()
+        if broker is not None:
+            from docsgpt.celeryconfig import task_queues
+
+            queues = queue_gauge.measure_celery_queues(broker, [q.name for q in task_queues])
+    except Exception:
+        logging.warning("queue gauge sweep failed", exc_info=True)
+        queues = None
+    if snapshot is None and not queues:
+        return {"skipped": skipped}
+    logging.info(
+        "sse_gauge",
+        extra={
+            **(snapshot or {}),
+            **(queue_gauge.queue_log_fields(queues) if queues else {}),
+        },
+    )
+    if queues:
+        return {**(snapshot or {}), "queues": queues}
+    return snapshot
+
+
+@celery.task(bind=True, acks_late=False)
 def reap_sandbox_sessions(self):
-    """Close sandbox sessions idle past their TTL in this worker process.
+    """Let go of sandbox sessions idle past their TTL in this worker process.
 
     The SandboxManager registry is per-process, so this reaps only sessions
     bound in THIS worker; the API processes reap their own opportunistically on
-    ``open``. Artifacts are persisted eagerly, so reaping only closes idle
-    kernels and never loses a user-facing artifact.
+    ``open``. A Daytona sandbox another process may still use is only released
+    here, and deleted once no process has used it for ``SANDBOX_MAX_TTL``.
+    Artifacts are persisted eagerly, so reaping never loses a user-facing artifact.
     """
     try:
         from docsgpt.sandbox.sandbox_creator import SandboxCreator
@@ -651,6 +808,18 @@ def poll_background_sandbox_job(self, job_id):
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def poll_background_device_job(self, job_id):
+    """One poll of a background job's command on a paired device; re-queues itself until it reports.
+
+    Never retried by Celery: a failed poll re-queues itself with a backoff,
+    and the background sweep restarts a chain that broke.
+    """
+    from docsgpt.background.device_runner import poll_job
+
+    return poll_job(job_id)
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
 def run_background_tool_call(self, job_id, payload):
     """Run an explicit ``background=true`` tool call in this worker and finish its job.
 
@@ -684,7 +853,7 @@ def continue_conversation(self, conversation_id, attempt=0):
 
 
 # A continuation is an agent turn: the same time limit as a scheduled run.
-continue_conversation.soft_time_limit = max(30, int(_background_settings.SCHEDULE_RUN_TIMEOUT))
+continue_conversation.soft_time_limit = max(30, int(_background_settings.CONTINUATION_RUN_TIMEOUT))
 continue_conversation.time_limit = continue_conversation.soft_time_limit + 60
 
 
@@ -792,6 +961,16 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         timedelta(hours=24),
+        cleanup_decision_usage.s(),
+        name="cleanup-decision-usage",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_content_scores.s(),
+        name="cleanup-content-scores",
+    )
+    sender.add_periodic_task(
+        timedelta(hours=24),
         cleanup_traces.s(),
         name="cleanup-traces",
     )
@@ -810,6 +989,13 @@ def setup_periodic_tasks(sender, **kwargs):
         timedelta(hours=24),
         cleanup_schedule_runs.s(),
         name="cleanup-schedule-runs",
+    )
+    # Open SSE connections and Celery queue depth, wait and in-flight, once a
+    # minute; the sweep is a few SCAN / pipelined round-trips.
+    sender.add_periodic_task(
+        timedelta(seconds=60),
+        sse_connections_gauge_task.s(),
+        name="sse-connections-gauge",
     )
     # Close idle-past-TTL sandbox sessions roughly every minute. The on-open
     # opportunistic reap still runs in the API processes; this covers worker
@@ -839,6 +1025,39 @@ def setup_periodic_tasks(sender, **kwargs):
         name="cleanup-background-jobs",
     )
     sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
+    # Vectors of ingests that ended without a source, once they are
+    # INGEST_ORPHAN_TTL_HOURS old.
+    sender.add_periodic_task(timedelta(hours=1), cleanup_orphaned_ingests.s(), name="cleanup-orphaned-ingests")
+    # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
+    # digest run on ANALYTICS_QUEUE and are only scheduled while
+    # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
+    # drops entries no longer registered). ``expires`` only drops a message a
+    # worker receives too late, so a backlog does not run sweeps back to back
+    # or send a digest per stale message: the Redis broker checks it on
+    # receipt, and an unconsumed queue keeps every message. Label retention
+    # runs on ``docsgpt`` regardless, so labels made while analytics was on are
+    # still purged after it goes off.
+    from docsgpt.analytics.tasks import analytics_gap_digest, analytics_sweep, cleanup_conversation_labels
+
+    analytics_on = bool(settings.DECISION_ANALYTICS_ENABLED)
+    if analytics_on:
+        sweep_every = max(60, settings.ANALYTICS_SWEEP_SECONDS)
+        sender.add_periodic_task(
+            timedelta(seconds=sweep_every),
+            analytics_sweep.s(),
+            name="analytics-sweep",
+            expires=sweep_every,
+        )
+    sender.add_periodic_task(
+        timedelta(hours=24),
+        cleanup_conversation_labels.s(),
+        name="cleanup-conversation-labels",
+        expires=24 * 3600,
+    )
+    if analytics_on:
+        sender.add_periodic_task(
+            timedelta(weeks=1), analytics_gap_digest.s(), name="analytics-gap-digest", expires=6 * 3600
+        )
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the
@@ -848,8 +1067,19 @@ def setup_periodic_tasks(sender, **kwargs):
 # terminal ``mcp.oauth.failed``; the hard limit is the prefork backstop.
 # Generous so a human actively clicking through OAuth isn't cut off.
 @celery.task(bind=True, soft_time_limit=600, time_limit=660)
-def mcp_oauth_task(self, config, user):
-    resp = mcp_oauth(self, config, user)
+def mcp_oauth_task(self, config, user, actor=None):
+    """Sign in to an MCP server; ``user`` owns the sign-in, ``actor`` is the Admin signing in for a team.
+
+    Args:
+        self: The bound task.
+        config: The MCP server config.
+        user: The person, or a team's principal.
+        actor: For a team's sign-in, the Admin who follows it (its events and status are theirs).
+
+    Returns:
+        What :func:`docsgpt.worker.mcp_oauth` returns.
+    """
+    resp = mcp_oauth(self, config, user, actor)
     return resp
 
 
@@ -871,11 +1101,13 @@ def cleanup_pending_tool_state(self):
         reverted = repo.revert_stale_resuming(grace_seconds=600)
         cleared = repo.cleanup_expired()
 
-    # Reaping the resumable state retires any awaiting-approval prompt
-    # tied to it. Without a clearing event the durable
-    # ``tool.approval.required`` envelope replays on reconnect and the UI
-    # toast lingers for a conversation that can no longer be resumed.
-    from docsgpt.events.publisher import publish_user_event
+    # Reaping the resumable state retires the turn that waited on it: its
+    # message keeps what it did, with the calls it waited on as never run,
+    # and the awaiting-approval prompt is revoked. Without a clearing event
+    # the durable ``tool.approval.required`` envelope replays on reconnect
+    # and the UI toast lingers for a conversation that can no longer be
+    # resumed.
+    from docsgpt.api.answer.services import continuation_service
 
     for row in cleared:
         user_id = row.get("user_id")
@@ -890,27 +1122,20 @@ def cleanup_pending_tool_state(self):
         )
         if reserved_message_id:
             try:
-                from docsgpt.api.answer.services.conversation_service import (
-                    ConversationService,
-                    TERMINATED_RESPONSE_PLACEHOLDER,
-                )
-
-                ConversationService().finalize_message(
-                    str(reserved_message_id),
-                    TERMINATED_RESPONSE_PLACEHOLDER,
-                    status="failed",
-                    error=TimeoutError("Tool continuation expired before resume"),
-                )
+                with engine.begin() as conn:
+                    continuation_service.retire_paused_message(
+                        conn, row, continuation_service.RETIRED_EXPIRED
+                    )
             except Exception:
                 logger.exception(
                     "Failed to retire expired continuation message %s",
                     reserved_message_id,
                 )
-        publish_user_event(
+        continuation_service.publish_pause_retired(
             str(user_id),
-            "tool.approval.cleared",
-            {"conversation_id": str(conversation_id), "reason": "expired"},
-            scope={"kind": "conversation", "id": str(conversation_id)},
+            str(conversation_id),
+            str(reserved_message_id) if reserved_message_id else None,
+            continuation_service.RETIRED_EXPIRED,
         )
     return {"deleted": len(cleared), "reverted": reverted}
 
@@ -939,6 +1164,14 @@ def cleanup_idempotency_dedup(self):
     engine = get_engine()
     with engine.begin() as conn:
         return IdempotencyRepository(conn).cleanup_expired()
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_orphaned_ingests(self):
+    """Delete the vectors of ingests that ended without a source, past ``INGEST_ORPHAN_TTL_HOURS``."""
+    from docsgpt.api.user.ingest_orphans import sweep_orphaned_ingests
+
+    return sweep_orphaned_ingests()
 
 
 @celery.task(bind=True, acks_late=False)
@@ -1025,6 +1258,78 @@ def cleanup_guardrail_events(self):
     with engine.begin() as conn:
         deleted = GuardrailEventsRepository(conn).purge_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_decision_usage(self):
+    """Delete ``decision_usage`` days older than ``DECISION_USAGE_RETENTION_DAYS``.
+
+    The rows are small counters, one per day, feature, mode, model version
+    and status, but they are written for as long as a feature is on.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.decision_usage import (
+        DecisionUsageRepository,
+    )
+
+    ttl_days = settings.DECISION_USAGE_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = DecisionUsageRepository(conn).purge_older_than(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_content_scores(self):
+    """Delete cached prompt-injection scores unseen for ``GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS``.
+
+    A row is written for every text scored and kept while it is seen again,
+    so text that left every index and conversation is eventually forgotten.
+    """
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.storage.db.engine import get_engine
+    from docsgpt.storage.db.repositories.content_scores import (
+        ContentScoresRepository,
+    )
+
+    ttl_days = settings.GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS
+    engine = get_engine()
+    with engine.begin() as conn:
+        deleted = ContentScoresRepository(conn).purge_unseen_for(ttl_days)
+    return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def score_injection_texts(self, texts):
+    """Score for prompt injection the texts a turn could not score in time, so the next one finds them cached.
+
+    The model is called over HTTP (the decider, or the API's internal route),
+    never loaded here. Nothing is retried: a text left unscored is queued
+    again by the next turn that uses it.
+    """
+    from docsgpt.guardrails import injection_scoring
+
+    return injection_scoring.score_lazy(list(texts or []))
+
+
+@celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)
+def touch_content_scores(self, hashes, scorer):
+    """Mark cached prompt-injection scores a chat turn read as seen today, so retention keeps them.
+
+    Queued by the turn rather than written in it; at most once per row and
+    day (``ContentScoresRepository.touch``).
+    """
+    from docsgpt.guardrails import injection_scoring
+
+    injection_scoring._touch(list(hashes or []), scorer)
+    return {"hashes": len(hashes or [])}
 
 
 @celery.task(bind=True, acks_late=False)

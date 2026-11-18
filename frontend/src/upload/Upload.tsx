@@ -1,16 +1,17 @@
-import { ArrowRight, FileText } from 'lucide-react';
+import { ArrowRight, FileText, X } from 'lucide-react';
 import { envVar } from '@/env';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { nanoid } from '@reduxjs/toolkit';
-import type { FileRejection } from 'react-dropzone';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import type { RootState } from '../store';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
+import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { FormField as UiFormField } from '../components/ui/form-field';
 import { Textarea } from '../components/ui/textarea';
@@ -20,7 +21,9 @@ import { SectionHeader } from '../components/ui/section-header';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { syncTargets } from '../connectors/catalogCards';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
+import type { LeaveTo } from '../hooks/useLeaveGuard';
 import { connectorName } from '../connectors/i18n';
+import { connectionErrorMessage } from '../connectors/connectionErrors';
 import {
   connectionNeedsSignIn,
   loadConnectors,
@@ -28,6 +31,8 @@ import {
   selectConnectorCatalog,
   selectConnectorsEnabled,
   selectConnectorsLoaded,
+  selectPickableConnections,
+  selectWorkspaceConnectorCatalog,
 } from '../connectors/connectorsSlice';
 import type { AppDispatch } from '../store';
 import type { ConnectorDefinition } from '../connectors/types';
@@ -37,13 +42,12 @@ import { ListRow, ListRows } from '../components/ui/list-row';
 import { formatBytes } from '../components/artifactViewUtils';
 import { ActiveState, Doc } from '../models/misc';
 
-import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSelectedDocs,
   selectToken,
   setSelectedDocs,
-  setSourceDocs,
 } from '../preferences/preferenceSlice';
+import { reloadSourceDocs } from '../preferences/reloadSourceDocs';
 import {
   IngestorDefaultConfigs,
   IngestorFormSchemas,
@@ -51,23 +55,84 @@ import {
   IngestorOption,
   UPLOAD_AND_WEB_INGESTORS,
 } from '../upload/types/ingestor';
+import { selectInTeam } from '../settings/workspaceAccess';
+import {
+  roleAtLeast,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
 import { addUploadTask, updateUploadTask } from './uploadSlice';
 
 import { FormField, IngestorConfig, IngestorType } from './types/ingestor';
 
 import { FILE_UPLOAD_ACCEPT } from '../constants/fileUpload';
+import {
+  getFolderName,
+  getUploadPath,
+  hasAcceptedExtension,
+  isHiddenUpload,
+} from './folderUpload';
 import RetrievalOptions, {
-  DEFAULT_RETRIEVAL_OPTIONS,
   isPrescreenConfigValid,
   optionsToConfig,
-  type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import useNewSourceOptions from '../settings/components/useNewSourceOptions';
+import { isWikiUnsupported } from '../settings/wikiConvertUtils';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
+import {
+  captureWorkspace,
+  type CapturedWorkspace,
+  requestWorkspace,
+  WORKSPACE_HEADER,
+} from '../workspace/requestWorkspace';
+import WebsiteFields from './WebsiteFields';
+import useWebPageLimits, { useReseedMaxPages } from './useWebPageLimits';
+import {
+  defaultWebsiteDraft,
+  isWebsiteDraftValid,
+  nameFromUrl,
+  pathPrefixFromUrl,
+  type SyncFrequency,
+  type WebsiteDraft,
+  websiteConfig,
+  websiteRefusalForCode,
+} from './website';
 
 /** Per-file limit for local uploads (25 MB), enforced by the dropzone. */
 const MAX_UPLOAD_BYTES = 25000000;
 /** Service tiles on the first step: two rows of three. */
 const SERVICE_TILE_LIMIT = 6;
+
+/**
+ * Why the server refused an upload or ingest: a Website or team connection
+ * refusal `code` in the user's language, else its JSON `message` or `error`
+ * sentence when it sent one, else a generic line (never the HTTP status
+ * text, nor a bare code).
+ *
+ * @param t The translate function.
+ * @param responseText The response body.
+ * @param fallback The localized generic message.
+ * @param status The response's HTTP status.
+ * @returns The message for the upload toast.
+ */
+function refusalMessage(
+  t: TFunction,
+  responseText: string,
+  fallback: string,
+  status?: number,
+): string {
+  try {
+    const data = JSON.parse(responseText) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    const worded = websiteRefusalForCode(t, data);
+    if (worded) return worded;
+    return connectionErrorMessage(t, data, { status, fallback });
+  } catch {
+    // Not JSON (a proxy's error page): the generic line.
+  }
+  return fallback;
+}
 
 function Upload({
   receivedFile = [],
@@ -78,6 +143,8 @@ function Upload({
   onSuccessfulUpload = () => undefined,
   selectUploadedDoc = true,
   onBrowseConnectors,
+  onNavigate,
+  folderId = null,
 }: {
   receivedFile: File[];
   setModalState: (state: ActiveState) => void;
@@ -98,12 +165,36 @@ function Upload({
    * closes first.
    */
   onBrowseConnectors?: () => void;
+  /**
+   * How a connect run started here leaves for a page (Open in Knowledge,
+   * Try it in chat); a builder passes its leave guard's `leaveTo`. The
+   * router's navigate otherwise.
+   */
+  onNavigate?: LeaveTo;
+  /**
+   * The caller's Knowledge folder the new source is filed into (Add
+   * knowledge inside a folder), by upload, remote ingest or sync alike.
+   */
+  folderId?: string | null;
 }) {
   const token = useSelector(selectToken);
   const connectorCatalog = useSelector(selectConnectorCatalog);
   const connections = useSelector(selectConnections);
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
-  const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const connectorsOn = useSelector(selectConnectorsEnabled);
+  const inTeam = useSelector(selectInTeam);
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  // A team's source reads only through an account connected for the team,
+  // and only whoever connected it picks what it shares: in a team the
+  // services are those the caller can pick from a team account (never their
+  // own accounts, which stay in Personal, nor a teammate's).
+  const pickableConnections = useSelector(selectPickableConnections);
+  const workspaceCatalog = useSelector(selectWorkspaceConnectorCatalog);
+  const syncCatalog = inTeam ? workspaceCatalog : connectorCatalog;
+  const syncAccounts = inTeam ? pickableConnections : connections;
+  // Admins connect the team's accounts on the Connectors page.
+  const canConnectForTeam =
+    inTeam && connectorsOn && roleAtLeast(role, 'admin');
   // Connecting a service (a "From a service" card, GitHub's private-
   // repository hand-over) goes to the connect wizard, the one flow every
   // entry point uses. This modal steps aside while it runs: a connect closes
@@ -114,14 +205,81 @@ function Upload({
   // Names of the files the last drop turned away (over the size limit or of
   // an unaccepted type), shown under the dropzone.
   const [rejectedFiles, setRejectedFiles] = useState<string[]>([]);
+  // Hidden folder picker behind the "Or choose a whole folder" link.
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  const setFolderInput = useCallback((input: HTMLInputElement | null) => {
+    folderInputRef.current = input;
+    // React has no prop for it; it turns the file picker into a folder picker.
+    if (input) input.webkitdirectory = true;
+  }, []);
   const [activeTab, setActiveTab] = useState<boolean>(true);
-  const [retrievalOptions, setRetrievalOptions] =
-    useState<RetrievalOptionsValue>(DEFAULT_RETRIEVAL_OPTIONS);
-  const { graphRAGAvailable, hybridAvailable, availableModels } =
+  const {
+    value: retrievalOptions,
+    setValue: setRetrievalOptions,
+    reset: resetRetrievalOptions,
+  } = useNewSourceOptions(token);
+  const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
+  // The Website form: its draft, schedule and link setting. The schedule
+  // follows the mode (never for pages, weekly for a site) until picked, and
+  // "Stay under" follows the address until typed in.
+  const webLimits = useWebPageLimits();
+  const [websiteDraft, setWebsiteDraft] = useState<WebsiteDraft>(() =>
+    defaultWebsiteDraft(webLimits.defaultPages),
+  );
+  useReseedMaxPages(webLimits.defaultPages, setWebsiteDraft);
+  const [syncFrequency, setSyncFrequency] = useState<SyncFrequency>('never');
+  const [syncTouched, setSyncTouched] = useState(false);
+  const [prefixTouched, setPrefixTouched] = useState(false);
+  const [keepLinks, setKeepLinks] = useState(false);
+
+  const resetWebsite = useCallback((defaultPages: number) => {
+    setWebsiteDraft(defaultWebsiteDraft(defaultPages));
+    setSyncFrequency('never');
+    setSyncTouched(false);
+    setPrefixTouched(false);
+    setKeepLinks(false);
+  }, []);
+
+  const handleWebsiteChange = (next: WebsiteDraft) => {
+    let draft = next;
+    const firstUrl = next.urls[0] ?? '';
+    if (next.pathPrefix !== websiteDraft.pathPrefix) {
+      setPrefixTouched(true);
+    } else if (
+      !prefixTouched &&
+      next.mode === 'site' &&
+      (firstUrl !== websiteDraft.urls[0] || next.mode !== websiteDraft.mode)
+    ) {
+      draft = { ...next, pathPrefix: pathPrefixFromUrl(firstUrl) };
+    }
+    if (next.mode !== websiteDraft.mode && !syncTouched) {
+      setSyncFrequency(next.mode === 'site' ? 'weekly' : 'never');
+    }
+    if (!nameTouched) {
+      setIngestor((prev) => ({ ...prev, name: nameFromUrl(firstUrl) }));
+    }
+    setWebsiteDraft(draft);
+  };
 
   const renderFormFields = () => {
     if (!ingestor.type) return null;
+    if (ingestor.type === 'website') {
+      return (
+        <WebsiteFields
+          draft={websiteDraft}
+          onChange={handleWebsiteChange}
+          maxPages={webLimits.maxPages}
+          syncFrequency={syncFrequency}
+          onSyncFrequencyChange={(value) => {
+            setSyncTouched(true);
+            setSyncFrequency(value);
+          }}
+          keepLinks={keepLinks}
+          onKeepLinksChange={setKeepLinks}
+        />
+      );
+    }
     const ingestorSchema = getIngestorSchema(ingestor.type as IngestorType);
     if (!ingestorSchema) return null;
     return (
@@ -134,6 +292,7 @@ function Upload({
   const renderField = (field: FormField) => {
     const isRequired = field.required ?? false;
     const fieldLabel = field.labelKey ? t(field.labelKey) : field.label;
+    const fieldHint = field.hintKey ? t(field.hintKey) : undefined;
     switch (field.type) {
       case 'string':
         return (
@@ -160,6 +319,7 @@ function Upload({
             key={field.name}
             label={fieldLabel}
             required={isRequired}
+            hint={fieldHint}
           >
             <Textarea
               name={field.name}
@@ -173,10 +333,8 @@ function Upload({
                   e.target.value,
                 )
               }
-              required={isRequired}
               rows={8}
               size="lg"
-              variant="filled"
             />
           </UiFormField>
         );
@@ -200,12 +358,31 @@ function Upload({
                   : undefined
               }
             />
+            {/* Dropping a folder works on the target itself; clicking it can
+                only pick files, so the folder picker is a link under it. */}
+            <Button
+              type="button"
+              variant="link"
+              size="inline"
+              className="self-start"
+              onClick={() => folderInputRef.current?.click()}
+            >
+              {t('modals.uploadDoc.selectFolder')}
+            </Button>
+            <input
+              ref={setFolderInput}
+              type="file"
+              multiple
+              className="hidden"
+              data-testid="folder-input"
+              onChange={onFolderPicked}
+            />
             {files.length > 0 && (
               <Card variant="outline" padding="none">
                 <ListRows>
                   {files.map((file) => (
                     <ListRow
-                      key={`${file.name}-${file.size}-${file.lastModified}`}
+                      key={getUploadPath(file)}
                       leading={
                         <Avatar
                           aria-hidden="true"
@@ -216,8 +393,25 @@ function Upload({
                           <FileText className="size-4" />
                         </Avatar>
                       }
-                      title={<span title={file.name}>{file.name}</span>}
+                      title={
+                        <span title={getUploadPath(file)}>
+                          {getUploadPath(file)}
+                        </span>
+                      }
                       description={formatBytes(file.size)}
+                      trailing={
+                        <IconButton
+                          variant="ghost-destructive"
+                          size="icon-sm"
+                          icon={X}
+                          label={t('modals.uploadDoc.removeFile', {
+                            name: getUploadPath(file),
+                            // React escapes the text; i18next must not too.
+                            interpolation: { escapeValue: false },
+                          })}
+                          onClick={() => removeFile(file)}
+                        />
+                      }
                     />
                   ))}
                 </ListRows>
@@ -259,9 +453,10 @@ function Upload({
     setIngestor({ type: null, name: '', config: {} });
     setfiles([]);
     setRejectedFiles([]);
-    setRetrievalOptions(DEFAULT_RETRIEVAL_OPTIONS);
+    resetRetrievalOptions();
     setNameTouched(false);
-  }, []);
+    resetWebsite(webLimits.defaultPages);
+  }, [resetRetrievalOptions, resetWebsite, webLimits.defaultPages]);
 
   const handleTaskFailure = useCallback(
     (clientTaskId: string, errorMessage?: string) => {
@@ -278,13 +473,18 @@ function Upload({
     [dispatch],
   );
 
-  /** Re-read the source list into the store so a new source is pickable. */
+  /**
+   * Re-read the source list into the store so a new source is pickable. A
+   * list read for a workspace the app has left is not applied.
+   *
+   * @param workspace The workspace the upload started in; now when left out.
+   * @returns The list, or null once the app has left that workspace.
+   */
   const refreshSourceDocs = useCallback(
-    () =>
-      getDocs(token).then((docs) => {
-        dispatch(setSourceDocs(docs));
-        return docs;
-      }),
+    async (workspace: CapturedWorkspace = captureWorkspace()) => {
+      const docs = await dispatch(reloadSourceDocs(token));
+      return workspace.isCurrent() ? docs : null;
+    },
     [dispatch, token],
   );
 
@@ -319,6 +519,8 @@ function Upload({
       batch?: ReadonlySet<string>,
     ) => {
       let handled = false;
+      // The new source joins the selection of the workspace it was made in.
+      const workspace = captureWorkspace();
 
       const handleTerminal = (
         status: 'completed' | 'failed',
@@ -327,7 +529,7 @@ function Upload({
         if (handled) return;
         handled = true;
         if (status !== 'completed') return;
-        refreshSourceDocs()
+        refreshSourceDocs(workspace)
           .then((docs) => {
             if (selectUploadedDoc && Array.isArray(docs) && sourceId) {
               // Match the id this upload returned. Diffing against the list as
@@ -433,39 +635,86 @@ function Upload({
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: () => close(),
     onCancel: () => setHandedOver(false),
+    onNavigate,
+    folderId,
     onSynced: (sourceIds) => {
       const batch = new Set(sourceIds);
       sourceIds.forEach((sourceId) => trackTraining(sourceId, sourceId, batch));
     },
   });
 
-  const onDrop = useCallback(
-    (acceptedFiles: File[], rejections: FileRejection[] = []) => {
-      setfiles(acceptedFiles);
-      setRejectedFiles(rejections.map((rejection) => rejection.file.name));
-      const pickedName = acceptedFiles[0]?.name;
-      if (!nameTouched && pickedName) {
-        setIngestor((prev) => ({ ...prev, name: pickedName }));
-      }
-
-      // If we're in local_file mode, update the ingestor config
+  /** The picked files, kept in the local-file ingestor's config too. */
+  const setPickedFiles = useCallback(
+    (next: File[]) => {
+      setfiles(next);
       if (ingestor.type === 'local_file') {
         setIngestor((prevState) => ({
           ...prevState,
-          config: {
-            ...prevState.config,
-            files: acceptedFiles,
-          },
+          config: { ...prevState.config, files: next },
         }));
       }
     },
-    [ingestor.type, nameTouched],
+    [ingestor.type],
   );
+
+  const removeFile = (file: File) => {
+    const path = getUploadPath(file);
+    setPickedFiles(files.filter((f) => getUploadPath(f) !== path));
+  };
+
+  const onDrop = useCallback(
+    // Rejections come from the dropzone or from onFolderPicked below.
+    (pickedFiles: File[], rejections: { file: File }[] = []) => {
+      // A folder brings its hidden files (.git, .DS_Store) along. The worker
+      // skips them anyway, so leave them out without listing them as rejected.
+      const acceptedFiles = pickedFiles.filter((file) => !isHiddenUpload(file));
+      // A new pick adds to the list. A path picked again replaces its file
+      // in place (Map.set keeps the first position).
+      const byPath = new Map(files.map((file) => [getUploadPath(file), file]));
+      acceptedFiles.forEach((file) => byPath.set(getUploadPath(file), file));
+      const merged = Array.from(byPath.values());
+      setPickedFiles(merged);
+      setRejectedFiles(
+        rejections
+          .filter((rejection) => !isHiddenUpload(rejection.file))
+          .map((rejection) => getUploadPath(rejection.file)),
+      );
+      // An untouched name follows the list's first file, not the latest pick.
+      const firstFile = merged[0];
+      const pickedName = firstFile
+        ? (getFolderName(firstFile) ?? firstFile.name)
+        : undefined;
+      if (!nameTouched && pickedName) {
+        setIngestor((prev) => ({ ...prev, name: pickedName }));
+      }
+    },
+    [files, nameTouched, setPickedFiles],
+  );
+
+  // The folder picker applies no filter, so check type and size here the way
+  // the dropzone does for a drop.
+  const onFolderPicked = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(event.target.files ?? []);
+    // Let the same folder be picked again.
+    event.target.value = '';
+    const accepted: File[] = [];
+    const rejections: { file: File }[] = [];
+    picked.forEach((file) => {
+      if (
+        hasAcceptedExtension(file, FILE_UPLOAD_ACCEPT) &&
+        file.size <= MAX_UPLOAD_BYTES
+      )
+        accepted.push(file);
+      else rejections.push({ file });
+    });
+    onDrop(accepted, rejections);
+  };
 
   const uploadFile = (clientTaskId: string) => {
     const formData = new FormData();
     files.forEach((file) => {
-      formData.append('file', file);
+      // Sent with its path inside the folder, so the source keeps the tree.
+      formData.append('file', file, getUploadPath(file));
     });
 
     formData.append('name', ingestor.name);
@@ -474,8 +723,11 @@ function Upload({
       'config',
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
+    if (folderId) formData.append('folder_id', folderId);
 
     const apiHost = envVar('VITE_API_HOST');
+    // The source is created in the workspace the upload started in.
+    const workspace = requestWorkspace();
     const xhr = new XMLHttpRequest();
 
     dispatch(
@@ -531,7 +783,15 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          refusalMessage(
+            t,
+            xhr.responseText,
+            t('common.actionFailed'),
+            xhr.status,
+          ),
+        );
       }
     };
 
@@ -541,6 +801,7 @@ function Upload({
 
     xhr.open('POST', `${apiHost}/api/upload`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader(WORKSPACE_HEADER, workspace);
     xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
@@ -559,12 +820,23 @@ function Upload({
       'config',
       JSON.stringify(optionsToConfig(retrievalOptions)),
     );
+    if (folderId) formData.append('folder_id', folderId);
 
-    formData.append('data', JSON.stringify(ingestor.config));
+    if (ingestor.type === 'website') {
+      formData.append(
+        'data',
+        JSON.stringify(websiteConfig(websiteDraft, keepLinks)),
+      );
+      formData.append('sync_frequency', syncFrequency);
+    } else {
+      formData.append('data', JSON.stringify(ingestor.config));
+    }
 
     const apiHost: string = envVar('VITE_API_HOST');
     // Local files go through uploadFile; everything else is fetched remotely.
     const endpoint = `${apiHost}/api/remote`;
+    // The source is created in the workspace the ingest started in.
+    const workspace = requestWorkspace();
 
     const xhr = new XMLHttpRequest();
 
@@ -621,7 +893,15 @@ function Upload({
           handleTaskFailure(clientTaskId);
         }
       } else {
-        handleTaskFailure(clientTaskId, xhr.statusText || undefined);
+        handleTaskFailure(
+          clientTaskId,
+          refusalMessage(
+            t,
+            xhr.responseText,
+            t('common.actionFailed'),
+            xhr.status,
+          ),
+        );
       }
     };
 
@@ -631,6 +911,7 @@ function Upload({
 
     xhr.open('POST', endpoint);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader(WORKSPACE_HEADER, workspace);
     xhr.setRequestHeader('Idempotency-Key', clientTaskId);
     xhr.send(formData);
   };
@@ -647,13 +928,20 @@ function Upload({
         {
           name: ingestor.name,
           initial_content: String(ingestor.config.initial_content ?? ''),
+          ...(folderId ? { folder_id: folderId } : {}),
         },
         token,
       )
       .then((response) => response.json())
       .then((data) => {
         if (!data?.success) {
-          handleTaskFailure(clientTaskId, data?.message);
+          handleTaskFailure(
+            clientTaskId,
+            // The store can't hold a wiki: worded here, not the English.
+            isWikiUnsupported(data)
+              ? t('settings.sources.wiki.unsupported')
+              : data?.message,
+          );
           return;
         }
         dispatch(
@@ -726,6 +1014,8 @@ function Upload({
     if (!isPrescreenConfigValid(retrievalOptions)) return true;
 
     if (!ingestor.type) return true;
+    if (ingestor.type === 'website')
+      return !isWebsiteDraftValid(websiteDraft, webLimits.maxPages);
     const schema = getIngestorSchema(ingestor.type);
     if (!schema) return true;
     return schema.fields.some((field: FormField) => {
@@ -767,6 +1057,7 @@ function Upload({
       config: defaultConfig.config,
     });
     setNameTouched(false);
+    resetWebsite(webLimits.defaultPages);
 
     // Clear files if switching away from local_file
     if (type !== 'local_file') {
@@ -775,18 +1066,9 @@ function Upload({
     }
   };
 
-  // "From a service": the services that sync into Knowledge, in the
-  // Connectors page's order, each opening the connect wizard in place.
-  const syncServices = connectorsEnabled ? syncTargets(connectorCatalog) : [];
-  // GitHub is listed once, here. Where it cannot be connected it still reads
-  // a public repository by URL, so it stays as that form.
-  const githubListed = syncServices.some(
-    ({ card, target }) => card.key === 'github' || target.key === 'github',
-  );
-
   /** The service's accounts that can sync, and those that need signing in. */
   const accountsOf = (key: string) => {
-    const own = connections.filter((c) => c.connector_key === key);
+    const own = syncAccounts.filter((c) => c.connector_key === key);
     return {
       connected: own.filter((c) => c.status === 'connected'),
       broken: own.filter(connectionNeedsSignIn),
@@ -801,6 +1083,20 @@ function Upload({
     return undefined;
   };
 
+  // "From a service": the services that sync into Knowledge, in the
+  // Connectors page's order, each opening the connect wizard in place. A
+  // team lists only those with a team account the caller picks from.
+  const syncServices = connectorsOn
+    ? syncTargets(syncCatalog).filter(
+        ({ target }) => !inTeam || !!serviceStatus(target.key),
+      )
+    : [];
+  // GitHub is listed once, here. Where it cannot be connected it still reads
+  // a public repository by URL, so it stays as that form.
+  const githubListed = syncServices.some(
+    ({ card, target }) => card.key === 'github' || target.key === 'github',
+  );
+
   const openService = (target: ConnectorDefinition) => {
     const { connected, broken } = accountsOf(target.key);
     if (
@@ -813,6 +1109,9 @@ function Upload({
       return;
     }
     setHandedOver(true);
+    // In a team the wizard works on the team's accounts (and asks among
+    // those the caller picks from), never the caller's own.
+    const owner = inTeam ? ({ owner: 'team' } as const) : {};
     if (connected.length > 0) {
       // Opened to add knowledge: an account already connected goes straight
       // to what to sync. With several, the wizard asks which one.
@@ -823,8 +1122,9 @@ function Upload({
               mode: 'sync',
               connectionId: connected[0].id,
               purpose: 'knowledge',
+              ...owner,
             }
-          : { mode: 'sync', purpose: 'knowledge' },
+          : { mode: 'sync', purpose: 'knowledge', ...owner },
       );
     } else if (broken.length > 0) {
       // Repair the account that stopped rather than add a second one.
@@ -832,6 +1132,7 @@ function Upload({
         mode: 'reconnect',
         connectionId: broken[0].id,
         purpose: 'knowledge',
+        ...owner,
       });
     } else {
       launch(target, { purpose: 'knowledge' });
@@ -879,7 +1180,7 @@ function Upload({
           />
         )}
       </div>
-      {onBrowseConnectors && (
+      {onBrowseConnectors && (!inTeam || canConnectForTeam) && (
         <Button
           type="button"
           variant="link"
@@ -890,7 +1191,9 @@ function Upload({
             onBrowseConnectors();
           }}
         >
-          {t('settings.connectors.browseAll')}
+          {inTeam
+            ? t('settings.connectors.team.connectForTeam')
+            : t('settings.connectors.browseAll')}
           <ArrowRight />
         </Button>
       )}
@@ -920,30 +1223,29 @@ function Upload({
 
   // The GitHub form reads public repositories by URL with no account (it
   // opens only while no account is connected). A private one needs the
-  // user's own GitHub connection: hand over to the connect wizard.
-  const githubConnector = connectorsEnabled
-    ? connectorCatalog.find((c) => c.key === 'github' && c.available)
-    : undefined;
+  // user's own GitHub connection: hand over to the connect wizard. Not in a
+  // team, where it would connect the caller's own account, which a team's
+  // source can't read through.
+  const githubConnector =
+    connectorsOn && !inTeam
+      ? connectorCatalog.find((c) => c.key === 'github' && c.available)
+      : undefined;
   const renderGitHubHandOver = () =>
     githubConnector ? (
       <Alert variant="info" role="note">
         <AlertDescription>
-          {t('modals.uploadDoc.github.privateHint')}
+          <p>
+            {t('modals.uploadDoc.github.privateHint')}{' '}
+            <AlertAction
+              onClick={() => {
+                setHandedOver(true);
+                launch(githubConnector, { purpose: 'knowledge' });
+              }}
+            >
+              {t('modals.uploadDoc.github.connect')}
+            </AlertAction>
+          </p>
         </AlertDescription>
-        <div className="mt-2">
-          <Button
-            type="button"
-            size="sm"
-            shape="pill"
-            variant="outline"
-            onClick={() => {
-              setHandedOver(true);
-              launch(githubConnector, { purpose: 'knowledge' });
-            }}
-          >
-            {t('modals.uploadDoc.github.connect')}
-          </Button>
-        </div>
       </Alert>
     ) : null;
 
@@ -968,9 +1270,7 @@ function Upload({
             size="lg"
             shape="pill"
           >
-            {ingestor.type === 'wiki'
-              ? t('modals.uploadDoc.create')
-              : t('modals.uploadDoc.train')}
+            {t('modals.uploadDoc.train')}
           </Button>
         ) : undefined
       }
@@ -1010,6 +1310,8 @@ function Upload({
                     hybridAvailable={hybridAvailable}
                     graphRAGAvailable={graphRAGAvailable}
                     availableModels={availableModels}
+                    decision={decision}
+                    variant="create"
                   />
                 )}
               </div>

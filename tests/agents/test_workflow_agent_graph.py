@@ -25,6 +25,7 @@ def _make_agent(*, workflow_id=None, workflow=None, workflow_owner=None,
     agent._engine = None
     agent._run_persisted = False
     agent._bridge_error = None
+    agent.passthrough = None
     agent.decoded_token = decoded_token or {}
     return agent
 
@@ -289,6 +290,60 @@ class TestDetermineRunStatus:
             {"status": ExecutionStatus.COMPLETED.value},
             {"status": ExecutionStatus.FAILED.value},
         ]
+        assert agent._determine_run_status() == ExecutionStatus.FAILED
+
+    def test_failed_when_the_step_limit_cut_the_run_short(self):
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
+
+        agent = _make_agent()
+        agent._engine = MagicMock()
+        agent._engine.step_limit_reached = True
+        agent._engine.execution_log = [{"status": ExecutionStatus.COMPLETED.value}]
+        assert agent._determine_run_status() == ExecutionStatus.FAILED
+
+    def test_completed_when_every_logged_step_completed(self):
+        from docsgpt.agents.workflows.schemas import ExecutionStatus
+
+        agent = _make_agent()
+        agent._engine = MagicMock()
+        agent._engine.step_limit_reached = False
+        agent._engine.execution_log = [{"status": ExecutionStatus.COMPLETED.value}]
+        assert agent._determine_run_status() == ExecutionStatus.COMPLETED
+
+    def test_looping_workflow_is_finalized_failed(self):
+        """A real engine that hits its cap, not a mock, drives the status."""
+        from docsgpt.agents.workflows.schemas import (
+            ExecutionStatus,
+            NodeType,
+            Workflow,
+            WorkflowEdge,
+            WorkflowGraph,
+            WorkflowNode,
+        )
+        from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+
+        def node(node_id, node_type):
+            return WorkflowNode(
+                id=node_id, workflow_id="wf", type=node_type, title=node_id, config={}
+            )
+
+        def edge(edge_id, source, target):
+            return WorkflowEdge(
+                id=edge_id, workflow_id="wf", source=source, target=target
+            )
+
+        graph = WorkflowGraph(
+            workflow=Workflow(name="loop"),
+            nodes=[node("start", NodeType.START), node("note", NodeType.NOTE)],
+            edges=[edge("e1", "start", "note"), edge("e2", "note", "note")],
+        )
+        engine = WorkflowEngine(graph, MagicMock(chat_history=[]))
+        engine.MAX_EXECUTION_STEPS = 4
+        events = list(engine.execute({}, "q"))
+        agent = _make_agent()
+        agent._engine = engine
+
+        assert events[-1]["type"] == "error"
         assert agent._determine_run_status() == ExecutionStatus.FAILED
 
 

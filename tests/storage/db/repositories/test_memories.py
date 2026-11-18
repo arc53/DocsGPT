@@ -75,6 +75,17 @@ class TestListByPrefix:
         assert {r["path"] for r in results} == {"/docs/a.md", "/docs/b.md"}
 
 
+    def test_underscore_in_a_prefix_is_literal(self, pg_conn):
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        repo.upsert("u", tool_id, "/project_a/notes.md", "a")
+        repo.upsert("u", tool_id, "/projectXa/notes.md", "x")
+        repo.upsert("u", tool_id, "/100%/notes.md", "p")
+        repo.upsert("u", tool_id, "/1000/notes.md", "k")
+        assert [r["path"] for r in repo.list_by_prefix("u", tool_id, "/project_a/")] == ["/project_a/notes.md"]
+        assert [r["path"] for r in repo.list_by_prefix("u", tool_id, "/100%/")] == ["/100%/notes.md"]
+
+
 class TestDeleteByPath:
     def test_deletes_single(self, pg_conn):
         repo = _repo(pg_conn)
@@ -100,6 +111,17 @@ class TestDeleteByPrefix:
         count = repo.delete_by_prefix("u", tool_id, "/dir/")
         assert count == 2
         assert repo.get_by_path("u", tool_id, "/other/c") is not None
+
+
+    def test_deleting_a_directory_spares_look_alike_ones(self, pg_conn):
+        # The memory tool deletes a directory by prefix; "_" must not let
+        # "/project_a/" take "/projectXa/" with it.
+        repo = _repo(pg_conn)
+        tool_id = _make_tool(pg_conn)
+        repo.upsert("u", tool_id, "/project_a/notes.md", "a")
+        repo.upsert("u", tool_id, "/projectXa/notes.md", "x")
+        assert repo.delete_by_prefix("u", tool_id, "/project_a/") == 1
+        assert repo.get_by_path("u", tool_id, "/projectXa/notes.md") is not None
 
 
 class TestDeleteAll:

@@ -7,15 +7,22 @@ from flask_restx import fields, Resource
 from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
-from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
+from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource, UsageRefused
 
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
+    ContinuationNotPendingError,
+    InvalidToolActionsError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
+from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.api.answer.services.stream_processor import (
+    ChatWorkspaceError,
     StreamProcessor,
+    UnfinishedWorkflowError,
     flush_trace_after_request,
 )
 from docsgpt.error import bounded_error_text, user_facing_error
@@ -56,6 +63,14 @@ class AnswerResource(Resource, BaseAnswerResource):
             "active_docs": fields.String(
                 required=False, description="Active documents"
             ),
+            "active_folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Agentless chats only: the caller's own source folders to search as a whole, every source "
+                    "filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers"
+                ),
+            ),
             "isNoneDoc": fields.Boolean(
                 required=False, description="Flag indicating if no document is used"
             ),
@@ -81,6 +96,17 @@ class AnswerResource(Resource, BaseAnswerResource):
             "passthrough": fields.Raw(
                 required=False,
                 description="Dynamic parameters to inject into prompt template",
+            ),
+            "capabilities": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "What this client can render. 'forms': the assistant may ask clarifying questions "
+                    "(ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and "
+                    "`questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. "
+                    "Optional and not enforced: unknown values are ignored, and without 'forms' the assistant "
+                    "never asks and answers as usual."
+                ),
             ),
         },
     )
@@ -124,6 +150,7 @@ class AnswerResource(Resource, BaseAnswerResource):
                     agent_id=processor.agent_id,
                     model_id=processor.model_id,
                     trace=processor.trace,
+                    passthrough=processor.passthrough,
                     _continuation={
                         "messages": messages,
                         "tools_dict": tools_dict,
@@ -132,18 +159,25 @@ class AnswerResource(Resource, BaseAnswerResource):
                         "reserved_message_id": processor.reserved_message_id,
                         "request_id": processor.request_id,
                         "reasoning_content": reasoning_content,
+                        "prior_tool_calls": processor.prior_tool_calls,
+                        "prior_turn": processor.prior_turn,
                     },
                 )
             else:
                 # ---- Normal mode ----
+                # Limits are checked as soon as the caller and agent are
+                # known, before setup reaches a model.
+                processor.setup_gate = self.setup_gate
                 agent = processor.build_agent(data.get("question", ""))
                 if not processor.decoded_token:
                     return make_response({"error": "Unauthorized"}, 401)
 
-                if error := self.check_usage(
-                    processor.agent_config,
-                    processor.decoded_token,
-                    agent_id=processor.agent_id,
+                if processor.setup_gate_passed is not True and (
+                    error := self.check_usage(
+                        processor.agent_config,
+                        processor.decoded_token,
+                        agent_id=processor.agent_id,
+                    )
                 ):
                     return error
 
@@ -167,6 +201,8 @@ class AnswerResource(Resource, BaseAnswerResource):
                     model_id=processor.model_id,
                     request_id=processor.request_id,
                     trace=processor.trace,
+                    passthrough=processor.passthrough,
+                    workspace_team_id=processor.workspace_team_id,
                 )
 
             stream_result = self.process_response_stream(stream)
@@ -186,10 +222,16 @@ class AnswerResource(Resource, BaseAnswerResource):
                 "tool_calls": stream_result["tool_calls"],
                 "thought": stream_result["thought"],
             }
+            for key in ("artifacts", "attachments"):
+                if stream_result.get(key):
+                    result[key] = stream_result[key]
 
             extra_info = stream_result.get("extra")
             if extra_info:
                 result.update(extra_info)
+        except UsageRefused as refused:
+            # A limit used up, found before setup reached a model.
+            return refused.response
         except ContextOverflowError as e:
             # A turn too big for the window, found before any provider call.
             logger.info("/api/answer - turn does not fit the context window: %s", bounded_error_text(e))
@@ -198,6 +240,35 @@ class AnswerResource(Resource, BaseAnswerResource):
             if public.params:
                 body["params"] = public.params
             return make_response(body, 400)
+        except UnfinishedWorkflowError as e:
+            # A draft workflow agent whose stored graph isn't finished. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, 400)
+        except AgentPausedError as e:
+            # The agent's owner is deactivated: its link and key are paused. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, 403)
+        except ChatWorkspaceError as e:
+            # A team the caller is not in, or an agent from another workspace. Nothing ran.
+            return make_response({"error": e.message, "code": e.code}, e.status)
+        except ContinuationNotPendingError:
+            # A decision for a pause that is over (decided, moved past by a new
+            # turn, or expired). Nothing ran.
+            logger.info(
+                "/api/answer - tool actions for a pause no longer pending in conversation %s",
+                data.get("conversation_id"),
+            )
+            return make_response(
+                {"error": NOT_PENDING_MESSAGE, "code": NOT_PENDING_CODE},
+                409,
+            )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on (a decision
+            # for a question, say). Nothing ran and the pause still waits.
+            logger.info(
+                "/api/answer - tool actions refused for conversation %s: %s",
+                data.get("conversation_id"),
+                e.message,
+            )
+            return make_response({"error": e.message, "code": e.code}, 400)
         except ResumeInProgressError as e:
             # Another request already owns this conversation's continuation
             # claim. Same contract as ``/stream`` and ``/v1/chat/completions``:

@@ -51,13 +51,15 @@ def _db(conn):
 
 
 def _connection(conn, user="alice", provider="telegram", status="connected", auth_kind="api_key",
-                server_url=None, secrets=None) -> str:
+                server_url=None, secrets=None, connector_key=None) -> str:
+    """A connection row; ``connector_key`` defaults to ``provider`` as an API-key row stores it."""
     return str(conn.execute(
         text(
             "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, account_label, "
-            "server_url, encrypted_credentials) VALUES (:u, :p, :p, :a, :s, :l, :url, :e) RETURNING id"
+            "server_url, encrypted_credentials) VALUES (:u, :p, :k, :a, :s, :l, :url, :e) RETURNING id"
         ),
-        {"u": user, "p": provider, "a": auth_kind, "s": status, "l": f"{user}@example.com", "url": server_url,
+        {"u": user, "p": provider, "k": connector_key or provider, "a": auth_kind, "s": status,
+         "l": f"{user}@example.com", "url": server_url,
          "e": encrypt_json(secrets or {"credentials": {"token": "tok"}}, user)},
     ).scalar())
 
@@ -73,16 +75,79 @@ def _call(app, resource, method, path, *, user="alice", body=None, roles=None, a
 class TestPresets:
     def test_presets_are_in_the_catalog(self):
         presets = [d for d in catalog.all_definitions() if d.publisher == "preset"]
-        assert {p.key for p in presets} >= {"mcp:notion", "mcp:linear"}
+        assert {p.key for p in presets} >= {"mcp:notion", "mcp:linear", "mcp:excalidraw"}
         for preset in presets:
             assert preset.mcp_url.startswith("https://")
-            assert preset.auth_kind in ("mcp_oauth", "none")
+            assert preset.auth_kind in ("mcp_oauth", "mcp", "none")
             assert preset.tool_templates == ("mcp_tool",)
 
     def test_existing_mcp_connection_maps_to_its_preset(self):
         row = {"provider": "mcp:https://mcp.linear.app", "server_url": "https://mcp.linear.app",
                "connector_key": "custom_mcp"}
         assert catalog.connector_key_for_row(row) == "mcp:linear"
+
+    def test_a_new_preset_does_not_revive_a_disabled_custom_connection(
+        self, app, pg_conn, tmp_path, monkeypatch,
+    ):
+        """Shipping a preset must not re-enable a custom server an admin turned off.
+
+        A custom MCP connection is stored as ``custom_mcp``. Once a preset
+        claims its origin the row is *reported* as that preset, and a preset
+        needs no server settings, so it is on by default. Policy must not
+        follow that far: the admin switched off the connector this row is
+        stored under, and nobody signed in again, so the connection stays
+        unavailable while custom MCP is off. What lifts that is the admin
+        turning custom MCP back on, or the connection being re-established
+        under the preset — never the preset merely shipping, which is what
+        this test pins.
+        """
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+        from docsgpt.connectors.resolve import resolve_connection
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        connection_id = _connection(
+            pg_conn, provider="mcp:https://mcp.example.com", auth_kind="mcp_oauth",
+            server_url="https://mcp.example.com", connector_key="custom_mcp",
+            secrets={"tokens": {"access_token": "tok"}},
+        )
+        resource = {"connection_id": connection_id, "user_id": "alice"}
+
+        with _db(pg_conn):
+            # Turned off the way an admin does it, through the admin endpoint.
+            resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors",
+                         roles=["admin"], body={"allow_custom_mcp": False})
+            assert resp.status_code == 200
+            before = resolve_connection(resource, "alice")
+        assert before.connector_key == "custom_mcp"
+        assert before.enabled is False
+        assert before.available is False
+
+        (tmp_path / "example.yaml").write_text(
+            "key: mcp:example\n"
+            "name: Example\n"
+            "description: Example records.\n"
+            "icon: example\n"
+            "category: knowledge\n"
+            "mcp_url: https://mcp.example.com/mcp\n"
+            "auth_kind: mcp_oauth\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(catalog, "_PRESETS_DIR", tmp_path)
+        catalog.reset_registry_for_tests()
+        try:
+            with _db(pg_conn):
+                after = resolve_connection(resource, "alice")
+            # Identity still follows the server: the row is the preset's now.
+            assert after.connector_key == "mcp:example"
+            # ...but the admin's decision survives the preset shipping.
+            assert after.enabled is False
+            assert after.available is False
+            # The gate the worker and background access checks use agrees,
+            # so a sync or a scheduled run cannot reach it either.
+            row = ConnectorSessionsRepository(pg_conn).get(connection_id)
+            assert service.connector_enabled(pg_conn, row) is False
+        finally:
+            catalog.reset_registry_for_tests()
 
 
 class TestAdminPolicies:
@@ -449,14 +514,126 @@ class TestAttribution:
         )).scalar())
         with _db(pg_conn):
             labels = connector_labels([source, upload, "not-a-uuid"])
-        assert labels == {source: {"connector_key": "google_drive", "connector_name": "Google Drive"}}
+        assert labels == {
+            source: {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": True},
+        }
+
+    def test_citations_follow_the_sources_link_switch(self, pg_conn):
+        from docsgpt.connectors.attribution import connector_labels
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth")
+        source = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, connection_id, config) "
+            "VALUES ('alice', 'Handbook', CAST(:c AS uuid), CAST(:cfg AS jsonb)) RETURNING id"
+        ), {"c": cid, "cfg": json.dumps({"retrieval": {"show_links": False}})}).scalar())
+        with _db(pg_conn):
+            labels = connector_labels([source])
+        assert labels[source]["show_links"] is False
+
+    @pytest.mark.parametrize("show_links, url, expected", [
+        (True, "https://drive.google.com/file/d/1/view", "https://drive.google.com/file/d/1/view"),
+        (False, "https://drive.google.com/file/d/1/view", None),
+        (True, "javascript:alert(1)", None),
+        (True, None, None),
+    ])
+    def test_retrieved_chunk_carries_its_link_when_the_source_shows_links(self, show_links, url, expected):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": show_links}}
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
+            labels = ConnectorLabelCache().for_source("s1", {"url": url} if url else {})
+        assert labels.get("url") == expected
+        assert labels["connector_key"] == "google_drive"
+        assert "show_links" not in labels
+
+    def test_uploaded_chunk_gets_no_link(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
+            assert ConnectorLabelCache().for_source("s1", {"url": "https://example.com/x"}) == {}
+
+    def test_source_names_cover_uploads_and_synced_sources(self, pg_conn):
+        from docsgpt.connectors.attribution import source_names
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth")
+        synced = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, connection_id) VALUES ('alice', 'Handbook', CAST(:c AS uuid)) "
+            "RETURNING id"
+        ), {"c": cid}).scalar())
+        upload = str(pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name) VALUES ('alice', 'test-1') RETURNING id"
+        )).scalar())
+        with _db(pg_conn):
+            names = source_names([synced, upload, "not-a-uuid"])
+        assert names == {synced: "Handbook", upload: "test-1"}
+
+    def test_retrieved_chunk_carries_its_source_name(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"s1": "test-1"}) as lookup:
+            cache = ConnectorLabelCache()
+            first = cache.for_source("s1")
+            again = cache.for_source("s1")
+        assert first == again == {"source_name": "test-1"}
+        assert lookup.call_count == 1
+
+    def test_prefetch_looks_up_every_source_in_one_query_each(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        found = {"s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "show_links": False}}
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value=found) as labels, \
+                patch("docsgpt.connectors.attribution.source_names",
+                      return_value={"s1": "Handbook", "s2": "test-1"}) as names:
+            cache = ConnectorLabelCache()
+            cache.prefetch(["s1", "s2", "s3", None, "s1"])
+            cache.prefetch(["s2"])
+            got = {sid: cache.for_source(sid) for sid in ("s1", "s2", "s3")}
+        labels.assert_called_once_with(["s1", "s2", "s3"])
+        names.assert_called_once_with(["s1", "s2", "s3"])
+        assert got == {
+            "s1": {"connector_key": "google_drive", "connector_name": "Google Drive", "source_name": "Handbook"},
+            "s2": {"source_name": "test-1"},
+            "s3": {},
+        }
+
+    def test_prefetch_never_raises(self):
+        from docsgpt.connectors.attribution import ConnectorLabelCache
+
+        with patch("docsgpt.connectors.attribution.connector_labels", side_effect=RuntimeError("db down")), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
+            cache = ConnectorLabelCache()
+            cache.prefetch(["s1"])
+        with patch("docsgpt.connectors.attribution.connector_labels", return_value={}), \
+                patch("docsgpt.connectors.attribution.source_names", return_value={"s1": "test-1"}):
+            # A failed prefetch caches nothing, so the per-source lookup still runs.
+            assert cache.for_source("s1") == {"source_name": "test-1"}
+
+    def test_client_sources_leave_out_the_knowledge_name(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "x", "source_name": "test-1", "connector_name": "Google Drive"}, "not-a-dict"]
+        sent = client_sources(docs)
+        assert sent == [{"text": "x", "connector_name": "Google Drive"}, "not-a-dict"]
+        # The caller's chunks still carry the name for the prompt.
+        assert docs[0]["source_name"] == "test-1"
+
+    @pytest.mark.parametrize("docs", [None, [], "oops"])
+    def test_client_sources_pass_non_lists_through(self, docs):
+        from docsgpt.connectors.attribution import client_sources
+
+        assert client_sources(docs) == docs
 
     def test_classic_retriever_stamps_connector(self, pg_conn):
         from docsgpt.retriever.classic_rag import ClassicRAG
 
         retriever = ClassicRAG.__new__(ClassicRAG)
         with patch("docsgpt.connectors.attribution.connector_labels",
-                   return_value={"s1": {"connector_key": "google_drive", "connector_name": "Google Drive"}}) as lookup:
+                   return_value={"s1": {"connector_key": "google_drive", "connector_name": "Google Drive",
+                                        "show_links": True}}) as lookup, \
+                patch("docsgpt.connectors.attribution.source_names", return_value={}):
             first = retriever._connector_labels.for_source("s1")
             again = retriever._connector_labels.for_source("s1")
         assert first == again == {"connector_key": "google_drive", "connector_name": "Google Drive"}

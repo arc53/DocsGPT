@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -23,9 +30,13 @@ import {
 import { AppDispatch } from '../store';
 import { ChatCompanionContext, type AnswerSource } from './chatCompanion';
 import { handleSendFeedback } from './conversationHandlers';
+import { followItemWorkspace } from './followWorkspace';
+import type { WorkspaceItemFields } from '../workspace/itemOrigin';
+import { AgentCardSkeleton } from './ChatLoadingSkeleton';
 import ConversationMessages from './ConversationMessages';
 import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
+import { pendingQuestionCall, type QuestionAction } from './questionCall';
 import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
@@ -34,6 +45,7 @@ import {
   loadConversation,
   resendQuery,
   resetConversation,
+  resumeQuestion,
   selectQueries,
   selectStatus,
   submitToolActions,
@@ -45,11 +57,21 @@ import {
   selectAttachments,
   selectSendableAttachments,
 } from '../upload/uploadSlice';
+import type { ArtifactCardItem, OpenArtifactRequest } from './artifactCards';
+import ArtifactsPanel from './ArtifactsPanel';
 import { cn } from '@/lib/utils';
 
 /** What the chat's one docked side panel shows (DESIGN.md "Side panels"). */
 type ChatCompanion =
-  | { kind: 'artifact'; id: string; toolName: string }
+  | { kind: 'artifact'; id: string; toolName: string; version?: number }
+  // An answer's artifacts; `key` names the answer, `open` is the one
+  // showing, null shows the list.
+  | {
+      kind: 'artifacts';
+      key: string;
+      items: ArtifactCardItem[];
+      open: OpenArtifactRequest | null;
+    }
   // `index` is the source whose reader shows; null shows the list.
   | { kind: 'sources'; sources: AnswerSource[]; index: number | null };
 
@@ -83,6 +105,31 @@ export default function Conversation() {
   const [lastQueryReturnedErr, setLastQueryReturnedErr] =
     useState<boolean>(false);
 
+  // The chat the URL moved to, until it has been applied: while it loads.
+  // Not set by a sidebar click, which applies the chat before the URL
+  // follows; that chat shows in place of the last one, not a loading one.
+  const [urlChat, setUrlChat] = useState<string | null>(() =>
+    isNewChatRoute ? null : (urlConversationId ?? null),
+  );
+  useLayoutEffect(() => {
+    setUrlChat(isNewChatRoute ? null : (urlConversationId ?? null));
+  }, [urlConversationId, isNewChatRoute]);
+  useLayoutEffect(() => {
+    if (urlChat !== null && urlChat === conversationId) setUrlChat(null);
+  }, [urlChat, conversationId]);
+  const isLoadingUrlChat = urlChat !== null && urlChat !== conversationId;
+
+  const fetchAgent = async (id: string): Promise<Agent | null> => {
+    if (selectedAgent?.id === id) return selectedAgent;
+    try {
+      const response = await userService.getAgent(id, token);
+      return response.ok ? ((await response.json()) as Agent) : null;
+    } catch (err) {
+      console.error('Failed to load agent:', err);
+      return null;
+    }
+  };
+
   // URL → state. Thunk short-circuits when Redux already matches.
   useEffect(() => {
     if (isNewChatRoute) {
@@ -94,7 +141,27 @@ export default function Conversation() {
       return;
     }
     if (urlConversationId && urlConversationId !== conversationId) {
-      dispatch(loadConversation({ id: urlConversationId }))
+      dispatch(
+        loadConversation({
+          id: urlConversationId,
+          // A chat opened by its URL from another workspace takes the app
+          // there before it applies: the switch closes the open chat, so
+          // applied first it would show and then go. The page reloads in
+          // the new workspace and finds the chat already open.
+          // An agent's chat: the agent resolves before the chat applies, so
+          // its card and the messages land in one render. Read on its own,
+          // the card landed after the messages and pushed them down.
+          resolveAgent: async (data) => {
+            await dispatch(
+              followItemWorkspace(
+                (data as WorkspaceItemFields | null)?.workspace,
+              ),
+            );
+            // A chat without an agent's route has no agent card.
+            return urlAgentId ? fetchAgent(urlAgentId) : null;
+          },
+        }),
+      )
         .unwrap()
         .then((result) => {
           if (result.stale) return;
@@ -109,16 +176,40 @@ export default function Conversation() {
   // Agent context follows the URL. ``cancelled`` covers two races:
   // the user switches agents before the fetch resolves, or leaves the
   // agent route entirely; either way the late dispatch must be dropped.
+  // Read again once an agent route's chat has applied: if the agent it
+  // brought is not the URL's (the read failed, or the URL moved on while it
+  // loaded), the URL's is read here. Never flips on a route with no agent.
+  const agentChatApplied = Boolean(urlAgentId) && !isLoadingUrlChat;
+  const selectedAgentRef = useRef(selectedAgent);
+  selectedAgentRef.current = selectedAgent;
   useEffect(() => {
     let cancelled = false;
     if (urlAgentId) {
-      if (selectedAgent?.id !== urlAgentId) {
+      // A chat of the agent's that is about to load brings the agent with it.
+      if (selectedAgent?.id !== urlAgentId && !isLoadingUrlChat) {
+        const selectedAtStart = selectedAgent;
         userService
           .getAgent(urlAgentId, token)
           .then((response) => (response.ok ? response.json() : null))
-          .then((agent: Agent | null) => {
+          .then(async (agent: Agent | null) => {
+            if (cancelled) return;
+            // A new chat with an agent of another workspace (a link) is
+            // started there, or the server refuses it; the page reloads in
+            // that workspace. A chat that exists keeps its own.
+            if (
+              agent &&
+              isNewChatRoute &&
+              (await dispatch(
+                followItemWorkspace((agent as WorkspaceItemFields).workspace),
+              ))
+            )
+              return;
             if (cancelled) return;
             if (agent) dispatch(setSelectedAgent(agent));
+            // Not another agent's card under this agent's URL, but a pick
+            // made while the read was out stands.
+            else if (selectedAgentRef.current === selectedAtStart)
+              dispatch(setSelectedAgent(null));
           })
           .catch((err) => {
             if (!cancelled) console.error('Failed to load agent:', err);
@@ -130,7 +221,7 @@ export default function Conversation() {
     return () => {
       cancelled = true;
     };
-  }, [urlAgentId, token]);
+  }, [urlAgentId, token, agentChatApplied]);
 
   // State → URL. ``replace`` so Back doesn't return to /c/new and
   // reset the just-streamed chat.
@@ -153,6 +244,15 @@ export default function Conversation() {
     [dispatch],
   );
 
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
+
   const lastAutoOpenedArtifactId = useRef<string | null>(null);
   // The mount key the auto-open below last saw; a new one is a chat
   // whose history must not open anything.
@@ -162,6 +262,9 @@ export default function Conversation() {
   // Keeps the last content on screen while the phone sheet slides out.
   const [shownCompanion, setShownCompanion] = useState(companion);
   if (companion && companion !== shownCompanion) setShownCompanion(companion);
+  // Until the docked panel has shrunk out, so the columns widen with it.
+  const [companionPresent, setCompanionPresent] = useState(false);
+  if (companion && !companionPresent) setCompanionPresent(true);
 
   // The first prompt sent while the chat had no id. The id the server then
   // assigns belongs to that chat; a chat opened from the sidebar while the
@@ -328,7 +431,11 @@ export default function Conversation() {
         lastQueryReturnedErr,
         composerFileCount: sendableAttachments.length,
       });
-      if (target.kind === 'retry') {
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: question.trim() });
+      } else if (target.kind === 'retry') {
         // Different prompt = new logical action, fresh idempotency key.
         if (!target.samePrompt) {
           dispatch(
@@ -411,29 +518,67 @@ export default function Conversation() {
     });
   }, [queries, conversationMountKey]);
 
-  const handleOpenArtifact = useCallback(
-    (artifact: { id: string; toolName: string }) => {
-      lastAutoOpenedArtifactId.current = artifact.id;
-      setCompanion({ kind: 'artifact', ...artifact });
-    },
-    [],
-  );
+  const handleOpenArtifact = useCallback((artifact: OpenArtifactRequest) => {
+    lastAutoOpenedArtifactId.current = artifact.id;
+    setCompanion({ kind: 'artifact', ...artifact });
+  }, []);
 
+  // The artifact showing, whether opened from its card or from a list.
+  const shownArtifact =
+    companion?.kind === 'artifact'
+      ? companion
+      : companion?.kind === 'artifacts'
+        ? companion.open
+        : null;
+  const openArtifactId = shownArtifact?.id ?? null;
+  const openArtifactVersion = shownArtifact?.version;
+  const openArtifactListKey =
+    companion?.kind === 'artifacts' ? companion.key : null;
   const companionContext = useMemo(
     () => ({
       openSources: (sources: AnswerSource[], index?: number) =>
         setCompanion({ kind: 'sources', sources, index: index ?? null }),
+      openArtifact: openArtifactId
+        ? { id: openArtifactId, version: openArtifactVersion }
+        : null,
+      openArtifactList: (items: ArtifactCardItem[], key: string) =>
+        setCompanion({ kind: 'artifacts', key, items, open: null }),
+      openArtifactListKey,
+      // The open list follows its answer as the answer's files arrive.
+      syncArtifactList: (key: string, items: ArtifactCardItem[]) =>
+        setCompanion((current) =>
+          current?.kind === 'artifacts' &&
+          current.key === key &&
+          current.items !== items
+            ? { ...current, items }
+            : current,
+        ),
     }),
-    [],
+    [openArtifactId, openArtifactVersion, openArtifactListKey],
   );
 
-  const isCompanionDocked = !isMobile && companion !== null;
+  const isCompanionDocked = !isMobile && companionPresent;
 
   const companionPanel =
     shownCompanion?.kind === 'artifact' ? (
       <ArtifactPanel
+        // Another artifact or version is a fresh panel: its fetch and the
+        // version it opens on are per artifact.
+        key={`${shownCompanion.id}:${shownCompanion.version ?? ''}`}
         artifactId={shownCompanion.id}
         toolName={shownCompanion.toolName}
+        version={shownCompanion.version}
+        conversationId={conversationId}
+      />
+    ) : shownCompanion?.kind === 'artifacts' ? (
+      <ArtifactsPanel
+        items={shownCompanion.items}
+        open={shownCompanion.open}
+        onOpenChange={(open) =>
+          setCompanion((current) =>
+            current?.kind === 'artifacts' ? { ...current, open } : current,
+          )
+        }
         conversationId={conversationId}
       />
     ) : shownCompanion?.kind === 'sources' ? (
@@ -465,11 +610,15 @@ export default function Conversation() {
                 handleQuestion={handleQuestion}
                 handleQuestionSubmission={handleQuestionSubmission}
                 handleFeedback={handleFeedback}
-                queries={queries}
+                // Not the last chat's turns under the URL of the one loading.
+                queries={isLoadingUrlChat ? [] : queries}
                 status={status}
                 showHeroOnEmpty={selectedAgent ? false : true}
+                isLoading={isLoadingUrlChat}
+                starters={selectedAgent?.starters}
                 onOpenArtifact={handleOpenArtifact}
                 onToolAction={handleToolAction}
+                onQuestionAction={handleQuestionAction}
                 isSplitView={isCompanionDocked}
                 agentId={selectedAgent?.id}
                 // Same rule as the composer's Knowledge picker: an agent's
@@ -488,6 +637,11 @@ export default function Conversation() {
                             : undefined
                         }
                       />
+                    </div>
+                  ) : isLoadingUrlChat && urlAgentId ? (
+                    // The agent arrives with its chat; hold its card's place.
+                    <div className="flex w-full items-center justify-center py-4">
+                      <AgentCardSkeleton />
                     </div>
                   ) : undefined
                 }
@@ -522,6 +676,12 @@ export default function Conversation() {
                 queuedQuestion={queuedQuestion}
                 onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
                 loading={status === 'loading'}
+                placeholder={
+                  waitingQuestion ? t('questions.typeAnswer') : undefined
+                }
+                // A send now would go to the chat still applied, not the URL's.
+                sendBlocked={isLoadingUrlChat}
+                workspaceLine
                 showSourceButton={selectedAgent ? false : true}
                 showToolButton={selectedAgent ? false : true}
               />
@@ -540,8 +700,12 @@ export default function Conversation() {
           onOpenChange={(open) => {
             if (!open) setCompanion(null);
           }}
+          onClosed={() => setCompanionPresent(false)}
           expandable={
-            shownCompanion?.kind === 'artifact' ? 'artifact' : undefined
+            shownCompanion?.kind === 'artifact' ||
+            shownCompanion?.kind === 'artifacts'
+              ? 'artifact'
+              : undefined
           }
         >
           {companionPanel}

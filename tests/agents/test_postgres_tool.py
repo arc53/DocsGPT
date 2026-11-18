@@ -90,6 +90,19 @@ class TestPostgresExecuteAction:
         mock_conn.close.assert_called_once()
 
     @patch("docsgpt.agents.tools.postgres.psycopg.connect")
+    def test_get_schema_without_db_name(self, mock_connect, tool):
+        mock_conn = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchall.return_value = [("users", "id", "integer", None, "NO")]
+        mock_conn.cursor.return_value = mock_cur
+        mock_connect.return_value = mock_conn
+
+        result = tool.execute_action("postgres_get_schema")
+
+        assert result["status_code"] == 200
+        assert "users" in result["schema"]
+
+    @patch("docsgpt.agents.tools.postgres.psycopg.connect")
     def test_get_schema_db_error(self, mock_connect, tool):
         import psycopg
 
@@ -139,6 +152,10 @@ class TestPostgresMetadata:
         names = {a["name"] for a in meta}
         assert "postgres_execute_sql" in names
         assert "postgres_get_schema" in names
+
+    def test_get_schema_takes_no_required_arguments(self, tool):
+        action = next(a for a in tool.get_actions_metadata() if a["name"] == "postgres_get_schema")
+        assert action["parameters"].get("required", []) == []
 
     def test_config_requirements(self, tool):
         reqs = tool.get_config_requirements()

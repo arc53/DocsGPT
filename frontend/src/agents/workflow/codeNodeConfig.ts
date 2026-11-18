@@ -1,4 +1,5 @@
 import type { CodeNodeConfig } from '../types/workflow';
+import { normalizeRetryConfig } from './retryConfig';
 
 /**
  * Validate a parsed JSON schema object the same way the agent node does:
@@ -91,6 +92,8 @@ export function normalizeCodeConfig(
   ) {
     config.json_schema = source.json_schema as Record<string, unknown>;
   }
+  const retry = normalizeRetryConfig(source.retry);
+  if (retry) config.retry = retry;
   return config;
 }
 
@@ -121,5 +124,7 @@ export function serializeCodeConfig(
   ) {
     serialized.json_schema = source.json_schema;
   }
+  const retry = normalizeRetryConfig(source.retry);
+  if (retry) serialized.retry = retry;
   return serialized;
 }

@@ -15,6 +15,7 @@ from docsgpt.connectors import catalog, service
 from docsgpt.security.encryption import encrypt_json
 
 NOTION_MCP = "https://mcp.notion.com/mcp"
+COINGECKO_MCP = "https://mcp.api.coingecko.com/mcp"
 ACTIONS = [
     {"name": "notion-search", "description": "Search", "annotations": {"readOnlyHint": True},
      "parameters": {"type": "object", "properties": {"query": {"type": "string"}}}},
@@ -60,6 +61,17 @@ def _connection(conn, status="connected") -> str:
     ).scalar())
 
 
+def _keyless_connection(conn) -> str:
+    """A CoinGecko connection, as the no-auth MCP server form stores it."""
+    return str(conn.execute(
+        text(
+            "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, account_label, "
+            "server_url) VALUES ('alice', 'custom_mcp', 'custom_mcp', 'none', 'connected', "
+            "'mcp.api.coingecko.com', 'https://mcp.api.coingecko.com') RETURNING id"
+        ),
+    ).scalar())
+
+
 def _tools(conn, cid):
     return conn.execute(text(
         "SELECT name, config, actions, display_name, description, connection_id FROM user_tools "
@@ -75,6 +87,13 @@ def _setup(app, cid):
 
 
 class TestPresetConfig:
+    def test_excalidraw_recreation_keeps_authentication_disabled(self):
+        definition = catalog.get_definition("mcp:excalidraw")
+        assert service.connection_mcp_config(definition) == {
+            "server_url": "https://mcp.excalidraw.com/mcp", "auth_type": "none",
+            "timeout": 30, "transport_type": "auto",
+        }
+
     def test_is_the_config_the_sign_in_saves(self):
         definition = catalog.get_definition("mcp:notion")
         assert service.connection_mcp_config(definition) == {
@@ -90,8 +109,39 @@ class TestPresetConfig:
         # The built-in-only helpers still ignore presets.
         assert service.builtin_mcp_config(catalog.get_definition("mcp:notion")) is None
 
+    @pytest.mark.parametrize("key, url", [
+        ("mcp:coingecko", COINGECKO_MCP),
+        ("mcp:drawio", "https://mcp.draw.io/mcp"),
+    ])
+    def test_keyless_presets_connect_without_oauth(self, key, url):
+        config = service.connection_mcp_config(catalog.get_definition(key))
+        assert config["server_url"] == url
+        assert config["auth_type"] == "none"
+
 
 class TestRecreate:
+    def test_setup_rebuilds_excalidraw_without_oauth(self, app, pg_conn):
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        row = ConnectorSessionsRepository(pg_conn).create(
+            "alice", "custom_mcp", connector_key="custom_mcp", auth_kind="none",
+            display_name="Excalidraw", account_label="mcp.excalidraw.com",
+            server_url="https://mcp.excalidraw.com",
+        )
+        cid = str(row["id"])
+        actions = [{"name": "export_to_excalidraw", "description": "Export diagram"}]
+        with _db(pg_conn), patch("docsgpt.connectors.mcp._discover", return_value=actions) as discover:
+            for _ in range(2):
+                resp = _setup(app, cid)
+                assert resp.status_code == 200, resp.get_json()
+        discover.assert_called_once()
+        assert discover.call_args.args[2]["config"]["auth_type"] == "none"
+        tools = _tools(pg_conn, cid)
+        assert len(tools) == 1
+        assert tools[0].config["auth_type"] == "none"
+        assert "oauth_scopes" not in tools[0].config
+        assert tools[0].display_name == "Excalidraw"
+
     def test_setup_rebuilds_the_deleted_tool_from_the_sign_in(self, app, pg_conn):
         cid = _connection(pg_conn)
         with _db(pg_conn), patch("docsgpt.agents.tools.mcp_tool.MCPTool.discover_tools") as discover, \
@@ -129,6 +179,29 @@ class TestRecreate:
         assert by_name["notion-create-pages"]["require_approval"] is True
         assert by_name["notion-search"]["parameters"]["properties"]["query"]["filled_by_llm"] is True
         assert [t["name"] for t in resp.get_json()["tools"]] == ["mcp_tool"]
+
+    def test_setup_rebuilds_a_keyless_preset_tool_without_oauth(self, app, pg_conn):
+        cid = _keyless_connection(pg_conn)
+        with _db(pg_conn), patch("docsgpt.agents.tools.mcp_tool.MCPTool.discover_tools"), \
+                patch("docsgpt.agents.tools.mcp_tool.MCPTool.get_actions_metadata",
+                      side_effect=lambda: [dict(a) for a in ACTIONS]), \
+                patch("docsgpt.agents.tools.mcp_tool.MCPTool.__init__", return_value=None) as init, \
+                patch.object(service, "mark_reconnect_needed") as flag:
+            resp = _setup(app, cid)
+        assert resp.status_code == 200, resp.get_json()
+        flag.assert_not_called()
+        discovery = init.call_args_list[0].args[0]
+        assert discovery["server_url"] == COINGECKO_MCP
+        assert discovery["auth_type"] == "none"
+        assert discovery["connection_id"] == cid
+
+        rows = _tools(pg_conn, cid)
+        assert len(rows) == 1
+        name, config, _, display_name, _, _ = rows[0]
+        assert name == "mcp_tool"
+        assert config["server_url"] == COINGECKO_MCP
+        assert config["auth_type"] == "none"
+        assert display_name == "CoinGecko"
 
     def test_a_connection_that_still_has_its_tool_is_not_rescanned(self, app, pg_conn):
         cid = _connection(pg_conn)

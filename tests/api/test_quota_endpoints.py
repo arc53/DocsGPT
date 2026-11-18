@@ -68,7 +68,7 @@ def _team(conn, slug="q-team", member=None, name=None):
     )
     if member:
         conn.execute(
-            text("INSERT INTO team_members (team_id, user_id, role) VALUES (CAST(:t AS uuid), :u, 'team_member')"),
+            text("INSERT INTO team_members (team_id, user_id, role) VALUES (CAST(:t AS uuid), :u, 'team_viewer')"),
             {"t": team_id, "u": member},
         )
     return team_id
@@ -280,7 +280,8 @@ class TestQuotaListing:
         assert (len(body["teams"]), body["teams_total"]) == (4, 3)
         assert (len(body["users"]), body["users_total"]) == (3, 3)
         assert [u["subject_id"] for u in body["users"]] == ["alice-sub", "bob-sub", "carol-sub"]
-        assert "email" not in body["users"][0]
+        # Each user row carries the stored email, None when there is none.
+        assert [u["email"] for u in body["users"]] == ["Alice@Example.com", "bob@corp.io", None]
 
     def test_teams_q_matches_name_or_slug_case_insensitively(self, client, db):
         _seed_listing(db)
@@ -441,7 +442,9 @@ class TestMyQuota:
     def test_unlimited_user_sees_no_buckets(self, client, db):
         with _as("u1"):
             body = _body(client.get("/api/user/quota"))
-        assert body == {"success": True, "period": "month", "buckets": []}
+        assert body == {
+            "success": True, "period": "month", "buckets": [], "notice": None, "parts": None, "paused": None,
+        }
 
     def test_limited_user_sees_usage_without_policy_internals(self, client, db):
         QuotaPoliciesRepository(db).upsert(scope="user", subject_id="u1", token_limit=100, note="secret note")

@@ -30,6 +30,7 @@ from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,33 @@ def _actor() -> str | None:
     return token.get("sub") if isinstance(token, dict) else None
 
 
+def not_a_person(user_id: str, row: dict | None = None) -> bool:
+    """Whether ``user_id`` is a team principal (by syntax) or ``row`` is a ``users`` row that is not a person.
+
+    Args:
+        user_id: The id from the URL.
+        row: Its ``users`` row, when the caller already read it.
+
+    Returns:
+        bool: True for a team principal or ``__system__``, which no admin action applies to.
+    """
+    return is_principal_id(user_id) or (row is not None and row.get("kind", "user") != "user")
+
+
+def not_a_person_response():
+    """The 409 an admin action answers for an account that is not a person."""
+    return make_response(
+        jsonify(
+            {
+                "success": False,
+                "error": "not_a_person",
+                "message": "This account is not a person (a team or the system) and can't be changed here",
+            }
+        ),
+        409,
+    )
+
+
 def _since_arg(default_days: int) -> datetime | None:
     """``?since_days=N`` → a UTC cutoff datetime, or None for 'all time'."""
     days = _int_arg("since_days", default_days)
@@ -84,9 +112,10 @@ class AdminUsersResource(Resource):
     def get(self):
         """List users, paginated, most-recently-seen first.
 
-        Each row carries ``last_seen`` (max auth-event time). Admin status is
-        intentionally not joined here; the dashboard cross-references
-        GET /api/admin/admins for badges.
+        Each row carries ``last_seen`` (max auth-event time) and the stored
+        ``email`` (null when none is on file); ``?user_id=`` matches either.
+        Admin status is intentionally not joined here; the dashboard
+        cross-references GET /api/admin/admins for badges.
         """
         page, page_size, offset = _page()
         user_id_filter = request.args.get("user_id") or None
@@ -97,6 +126,7 @@ class AdminUsersResource(Resource):
         users = [
             {
                 "user_id": row.get("user_id"),
+                "email": row.get("email"),
                 "active": bool(row.get("active", True)),
                 "created_at": row.get("created_at"),
                 "last_seen": row.get("last_seen"),
@@ -122,20 +152,31 @@ class AdminUsersResource(Resource):
 class AdminUserResource(Resource):
     @admin_required
     def get(self, user_id):
-        """Per-user drill-down: profile, roles, recent auth events, counts."""
+        """Per-user drill-down: profile, roles, recent auth events, counts.
+
+        A team principal is shown, not hidden, labelled with its team, so the
+        counts of what the team owns stay reachable.
+        """
         with db_readonly() as conn:
-            user = UsersRepository(conn).get(user_id)
+            users = UsersRepository(conn)
+            user = users.get(user_id)
             if user is None:
                 return make_response(jsonify({"success": False}), 404)
             roles_repo = UserRolesRepository(conn)
+            profile = {
+                "user_id": user.get("user_id"),
+                "email": user.get("email"),
+                "active": bool(user.get("active", True)),
+                "created_at": user.get("created_at"),
+                "updated_at": user.get("updated_at"),
+                "kind": user.get("kind", "user"),
+            }
+            if profile["kind"] == "team":
+                profile["team_id"] = str(user["team_id"]) if user.get("team_id") else None
+                profile["label"] = users.principal_labels([user_id]).get(user_id)
             body = {
                 "success": True,
-                "user": {
-                    "user_id": user.get("user_id"),
-                    "active": bool(user.get("active", True)),
-                    "created_at": user.get("created_at"),
-                    "updated_at": user.get("updated_at"),
-                },
+                "user": profile,
                 "roles": sorted({"user", *roles_repo.role_names_for(user_id)}),
                 "grants": roles_repo.list_for(user_id),
                 # Identity and access only. Data-plane events file under the
@@ -167,10 +208,14 @@ class AdminUserResource(Resource):
                 ),
                 409,
             )
+        if not_a_person(user_id):
+            return not_a_person_response()
         with db_session() as conn:
             user = UsersRepository(conn).get(user_id)
             if user is None:
                 return make_response(jsonify({"success": False}), 404)
+            if not_a_person(user_id, user):
+                return not_a_person_response()
             updated = UsersRepository(conn).set_active(str(user["id"]), active)
             AuthEventsRepository(conn).insert(
                 user_id,
@@ -194,9 +239,13 @@ class AdminUserResource(Resource):
 class AdminUserRoleResource(Resource):
     @admin_required
     def post(self, user_id):
-        """Grant the admin role to ``user_id`` (manual source). Idempotent."""
+        """Grant the admin role to ``user_id`` (manual source). Idempotent. 409 for a team or the system."""
         actor = _actor()
+        if not_a_person(user_id):
+            return not_a_person_response()
         with db_session() as conn:
+            if not_a_person(user_id, UsersRepository(conn).get(user_id)):
+                return not_a_person_response()
             inserted = UserRolesRepository(conn).grant(
                 user_id, ROLE_ADMIN, source="manual", granted_by=actor
             )
@@ -259,7 +308,12 @@ class AdminUserRoleResource(Resource):
 class AdminUserSessionsResource(Resource):
     @admin_required
     def post(self, user_id):
-        """Force-logout: revoke the user's live OIDC sessions (best-effort)."""
+        """Force-logout: revoke the user's live OIDC sessions (best-effort). 409 for a team or the system."""
+        if not_a_person(user_id):
+            return not_a_person_response()
+        with db_readonly() as conn:
+            if not_a_person(user_id, UsersRepository(conn).get(user_id)):
+                return not_a_person_response()
         ok = denylist.deny_user(user_id)
         with db_session() as conn:
             # A forced logout that left API credentials alive would not be one.

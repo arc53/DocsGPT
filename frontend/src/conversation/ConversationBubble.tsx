@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Database,
   Download,
-  Eye,
   FileText,
   Paperclip,
   Pencil,
@@ -19,19 +18,22 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useId,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import WorkflowRunArtifacts from '../agents/workflow/WorkflowRunArtifacts';
+import { ArtifactCardList } from '../components/ArtifactCard';
 import CopyButton from '../components/CopyButton';
 
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { CodeBlock } from '../components/ui/code-block';
+import { EmptyState } from '../components/ui/empty-state';
 import { IconButton } from '../components/ui/icon-button';
 import { Input } from '../components/ui/input';
 import { SidePanel } from '../components/ui/side-panel';
@@ -54,17 +56,31 @@ import ConnectToolCallBar from './ConnectToolCallBar';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { connectorIconKey } from '../connectors/i18n';
 import { AnswerSegment } from './answerSegments';
-import { deriveArtifactChips } from './artifactChips';
+import {
+  cardsFromToolCalls,
+  orderArtifactCards,
+  type OpenArtifactRequest,
+} from './artifactCards';
+import { deriveArtifactChips, type JobArtifact } from './artifactChips';
 import {
   type AnswerSource,
   sourceHref,
   useChatCompanion,
 } from './chatCompanion';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import {
+  FEEDBACK,
+  MESSAGE_TYPE,
+  ResearchState,
+  WorkflowProgress,
+} from './conversationModels';
 import ResearchProgress from './ResearchProgress';
+import WorkflowRunProgress from './WorkflowRunProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
+import QuestionBlock from './QuestionBlock';
+import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
+import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
 const DisableSourceFE = envVar('VITE_DISABLE_SOURCE_FE') === 'true';
@@ -85,6 +101,8 @@ const ConversationBubble = forwardRef<
     /** Set when this answer came from a workflow agent run; renders the
      * run's produced artifacts as click-through chips/previews. */
     workflowRunId?: string;
+    /** A workflow agent's steps; shown above the answer while they run. */
+    workflow?: WorkflowProgress;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
     /**
@@ -92,7 +110,10 @@ const ConversationBubble = forwardRef<
      * ``message`` as curated text for the user rather than a raw exception.
      */
     errorCode?: string;
-    /** An action offered under a failed turn's error (Add to Knowledge). */
+    /**
+     * A fix for a failed turn's error (Add to Knowledge): inline content, put
+     * at the end of the message's paragraph.
+     */
     errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;
@@ -108,14 +129,23 @@ const ConversationBubble = forwardRef<
      * The chip RAIL still uses this turn's artifacts only.
      */
     conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
-    onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
+    /** Files of the background jobs this answer reports; shown in its rail. */
+    jobArtifacts?: JobArtifact[];
+    onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
     onToolAction?: (
       callId: string,
       decision: 'approved' | 'denied',
       comment?: string,
     ) => void;
+    /**
+     * Resumes a turn paused on clarifying questions (`ask_user`) with the
+     * answers or Just answer; without it the questions can't be answered.
+     */
+    onQuestionAction?: (callId: string, action: QuestionAction) => void;
     /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
     agentId?: string;
+    /** The saved message behind this answer, for an MCP App view to read its result back. */
+    messageId?: string;
   }
 >(function ConversationBubble(
   {
@@ -129,6 +159,7 @@ const ConversationBubble = forwardRef<
     toolCalls,
     segments,
     workflowRunId,
+    workflow,
     research,
     retryBtn,
     errorCode,
@@ -138,9 +169,12 @@ const ConversationBubble = forwardRef<
     handleUpdatedQuestionSubmission,
     filesAttached,
     conversationArtifacts,
+    jobArtifacts,
     onOpenArtifact,
     onToolAction,
+    onQuestionAction,
     agentId,
+    messageId,
   },
   ref,
 ) {
@@ -162,7 +196,8 @@ const ConversationBubble = forwardRef<
   // opens that source's reader; none opens the list.
   const openSources = useCallback(
     (index?: number) => {
-      if (companion && sources) companion.openSources(sources, index);
+      if (companion?.openSources && sources)
+        companion.openSources(sources, index);
       else {
         setOpenSourceIndex(index ?? null);
         setIsSidebarOpen(true);
@@ -173,7 +208,28 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifacts = deriveArtifactChips(toolCalls);
+  const completedArtifacts = deriveArtifactChips(toolCalls, jobArtifacts);
+  // Only a view that can open an artifact lists the run's (a shared chat
+  // can't, and its reader may not own the run).
+  const runArtifacts = useRunArtifacts(
+    onOpenArtifact ? workflowRunId : undefined,
+    isStreaming,
+  );
+  // This turn's artifacts, from its tool calls and its workflow run, as cards.
+  const artifactCards = useMemo(
+    () =>
+      orderArtifactCards([
+        ...cardsFromToolCalls(toolCalls, jobArtifacts),
+        ...runArtifacts.items,
+      ]),
+    [toolCalls, jobArtifacts, runArtifacts.items],
+  );
+  // Names this answer's artifact list in the side panel.
+  const artifactListKey = useId();
+  const syncArtifactList = companion?.syncArtifactList;
+  useEffect(() => {
+    syncArtifactList?.(artifactListKey, artifactCards);
+  }, [syncArtifactList, artifactListKey, artifactCards]);
 
   useOutsideAlerter(editableQueryRef, () => setIsEditClicked(false), [], true);
 
@@ -190,6 +246,23 @@ const ConversationBubble = forwardRef<
     setIsEditClicked(false);
     handleUpdatedQuestionSubmission?.(editInputBox, true, questionNumber);
   };
+  // A workflow run that answered only with files: nothing to show until it
+  // has one (or its list failed), once it has finished.
+  if (
+    type === 'ANSWER' &&
+    workflowRunId &&
+    !isStreaming &&
+    !message &&
+    !thought &&
+    !research &&
+    !workflow?.steps.length &&
+    !toolCalls?.length &&
+    !segments?.length &&
+    !sources?.length &&
+    artifactCards.length === 0 &&
+    !runArtifacts.failed
+  )
+    return null;
   let bubble;
   if (type === 'QUESTION') {
     bubble = (
@@ -348,7 +421,7 @@ const ConversationBubble = forwardRef<
                   type="button"
                   variant="ghost"
                   size="sm"
-                  aria-haspopup={companion ? undefined : 'dialog'}
+                  aria-haspopup={companion?.openSources ? undefined : 'dialog'}
                   onClick={() => openSources()}
                   className="my-2 ml-3.5 w-fit"
                 >
@@ -383,7 +456,9 @@ const ConversationBubble = forwardRef<
                               onClick={() => openSources(index)}
                             >
                               <span className="line-clamp-3 h-12 text-xs wrap-break-word">
-                                {source.text}
+                                {source.withheld
+                                  ? t('conversation.sources.withheldNote')
+                                  : source.text}
                               </span>
                             </button>
                             {href ? (
@@ -473,36 +548,12 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
-        {!message && onOpenArtifact && completedArtifacts.length > 0 && (
-          <div className="my-2 ml-6 flex flex-wrap justify-start gap-2">
-            {completedArtifacts.map((artifact, artifactIndex) => (
-              <Button
-                key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
-                type="button"
-                onClick={() =>
-                  onOpenArtifact({
-                    id: artifact.id,
-                    toolName: artifact.toolName,
-                  })
-                }
-                variant="secondary"
-                shape="pill"
-              >
-                <Eye />
-                <span className="max-w-50 truncate" title={artifact.label}>
-                  {artifact.label}
-                </span>
-              </Button>
-            ))}
-          </div>
-        )}
-        {workflowRunId && (
-          <div className="my-2 mr-5 ml-6">
-            <WorkflowRunArtifacts
-              workflowRunId={workflowRunId}
-              inProgress={isStreaming}
-            />
-          </div>
+        {workflow && (
+          <WorkflowRunProgress
+            workflow={workflow}
+            isStreaming={isStreaming}
+            hasAnswerText={Boolean(message)}
+          />
         )}
         {type === 'ERROR' ? (
           message && (
@@ -510,19 +561,31 @@ const ConversationBubble = forwardRef<
             // error is often a raw provider exception, so it is mono detail
             // under a readable title; a curated error (it has a code) is
             // written for the user and reads as prose.
+            // An answer its user stopped is a note: nothing went wrong.
             <div className="animate-in fade-in slide-in-from-bottom-1.5 mr-5 ml-6 self-stretch duration-260 ease-out motion-reduce:animate-none">
-              <Alert variant="destructive">
-                <AlertTitle>{t('conversation.failedTitle')}</AlertTitle>
+              <Alert
+                variant={errorCode === 'stopped' ? 'info' : 'destructive'}
+                {...(errorCode === 'stopped' && { role: 'note' })}
+              >
+                <AlertTitle>
+                  {errorCode === 'stopped'
+                    ? t('conversation.stoppedTitle')
+                    : t('conversation.failedTitle')}
+                </AlertTitle>
                 <AlertDescription>
-                  <p
+                  {/* A div, not a <p>: the fix's busy spinner is a block
+                      element. leading-relaxed is what a <p> here gets. */}
+                  <div
                     className={cn(
-                      'wrap-break-word whitespace-pre-wrap',
+                      'leading-relaxed wrap-break-word whitespace-pre-wrap',
                       !errorCode && 'font-mono text-xs',
                     )}
                   >
                     {message}
-                  </p>
-                  {errorAction}
+                    {/* A fix (Add to Knowledge) is a link at the end of
+                        the message, in the Alert's colour. */}
+                    {errorAction && <> {errorAction}</>}
+                  </div>
                 </AlertDescription>
               </Alert>
             </div>
@@ -539,9 +602,17 @@ const ConversationBubble = forwardRef<
             sourceCount={showSources ? (sources?.length ?? 0) : 0}
             onOpenSource={openSources}
             agentId={agentId}
+            messageId={messageId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
-            suppressStatusLine={Boolean(research)}
+            suppressStatusLine={
+              Boolean(research) ||
+              // The step progress above says what is happening until the
+              // answer starts.
+              (Boolean(isStreaming) &&
+                !message &&
+                Boolean(workflow?.steps.length))
+            }
             artifacts={conversationArtifacts ?? completedArtifacts}
             // The chip rail below renders from this turn's artifacts alone, so
             // a bare-filename link has to resolve against the same set or the
@@ -568,12 +639,52 @@ const ConversationBubble = forwardRef<
                 </div>
               </div>
             )}
+            renderQuestion={(toolCall: ToolCallsType) => (
+              <QuestionBlock
+                call={toolCall}
+                onAction={onQuestionAction}
+                disabled={isStreaming}
+              />
+            )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
               <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />
             )}
           />
         )}
-        {message && (
+        {onOpenArtifact && (
+          <ArtifactCardList
+            items={artifactCards}
+            open={companion?.openArtifact}
+            onShowAll={
+              companion?.openArtifactList
+                ? () =>
+                    companion.openArtifactList?.(artifactCards, artifactListKey)
+                : undefined
+            }
+            showAllOpen={companion?.openArtifactListKey === artifactListKey}
+            onOpen={(item) =>
+              onOpenArtifact({
+                id: item.id,
+                toolName: item.toolName,
+                version: item.version,
+              })
+            }
+            className="mt-3 mr-5 ml-6"
+          />
+        )}
+        {runArtifacts.failed && (
+          <EmptyState
+            tone="destructive"
+            size="sm"
+            illustration="none"
+            title={t('agents.workflow.artifacts.loadListFailed')}
+            onRetry={runArtifacts.retry}
+            className="mr-5 ml-6"
+          />
+        )}
+        {/* Not drawn while streaming: an empty row's margins made the end of
+            the stream shrink the turn, which jolts the chat scroll. */}
+        {message && (type === 'ERROR' || !isStreaming) && (
           // ml-4 plus each button's own p-2 puts the first glyph on the answer's
           // ml-6 text column.
           <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">
@@ -588,34 +699,6 @@ const ConversationBubble = forwardRef<
               </>
             ) : (
               <>
-                {onOpenArtifact &&
-                  completedArtifacts.map((artifact, artifactIndex) => (
-                    <div
-                      key={artifact.id ?? `${artifact.callId}-${artifactIndex}`}
-                      className="relative flex items-center justify-center"
-                    >
-                      <Button
-                        type="button"
-                        onClick={() =>
-                          onOpenArtifact({
-                            id: artifact.id,
-                            toolName: artifact.toolName,
-                          })
-                        }
-                        variant="secondary"
-                        shape="pill"
-                        aria-label={t('conversation.viewArtifact')}
-                      >
-                        <Eye />
-                        <span
-                          className="max-w-50 truncate"
-                          title={artifact.label}
-                        >
-                          {artifact.label}
-                        </span>
-                      </Button>
-                    </div>
-                  ))}
                 {!isStreaming && (
                   <>
                     <div className="relative block items-center justify-center">
@@ -714,7 +797,7 @@ const ConversationBubble = forwardRef<
             )}
           </div>
         )}
-        {sources && !companion && (
+        {sources && !companion?.openSources && (
           <SidePanel open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
             <SourcesPanel
               sources={sources}
@@ -755,6 +838,9 @@ function ToolCallApprovalBar({
 
   const isRemoteDevice =
     toolCall.tool_name === 'remote_device' && toolCall.device_id;
+  const secretRefs = toolCall.secret_refs ?? [];
+  // A call that fills in a link secret is approved one at a time, never as a sticky pattern.
+  const offerSticky = isRemoteDevice && secretRefs.length === 0;
   const handleApproveSticky = async () => {
     if (!isRemoteDevice || !toolCall.device_id) return;
     const command =
@@ -813,7 +899,7 @@ function ToolCallApprovalBar({
           >
             {t('conversation.toolApproval.approve')}
           </Button>
-          {isRemoteDevice && (
+          {offerSticky && (
             <Button
               type="button"
               variant="outline"
@@ -862,6 +948,28 @@ function ToolCallApprovalBar({
         </>
       }
     >
+      {secretRefs.length > 0 && (
+        <p
+          className="text-muted-foreground text-xs"
+          data-testid="approval-secret-refs"
+        >
+          {t('conversation.toolApproval.secretRefs', {
+            refs: secretRefs
+              .map((ref) => {
+                const label = toolCall.secret_ref_labels?.[ref];
+                return label
+                  ? t('conversation.toolApproval.secretRefLabel', {
+                      label,
+                      ref,
+                      interpolation: { escapeValue: false },
+                    })
+                  : ref;
+              })
+              .join(', '),
+            interpolation: { escapeValue: false },
+          })}
+        </p>
+      )}
       {expanded && (
         <div className="flex flex-col gap-2">
           <p className="text-muted-foreground text-xs font-medium">

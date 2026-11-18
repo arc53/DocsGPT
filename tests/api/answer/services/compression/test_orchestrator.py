@@ -165,7 +165,7 @@ class TestCompressIfNeeded:
         # user_id flows through so BYOM custom-model UUIDs resolve to
         # the user's declared context window in the threshold check.
         mock_threshold_checker.should_compress.assert_called_once_with(
-            sample_conversation, "gpt-4", 1000, user_id="user1"
+            sample_conversation, "gpt-4", 1000, user_id="user1", context_window_limit=None
         )
 
 

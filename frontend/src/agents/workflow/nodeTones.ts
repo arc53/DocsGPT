@@ -5,13 +5,14 @@ import {
   Flag,
   GitBranch,
   Play,
+  Repeat,
   StickyNote,
   type LucideIcon,
 } from 'lucide-react';
 
 /** The node types the builder draws. */
 export type WorkflowNodeType =
-  'start' | 'agent' | 'end' | 'note' | 'state' | 'condition' | 'code';
+  'start' | 'agent' | 'end' | 'note' | 'state' | 'condition' | 'code' | 'loop';
 
 /** A node's colour role: the brand tint or one status tint. */
 export type NodeTone = 'primary' | 'success' | 'warning' | 'info';
@@ -29,6 +30,7 @@ export const NODE_TONES: Record<WorkflowNodeType, NodeTone> = {
   state: 'info',
   condition: 'warning',
   code: 'info',
+  loop: 'primary',
 };
 
 // Whole class strings per tone so Tailwind sees them. Brand is the soft
@@ -68,4 +70,5 @@ export const NODE_META: Record<
   state: { icon: Database, labelKey: 'agents.workflow.nodes.setState' },
   condition: { icon: GitBranch, labelKey: 'agents.workflow.nodes.condition' },
   code: { icon: CodeXml, labelKey: 'agents.workflow.nodes.code' },
+  loop: { icon: Repeat, labelKey: 'agents.workflow.nodes.loop' },
 };

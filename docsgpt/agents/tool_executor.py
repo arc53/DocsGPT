@@ -4,20 +4,20 @@ import logging
 import re
 import uuid
 from collections import Counter, OrderedDict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy.exc import IntegrityError
 
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.default_tools import (
     BUILTIN_AGENT_TOOLS,
     is_headless_excluded_tool,
-    is_server_attached_tool,
-    is_server_attached_tool_id,
     is_synthesized_tool_id,
     resolve_tool_by_id,
     synthesized_default_tools,
 )
 from docsgpt import tracing
+from docsgpt.agents import mcp_apps
 from docsgpt.agents.tool_pins import (
     PARAM_SECTIONS,
     iter_parameters,
@@ -25,9 +25,13 @@ from docsgpt.agents.tool_pins import (
     resolve_arguments,
     sent_arguments,
 )
+from docsgpt.agents.questions import QuestionsInvalid, normalize_questions
+from docsgpt.agents.tools import ask_user
+from docsgpt.agents.tools.report_cannot_complete import REPORT_CANNOT_COMPLETE
 from docsgpt.agents.tools.tool_action_parser import ToolActionParser
 from docsgpt.agents.tools.tool_manager import ToolManager
 from docsgpt.guardrails.types import Stage as GuardrailStage, resolve_tool_result
+from docsgpt.monitors import secret_refs
 from docsgpt.security.encryption import decrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -37,16 +41,39 @@ from docsgpt.storage.db.repositories.tool_call_attempts import (
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
+
+# Stored for a call that ran but whose result a time limit stopped before the guardrail checked it.
+_RESULT_WITHHELD = "[Output withheld: the time limit stopped its guardrail check.]"
 
 #: ``user_tools.config`` key holding an api_tool's encrypted header /
 #: query-param values: ``{action: {section: {param: value}}}``, keyed by the
 #: tool owner's id. The plaintext ``value`` of those entries is kept empty.
 API_TOOL_SECRETS_KEY = "encrypted_action_secrets"
 API_TOOL_SECRET_SECTIONS = ("headers", "query_params")
+# ``error_type`` of a call refused because it would use a team's connection
+# outside the team (an API key, widget, webhook or public link caller, or
+# someone the tool reached through another team), and of one whose team
+# connection is paused.
+TEAM_CONNECTION_OUTSIDE = "team_connection_outside"
+CONNECTION_PAUSED = "connection_paused"
+
+
+def _connection_backed(tool_data: Dict) -> bool:
+    """Whether a tool runs on a connection: it names one, or it runs on each caller's own (member mode)."""
+    if tool_data.get("client_side"):
+        return False
+    return bool(tool_data.get("connection_id")) or tool_data.get("credential_mode") == "member"
+
+
 # Tools that label their hits ``[n]`` from the answer's citation registry.
 CITING_TOOLS = frozenset({"internal_search", "graph_search"})
+# The actions whose result is made of hits the agent's ``retrieval_screen``
+# already scored one by one; any other action of those tools (file listings,
+# graph entities) never passed it.
+SCREENED_SEARCH_ACTIONS = frozenset({("internal_search", "search"), ("graph_search", "read_entity_pages")})
 
 
 def api_tool_action_with_secrets(tool_data: Dict, action_name: str, fallback_owner: Optional[str] = None) -> Dict:
@@ -106,6 +133,7 @@ _TOOL_SPAN_STATUS = {
     "skipped": tracing.STATUS_SKIPPED,
     "awaiting_approval": tracing.STATUS_PENDING,
     "requires_client_execution": tracing.STATUS_PENDING,
+    "awaiting_answer": tracing.STATUS_PENDING,
 }
 
 
@@ -264,6 +292,50 @@ def sanitize_tool_result(value: Any) -> Any:
     if isinstance(value, tuple):
         return tuple(sanitize_tool_result(item) for item in value)
     return value
+
+
+def _scan_lines(value: Any, path: str, lines: List[str]) -> None:
+    """Append ``value``'s leaves to ``lines`` as ``path = value`` text.
+
+    A string leaf goes on the line after its ``path =``, verbatim: its
+    newlines and quotes stay real, so a pattern anchored on a line start or
+    stopped by a quote reads it as it reads plain text. ``=`` rather than
+    ``:`` keeps a key named ``system`` from reading as a fake turn. An empty
+    leaf (``None``, ``""``, ``{}``, ``[]``) still gets its ``path =`` line,
+    since its key is persisted with the result.
+    """
+    if value is None or (isinstance(value, (str, dict, list, tuple)) and not value):
+        if path:
+            lines.append(f"{path} =")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _scan_lines(item, f"{path}.{key}" if path else str(key), lines)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _scan_lines(item, path, lines)
+    elif isinstance(value, str):
+        lines.extend([f"{path} =", value] if path else [value])
+    else:
+        lines.append(f"{path} = {value}" if path else str(value))
+
+
+def _scan_text(result: Any) -> str:
+    """The text the ``tool_result`` guardrails read for ``result``.
+
+    Args:
+        result: A tool result, already sanitized.
+
+    Returns:
+        The string itself, a dict, list or tuple as one ``path = value`` line
+        per leaf (see ``_scan_lines``), or ``""`` for anything else.
+    """
+    if isinstance(result, str):
+        return result
+    if not isinstance(result, (dict, list, tuple)) or not result:
+        return ""
+    lines: List[str] = []
+    _scan_lines(result, "", lines)
+    return "\n".join(lines)
 
 
 def bound_result_full(text: str) -> str:
@@ -431,6 +503,8 @@ def _record_proposed(
             )
         return inserted
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc):
             logger.warning(
                 "tool_call_attempts: parent message row %s is gone "
@@ -466,12 +540,15 @@ def _mark_executed(
     tool_id: Optional[str] = None,
     user_id: Optional[str] = None,
     agent_id: Optional[str] = None,
+    app_result: Optional[Dict] = None,
 ) -> None:
     """Flip the row to ``executed``. If ``proposed_ok`` is False (the
     proposed write failed earlier), upsert a fresh row in ``executed`` so
     the reconciler can still see the attempt — without this, the side
     effect would be invisible to the journal. Both paths are scoped to
     the owning ``user_id`` so a reused ``call_id`` can't cross tenants.
+    ``app_result`` is the MCP App view's screened result, kept for
+    ``/api/mcp_apps/result`` when the conversation is reopened.
     """
     key = _journal_key(call_id, message_id)
     try:
@@ -484,6 +561,7 @@ def _mark_executed(
                     message_id=_parent_column(message_id),
                     artifact_id=artifact_id,
                     user_id=user_id,
+                    app_result=app_result,
                 )
                 if updated:
                     return
@@ -499,8 +577,11 @@ def _mark_executed(
                 artifact_id=artifact_id,
                 user_id=user_id,
                 agent_id=(str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None),
+                app_result=app_result,
             )
     except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         if _note_missing_parent(message_id, exc) or _is_missing_parent(message_id):
             logger.debug(
                 "tool_call_attempts executed write skipped for %s "
@@ -526,7 +607,9 @@ def _mark_failed(
             ToolCallAttemptsRepository(conn).mark_failed(
                 _journal_key(call_id, message_id), error, user_id=user_id
             )
-    except Exception:
+    except Exception as exc:
+        if is_budget_exhausted(exc):
+            raise
         logger.exception("tool_call_attempts failed-write failed for %s", call_id)
 
 
@@ -558,6 +641,70 @@ def journal_refused_call(executor: Any, pause_info: Dict, error: str) -> None:
             message_id=getattr(executor, "message_id", None),
             user_id=getattr(executor, "user", None),
         )
+
+
+def refusal_texts(executor: Any, reason: str) -> Tuple[str, str]:
+    """What the model is told about a refused call, and the journal error, worded for the run it happened in.
+
+    ``check_pause`` refuses calls in interactive turns too (a secret
+    reference a tool can't take, an admin's read-only connector, an API
+    caller's write on the owner's account), so only a headless run is called
+    one.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        reason: Why the call was refused, as ``check_pause`` worded it.
+
+    Returns:
+        ``(tool result for the model, journal error)``.
+    """
+    if getattr(executor, "headless", False):
+        return f"Tool denied (headless): {reason}", f"headless: {reason}"
+    return f"Tool denied: {reason}", f"denied: {reason}"
+
+
+def record_refused_call(
+    executor: Any,
+    pause_info: Dict,
+    *,
+    reason: str,
+    model_text: str,
+    journal_error: str,
+) -> Dict[str, Any]:
+    """Journal a refused call and keep it on the message as a failed call.
+
+    The message's ``tool_calls`` are what a reload renders and what later
+    turns replay to the model, so a refusal kept only in the journal vanished
+    from both.
+
+    Args:
+        executor: The run's ``ToolExecutor``.
+        pause_info: What ``check_pause`` returned for the call.
+        reason: Why it was refused, for the user (the call's ``error``).
+        model_text: The tool result the model was given (the call's ``result``).
+        journal_error: The failure recorded on the journal row.
+
+    Returns:
+        The recorded entry.
+    """
+    journal_refused_call(executor, pause_info, journal_error)
+    entry: Dict[str, Any] = {
+        "tool_name": pause_info.get("tool_name") or "unknown",
+        "call_id": pause_info["call_id"],
+        "action_name": pause_info.get("llm_name") or pause_info.get("name") or pause_info.get("action_name"),
+        "arguments": pause_info.get("arguments") or {},
+        "result": model_text,
+        "error": reason,
+        "error_type": pause_info.get("error_type") or "tool_not_allowed",
+        "status": "error",
+    }
+    for key in ("device_id", "connector_key", "connector_name", "access"):
+        if pause_info.get(key):
+            entry[key] = pause_info[key]
+    tool_calls = getattr(executor, "tool_calls", None)
+    if isinstance(tool_calls, list):
+        tool_calls.append(entry)
+    return entry
 
 
 class ToolExecutor:
@@ -608,17 +755,22 @@ class ToolExecutor:
         # Who an explicit tool-id scope resolves as: the workflow owner for a
         # node, so whoever runs it gets the owner's tools. None = ``user``.
         self.tool_owner: Optional[str] = None
-        # Tool id -> the user to resolve it as, for a workflow node's tools
-        # sponsored by an editor (see resource_access.active_sponsor).
-        self.tool_principals: Dict[str, str] = {}
-        # The workflow row a node's tools belong to, so a dropped one is
-        # logged with why it doesn't run.
+        # The workflow row a node's tools belong to: its sponsors are checked
+        # live, and a dropped tool is logged with why it doesn't run.
         self.tool_holder: Optional[Dict] = None
+        # The team workspace an agentless chat runs in (a chat uses only its own workspace's items), set by
+        # the chat after constructing the executor; None is Personal. It picks
+        # the chat's stored tools: the team's own in a team, never a team's in
+        # Personal. Agent-bound runs ignore it (the agent's tools apply).
+        self.workspace_team_id: Optional[str] = None
         self.conversation_id: Optional[str] = None
         # Set by the workflow engine for agent nodes so run-scoped tools
         # (artifact_generator / code_executor) address artifacts by the
         # workflow run rather than a conversation.
         self.workflow_run_id: Optional[str] = None
+        # Set by the headless runner for a scheduled or webhook run with no
+        # conversation, so code_executor still gets a sandbox for the run.
+        self.run_scope_id: Optional[str] = None
         self.message_id: Optional[str] = None
         # The request's own (already user-scoped) chat attachments, stamped onto
         # sandbox tools so a referenced attachment can be lazily bridged to a
@@ -629,6 +781,21 @@ class ToolExecutor:
         # are final. Held here rather than in ``tools_dict``, which is saved
         # with a paused turn and would come back as a detached copy.
         self.citation_registry: Optional[List[Dict]] = None
+        # The agent's per-document retrieval screen (``BaseAgent._screen_docs``),
+        # handed to the search tools so each hit is screened as a retrieved
+        # document before it is formatted into their result.
+        self.retrieval_screen: Optional[Callable[[List[Dict]], List[Dict]]] = None
+        # The agent's per-name screen (``BaseAgent._screen_names_one_by_one``)
+        # for the source names a search tool's result lists that are not hits
+        # ("Could not be searched"); the tool-result stage skips its item-level
+        # controls for those tools, so nothing else would score them.
+        self.source_name_screen: Optional[Callable[[Dict[str, str]], Dict[str, str]]] = None
+        # The agent's output screen for question cards (``BaseAgent._screen_questions``):
+        # ``(message, questions)`` in, ``(message, questions, block event)`` out.
+        self.question_screen: Optional[Callable[..., Tuple[Optional[str], List[Dict], Optional[Dict]]]] = None
+        # The event that ends the turn when that screen blocked the cards; the
+        # LLM handler takes it and emits it instead of the pause.
+        self.questions_blocked: Optional[Dict] = None
         # Images the last tool call returned for the model to see (references,
         # see ``docsgpt.llm.tool_images``). The LLM handler moves them onto
         # that call's tool message; ``images_shown`` counts them per turn.
@@ -653,16 +820,59 @@ class ToolExecutor:
         self._tool_to_name: Dict[Tuple[str, str], str] = {}
         # Filled by the LLMHandler.handle_tool_calls headless loop.
         self.headless_denials: List[Dict] = []
+        # The reason a scheduled run's ``report_cannot_complete`` call gave, if it made one.
+        self.cannot_complete: Optional[str] = None
         # Per-turn connection resolution for connection-backed tools, keyed
         # by tool row id, so check_pause and execute share one lookup.
         self._connections: Dict[str, Any] = {}
         # Tool parameters those connections set (Telegram's default chat).
         self._connection_params: Dict[str, Dict] = {}
+        # Whether the run's reader is in a team, by team id, for the team
+        # connections this turn's tools run on.
+        self._team_readers: Dict[str, bool] = {}
         # Calls the user approved on an approval card (set by the resume
         # path), and the call running now: ``monitor`` binds an approval only
         # when the call that creates it was really approved.
         self.approved_call_ids: set = set()
         self.current_call_id: Optional[str] = None
+        # Link secrets filled into this turn's approved calls (``{secret: reference}``):
+        # every later result in the turn is redacted with them too. The call ids
+        # whose approval already filled secrets in can't fill them in again.
+        self.secret_values: Dict[str, str] = {}
+        self.secret_approvals_used: set = set()
+        # Secrets the owner chose to show the assistant (``{secret: reference}``),
+        # looked up once per turn: a raw one in a call is taken as its reference.
+        self._exposed_secrets: Optional[Dict[str, str]] = None
+        # Whether this turn may ask the model's clarifying questions
+        # (``ask_user``), pausing for the client to draw them as cards. Off
+        # for headless runs, workflow nodes, research steps and every client
+        # that doesn't draw forms.
+        self.offers_questions = False
+        # A question round was asked in this user message (survives a resume
+        # through the paused state): a second one is refused.
+        self.questions_asked = False
+        # Questions the model sent that could not be shown, this turn.
+        self._invalid_questions = 0
+        # Tool calls in the round being run (set by the LLM handler): ask_user
+        # is honoured only alone.
+        self.calls_this_round = 1
+
+    def exposed_secrets(self) -> Dict[str, str]:
+        """``{secret: reference}`` for the secrets this user chose to show the assistant (cached per turn)."""
+        if self._exposed_secrets is None:
+            self._exposed_secrets = secret_refs.exposed_values(str(self.user or "")) if self.user else {}
+        return self._exposed_secrets
+
+    def _sealed(self, arguments: Any) -> Any:
+        """Arguments with any exposed raw secret put back to its reference, before anything records them.
+
+        The call then goes through the reference rules: it asks for approval,
+        and only an eligible, approved call gets the value filled in again.
+        """
+        if not isinstance(arguments, (dict, list, str)):
+            return arguments
+        exposed = self.exposed_secrets()
+        return secret_refs.redact(arguments, exposed) if exposed else arguments
 
     def get_tools(self) -> Dict[str, Dict]:
         """Load tool configs from DB based on user context.
@@ -679,9 +889,77 @@ class ToolExecutor:
             tools = self._get_tools_by_agent_id(self.agent_id)
         else:
             tools = self._get_user_tools(self.user or "local")
+        tools = {key: tool for key, tool in tools.items() if not self._held_in_team(tool)}
         if self.client_tools:
             self.merge_client_tools(tools, self.client_tools)
         return tools
+
+    def _held_in_team(self, tool: Any) -> bool:
+        """Whether a tool on a team's connection is left out because this caller is outside the team.
+
+        Logged, like any team item a run's reader can't use; nothing is
+        deleted, and the call-time checks refuse it again should it come
+        back (a paused turn's saved tools).
+        """
+        if not isinstance(tool, dict) or not tool.get("connection_id") or not is_principal_id(tool.get("user_id")):
+            return False
+        if not self._team_connection_refused(self._resolve_connection(tool)):
+            return False
+        logger.info(
+            "team_connection_tool_held_back",
+            extra={"tool_id": str(tool.get("id") or ""), "tool_owner": tool.get("user_id"),
+                   "invoker": self.user, "agent_id": self.agent_id},
+        )
+        return True
+
+    def _team_connection_refused(self, resolved) -> bool:
+        """Whether a call would run a team's connection for someone outside that team.
+
+        A tool on a team's own account (owner mode) runs only for the team's
+        members, in the app: never for an API-key, widget, webhook or public
+        link caller, nor for a reader who reached it through another team or
+        has left. The team itself (a scheduled run of its agent) reads as its
+        reader, whoever set the schedule. A member-mode tool runs on each
+        caller's own account, so it is never refused here.
+
+        Args:
+            resolved: What :func:`resolve_connection` picked, or None.
+
+        Returns:
+            True when the call must not run.
+        """
+        from docsgpt.connectors.resolve import MODE_MEMBER
+
+        row = resolved.row if resolved is not None else None
+        if row is None or resolved.mode == MODE_MEMBER or not is_principal_id(row.get("user_id")):
+            return False
+        if self.external_caller or self.public_link_caller:
+            return True
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import current_run_reader
+
+        reader = current_run_reader()
+        if reader is None:
+            reader = self.user
+        if not reader:
+            return True
+        team_owner = row.get("user_id")
+        if reader == team_owner:
+            return False
+        team_id = team_of_principal(team_owner)
+        key = f"{team_id}:{reader}"
+        if key not in self._team_readers:
+            from docsgpt.workspaces.roles import team_role_for
+
+            try:
+                with db_readonly() as conn:
+                    self._team_readers[key] = team_role_for(conn, reader, team_id) is not None
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
+                logger.exception("team membership lookup failed for a team connection")
+                self._team_readers[key] = False
+        return not self._team_readers[key]
 
     def get_enabled_tool_names(self) -> set:
         """Return the set of tool names enabled for this context.
@@ -697,44 +975,21 @@ class ToolExecutor:
         """Resolve an explicit tool-id scope — exactly these ids, no defaults.
 
         Used by workflow agent nodes: the node's configured tools (builtin
-        synthetic ids like Artifact/Code Executor/Read Document, or the
-        ``user_tools`` rows of ``tool_owner``) are the node's WHOLE toolset.
-        Rows resolve as the workflow owner, then as the editor who attached
-        them, never as whoever runs the workflow — the same rule as an agent's
-        own tools. An unresolvable id is dropped with a warning rather than
-        failing the node.
+        synthetic ids like Artifact/Code Executor/Read Document, or
+        ``user_tools`` rows) are the node's WHOLE toolset. They resolve as the
+        workflow owner (``tool_owner``), then as the editor who attached them,
+        never as whoever runs the workflow — the same resolver an agent's own
+        tools use (``resource_access.resolve_holder_tools``). A tool that
+        doesn't run is dropped and logged rather than failing the node.
         """
         if not tool_ids:
             return {}
-        principal = self.tool_owner or self.user
-        with db_readonly() as conn:
-            tools_repo = UserToolsRepository(conn)
-            tools: List[Dict] = []
-            for tid in tool_ids:
-                row = resolve_tool_by_id(tid, principal, user_tools_repo=tools_repo)
-                if row is None and str(tid) in self.tool_principals:
-                    row = resolve_tool_by_id(tid, self.tool_principals[str(tid)], user_tools_repo=tools_repo)
-                if row is None:
-                    self._log_dropped_scoped_tool(conn, tid, principal)
-                    continue
-                if self.headless and is_headless_excluded_tool(row.get("name")):
-                    continue
-                tools.append(row)
-        return {str(tool["id"]): tool for tool in tools}
-
-    def _log_dropped_scoped_tool(self, conn, tool_id: str, principal: Optional[str]) -> None:
-        """Log a node tool the scoped toolset leaves out, with why when the workflow is known."""
         # Lazy: docsgpt.api's package import pulls in every route module.
-        from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+        from docsgpt.api.user.resource_access import resolve_holder_tools
 
-        holder = {**(self.tool_holder or {}), "user_id": principal}
-        reason = None
-        try:
-            _row, access = resolve_holder_tool(conn, "workflow", holder, tool_id)
-            reason = access.reason
-        except Exception:
-            logger.exception("Could not tell why tool %s does not resolve", tool_id)
-        log_stopped("workflow", holder, "tool", tool_id, reason)
+        holder = {**(self.tool_holder or {}), "user_id": self.tool_owner or self.user}
+        with db_readonly() as conn:
+            return resolve_holder_tools(conn, "workflow", holder, tool_ids, headless=self.headless)
 
     def _get_tools_by_api_key(self, api_key: str) -> Dict[str, Dict]:
         """Resolve an agent's toolset — exactly ``agents.tools``, no defaults."""
@@ -756,44 +1011,52 @@ class ToolExecutor:
             return self._agent_tools(conn, agent_data)
 
     def _agent_tools(self, conn, agent_data: Optional[Dict]) -> Dict[str, Dict]:
-        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner."""
-        tool_ids = (agent_data.get("tools") or []) if agent_data else []
-        tools_repo = UserToolsRepository(conn)
-        owner = (agent_data.get("user_id") or agent_data.get("user")) if agent_data else None
-        tools: List[Dict] = []
-        for tid in tool_ids:
-            # check_job, once pickable, is attached by the server now; a saved id is not a choice.
-            if is_server_attached_tool_id(tid):
-                continue
-            row = resolve_tool_by_id(tid, owner, user_tools_repo=tools_repo)
-            if row is None:
-                # A tool the owner can't use runs as the editor who
-                # attached it, while they still qualify: the same check
-                # the agent page's run state uses.
-                # Lazy: docsgpt.api's package import pulls in every route module.
-                from docsgpt.api.user.resource_access import log_stopped, resolve_holder_tool
+        """Exactly the tools in ``agent_data["tools"]``, resolved as the agent's owner, else a live sponsor."""
+        if not agent_data:
+            return {}
+        # Lazy: docsgpt.api's package import pulls in every route module.
+        from docsgpt.api.user.resource_access import resolve_holder_tools
 
-                row, access = resolve_holder_tool(conn, "agent", agent_data, tid, tools_repo=tools_repo)
-                if row is None:
-                    log_stopped("agent", agent_data, "tool", tid, access.reason)
-            if row is None or is_server_attached_tool(row.get("name")):
-                continue
-            # Workflow-only builtins (read_document) never resolve for a
-            # chat/scheduled agent — nodes get them via the scoped-id path.
-            if row.get("workflow_only"):
-                continue
-            # Headless runs (scheduled / webhook) drop chat-only tools
-            # like ``scheduler`` so a fire-time LLM can't chain schedules.
-            if self.headless and is_headless_excluded_tool(row.get("name")):
-                continue
-            tools.append(row)
-        return {str(tool["id"]): tool for tool in tools}
+        holder = dict(agent_data)
+        holder["user_id"] = agent_data.get("user_id") or agent_data.get("user")
+        return resolve_holder_tools(
+            conn, "agent", holder, agent_data.get("tools") or [], headless=self.headless,
+            tools_repo=UserToolsRepository(conn),
+        )
 
     def _get_user_tools(self, user: str = "local") -> Dict[str, Dict]:
-        """Resolve an agentless chat's toolset: explicit user tools plus defaults."""
+        """Resolve an agentless chat's toolset: the workspace's stored tools plus defaults.
+
+        In Personal (``workspace_team_id`` None): the user's own switched-on
+        tools and the shared ones they switched into their chats, never a
+        team's. In a team: only that team's tools, and another team's shared
+        with it, that the user switched on for their chats
+        (``user_tool_preferences``; a team tool's ``status`` is nobody's
+        switch) and may still use, membership and the share checked again on
+        every call; none of the user's personal tools.
+        """
         with db_readonly() as conn:
-            user_tools = UserToolsRepository(conn).list_active_for_user(user)
-            user_tools.extend(self._shared_in_chat_tools(conn, user))
+            switched_on = self._shared_in_chat_tools(conn, user)
+            if self.workspace_team_id:
+                # Lazy: docsgpt.api's package import pulls in every route module.
+                from docsgpt.api.user.resource_access import team_item_reach
+
+                team_id = canonical_team_id(self.workspace_team_id)
+                team_owner = principal_id(team_id) if team_id else None
+                # The team's own tools, and another team's shared with it while the share is live.
+                user_tools = [
+                    t for t in switched_on
+                    if team_owner and (
+                        t.get("user_id") == team_owner
+                        or (is_principal_id(t.get("user_id"))
+                            and team_item_reach(conn, team_owner, "tool", str(t.get("id"))) is not None)
+                    )
+                ]
+            else:
+                user_tools = UserToolsRepository(conn).list_active_for_user(user)
+                user_tools.extend(switched_on)
+                # A team's tool is never in a Personal chat (also when ``user`` is a principal).
+                user_tools = [t for t in user_tools if not is_principal_id(t.get("user_id"))]
             user_doc = UsersRepository(conn).get(user) if self.agent_id is None else None
         # Headless agentless runs (e.g. scheduled fire) drop chat-only
         # tools (``scheduler``) from explicit user_tools too.
@@ -913,6 +1176,8 @@ class ToolExecutor:
 
         # Stable sort: preserves the caller's order within each group.
         ordered_tools = sorted(tools_dict.items(), key=lambda kv: is_synthesized_tool_id(kv[0]))
+        # An MCP App's app-only tools (``visibility: ["app"]``) are its view's, never the model's.
+        apps_on = mcp_apps.enabled()
 
         for tool_id, tool in ordered_tools:
             is_api = tool["name"] == "api_tool"
@@ -927,6 +1192,8 @@ class ToolExecutor:
 
             for action in actions:
                 if not action.get("active", True):
+                    continue
+                if apps_on and not mcp_apps.visible_to_model(action):
                     continue
                 tool_name = tool.get("name", "")
                 if tool_name in dedupable:
@@ -1040,7 +1307,7 @@ class ToolExecutor:
 
     def _connection_names(self, tool_data: Dict) -> Optional[Tuple[str, str]]:
         """``(service, account)`` a connection tool runs with, e.g. ``("Telegram", "Alerts bot")``."""
-        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+        if not _connection_backed(tool_data):
             return None
         resolved = self._resolve_connection(tool_data)
         if resolved is None or resolved.row is None:
@@ -1086,24 +1353,42 @@ class ToolExecutor:
         A tool result is untrusted third-party text on the same footing as a
         retrieved document, and it is a common exfiltration path for secrets
         that the calling API happened to echo back.
+
+        A structured result (``api_tool``, MCP, search tools) is scanned as
+        one ``path = value`` line per leaf (``_scan_text``). A clean one keeps
+        its shape; a redacted one becomes the masked text, so no half-masked
+        value survives inside it.
         """
         engine = getattr(self, "guardrail_engine", None)
         if engine is None or not engine.has_stage(GuardrailStage.TOOL_RESULT):
             return result
-        if not isinstance(result, str) or not result:
+        text = _scan_text(result)
+        if not text:
             return result
+        # A search action's hits were screened one by one as retrieved documents
+        # (``retrieval_screen``); its result, which joins them, then gets only
+        # the whole-text controls, so the model check never scores them twice.
+        screened = (
+            (tool_name, action_name) in SCREENED_SEARCH_ACTIONS
+            and self.retrieval_screen is not None
+            and bool(engine.config.controls_for(GuardrailStage.RETRIEVAL, item_level=True))
+        )
         try:
             engine.context.tool_name = tool_name
             engine.context.action_name = action_name
-            decision = engine.evaluate(result, GuardrailStage.TOOL_RESULT)
-        except Exception:
+            decision = engine.evaluate(
+                text, GuardrailStage.TOOL_RESULT, item_level=False if screened else None
+            )
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Tool-result guardrail failed for %s.%s", tool_name, action_name)
             return result
         return resolve_tool_result(result, decision)
 
     def _resolve_connection(self, tool_data: Dict):
         """The connection a connection-backed tool runs with this turn, or None."""
-        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+        if not _connection_backed(tool_data):
             return None
         key = str(tool_data.get("id") or tool_data.get("connection_id"))
         if key not in self._connections:
@@ -1111,7 +1396,9 @@ class ToolExecutor:
 
             try:
                 self._connections[key] = resolve_connection(tool_data, self.user)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 logger.exception("connection resolution failed for tool %s", key)
                 self._connections[key] = None
         return self._connections[key]
@@ -1123,7 +1410,7 @@ class ToolExecutor:
         connection (and so their own chat) applies. Only connectors with
         such fields are looked up.
         """
-        if not tool_data.get("connection_id") or tool_data.get("client_side"):
+        if not _connection_backed(tool_data):
             return {}
         from docsgpt.connectors import catalog
 
@@ -1139,7 +1426,9 @@ class ToolExecutor:
 
                 try:
                     params = connection_parameters(resolved.row)
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     logger.exception("connection parameters failed for tool %s", key)
             self._connection_params[key] = params
         return self._connection_params[key]
@@ -1176,20 +1465,25 @@ class ToolExecutor:
         """How the chat names a connection's owner ("Ask lena@… to reconnect it").
 
         The email on record, which is what sharing already shows members;
+        a team's principal is named by its team ("Team Ops"), never by its id.
         None without one, and the card uses generic owner copy.
 
         Args:
             user_id: The connection owner's auth ``sub``.
 
         Returns:
-            The owner's email, or None.
+            The owner's email or team label, or None.
         """
         if not user_id:
             return None
         try:
             with db_readonly() as conn:
+                if is_principal_id(user_id):
+                    return UsersRepository(conn).principal_labels([user_id]).get(user_id)
                 return UsersRepository(conn).emails_for([user_id]).get(user_id)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("owner name lookup failed")
             return None
 
@@ -1202,6 +1496,7 @@ class ToolExecutor:
         """
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        call_args = self._sealed(call_args)
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
         llm_name = getattr(call, "name", "")
 
@@ -1210,6 +1505,9 @@ class ToolExecutor:
 
         tool_data = tools_dict[tool_id]
         arguments = call_args if isinstance(call_args, dict) else {}
+
+        if self._is_ask_user(tool_data):
+            return self._ask_user_pause(call, call_id, llm_name, tool_id, tool_data, action_name, arguments)
 
         # Client-side tools
         if tool_data.get("client_side"):
@@ -1239,10 +1537,29 @@ class ToolExecutor:
                 "thought_signature": getattr(call, "thought_signature", None),
             }
 
+        # A tool on a team's own account never runs outside the team, and
+        # not while that account is paused; nobody in this chat can change
+        # either, so the call is refused rather than paused on a card.
+        resolved = self._resolve_connection(tool_data)
+        refusal = self._team_connection_denial(resolved)
+        if refusal is not None:
+            error_type, reason = refusal
+            return {
+                "call_id": call_id,
+                "name": llm_name,
+                "tool_name": tool_data.get("name", "unknown"),
+                "tool_id": tool_id,
+                "action_name": action_name,
+                "llm_name": llm_name,
+                "arguments": arguments,
+                "pause_type": "headless_denied",
+                "deny_reason": reason,
+                "error_type": error_type,
+                "thought_signature": getattr(call, "thought_signature", None),
+            }
         # A tool whose connection needs signing in pauses on a Connect card
         # (the approval card's connection variant) instead of failing; the
         # user connects, then continues, and the pending call resumes.
-        resolved = self._resolve_connection(tool_data)
         if resolved is not None and not resolved.available:
             if self.headless or self.external_caller:
                 return {
@@ -1384,6 +1701,27 @@ class ToolExecutor:
                     "thought_signature": getattr(call, "thought_signature", None),
                 }
 
+        # A call that carries a link secret reference always asks the user,
+        # whatever the tool's mode: approving it is what fills the secret in.
+        # One that can't take a secret at all is refused here, before it runs.
+        secret_plan = secret_refs.plan(self, tool_data, action_name, arguments)
+        if secret_plan is not None:
+            if secret_plan.refusal:
+                return {
+                    "call_id": call_id,
+                    "name": llm_name,
+                    "tool_name": tool_data.get("name", "unknown"),
+                    "tool_id": tool_id,
+                    "action_name": action_name,
+                    "llm_name": llm_name,
+                    "arguments": arguments,
+                    "pause_type": "headless_denied",
+                    "deny_reason": secret_plan.refusal,
+                    "error_type": "tool_not_allowed",
+                    "thought_signature": getattr(call, "thought_signature", None),
+                }
+            require_approval = True
+
         if require_approval:
             if self.headless:
                 tool_row_id = str(tool_data.get("id") or tool_id)
@@ -1438,8 +1776,196 @@ class ToolExecutor:
                 config = tool_data.get("config") or {}
                 if config.get("device_id"):
                     payload["device_id"] = config["device_id"]
+            # The card says approving fills these link secrets in.
+            if secret_plan is not None:
+                payload["secret_refs"] = list(secret_plan.refs)
+                # Named by its monitor: a bare id means nothing to the user.
+                ref_labels = secret_refs.labels(str(self.user or ""), secret_plan.refs) if self.user else {}
+                if ref_labels:
+                    payload["secret_ref_labels"] = ref_labels
             return payload
 
+        return None
+
+    @staticmethod
+    def _is_ask_user(tool_data: Dict) -> bool:
+        """Whether ``tool_data`` is the server-attached ``ask_user`` tool (a client tool of that name is not)."""
+        return tool_data.get("name") == ask_user.ASK_USER and not tool_data.get("client_side")
+
+    def _ask_user_check(self, arguments: Dict) -> Tuple[Optional[str], Optional[str], Optional[str], List[Dict]]:
+        """Whether an ``ask_user`` call may ask, and its questions normalized.
+
+        Questions that can't be shown count towards the one corrected try the
+        model gets.
+
+        Args:
+            arguments: The call's arguments.
+
+        Returns:
+            ``(model text, reason, message, questions)``: the first two are set
+            when the call is refused (what the model is told, and the short
+            reason kept on the message); otherwise the normalized questions.
+        """
+        if self.offers_questions is not True:
+            return ask_user.UNAVAILABLE_TEXT, "questions can't be shown here", None, []
+        if self.questions_asked is True:
+            return ask_user.ONE_ROUND_TEXT, "already asked in this turn", None, []
+        if isinstance(self.calls_this_round, int) and self.calls_this_round > 1:
+            return ask_user.NOT_ALONE_TEXT, "called beside other tools", None, []
+        try:
+            message, questions = normalize_questions(arguments)
+        except QuestionsInvalid as exc:
+            last_try = self._invalid_questions >= 1
+            self._invalid_questions += 1
+            if last_try:
+                # No third try: the model answers without asking.
+                self.questions_asked = True
+            return ask_user.invalid_text(exc.problems, last_try), "the questions were invalid", None, []
+        return None, None, message, questions
+
+    def _ask_user_pause(
+        self,
+        call: Any,
+        call_id: str,
+        llm_name: str,
+        tool_id: str,
+        tool_data: Dict,
+        action_name: str,
+        arguments: Dict,
+    ) -> Optional[Dict]:
+        """What ``check_pause`` returns for an ``ask_user`` call.
+
+        A call that may not ask is refused (the ``headless_denied`` shape the
+        LLM handler answers with ``model_text``); otherwise the turn pauses on
+        ``awaiting_answer``, carrying the normalized questions as its
+        arguments.
+
+        Args:
+            call: The model's tool call.
+            call_id: Its id.
+            llm_name: The name the model called it by.
+            tool_id: The tool's key in the turn's tools.
+            tool_data: The tool.
+            action_name: The action's name.
+            arguments: The call's arguments.
+
+        Returns:
+            The pause or the refusal.
+        """
+        base = {
+            "call_id": call_id,
+            "name": llm_name,
+            "tool_name": tool_data.get("name", ask_user.ASK_USER),
+            "tool_id": tool_id,
+            "action_name": action_name,
+            "llm_name": llm_name,
+            "arguments": arguments,
+            "thought_signature": getattr(call, "thought_signature", None),
+        }
+        model_text, reason, message, questions = self._ask_user_check(arguments)
+        if model_text is not None:
+            # A refused round shows nothing, so none of the model's text goes
+            # to the client, the journal or the kept record; the model's own
+            # call reaches it from the call itself.
+            return {
+                **base,
+                "arguments": {},
+                "pause_type": "headless_denied",
+                "deny_reason": f"Questions not asked: {reason}.",
+                "model_text": model_text,
+                "error_type": "questions_not_asked",
+            }
+        self.questions_asked = True
+        screened = self._screened_questions(message, questions)
+        if screened is None:
+            return {**base, "arguments": {}, "pause_type": ask_user.QUESTIONS_BLOCKED}
+        message, questions = screened
+        # The model's own wording must not reach the client or the paused
+        # state: the arguments are the screened cards, so whatever the cards
+        # leave out (a fourth question, an extra key, text past a cap) and the
+        # screen therefore never saw stays out too. They are held once, as the
+        # arguments; clients get them beside the call too
+        # (``ask_user.question_payload`` / ``client_pending_call``).
+        return {
+            **base,
+            "arguments": {"message": message, "questions": questions},
+            "pause_type": ask_user.AWAITING_ANSWER,
+        }
+
+    def _screened_questions(
+        self, message: Optional[str], questions: List[Dict]
+    ) -> Optional[Tuple[Optional[str], List[Dict]]]:
+        """The normalized questions after the turn's output controls, or None when a control blocked them.
+
+        A block is left in :attr:`questions_blocked`, which ends the turn as a
+        blocked answer does.
+
+        Args:
+            message: The cards' lead-in line.
+            questions: The normalized questions.
+
+        Returns:
+            ``(message, questions)`` as they may be shown, or None.
+        """
+        if self.question_screen is None:
+            return message, questions
+        screened_message, screened, block = self.question_screen(message, questions)
+        if block is not None:
+            self.questions_blocked = block
+            return None
+        return screened_message, screened
+
+    def _ask_user_unavailable(self, call_id: str, llm_name: str):
+        """Refuse an ``ask_user`` call that reached execution: questions are only ever asked by pausing.
+
+        ``check_pause`` pauses or refuses every ``ask_user`` call, so this runs
+        only for a caller that skipped it. Nothing of the call is kept.
+
+        Args:
+            call_id: The call's id.
+            llm_name: The name the model called it by.
+
+        Yields:
+            The call's ``tool_call`` event.
+
+        Returns:
+            ``(tool result, call id)``.
+        """
+        record: Dict[str, Any] = {
+            "tool_name": ask_user.ASK_USER,
+            "call_id": call_id,
+            "action_name": llm_name,
+            "arguments": {},
+            "result": ask_user.UNAVAILABLE_TEXT,
+            "error": "Questions not asked: questions can't be shown here.",
+            "error_type": "questions_not_asked",
+            "status": "error",
+        }
+        yield {"type": "tool_call", "data": dict(record)}
+        self.tool_calls.append(record)
+        return record["result"], call_id
+
+    def _team_connection_denial(self, resolved) -> Optional[Tuple[str, str]]:
+        """``(error_type, reason)`` when a team connection keeps this call from running, else None.
+
+        Args:
+            resolved: What :func:`resolve_connection` picked, or None.
+
+        Returns:
+            :data:`TEAM_CONNECTION_OUTSIDE` for a caller outside the team,
+            :data:`CONNECTION_PAUSED` while the account is paused, or None.
+        """
+        if resolved is None:
+            return None
+        service_name = resolved.connector_name or "this service"
+        if self._team_connection_refused(resolved):
+            return TEAM_CONNECTION_OUTSIDE, (
+                f"This tool uses a team's {service_name} account, which only that team's members can use in the app."
+            )
+        if resolved.paused_for is not None:
+            return CONNECTION_PAUSED, (
+                f"The team's {service_name} account is paused. A team Admin can reconnect it in Connectors."
+            )
         return None
 
     def _on_owner_credentials(self, tool_data: Dict, resolved, action_name: Optional[str] = None) -> bool:
@@ -1493,7 +2019,9 @@ class ToolExecutor:
                 user_id=self.user,
             )
             return tool.preview_decision(action_name, arguments)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "remote_device preview_decision failed; defaulting to a forced prompt",
             )
@@ -1520,7 +2048,9 @@ class ToolExecutor:
             )
             requires_approval, _forced = tool.preview_decision(action_name, arguments)
             return requires_approval
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception(
                 "code_executor preview_decision failed; defaulting to a prompt",
             )
@@ -1537,6 +2067,7 @@ class ToolExecutor:
         correctable error exists to break.
         """
         names = set()
+        apps_on = mcp_apps.enabled()
         for tool in (tools_dict or {}).values():
             tool = tool or {}
             if tool.get("name") == "api_tool":
@@ -1546,6 +2077,8 @@ class ToolExecutor:
                 actions = tool.get("actions") or []
             for action in actions:
                 if not isinstance(action, dict) or not action.get("active", True):
+                    continue
+                if apps_on and not mcp_apps.visible_to_model(action):
                     continue
                 if action.get("name"):
                     names.add(str(action["name"]))
@@ -1596,6 +2129,9 @@ class ToolExecutor:
         is read from the ``tool_calls`` entry each branch of :meth:`_execute`
         appends, so the span matches what the conversation stores.
         """
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(self, "message_id", None))
         span = record_tool_span_start(call)
         recorded = len(self.tool_calls)
         try:
@@ -1612,11 +2148,25 @@ class ToolExecutor:
             raise
         data = self.tool_calls[-1] if len(self.tool_calls) > recorded else {}
         finish_tool_span(span, data)
+        self._note_cannot_complete(data)
         return outcome
+
+    def _note_cannot_complete(self, data: Dict) -> None:
+        """Keep the reason of the first ``report_cannot_complete`` call that ran."""
+        if data.get("tool_name") != REPORT_CANNOT_COMPLETE or data.get("status") == "error":
+            return
+        # Read with a default: some callers build an executor without ``__init__``.
+        if getattr(self, "cannot_complete", None):
+            return
+        arguments = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+        reason = " ".join(str(arguments.get("reason") or "").split())
+        if reason:
+            self.cannot_complete = reason[:500]
 
     def _execute(self, tools_dict: Dict, call, llm_class_name: str):
         parser = ToolActionParser(llm_class_name, name_mapping=self._name_to_tool)
         tool_id, action_name, call_args = parser.parse_args(call)
+        call_args = self._sealed(call_args)
         llm_name = getattr(call, "name", "unknown")
 
         call_id = getattr(call, "id", None) or str(uuid.uuid4())
@@ -1781,6 +2331,27 @@ class ToolExecutor:
             "arguments": call_args,
         }
         tool_data = tools_dict[tool_id]
+        if self._is_ask_user(tool_data):
+            return (yield from self._ask_user_unavailable(call_id, llm_name))
+        if self._app_only(tool_data, action_name):
+            refused = f"'{llm_name}' is called only by its app's view in the chat, not by the model. Nothing ran."
+            tool_call_data["result"] = refused
+            tool_call_data["status"] = "error"
+            # Journaled like the other refused calls, so tool analytics count it.
+            if _record_proposed(
+                call_id,
+                tool_data["name"],
+                action_name,
+                call_args if isinstance(call_args, dict) else {},
+                tool_id=tool_data.get("id"),
+                message_id=self.message_id,
+                user_id=self.user,
+                agent_id=self.agent_id,
+            ):
+                _mark_failed(call_id, refused, message_id=self.message_id, user_id=self.user)
+            yield {"type": "tool_call", "data": {**tool_call_data}}
+            self.tool_calls.append(tool_call_data)
+            return refused, call_id
         # Name the service a connection-backed tool used, so the chip can show
         # its logo ("Searched Notion"). Never the account behind it.
         resolved = self._resolve_connection(tool_data)
@@ -1921,8 +2492,50 @@ class ToolExecutor:
             )
             call_kwargs = parameters
 
+        # Link secret references: filled into an approved call's arguments
+        # here, after everything recorded above kept the reference; any echo
+        # of a value in what the tool returns is put back to the reference.
+        substitution = None
+        refs = secret_refs.find_refs(tool_args)
+        if refs:
+            refused = None
+            if tool_data["name"] == "api_tool" and set(refs) - set(secret_refs.find_refs(call_kwargs)):
+                refused = (
+                    "A link secret reference can only go into an API action's body, never its query string or "
+                    "headers. Nothing ran."
+                )
+            else:
+                try:
+                    substitution = secret_refs.substitute(
+                        self, tool_data, action_name, call_kwargs, call_id=call_id, refs=refs
+                    )
+                except secret_refs.SecretRefError as exc:
+                    refused = str(exc)
+            if refused is not None:
+                tool_call_data["result"] = refused
+                tool_call_data["status"] = "error"
+                if proposed_ok:
+                    _mark_failed(call_id, refused, message_id=self.message_id, user_id=self.user)
+                yield {"type": "tool_call", "data": {**tool_call_data}}
+                self.tool_calls.append(tool_call_data)
+                return refused, call_id
+            call_kwargs = substitution.kwargs
+            self.secret_values.update(substitution.values)
+        # A value filled in earlier in the turn stays out of every later result (a command that reads it back).
+        known_secrets = dict(self.secret_values)
+
         def _invoke():
-            return tool.execute_action(action_name, **call_kwargs)
+            with secret_refs.active(substitution):
+                try:
+                    value = tool.execute_action(action_name, **call_kwargs)
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
+                    if not known_secrets:
+                        raise
+                    message = secret_refs.redact(str(exc) or type(exc).__name__, known_secrets)
+                    raise RuntimeError(message) from None
+            return secret_refs.redact(value, known_secrets) if known_secrets else value
 
         self.current_call_id = call_id
 
@@ -1931,7 +2544,8 @@ class ToolExecutor:
             if background_eligible:
                 explicit = handoff.wants_background(controls)
                 worker_payload = None
-                if explicit:
+                # A call holding a secret stays in this process: the worker would get the reference, not the value.
+                if explicit and substitution is None:
                     from docsgpt.background.celery_runner import worker_payload as build_worker_payload
 
                     worker_payload = build_worker_payload(self, tool_data, action_name, tool_args)
@@ -1953,12 +2567,11 @@ class ToolExecutor:
                 result = None if outcome.handed_off else outcome.value
             else:
                 result = _invoke()
-            if tool_data["name"] != "api_tool" and not (outcome and outcome.handed_off):
-                result = self._collect_native_parts(tool, result, tool_call_data)
         except Exception as exc:
             if proposed_ok:
+                # A time limit too: the call may have had side effects, so it must not read as never run.
                 _mark_failed(
-                    call_id, str(exc), message_id=self.message_id, user_id=self.user
+                    call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
                 )
             raise
 
@@ -1967,11 +2580,73 @@ class ToolExecutor:
                 yield from self._handed_off(tool_data, tool_id, call_id, tool_call_data, resolved_arguments, outcome)
             )
 
+        def journal_executed(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, app_result: Optional[Dict] = None
+        ) -> str:
+            # The model may read a secret its owner chose to show it (monitor_list); stored copies get the reference.
+            exposed = self.exposed_secrets()
+            if stored is not None:
+                result_full = stored
+            else:
+                result_full = bound_result_full(secret_refs.redact(str(result), exposed) if exposed else str(result))
+            # Tool side effect has run; flip the journal row so the
+            # message-finalize path can later confirm it. If the proposed
+            # write failed (DB outage), upsert a fresh row in ``executed`` so
+            # the reconciler still sees the side effect.
+            _mark_executed(
+                call_id,
+                result_full,
+                message_id=self.message_id,
+                artifact_id=artifact_id,
+                proposed_ok=proposed_ok,
+                tool_name=tool_data["name"],
+                action_name=action_name,
+                arguments=call_args,
+                tool_id=tool_data.get("id"),
+                user_id=self.user,
+                agent_id=self.agent_id,
+                app_result=app_result,
+            )
+            return result_full
+
+        def keep_interrupted(
+            artifact_id: Optional[str] = None, stored: Optional[str] = None, call_status: Optional[str] = None
+        ) -> None:
+            """Journal a call a time limit cut after it ran as executed, and keep it in the turn's saved calls."""
+            result_full = journal_executed(artifact_id, stored)
+            tool_call_data["resolved_arguments"] = resolved_arguments
+            tool_call_data["result_full"] = result_full
+            tool_call_data["result"] = truncate_tool_result(result_full)
+            tool_call_data["status"] = call_status or status
+            self.tool_calls.append(tool_call_data)
+
+        if tool_data["name"] != "api_tool":
+            try:
+                result = self._collect_native_parts(tool, result, tool_call_data)
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    # Not screened yet, so unscreened output is never stored.
+                    keep_interrupted(stored=_RESULT_WITHHELD, call_status=result_status(result))
+                elif proposed_ok:
+                    _mark_failed(
+                        call_id, str(exc) or type(exc).__name__, message_id=self.message_id, user_id=self.user
+                    )
+                raise
+
         # Single fan-out point: from here ``result`` reaches the LLM copy,
         # the conversation row, tool_call_attempts, and the stream event —
         # sanitize once so every lane gets clean text.
         result = sanitize_tool_result(result)
-        result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        # Read before the scan: a redacted dict comes back as text.
+        status = result_status(result)
+        unscreened = result
+        try:
+            result = self._guardrail_tool_result(result, tool_data.get("name", ""), action_name)
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                # Unscreened output is never stored.
+                keep_interrupted(stored=_RESULT_WITHHELD)
+            raise
 
         get_artifact_id = getattr(tool, "get_artifact_id", None) if tool_data["name"] != "api_tool" else None
 
@@ -1979,7 +2654,10 @@ class ToolExecutor:
         if callable(get_artifact_id):
             try:
                 artifact_id = get_artifact_id(action_name, **parameters)
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted()
+                    raise
                 logger.exception(
                     "Failed to extract artifact_id from tool %s for action %s",
                     tool_data["name"],
@@ -2008,11 +2686,19 @@ class ToolExecutor:
                         "id": str(a["id"]).strip(),
                         "filename": a.get("filename"),
                         "ref": a.get("ref"),
+                        # The version this call produced, so a later edit in the
+                        # same turn cannot make this call's entry describe it.
+                        **({"version": a["version"]} if isinstance(a.get("version"), int) else {}),
+                        # The name the chat's artifact card shows; the filename stays the download name.
+                        **({"title": a["title"]} if isinstance(a.get("title"), str) and a["title"].strip() else {}),
                     }
                     for a in (get_artifacts(action_name, **parameters) or [])
                     if isinstance(a, dict) and a.get("id")
                 ]
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted(artifact_id or None)
+                    raise
                 logger.exception(
                     "Failed to extract artifacts from tool %s for action %s",
                     tool_data["name"],
@@ -2020,35 +2706,36 @@ class ToolExecutor:
                 )
             if artifacts:
                 tool_call_data["artifacts"] = artifacts
-        result_full = bound_result_full(str(result))
+        app_result = None
+        if tool_data["name"] != "api_tool":
+            # A clean verdict hands the result back as it was; a masked or blocked
+            # one never reaches the view, which would get the raw result.
+            try:
+                view = self._app_view(
+                    tool, tool_data, action_data, known_secrets, withheld=result is not unscreened
+                )
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    keep_interrupted(artifact_id or None)
+                raise
+            if view:
+                # The saved call keeps only where the view is; its result goes to the
+                # live event and the journal, which ``/api/mcp_apps/result`` reads.
+                app_result = view.pop("result", None)
+                tool_call_data["ui"] = view
+        result_full = journal_executed(artifact_id or None, app_result=app_result)
         tool_call_data["resolved_arguments"] = resolved_arguments
         tool_call_data["result_full"] = result_full
         tool_call_data["result"] = truncate_tool_result(result_full)
         # A tool that ran but reported failure in-band persists as ``error``,
         # not ``completed`` -- the model saw an error and will likely retry.
-        tool_call_data["status"] = result_status(result)
-
-        # Tool side effect has run; flip the journal row so the
-        # message-finalize path can later confirm it. If the proposed
-        # write failed (DB outage), upsert a fresh row in ``executed`` so
-        # the reconciler still sees the side effect.
-        _mark_executed(
-            call_id,
-            result_full,
-            message_id=self.message_id,
-            artifact_id=artifact_id or None,
-            proposed_ok=proposed_ok,
-            tool_name=tool_data["name"],
-            action_name=action_name,
-            arguments=call_args,
-            tool_id=tool_data.get("id"),
-            user_id=self.user,
-            agent_id=self.agent_id,
-        )
+        tool_call_data["status"] = status
 
         stream_tool_call_data = {
             key: value for key, value in tool_call_data.items() if key not in {"result_full", "resolved_arguments"}
         }
+        if app_result is not None:
+            stream_tool_call_data["ui"] = {**tool_call_data["ui"], "result": app_result}
         yield {"type": "tool_call", "data": {**stream_tool_call_data}}
         self.tool_calls.append(tool_call_data)
 
@@ -2103,6 +2790,8 @@ class ToolExecutor:
                 cached_config["attachments"] = self.attachments or []
             if isinstance(cached_config, dict) and tool_data["name"] in CITING_TOOLS:
                 cached_config["citation_registry"] = self.citation_registry
+                cached_config["retrieval_screen"] = self.retrieval_screen
+                cached_config["source_name_screen"] = self.source_name_screen
             return cached
 
         tm = ToolManager(config={})
@@ -2133,13 +2822,25 @@ class ToolExecutor:
             # agentless path where the tool row carries no user_id.
             tool_owner = tool_data.get("user_id") or self.user
             resolved = self._resolve_connection(tool_data)
+            member = tool_data.get("credential_mode") == "member"
+            if resolved is None and member:
+                # A tool on each caller's own account whose account could not
+                # be looked up never falls back to its owner's (a team's).
+                from docsgpt.connectors.service import ConnectionUnavailable
+
+                raise ConnectionUnavailable(f"{tool_data.get('name') or 'This service'} needs to be connected")
             if tool_data["name"] == "mcp_tool":
                 # MCP OAuth tokens are read as the account the call runs on:
                 # the resolved connection's owner (a member's own in member
-                # mode), else the tool owner, so a shared server without a
-                # connection runs on the owner's sign-in like every other
-                # credential.
-                load_user = ((resolved.row or {}).get("user_id") if resolved else None) or tool_owner
+                # mode, else nobody: never the tool owner), else the tool
+                # owner, so a shared server without a connection runs on the
+                # owner's sign-in like every other credential.
+                from docsgpt.connectors.resolve import MODE_MEMBER
+
+                if resolved is not None and resolved.mode == MODE_MEMBER:
+                    load_user = (resolved.row or {}).get("user_id") or self.user
+                else:
+                    load_user = ((resolved.row or {}).get("user_id") if resolved else None) or tool_owner
             if resolved is not None:
                 self._apply_connection(tool_data, tool_id, tool_config, resolved)
             elif tool_config.get("encrypted_credentials") and tool_owner:
@@ -2186,13 +2887,19 @@ class ToolExecutor:
             # ref (A1) and edit_artifact resolve against the workflow run.
             if self.workflow_run_id:
                 tool_config["workflow_run_id"] = self.workflow_run_id
+            elif self.run_scope_id and not self.conversation_id:
+                tool_config["run_scope_id"] = self.run_scope_id
             if tool_data["name"] in CITING_TOOLS:
                 tool_config["citation_registry"] = self.citation_registry
+                tool_config["retrieval_screen"] = self.retrieval_screen
+                tool_config["source_name_screen"] = self.source_name_screen
             if tool_data["name"] == "scheduler":
                 # Agent-bound: stamp schedules.agent_id. Agentless: the tool
                 # falls back to ``origin_conversation_id`` as the schedule's
                 # conversation home.
                 tool_config["agent_id"] = str(self.agent_id) if self.agent_id else None
+                # The chat's team: an agentless team chat makes no schedules.
+                tool_config["team_id"] = self.workspace_team_id
                 if self.external_caller:
                     # Its runs act as the owner for an API-key caller.
                     tool_config["created_via"] = "api"
@@ -2247,6 +2954,16 @@ class ToolExecutor:
             f"{resolved.connector_name or 'This service'} needs to be connected",
             connection_id=resolved.connection_id,
         )
+        denial = self._team_connection_denial(resolved)
+        if denial is not None:
+            logger.warning(
+                "team connection refused for tool %s: %s", tool_data.get("id") or tool_id, denial[0],
+            )
+            raise service.ConnectionUnavailable(
+                denial[1], connection_id=resolved.connection_id,
+                status=service.STATUS_PAUSED if denial[0] == CONNECTION_PAUSED else service.STATUS_RECONNECT,
+                paused_for=resolved.paused_for if denial[0] == CONNECTION_PAUSED else None,
+            )
         if not resolved.available or resolved.row is None:
             raise unavailable
         tool_name = tool_data.get("name")
@@ -2297,10 +3014,91 @@ class ToolExecutor:
     # Keys the client needs that are not part of the fixed shape below. They are
     # small and optional, and are copied only when present so an ordinary tool
     # call does not grow null columns in every persisted row.
+    # ``error`` / ``error_type``: a refused call's reason, which the chat shows
+    # after a reload as it did live.
     _PRESERVED_TOOL_CALL_KEYS = (
         "artifacts", "device_id", "connector_key", "connector_name", "access", "sent_arguments", "images",
-        "job_id",
+        "job_id", "error", "error_type",
     )
+
+    @staticmethod
+    def _app_only(tool_data: Dict, action_name: Optional[str]) -> bool:
+        """Whether ``action_name`` is an MCP App's app-only tool, which the model may not call."""
+        if not mcp_apps.enabled():
+            return False
+        return any(
+            isinstance(action, dict) and action.get("name") == action_name and not mcp_apps.visible_to_model(action)
+            for action in tool_data.get("actions") or []
+        )
+
+    def _app_view(
+        self, tool: Any, tool_data: Dict, action: Dict, secrets: Dict[str, str], withheld: bool = False
+    ) -> Optional[Dict]:
+        """The MCP App view a call renders in the chat: its ``ui://`` resource, its tool row and full result.
+
+        The chat reads the view's HTML from ``/api/mcp_apps/resource`` by
+        ``tool_id``, and hands it ``result`` as ``ui/notifications/tool-result``.
+        Only the live call event carries ``result``; the saved call keeps
+        ``resource_uri`` and ``tool_id``, and a reopened chat reads the result
+        back from the journal through ``/api/mcp_apps/result``.
+
+        The result is the full ``CallToolResult``, ``structuredContent``
+        included, which the model's copy drops when there is content. So it
+        gets the journal's treatment of its own: exposed secrets put back to
+        their references, and the tool-result guardrail on the structured
+        part (the content was screened as the model's copy); a verdict that
+        would change it withholds the view.
+
+        Args:
+            tool: The tool that ran; its ``take_app_result`` is drained either way.
+            tool_data: Its row.
+            action: The action that ran.
+            secrets: ``{secret: reference}`` filled into this turn's calls, kept out of the result.
+            withheld: The tool-result guardrail masked or blocked the model's copy; no view then.
+
+        Returns:
+            ``{"resource_uri", "tool_id", "result"}``, or None when the action has no view.
+
+        Raises:
+            Whatever the guardrail raises when the turn's budget runs out.
+        """
+        take = getattr(tool, "take_app_result", None)
+        result = take() if callable(take) else None
+        uri = mcp_apps.resource_uri(action or {})
+        if withheld or not uri or not tool_data.get("id") or not mcp_apps.enabled():
+            return None
+        view: Dict[str, Any] = {"resource_uri": uri, "tool_id": str(tool_data["id"])}
+        if isinstance(result, dict):
+            result = self.redact_app_result(result, secrets)
+            # The content is the model's copy, screened already; only the structured part is the view's alone.
+            structured = result.get("structuredContent")
+            if structured is not None:
+                extra = {"structuredContent": structured}
+                screened = self._guardrail_tool_result(extra, tool_data.get("name", ""), str(action.get("name") or ""))
+                if screened is not extra:
+                    return None
+            view["result"] = result
+        return view
+
+    def redact_app_result(self, result: Dict, secrets: Optional[Dict[str, str]] = None) -> Dict:
+        """A ``CallToolResult`` as it may leave the server for an MCP App view.
+
+        Control characters are stripped, as from any tool result, and raw
+        secrets are put back to their references: the ones filled into this
+        turn's calls (``secrets``) and the ones the user exposed to the model,
+        which the journal does too. Shared with ``/api/mcp_apps/call``, whose
+        results go to the view alone.
+
+        Args:
+            result: The result, ``structuredContent`` included.
+            secrets: ``{secret: reference}`` filled into this turn's calls, if any.
+
+        Returns:
+            A clean copy, or ``result`` itself when nothing had to change.
+        """
+        result = sanitize_tool_result(result)
+        secrets = {**(secrets or {}), **self.exposed_secrets()}
+        return secret_refs.redact(result, secrets) if secrets else result
 
     def _collect_native_parts(self, tool: Any, result: Any, tool_call_data: Dict) -> Any:
         """Take the images a tool queued for the model, up to the turn's limit.
@@ -2319,7 +3117,9 @@ class ToolExecutor:
             return result
         try:
             parts = [p for p in drain() or [] if isinstance(p, dict)]
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.exception("Failed to collect images from tool %s", type(tool).__name__)
             return result
         from docsgpt.core.settings import settings
@@ -2363,5 +3163,9 @@ class ToolExecutor:
                 value = tool_call.get(key)
                 if value:
                     entry[key] = value
+            ui = tool_call.get("ui")
+            if isinstance(ui, dict) and ui.get("resource_uri") and ui.get("tool_id"):
+                # Where the view is, never its result: that stays in the journal.
+                entry["ui"] = {"resource_uri": ui["resource_uri"], "tool_id": ui["tool_id"]}
             projected.append(entry)
         return projected

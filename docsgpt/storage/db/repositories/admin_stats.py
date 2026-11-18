@@ -13,8 +13,17 @@ from typing import Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
+
+
+def _person(col: str) -> str:
+    """SQL predicate: the user id in ``col`` is not a team principal or ``__system__``.
+
+    The admin views count and list people only. An id with no ``users`` row
+    still counts as a person, as it did before rows had a kind.
+    """
+    return f"NOT EXISTS (SELECT 1 FROM users np WHERE np.user_id = {col} AND np.kind <> 'user')"
 
 
 def _round_ms(value: Optional[float]) -> Optional[int]:
@@ -37,8 +46,8 @@ class AdminStatsRepository:
         cutoff_7d = now - timedelta(days=7)
         cutoff_30d = now - timedelta(days=30)
 
-        users_total = self._scalar("SELECT count(*) FROM users")
-        users_active = self._scalar("SELECT count(*) FROM users WHERE active")
+        users_total = self._scalar("SELECT count(*) FROM users WHERE kind = 'user'")
+        users_active = self._scalar("SELECT count(*) FROM users WHERE kind = 'user' AND active")
         return {
             "users": {
                 "total": users_total,
@@ -46,17 +55,18 @@ class AdminStatsRepository:
                 "inactive": users_total - users_active,
             },
             "admins": self._scalar(
-                "SELECT count(DISTINCT user_id) FROM user_roles WHERE role = 'admin'"
+                "SELECT count(DISTINCT r.user_id) FROM user_roles r "
+                f"WHERE r.role = 'admin' AND {_person('r.user_id')}"
             ),
             "agents": self._scalar("SELECT count(*) FROM agents"),
             "sources": self._scalar("SELECT count(*) FROM sources"),
             "conversations": self._scalar("SELECT count(*) FROM conversations"),
             "new_users_7d": self._scalar(
-                "SELECT count(*) FROM users WHERE created_at >= :c", {"c": cutoff_7d}
+                "SELECT count(*) FROM users WHERE kind = 'user' AND created_at >= :c", {"c": cutoff_7d}
             ),
             "active_users_30d": self._scalar(
-                "SELECT count(DISTINCT user_id) FROM token_usage "
-                "WHERE timestamp >= :c AND user_id IS NOT NULL",
+                "SELECT count(DISTINCT t.user_id) FROM token_usage t "
+                f"WHERE t.timestamp >= :c AND t.user_id IS NOT NULL AND {_person('t.user_id')}",
                 {"c": cutoff_30d},
             ),
             "failed_logins_7d": self._scalar(
@@ -66,8 +76,9 @@ class AdminStatsRepository:
             ),
             "tokens_30d": self._scalar(
                 "SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0) "
-                "FROM token_usage WHERE timestamp >= :c",
-                {"c": cutoff_30d},
+                "FROM token_usage WHERE timestamp >= :c "
+                "AND COALESCE(source, 'agent_stream') <> ALL(:rollup_sources)",
+                {"c": cutoff_30d, "rollup_sources": list(TokenUsageRepository.ROLLUP_SOURCES)},
             ),
         }
 
@@ -85,13 +96,16 @@ class AdminStatsRepository:
         result = self._conn.execute(
             text(
                 """
-                SELECT user_id,
-                       SUM(prompt_tokens + generated_tokens) AS tokens,
-                       COALESCE(SUM(cost), 0) AS cost
-                FROM token_usage
-                WHERE timestamp >= :since AND user_id IS NOT NULL
-                  AND source <> ALL(:rollup_sources)
-                GROUP BY user_id
+                SELECT t.user_id,
+                       SUM(t.prompt_tokens + t.generated_tokens) AS tokens,
+                       COALESCE(SUM(t.cost), 0) AS cost,
+                       u.email
+                FROM token_usage t
+                LEFT JOIN users u ON u.user_id = t.user_id
+                WHERE t.timestamp >= :since AND t.user_id IS NOT NULL
+                  AND COALESCE(u.kind, 'user') = 'user'
+                  AND t.source <> ALL(:rollup_sources)
+                GROUP BY t.user_id, u.email
                 ORDER BY tokens DESC
                 LIMIT :limit
                 """
@@ -103,7 +117,7 @@ class AdminStatsRepository:
             },
         )
         return [
-            {"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2])}
+            {"user_id": r[0], "tokens": int(r[1]), "cost": float(r[2]), "email": r[3]}
             for r in result.fetchall()
         ]
 
@@ -220,25 +234,31 @@ class AdminStatsRepository:
 
         ``last_seen`` is max(auth_events.created_at) for the user (NULL = never).
         Ordering surfaces active accounts first, dormant ones last — the natural
-        triage order for an operator.
+        triage order for an operator. Each row carries the stored ``email``
+        (NULL when none is on file), and the filter matches the user id or the
+        email, case-insensitively. People only: team principals and
+        ``__system__`` are never listed.
         """
-        where = ""
+        where = "WHERE u.kind = 'user'"
         count_params: dict = {}
         if user_id_filter is not None:
-            where = "WHERE u.user_id ILIKE '%' || :uid || '%'"
-            count_params["uid"] = user_id_filter
+            where += (
+                " AND (u.user_id ILIKE :uid ESCAPE '\\'"
+                " OR COALESCE(u.email, '') ILIKE :uid ESCAPE '\\')"
+            )
+            count_params["uid"] = f"%{like_escape(user_id_filter)}%"
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users u {where}"), count_params
         ).scalar_one()
         result = self._conn.execute(
             text(
                 f"""
-                SELECT u.user_id, u.active, u.created_at,
+                SELECT u.user_id, u.email, u.active, u.created_at,
                        max(ae.created_at) AS last_seen
                 FROM users u
                 LEFT JOIN auth_events ae ON ae.user_id = u.user_id
                 {where}
-                GROUP BY u.user_id, u.active, u.created_at
+                GROUP BY u.user_id, u.email, u.active, u.created_at
                 ORDER BY max(ae.created_at) DESC NULLS LAST, u.created_at DESC
                 LIMIT :limit OFFSET :offset
                 """
@@ -262,7 +282,8 @@ class AdminStatsRepository:
             ),
             "tokens_30d": self._scalar(
                 "SELECT COALESCE(SUM(prompt_tokens + generated_tokens), 0) "
-                "FROM token_usage WHERE user_id = :u AND timestamp >= :c",
-                {"u": user_id, "c": cutoff_30d},
+                "FROM token_usage WHERE user_id = :u AND timestamp >= :c "
+                "AND COALESCE(source, 'agent_stream') <> ALL(:rollup_sources)",
+                {"u": user_id, "c": cutoff_30d, "rollup_sources": list(TokenUsageRepository.ROLLUP_SOURCES)},
             ),
         }

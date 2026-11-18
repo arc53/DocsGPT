@@ -15,17 +15,31 @@ export const WAKE_SOURCES = [
   'monitor',
   'trigger',
   'approval',
+  'continuation',
   'monitor_paused',
   'monitor_expired',
 ] as const;
 
 /**
  * `notify_user` kinds with their own heading: every wake source (a
- * continuation notifies with the source of the event that woke it), and
- * `schedule` (a one-time scheduled run that answered in its conversation).
- * Others read generically. Mirrors `docsgpt/notifications/kinds.py`.
+ * continuation notifies with the source of the event that woke it),
+ * `schedule` (a one-time scheduled run that answered in its conversation),
+ * `schedule_paused` / `schedule_failed` (a recurring schedule that paused
+ * itself, or started failing: its name as the title, the last error as the
+ * body) and `docs_gaps` (an agent's weekly docs-gap digest: the agent's name
+ * as the title, the top gaps as the body) and `payer_left` (a team's admins:
+ * a member who left or lost the role pays for schedules or outside access
+ * that are now paused). Others read generically. Mirrors
+ * `docsgpt/notifications/kinds.py`.
  */
-export const NOTIFICATION_KINDS = [...WAKE_SOURCES, 'schedule'] as const;
+export const NOTIFICATION_KINDS = [
+  ...WAKE_SOURCES,
+  'schedule',
+  'schedule_paused',
+  'schedule_failed',
+  'docs_gaps',
+  'payer_left',
+] as const;
 
 const isIn = (list: readonly string[], value: unknown): value is string =>
   typeof value === 'string' && list.includes(value);

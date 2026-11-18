@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ACTIVITY_SECTION,
   ADMIN_SECTION,
   AGENTS_SECTION,
   buildAgentSection,
@@ -10,6 +11,7 @@ import {
   getSectionItems,
   getVisibleGroups,
   SETTINGS_SECTION,
+  teamNavItem,
 } from './sections';
 
 describe('getSectionForPath', () => {
@@ -58,6 +60,19 @@ describe('getActiveItem', () => {
     ).toBe('accessTokens');
   });
 
+  it('lists Prompts in Workspace between Tools and Custom Models', () => {
+    const workspace = SETTINGS_SECTION.groups.find(
+      (group) => group.key === 'workspace',
+    )!;
+    const keys = workspace.items.map((item) => item.key);
+    expect(
+      keys.slice(keys.indexOf('tools'), keys.indexOf('tools') + 3),
+    ).toEqual(['tools', 'prompts', 'customModels']);
+    expect(getActiveItem(SETTINGS_SECTION, '/settings/prompts')?.key).toBe(
+      'prompts',
+    );
+  });
+
   it('keeps the parent item active inside a detail route', () => {
     expect(getActiveItem(SETTINGS_SECTION, '/settings/tools/slack')?.key).toBe(
       'tools',
@@ -76,15 +91,30 @@ describe('getActiveItem', () => {
   });
 });
 
-describe('monitors in settings', () => {
-  it('sit with the workspace tools, not under insights', () => {
-    const groups = getVisibleGroups(SETTINGS_SECTION, { isAdmin: false });
-    const workspace = groups.find((group) => group.key === 'workspace');
-    const insights = groups.find((group) => group.key === 'insights');
-    expect(workspace?.items.map((i) => i.key)).toContain('monitors');
-    expect(insights?.items.map((i) => i.key)).not.toContain('monitors');
-    const keys = workspace?.items.map((i) => i.key) ?? [];
-    expect(keys.indexOf('monitors')).toBe(keys.indexOf('tools') + 1);
+describe('activity section', () => {
+  it('owns /activity and lists schedules and monitors as automations', () => {
+    expect(getSectionForPath('/activity')?.key).toBe('activity');
+    expect(getSectionForPath('/activity/monitors')?.key).toBe('activity');
+    const groups = getVisibleGroups(ACTIVITY_SECTION, { isAdmin: false });
+    expect(groups[0].items.map((i) => i.key)).toEqual([
+      'now',
+      'calendar',
+      'history',
+    ]);
+    const automations = groups.find((group) => group.key === 'automations');
+    expect(automations?.items.map((i) => i.key)).toEqual([
+      'schedules',
+      'monitors',
+    ]);
+  });
+
+  it('marks Now active on the section root', () => {
+    expect(getActiveItem(ACTIVITY_SECTION, '/activity')?.key).toBe('now');
+  });
+
+  it('leaves monitors out of settings', () => {
+    const keys = getSectionItems(SETTINGS_SECTION).map((i) => i.key);
+    expect(keys).not.toContain('monitors');
   });
 });
 
@@ -117,6 +147,48 @@ describe('AGENTS_SECTION', () => {
       getActiveItem(AGENTS_SECTION, '/agents/manage/discovered')?.key,
     ).toBe('shared');
   });
+
+  it('lists Shared with you where the Team filter was', () => {
+    const items = getSectionItems(AGENTS_SECTION);
+    expect(items.map((i) => i.key)).toEqual([
+      'all',
+      'template',
+      'user',
+      'teamShared',
+      'sharedWithYou',
+      'shared',
+    ]);
+    const shared = items.find((i) => i.key === 'sharedWithYou')!;
+    expect(shared.path).toBe('/agents/manage/shared-with-you');
+    expect(shared.labelKey).toBe('workspace.page.sharedWithYou');
+    // The old Team address reads as Shared with you in Personal.
+    expect(getActiveItem(AGENTS_SECTION, '/agents/manage/team')?.key).toBe(
+      'sharedWithYou',
+    );
+  });
+
+  it('hides Shared with you and Discovered in a team', () => {
+    const keys = (inTeam: boolean) =>
+      getVisibleGroups(AGENTS_SECTION, { inTeam }).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+    expect(keys(false)).toContain('sharedWithYou');
+    expect(keys(false)).toContain('shared');
+    expect(keys(true)).toEqual(['all', 'template', 'user', 'teamShared']);
+  });
+
+  it('shows Shared with this team only in a team', () => {
+    const keys = (inTeam: boolean) =>
+      getVisibleGroups(AGENTS_SECTION, { inTeam }).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+    expect(keys(false)).not.toContain('teamShared');
+    const item = getSectionItems(AGENTS_SECTION).find(
+      (i) => i.key === 'teamShared',
+    )!;
+    expect(item.path).toBe('/agents/manage/shared-with-team');
+    expect(item.labelKey).toBe('workspace.page.sharedFromTeams.title');
+  });
 });
 
 describe('buildAgentSection', () => {
@@ -139,6 +211,9 @@ describe('buildAgentSection', () => {
       'overview',
     );
     expect(getActiveItem(section, '/agents/manage/logs/a1')?.key).toBe('logs');
+    expect(getActiveItem(section, '/agents/manage/analytics/a1')?.key).toBe(
+      'analytics',
+    );
     expect(getActiveItem(section, '/agents/manage/schedules/a1')?.key).toBe(
       'schedules',
     );
@@ -152,10 +227,38 @@ describe('buildAgentSection', () => {
       'overview',
     );
   });
+
+  it('points overview at the builder from a workflow agent’s other pages', () => {
+    // The monitoring paths don't say the agent is a workflow; its record does.
+    const section = buildAgentSection('a1', 'Flow', false, {
+      access: 'owner',
+      agent_type: 'workflow',
+    });
+
+    expect(section.rootPath).toBe('/agents/manage/workflow/edit/a1');
+    expect(getActiveItem(section, '/agents/manage/workflow/edit/a1')?.key).toBe(
+      'overview',
+    );
+  });
+
+  // A workflow on the classic edit path (an old link, a fallback built
+  // before its type was known) waits there for its editor: Overview stays
+  // the active tab meanwhile.
+  it('keeps overview active on a workflow agent’s classic edit path', () => {
+    const section = buildAgentSection('a1', 'Flow', false, {
+      access: 'owner',
+      agent_type: 'workflow',
+    });
+
+    expect(getActiveItem(section, '/agents/manage/edit/a1')?.key).toBe(
+      'overview',
+    );
+    expect(section.matches).toContain('/agents/manage/edit/a1');
+  });
 });
 
 describe('buildAgentSection tabs for a draft', () => {
-  it('shows only Overview until the agent is published', () => {
+  it('shows Overview and Logs until the agent is published', () => {
     const items = getSectionItems(
       buildAgentSection('a1', 'Bot', false, {
         access: 'owner',
@@ -163,7 +266,7 @@ describe('buildAgentSection tabs for a draft', () => {
         allowed_actions: ['view', 'view_logs', 'manage_schedules'],
       }),
     ).map((item) => item.key);
-    expect(items).toEqual(['overview']);
+    expect(items).toEqual(['overview', 'logs']);
   });
 });
 
@@ -179,20 +282,124 @@ describe('buildAgentSection tabs by role', () => {
     ).map((item) => item.key);
 
   it('shows every tab before the agent has loaded', () => {
-    expect(keys()).toEqual(['overview', 'logs', 'schedules']);
-  });
-
-  it('shows an editor all three tabs', () => {
-    expect(keys(['view', 'view_logs', 'manage_schedules'])).toEqual([
+    expect(keys()).toEqual([
       'overview',
-      'logs',
       'schedules',
+      'analytics',
+      'insights',
+      'logs',
     ]);
   });
 
-  it('shows a viewer no tabs, or Logs when the owner shares them', () => {
+  it('shows an editor every tab', () => {
+    expect(keys(['view', 'view_logs', 'manage_schedules'])).toEqual([
+      'overview',
+      'schedules',
+      'analytics',
+      'insights',
+      'logs',
+    ]);
+  });
+
+  it('shows a viewer no tabs, or Monitoring when the owner shares logs', () => {
     expect(keys(['pin', 'use'])).toEqual([]);
-    expect(keys(['pin', 'use', 'view_logs'])).toEqual(['logs']);
+    expect(keys(['pin', 'use', 'view_logs'])).toEqual([
+      'analytics',
+      'insights',
+      'logs',
+    ]);
+  });
+
+  it('hides Insights while the server labels no conversations', () => {
+    const visible = (analytics: boolean) =>
+      getVisibleGroups(buildAgentSection('a1', 'Bot', false), {
+        features: { analytics },
+      })
+        .flatMap((group) => group.items)
+        .map((item) => item.key);
+    expect(visible(false)).toEqual([
+      'overview',
+      'schedules',
+      'analytics',
+      'logs',
+    ]);
+    expect(visible(true)).toContain('insights');
+  });
+
+  it('owns the agent insights and analytics routes', () => {
+    const section = buildAgentSection('a1', 'Bot', false);
+    expect(getActiveItem(section, '/agents/manage/insights/a1')?.key).toBe(
+      'insights',
+    );
+    expect(getActiveItem(section, '/agents/manage/analytics/a1')?.key).toBe(
+      'analytics',
+    );
+    expect(getSectionForPath('/agents/manage/analytics/a1')?.key).toBe(
+      'agents',
+    );
+  });
+});
+
+describe('buildAgentSection groups', () => {
+  const groups = (actions?: string[]) =>
+    getVisibleGroups(
+      buildAgentSection(
+        'a1',
+        'Bot',
+        false,
+        actions ? { access: 'editor', allowed_actions: actions } : undefined,
+      ),
+    ).map((group) => ({
+      key: group.key,
+      labelKey: group.labelKey,
+      items: group.items.map((item) => item.key),
+    }));
+
+  it('puts the pages that watch the agent under Monitoring', () => {
+    expect(groups()).toEqual([
+      { key: 'agent', labelKey: undefined, items: ['overview', 'schedules'] },
+      {
+        key: 'monitoring',
+        labelKey: 'navigation.sections.groups.monitoring',
+        items: ['analytics', 'insights', 'logs'],
+      },
+    ]);
+  });
+
+  it('drops a group the role leaves empty', () => {
+    expect(groups(['pin', 'use', 'view_logs']).map((g) => g.key)).toEqual([
+      'monitoring',
+    ]);
+    expect(groups(['view']).map((g) => g.key)).toEqual(['agent']);
+  });
+});
+
+describe('SETTINGS_SECTION Monitoring', () => {
+  it('holds Analytics, Insights and Logs', () => {
+    const monitoring = SETTINGS_SECTION.groups.find(
+      (group) => group.key === 'monitoring',
+    );
+    expect(monitoring?.labelKey).toBe('navigation.sections.groups.monitoring');
+    expect(monitoring?.items.map((item) => item.key)).toEqual([
+      'analytics',
+      'insights',
+      'logs',
+    ]);
+    expect(
+      SETTINGS_SECTION.groups.some((group) => group.key === 'insights'),
+    ).toBe(false);
+  });
+
+  it('routes Insights to its own page, hidden while the server has it off', () => {
+    expect(getActiveItem(SETTINGS_SECTION, '/settings/insights')?.key).toBe(
+      'insights',
+    );
+    const keys = (analytics: boolean) =>
+      getVisibleGroups(SETTINGS_SECTION, { features: { analytics } })
+        .find((group) => group.key === 'monitoring')
+        ?.items.map((item) => item.key);
+    expect(keys(false)).toEqual(['analytics', 'logs']);
+    expect(keys(true)).toEqual(['analytics', 'insights', 'logs']);
   });
 });
 
@@ -207,5 +414,22 @@ describe('depthOf', () => {
 
   it('keeps a chat with an agent at the chat level', () => {
     expect(depthOf(getSectionForPath('/agents/a1/c/c1'))).toBe(0);
+  });
+});
+
+describe('teamNavItem', () => {
+  it('has no Team entry in Personal', () => {
+    expect(teamNavItem('personal')).toBeNull();
+  });
+
+  it("links a team workspace to that team's page", () => {
+    const item = teamNavItem('t1');
+    expect(item?.path).toBe('/teams/t1');
+    expect(item?.labelKey).toBe('workspace.team.navEntry');
+    // The team page is in Settings, under Teams.
+    expect(getSectionForPath('/teams/t1/settings')?.key).toBe('settings');
+    expect(getActiveItem(SETTINGS_SECTION, '/teams/t1/members')?.key).toBe(
+      'teams',
+    );
   });
 });

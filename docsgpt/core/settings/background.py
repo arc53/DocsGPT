@@ -33,6 +33,15 @@ class BackgroundSettings(SettingsGroup):
             "SANDBOX_EXEC_MAX_TIMEOUT by default."
         ),
     )
+    DEVICE_JOB_MAX_SECONDS: int = Field(
+        default=3600,
+        ge=60,
+        description=(
+            "Hard lifetime of a background job running a command on a paired remote device, in seconds. A "
+            "command started with background=true may run this long (a foreground one keeps its 600 s cap); a "
+            "job whose device never reports back before then is marked lost."
+        ),
+    )
     BACKGROUND_MAX_JOBS_PER_CONVERSATION: int = Field(
         default=2,
         ge=0,
@@ -74,6 +83,10 @@ class BackgroundSettings(SettingsGroup):
             "Threads per API or worker process that run tool calls a turn may hand off. A call that finds the "
             "pool full runs inline, as before."
         ),
+    )
+    CONTINUATION_RUN_TIMEOUT: int = Field(
+        default=1200, ge=60,
+        description="Soft wall-clock backstop for a continuation task, in seconds; healthy rounds save before it.",
     )
     AUTO_RESUME_ENABLED: bool = Field(
         default=True,

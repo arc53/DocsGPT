@@ -14,10 +14,12 @@ from flask_restx import Namespace, Resource
 
 from docsgpt.api import api
 from docsgpt.monitors import service
+from docsgpt.monitors.links import SECRET_REJECTIONS, SecretRejected
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerLinksRepository
 from docsgpt.storage.db.session import db_readonly
+
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +104,9 @@ class MonitorSecret(Resource):
     @api.doc(
         description=(
             "The signing secret of one of the caller's webhook monitors, so the owner can configure the sender. "
-            "Only the owner's session may read it (never an access token); the model only ever sees a "
-            "placeholder. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed "
-            "link."
+            "Only the owner's session may read it (never an access token); the model only ever sees its "
+            "reference. Rate limited, audited, never cached or logged. 404 when the monitor has no live signed "
+            "link, or its secret was never set."
         )
     )
     def get(self, monitor_id: str):
@@ -124,6 +126,76 @@ class MonitorSecret(Resource):
         if revealed is None:
             return _err("No signing secret for this monitor", 404)
         response = make_response(jsonify(revealed), 200)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @api.doc(
+        description=(
+            "Set the signing secret of one of the caller's webhook monitors: {secret}. For Stripe and Slack, "
+            "which create their own signing secret, this is how the link gets it; for any other signed scheme it "
+            "replaces the generated one. Only the owner's session may set it (never an access token). Rate "
+            "limited, audited without the value, never logged. 400 for a value that can't be this scheme's "
+            "secret, 404 when the monitor has no live signed link."
+        )
+    )
+    def put(self, monitor_id: str):
+        from docsgpt.monitors.triggers import rate_limited
+
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        if rate_limited("secret_set", user_id, SECRET_REVEALS_PER_MINUTE):
+            return _err("Too many requests; try again in a minute", 429)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or "secret" not in data:
+            return _err("Send {\"secret\": \"...\"}", 400)
+        try:
+            saved = service.set_secret(monitor_id, user_id, data.get("secret"))
+        except SecretRejected as exc:
+            # A fixed sentence per reason: never the value, never the exception's own text.
+            reason = SECRET_REJECTIONS.get(exc.code, "it isn't in this scheme's format")
+            return _err(f"That can't be this link's signing secret: {reason}", 400)
+        except ValueError:
+            return _err("That can't be this link's signing secret", 400)
+        except Exception:
+            logger.error("setting a monitor secret failed (%s)", monitor_id)
+            return _err("Failed to save the secret", 500)
+        if saved is None:
+            return _err("No signed link for this monitor", 404)
+        response = make_response(jsonify(saved), 200)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+
+@monitors_ns.route("/monitors/<string:monitor_id>/secret/exposure")
+class MonitorSecretExposure(Resource):
+    @api.doc(
+        description=(
+            "Show (or stop showing) one of the caller's webhook monitors' raw signing secret to the assistant: "
+            "{exposed: true|false}. Shown, monitor_list gives the assistant the value, which then goes to the model "
+            "provider. Only the owner's session may change it (never an access token, never the assistant). Rate "
+            "limited and audited. 404 when the monitor has no live signed link with a secret."
+        )
+    )
+    def put(self, monitor_id: str):
+        from docsgpt.monitors.triggers import rate_limited
+
+        user_id = _user_id()
+        if not user_id:
+            return _err("Unauthorized", 401)
+        if rate_limited("secret_exposure", user_id, SECRET_REVEALS_PER_MINUTE):
+            return _err("Too many requests; try again in a minute", 429)
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("exposed"), bool):
+            return _err("Send {\"exposed\": true} or {\"exposed\": false}", 400)
+        try:
+            changed = service.set_exposure(monitor_id, user_id, data["exposed"])
+        except Exception:
+            logger.exception("changing a monitor secret's exposure failed (%s)", monitor_id)
+            return _err("Failed to change it", 500)
+        if changed is None:
+            return _err("No signed link with a secret for this monitor", 404)
+        response = make_response(jsonify(changed), 200)
         response.headers["Cache-Control"] = "no-store"
         return response
 

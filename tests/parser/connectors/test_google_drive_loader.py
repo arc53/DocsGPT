@@ -1,9 +1,14 @@
 """Tests for GoogleDriveLoader."""
 
-from tests.parser.connectors.token_patch import patch_tokens
+import copy
+import json
 from unittest.mock import MagicMock, patch
 
+import httplib2
 import pytest
+from googleapiclient.errors import HttpError
+
+from tests.parser.connectors.token_patch import patch_tokens
 
 from docsgpt.parser.schema.base import Document
 
@@ -382,6 +387,68 @@ class TestListItemsInParent:
         assert docs == []
 
 
+class TestBrowseSharedDrives:
+
+    @pytest.mark.unit
+    def test_top_level_lists_shared_drives_first(self, loader, mock_service):
+        mock_service.drives.return_value.list.return_value.execute.return_value = {
+            "drives": [{"id": "drive-1", "name": "Engineering"}],
+        }
+        my_drive = [Document(text="", doc_id="f1", extra_info={"file_name": "a.txt"})]
+        loader._list_items_in_parent = MagicMock(return_value=my_drive)
+
+        result = loader.load_data({"limit": 10})
+
+        assert [d.doc_id for d in result] == ["drive-1", "f1"]
+        assert result[0].extra_info["is_folder"] is True
+        assert result[0].extra_info["file_name"] == "Engineering"
+        loader._list_items_in_parent.assert_called_once_with(
+            "root", limit=9, load_content=True, page_token=None, search_query=None
+        )
+        assert mock_service.drives.return_value.list.call_args.kwargs["pageSize"] == 9
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "inputs",
+        [{"folder_id": "folder1"}, {"page_token": "next"}, {"search_query": "report"}],
+    )
+    def test_shared_drives_only_on_the_first_top_level_page(self, loader, mock_service, inputs):
+        loader._list_items_in_parent = MagicMock(return_value=[])
+        loader.load_data(inputs)
+        mock_service.drives.return_value.list.assert_not_called()
+
+    @pytest.mark.unit
+    def test_shared_drive_listing_failure_still_lists_my_drive(self, loader, mock_service):
+        mock_service.drives.return_value.list.return_value.execute.side_effect = Exception("403")
+        my_drive = [Document(text="", doc_id="f1", extra_info={})]
+        loader._list_items_in_parent = MagicMock(return_value=my_drive)
+        assert loader.load_data({}) == my_drive
+
+    @pytest.mark.unit
+    def test_folder_in_shared_drive_listed_within_its_drive(self, loader, mock_service):
+        mock_service.files.return_value.get.return_value.execute.return_value = {"driveId": "drive-1"}
+        mock_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+        loader._list_items_in_parent("drive-1")
+        kwargs = mock_service.files.return_value.list.call_args.kwargs
+        assert kwargs["corpora"] == "drive"
+        assert kwargs["driveId"] == "drive-1"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("folder, metadata", [("root", None), ("folder1", {})])
+    def test_my_drive_listing_uses_default_corpus(self, loader, mock_service, folder, metadata):
+        mock_service.files.return_value.get.return_value.execute.return_value = metadata
+        mock_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+        loader._list_items_in_parent(folder)
+        assert "corpora" not in mock_service.files.return_value.list.call_args.kwargs
+
+    @pytest.mark.unit
+    def test_unreadable_folder_scope_falls_back_to_default(self, loader, mock_service):
+        mock_service.files.return_value.get.return_value.execute.side_effect = Exception("404")
+        mock_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+        loader._list_items_in_parent("folder1")
+        assert "corpora" not in mock_service.files.return_value.list.call_args.kwargs
+
+
 class TestDownloadFileContent:
 
     @pytest.mark.unit
@@ -618,203 +685,609 @@ class TestDownloadFileContent:
         assert result is None
 
 
+FOLDER = "application/vnd.google-apps.folder"
+SHORTCUT = "application/vnd.google-apps.shortcut"
+GDOC = "application/vnd.google-apps.document"
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _http_error(status, reason="forbidden"):
+    body = json.dumps({"error": {"message": reason, "errors": [{"reason": reason}]}}).encode()
+    return HttpError(httplib2.Response({"status": status}), body)
+
+
+class _Request:
+    def __init__(self, fn, calls):
+        self._fn = fn
+        self._calls = calls
+
+    def execute(self, num_retries=0):
+        self._calls.append(num_retries)
+        return self._fn()
+
+
+class FakeDrive:
+    """A Drive ``files()`` resource over an in-memory tree.
+
+    ``items`` maps id → metadata (with a ``parent``), ``contents`` maps id →
+    bytes served by downloads, and ``errors`` maps id → the exception a
+    download (or, for ``get_errors``, a metadata read) raises.
+    """
+
+    def __init__(self, items, contents=None, errors=None, get_errors=None):
+        self.items = items
+        self.contents = contents or {}
+        self.errors = errors or {}
+        self.get_errors = get_errors or {}
+        self.retries = []
+        self.list_calls = []
+        self.media_calls = []
+        self.service = MagicMock()
+        self.service.files.return_value = self
+
+    def _meta(self, item_id):
+        meta = {k: v for k, v in self.items[item_id].items() if k != "parent"}
+        return {"id": item_id, **meta}
+
+    def get(self, fileId, fields, supportsAllDrives):
+        def run():
+            if fileId in self.get_errors:
+                raise self.get_errors[fileId]
+            if fileId not in self.items:
+                raise _http_error(404, "notFound")
+            return self._meta(fileId)
+        return _Request(run, self.retries)
+
+    def list(self, q, fields, pageToken, pageSize, supportsAllDrives, includeItemsFromAllDrives, **kwargs):
+        parent = q.split("'")[1]
+        self.list_calls.append({"parent": parent, **kwargs})
+        children = [self._meta(i) for i, m in self.items.items() if m.get("parent") == parent]
+        return _Request(lambda: {"files": children}, self.retries)
+
+    def get_media(self, fileId, supportsAllDrives):
+        self.media_calls.append(fileId)
+        return ("media", fileId)
+
+    def export_media(self, fileId, mimeType):
+        self.media_calls.append(fileId)
+        return ("export", fileId)
+
+
+class FakeDownloader:
+    drive = None
+
+    def __init__(self, fh, request):
+        self.fh = fh
+        self.file_id = request[1]
+
+    def next_chunk(self, num_retries=0):
+        self.drive.retries.append(num_retries)
+        self.fh.write(b"partial")
+        if self.file_id in self.drive.errors:
+            raise self.drive.errors[self.file_id]
+        self.fh.seek(0)
+        self.fh.truncate()
+        self.fh.write(self.drive.contents.get(self.file_id, b"data"))
+        return None, True
+
+
+@pytest.fixture
+def drive_loader():
+    def build(items, **kwargs):
+        drive = FakeDrive(items, **kwargs)
+        FakeDownloader.drive = drive
+        return _make_loader(drive.service), drive
+
+    with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload", FakeDownloader):
+        yield build
+
+
+def _files(root):
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+
 class TestDownloadToDirectory:
 
     @pytest.mark.unit
-    def test_download_files(self, loader, tmp_path):
-        loader._download_file_to_directory = MagicMock(return_value=True)
+    def test_downloads_selected_files(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "f1": {"name": "a.pdf", "mimeType": "application/pdf"},
+            "f2": {"name": "b.txt", "mimeType": "text/plain"},
+        })
         result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1", "f2"]})
         assert result["files_downloaded"] == 2
-        assert result["source_type"] == "google_drive"
         assert result["empty_result"] is False
+        assert result["source_type"] == "google_drive"
+        assert _files(tmp_path) == ["a.pdf", "b.txt"]
 
     @pytest.mark.unit
-    def test_download_files_string_id(self, loader, tmp_path):
-        loader._download_file_to_directory = MagicMock(return_value=True)
-        result = loader.download_to_directory(str(tmp_path), {"file_ids": "single_id"})
+    def test_single_id_string(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({"f1": {"name": "a.pdf", "mimeType": "application/pdf"}})
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": "f1"})
         assert result["files_downloaded"] == 1
 
     @pytest.mark.unit
-    def test_download_folders(self, loader, tmp_path, mock_service):
-        mock_service.files.return_value.get.return_value.execute.return_value = {"name": "MyFolder"}
-        loader._download_folder_recursive = MagicMock(return_value=3)
-        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["folder1"]})
-        assert result["files_downloaded"] == 3
+    def test_folder_walked_recursively_into_its_own_directory(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "Reports", "mimeType": FOLDER},
+            "sub": {"name": "2026", "mimeType": FOLDER, "parent": "root"},
+            "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root"},
+            "f2": {"name": "q2.pdf", "mimeType": "application/pdf", "parent": "sub"},
+        })
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 2
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
 
     @pytest.mark.unit
-    def test_download_folders_string_id(self, loader, tmp_path, mock_service):
-        mock_service.files.return_value.get.return_value.execute.return_value = {"name": "F"}
-        loader._download_folder_recursive = MagicMock(return_value=1)
-        result = loader.download_to_directory(str(tmp_path), {"folder_ids": "single_folder"})
+    def test_non_recursive_skips_subfolders(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "Reports", "mimeType": FOLDER},
+            "sub": {"name": "2026", "mimeType": FOLDER, "parent": "root"},
+            "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root"},
+            "f2": {"name": "q2.pdf", "mimeType": "application/pdf", "parent": "sub"},
+        })
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "recursive": False})
+        assert _files(tmp_path) == ["Reports/q1.pdf"]
+
+    @pytest.mark.unit
+    def test_google_docs_exported_with_extension(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({"d1": {"name": "Plan", "mimeType": GDOC}})
+        loader.download_to_directory(str(tmp_path), {"file_ids": ["d1"]})
+        assert _files(tmp_path) == ["Plan.docx"]
+
+    @pytest.mark.unit
+    def test_extension_added_when_name_has_none(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({"f1": {"name": "invoice", "mimeType": "application/pdf"}})
+        loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"]})
+        assert _files(tmp_path) == ["invoice.pdf"]
+
+    @pytest.mark.unit
+    def test_file_urls_name_each_downloaded_file(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "Reports", "mimeType": FOLDER},
+            "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root",
+                   "webViewLink": "https://drive.google.com/file/d/f1/view"},
+            "d1": {"name": "Plan", "mimeType": GDOC, "webViewLink": "https://docs.google.com/document/d/d1/edit"},
+            "f2": {"name": "bad.pdf", "mimeType": "application/pdf",
+                   "webViewLink": "https://drive.google.com/file/d/f2/view"},
+            "f3": {"name": "nolink.pdf", "mimeType": "application/pdf"},
+        }, errors={"f2": _http_error(500, "backendError")})
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["d1", "f2", "f3"]})
+        assert result["file_urls"] == {
+            "Reports/q1.pdf": "https://drive.google.com/file/d/f1/view",
+            "Plan.docx": "https://docs.google.com/document/d/d1/edit",
+        }
+
+    @pytest.mark.unit
+    def test_item_fields_ask_for_the_web_link(self):
+        from docsgpt.parser.connectors.google_drive.loader import _ITEM_FIELDS
+
+        assert "webViewLink" in _ITEM_FIELDS.split(",")
+
+    @pytest.mark.unit
+    def test_unsupported_types_skipped(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "Mixed", "mimeType": FOLDER},
+            "form": {"name": "Survey", "mimeType": "application/vnd.google-apps.form", "parent": "root"},
+            "zip": {"name": "a.zip", "mimeType": "application/zip", "parent": "root"},
+            "f1": {"name": "ok.txt", "mimeType": "text/plain", "parent": "root"},
+        })
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
         assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 2
+        assert result["files_failed"] == 0
 
     @pytest.mark.unit
-    def test_no_ids_returns_error(self, loader, tmp_path):
+    def test_no_ids_returns_error(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({})
         result = loader.download_to_directory(str(tmp_path), {})
         assert "error" in result
         assert result["empty_result"] is True
 
     @pytest.mark.unit
-    def test_none_config_uses_empty(self, loader, tmp_path):
+    def test_none_config_uses_empty(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({})
         result = loader.download_to_directory(str(tmp_path))
         assert "error" in result
 
     @pytest.mark.unit
-    def test_folder_error_continues(self, loader, tmp_path, mock_service):
-        mock_service.files.return_value.get.return_value.execute.side_effect = Exception("fail")
-        loader._download_file_to_directory = MagicMock(return_value=True)
-        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"], "folder_ids": ["bad_folder"]})
+    def test_every_call_retries(self, drive_loader, tmp_path):
+        loader, drive = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root"},
+        })
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert drive.retries
+        assert set(drive.retries) == {5}
+
+
+class TestDownloadFailureIsolation:
+
+    @pytest.mark.unit
+    def test_failed_file_does_not_stop_the_folder(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(
+            {
+                "root": {"name": "R", "mimeType": FOLDER},
+                "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root"},
+                "big": {"name": "Huge", "mimeType": GDOC, "parent": "root"},
+                "f2": {"name": "c.txt", "mimeType": "text/plain", "parent": "root"},
+            },
+            errors={"big": _http_error(403, "exportSizeLimitExceeded")},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 2
+        assert _files(tmp_path) == ["R/a.txt", "R/c.txt"]
+
+    @pytest.mark.unit
+    def test_partial_file_removed(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(
+            {"f1": {"name": "a.txt", "mimeType": "text/plain"}},
+            errors={"f1": OSError("connection reset")},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"]})
+        assert result["files_downloaded"] == 0
+        assert _files(tmp_path) == []
+
+    @pytest.mark.unit
+    def test_permanent_refusal_counts_as_skipped(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(
+            {"big": {"name": "Huge", "mimeType": GDOC}, "f1": {"name": "a.txt", "mimeType": "text/plain"}},
+            errors={"big": _http_error(403, "exportSizeLimitExceeded")},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["big", "f1"]})
+        assert result["files_skipped"] == 1
+        assert result["files_failed"] == 0
+        assert result["sync_fingerprint"]
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "status, reason",
+        [(403, "cannotDownloadFile"), (403, "insufficientFilePermissions"), (404, "notFound")],
+    )
+    def test_access_refusal_withholds_fingerprint(self, drive_loader, tmp_path, status, reason):
+        # Sharing settings can change without touching modifiedTime, so a file
+        # refused for access must not be fingerprinted as if it were indexed.
+        loader, _ = drive_loader(
+            {"f1": {"name": "a.pdf", "mimeType": "application/pdf"}, "f2": {"name": "b.txt", "mimeType": "text/plain"}},
+            errors={"f1": _http_error(status, reason)},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1", "f2"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+        assert result["files_failed"] == 0
+        assert result["sync_fingerprint"] is None
+
+    @pytest.mark.unit
+    def test_transient_failure_withholds_fingerprint(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(
+            {"f1": {"name": "a.txt", "mimeType": "text/plain"}, "f2": {"name": "b.txt", "mimeType": "text/plain"}},
+            errors={"f1": _http_error(403, "userRateLimitExceeded")},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1", "f2"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_failed"] == 1
+        assert result["sync_fingerprint"] is None
+
+    @pytest.mark.unit
+    def test_unreadable_subfolder_does_not_stop_siblings(self, drive_loader, tmp_path):
+        loader, drive = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "bad": {"name": "Locked", "mimeType": FOLDER, "parent": "root"},
+            "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root"},
+        })
+        original_list = drive.list
+
+        def list_or_fail(q, **kwargs):
+            if "'bad'" in q:
+                raise _http_error(500, "backendError")
+            return original_list(q=q, **kwargs)
+
+        drive.list = list_or_fail
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_failed"] == 1
+        assert result["sync_fingerprint"] is None
+
+    @pytest.mark.unit
+    def test_missing_selected_item_skipped(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({"f1": {"name": "a.txt", "mimeType": "text/plain"}})
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["gone", "f1"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+
+
+class TestFileNames:
+
+    @pytest.mark.unit
+    def test_duplicate_names_numbered(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "f1": {"name": "report.pdf", "mimeType": "application/pdf", "parent": "root"},
+            "f2": {"name": "report.pdf", "mimeType": "application/pdf", "parent": "root"},
+            "f3": {"name": "Report.PDF", "mimeType": "application/pdf", "parent": "root"},
+        }, contents={"f1": b"one", "f2": b"two", "f3": b"three"})
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 3
+        assert _files(tmp_path) == ["R/Report_2.PDF", "R/report.pdf", "R/report_1.pdf"]
+        contents = {(tmp_path / "R" / name).read_bytes() for name in ("report.pdf", "report_1.pdf", "Report_2.PDF")}
+        assert contents == {b"one", b"two", b"three"}
+
+    @pytest.mark.unit
+    def test_export_name_collision_numbered(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "d1": {"name": "Plan", "mimeType": GDOC},
+            "f1": {"name": "Plan.docx", "mimeType": DOCX},
+        })
+        loader.download_to_directory(str(tmp_path), {"file_ids": ["d1", "f1"]})
+        assert _files(tmp_path) == ["Plan.docx", "Plan_1.docx"]
+
+    @pytest.mark.unit
+    def test_duplicate_folder_names_numbered(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "a": {"name": "Docs", "mimeType": FOLDER},
+            "b": {"name": "Docs", "mimeType": FOLDER},
+            "f1": {"name": "x.txt", "mimeType": "text/plain", "parent": "a"},
+            "f2": {"name": "x.txt", "mimeType": "text/plain", "parent": "b"},
+        })
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["a", "b"]})
+        assert _files(tmp_path) == ["Docs/x.txt", "Docs_1/x.txt"]
+
+    @pytest.mark.unit
+    def test_separators_and_dot_names_cannot_escape(self, drive_loader, tmp_path):
+        target = tmp_path / "target"
+        loader, _ = drive_loader({
+            "root": {"name": "..", "mimeType": FOLDER},
+            "f1": {"name": "../../escape.txt", "mimeType": "text/plain", "parent": "root"},
+            "f2": {"name": "..\\win.txt", "mimeType": "text/plain", "parent": "root"},
+            "f3": {"name": "a\x00b.txt", "mimeType": "text/plain", "parent": "root"},
+        })
+        result = loader.download_to_directory(str(target), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 3
+        assert _files(tmp_path) == ["target/_/.._.._escape.txt", "target/_/.._win.txt", "target/_/ab.txt"]
+
+    @pytest.mark.unit
+    def test_long_name_truncated_keeping_extension(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "f1": {"name": "é" * 300 + ".pdf", "mimeType": "application/pdf"},
+            "f2": {"name": "é" * 300 + ".pdf", "mimeType": "application/pdf"},
+        })
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1", "f2"]})
+        assert result["files_downloaded"] == 2
+        names = _files(tmp_path)
+        assert all(len(n.encode()) <= 255 and n.endswith(".pdf") for n in names)
+        assert names[1].endswith("_1.pdf") or names[0].endswith("_1.pdf")
+
+    @pytest.mark.unit
+    def test_safe_join_refuses_escape(self, tmp_path):
+        from docsgpt.parser.connectors.google_drive.loader import _safe_join
+
+        with pytest.raises(ValueError):
+            _safe_join(str(tmp_path), ("..", "x.txt"))
+        with pytest.raises(ValueError):
+            _safe_join(str(tmp_path), ())
+        assert _safe_join(str(tmp_path), ("a", "b.txt")).endswith("a/b.txt")
+
+
+class TestShortcuts:
+
+    @pytest.mark.unit
+    def test_file_shortcut_followed_under_its_own_name(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "s1": {
+                "name": "Linked spec", "mimeType": SHORTCUT, "parent": "root",
+                "shortcutDetails": {"targetId": "real", "targetMimeType": GDOC},
+            },
+            "real": {"name": "Spec v3", "mimeType": GDOC, "parent": "elsewhere"},
+        }, contents={"real": b"spec"})
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 1
+        assert (tmp_path / "R" / "Linked spec.docx").read_bytes() == b"spec"
+
+    @pytest.mark.unit
+    def test_folder_shortcut_walked(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "s1": {
+                "name": "Team", "mimeType": SHORTCUT, "parent": "root",
+                "shortcutDetails": {"targetId": "team", "targetMimeType": FOLDER},
+            },
+            "team": {"name": "Team folder", "mimeType": FOLDER, "parent": "elsewhere"},
+            "f1": {"name": "notes.txt", "mimeType": "text/plain", "parent": "team"},
+        })
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert _files(tmp_path) == ["R/Team/notes.txt"]
+
+    @pytest.mark.unit
+    def test_selected_shortcut_resolved(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "s1": {"name": "a.pdf", "mimeType": SHORTCUT, "shortcutDetails": {"targetId": "real"}},
+            "real": {"name": "a.pdf", "mimeType": "application/pdf"},
+        })
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["s1"]})
         assert result["files_downloaded"] == 1
 
-
-class TestDownloadSingleFile:
+    @pytest.mark.unit
+    def test_shortcut_cycle_visited_once(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "loop": {
+                "name": "Back up", "mimeType": SHORTCUT, "parent": "root",
+                "shortcutDetails": {"targetId": "root", "targetMimeType": FOLDER},
+            },
+            "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root"},
+        })
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 1
+        assert _files(tmp_path) == ["R/a.txt"]
 
     @pytest.mark.unit
-    def test_downloads_supported_file(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.get.return_value.execute.return_value = {
-            "name": "test.txt", "mimeType": "text/plain"
-        }
-        mock_request = MagicMock()
-        mock_service.files.return_value.get_media.return_value = mock_request
-
-        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDl:
-            mock_dl = MagicMock()
-            mock_dl.next_chunk.return_value = (None, True)
-            MockDl.return_value = mock_dl
-
-            result = loader._download_single_file("f1", str(tmp_path))
-        assert result is True
+    def test_file_reached_twice_downloaded_once(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root"},
+            "s1": {
+                "name": "a link", "mimeType": SHORTCUT, "parent": "root",
+                "shortcutDetails": {"targetId": "f1"},
+            },
+        })
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 1
 
     @pytest.mark.unit
-    def test_unsupported_mime_returns_false(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.get.return_value.execute.return_value = {
-            "name": "test.zip", "mimeType": "application/zip"
-        }
-        result = loader._download_single_file("f1", str(tmp_path))
-        assert result is False
+    def test_broken_shortcut_skipped(self, drive_loader, tmp_path):
+        loader, _ = drive_loader({
+            "root": {"name": "R", "mimeType": FOLDER},
+            "s1": {"name": "dead", "mimeType": SHORTCUT, "parent": "root", "shortcutDetails": {"targetId": "gone"}},
+            "s2": {"name": "empty", "mimeType": SHORTCUT, "parent": "root", "shortcutDetails": {}},
+            "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root"},
+        })
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 2
+        assert result["files_failed"] == 0
 
     @pytest.mark.unit
-    def test_google_workspace_file_export(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.get.return_value.execute.return_value = {
-            "name": "doc", "mimeType": "application/vnd.google-apps.document"
-        }
-        mock_request = MagicMock()
-        mock_service.files.return_value.export_media.return_value = mock_request
-
-        with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload") as MockDl:
-            mock_dl = MagicMock()
-            mock_dl.next_chunk.return_value = (None, True)
-            MockDl.return_value = mock_dl
-            result = loader._download_single_file("f1", str(tmp_path))
-
-        assert result is True
-        mock_service.files.return_value.export_media.assert_called_once()
+    def test_shortcut_target_unreachable_for_now_counts_as_failure(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(
+            {
+                "s1": {"name": "x", "mimeType": SHORTCUT, "shortcutDetails": {"targetId": "real"}},
+                "real": {"name": "a.pdf", "mimeType": "application/pdf"},
+            },
+            get_errors={"real": _http_error(503, "backendError")},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["s1"]})
+        assert result["files_failed"] == 1
 
 
-class TestDownloadFolderRecursive:
+class TestSharedDrives:
 
     @pytest.mark.unit
-    def test_downloads_files_in_folder(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.list.return_value.execute.return_value = {
-            "files": [
-                {"id": "f1", "name": "file1.txt", "mimeType": "text/plain"},
-            ],
-            "nextPageToken": None,
-        }
-        loader._download_single_file = MagicMock(return_value=True)
-        count = loader._download_folder_recursive("folder1", str(tmp_path))
-        assert count == 1
+    def test_shared_drive_folder_listed_within_its_drive(self, drive_loader, tmp_path):
+        loader, drive = drive_loader({
+            "sd": {"name": "Engineering", "mimeType": FOLDER, "driveId": "drive-1"},
+            "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "sd", "driveId": "drive-1"},
+        })
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["sd"]})
+        assert drive.list_calls == [{"parent": "sd", "corpora": "drive", "driveId": "drive-1"}]
+        assert _files(tmp_path) == ["Engineering/a.txt"]
 
     @pytest.mark.unit
-    def test_recurses_into_subfolders(self, loader, mock_service, tmp_path):
-        # First call: folder with subfolder and file
-        # Second call: subfolder contents
-        call_count = [0]
-        def list_side_effect():
-            mock = MagicMock()
-            if call_count[0] == 0:
-                call_count[0] += 1
-                mock.execute.return_value = {
-                    "files": [
-                        {"id": "sub1", "name": "subfolder", "mimeType": "application/vnd.google-apps.folder"},
-                        {"id": "f1", "name": "file1.txt", "mimeType": "text/plain"},
-                    ],
-                    "nextPageToken": None,
-                }
-            else:
-                mock.execute.return_value = {
-                    "files": [
-                        {"id": "f2", "name": "file2.txt", "mimeType": "text/plain"},
-                    ],
-                    "nextPageToken": None,
-                }
-            return mock
+    def test_my_drive_folder_uses_default_corpus(self, drive_loader, tmp_path):
+        loader, drive = drive_loader({"root": {"name": "R", "mimeType": FOLDER}})
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert drive.list_calls == [{"parent": "root"}]
 
-        mock_service.files.return_value.list.side_effect = lambda **kw: list_side_effect()
-        loader._download_single_file = MagicMock(return_value=True)
-        count = loader._download_folder_recursive("folder1", str(tmp_path), recursive=True)
-        assert count == 2
+
+class TestSyncFingerprint:
+
+    TREE = {
+        "root": {"name": "R", "mimeType": FOLDER},
+        "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root", "modifiedTime": "2026-10-01T00:00:00Z"},
+        "f2": {"name": "b.txt", "mimeType": "text/plain", "parent": "root", "modifiedTime": "2026-10-01T00:00:00Z"},
+    }
+    CONFIG = {"folder_ids": ["root"], "recursive": True}
+
+    def _fingerprint(self, drive_loader, items, **kwargs):
+        loader, drive = drive_loader(items, **kwargs)
+        return loader.sync_fingerprint(self.CONFIG), drive
 
     @pytest.mark.unit
-    def test_non_recursive_skips_subfolders(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.list.return_value.execute.return_value = {
-            "files": [
-                {"id": "sub1", "name": "subfolder", "mimeType": "application/vnd.google-apps.folder"},
-                {"id": "f1", "name": "file1.txt", "mimeType": "text/plain"},
-            ],
-            "nextPageToken": None,
-        }
-        loader._download_single_file = MagicMock(return_value=True)
-        count = loader._download_folder_recursive("folder1", str(tmp_path), recursive=False)
-        assert count == 1
+    def test_matches_download_and_downloads_nothing(self, drive_loader, tmp_path):
+        loader, drive = drive_loader(copy.deepcopy(self.TREE))
+        fingerprint = loader.sync_fingerprint(self.CONFIG)
+        assert drive.retries and all(r == 5 for r in drive.retries)
+        assert _files(tmp_path) == []
+        result = loader.download_to_directory(str(tmp_path), self.CONFIG)
+        assert result["sync_fingerprint"] == fingerprint
 
     @pytest.mark.unit
-    def test_download_failure_continues(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.list.return_value.execute.return_value = {
-            "files": [
-                {"id": "f1", "name": "fail.txt", "mimeType": "text/plain"},
-                {"id": "f2", "name": "ok.txt", "mimeType": "text/plain"},
-            ],
-            "nextPageToken": None,
-        }
-        loader._download_single_file = MagicMock(side_effect=[False, True])
-        count = loader._download_folder_recursive("folder1", str(tmp_path))
-        assert count == 1
+    def test_stable_when_nothing_changed(self, drive_loader):
+        first, _ = self._fingerprint(drive_loader, copy.deepcopy(self.TREE))
+        second, _ = self._fingerprint(drive_loader, copy.deepcopy(self.TREE))
+        assert first == second
 
     @pytest.mark.unit
-    def test_exception_returns_partial_count(self, loader, mock_service, tmp_path):
-        mock_service.files.return_value.list.return_value.execute.side_effect = Exception("fail")
-        count = loader._download_folder_recursive("folder1", str(tmp_path))
-        assert count == 0
-
-
-class TestDownloadFileToDirectory:
-
-    @pytest.mark.unit
-    def test_delegates_to_download_single(self, loader, tmp_path):
-        loader._download_single_file = MagicMock(return_value=True)
-        assert loader._download_file_to_directory("f1", str(tmp_path)) is True
-
-    @pytest.mark.unit
-    def test_exception_returns_false(self, loader, tmp_path):
-        loader._download_single_file = MagicMock(side_effect=Exception("fail"))
-        assert loader._download_file_to_directory("f1", str(tmp_path)) is False
-
-
-class TestDownloadFolderContents:
+    @pytest.mark.parametrize("change", ["modified", "added", "removed", "renamed"])
+    def test_changes_with_the_selection(self, drive_loader, change):
+        before, _ = self._fingerprint(drive_loader, copy.deepcopy(self.TREE))
+        tree = copy.deepcopy(self.TREE)
+        if change == "modified":
+            tree["f1"]["modifiedTime"] = "2026-10-02T00:00:00Z"
+        elif change == "added":
+            tree["f3"] = {"name": "c.txt", "mimeType": "text/plain", "parent": "root"}
+        elif change == "removed":
+            del tree["f2"]
+        else:
+            tree["f2"]["name"] = "renamed.txt"
+        after, _ = self._fingerprint(drive_loader, tree)
+        assert before != after
 
     @pytest.mark.unit
-    def test_delegates_to_recursive(self, loader, tmp_path):
-        loader._download_folder_recursive = MagicMock(return_value=5)
-        count = loader._download_folder_contents("folder1", str(tmp_path))
-        assert count == 5
+    @pytest.mark.parametrize("target", ["sub", "s1"])
+    def test_access_granted_later_changes_it(self, drive_loader, target):
+        # A folder or shortcut target refused for access is left out of the
+        # walk, not failed. The preflight walks again on every sync, so once
+        # access is granted its files join the fingerprint and the sync runs.
+        tree = copy.deepcopy(self.TREE)
+        tree["sub"] = {"name": "Locked", "mimeType": FOLDER, "parent": "root"}
+        tree["s1"] = {"name": "link", "mimeType": SHORTCUT, "parent": "root", "shortcutDetails": {"targetId": "t1"}}
+        tree["t1"] = {"name": "t.txt", "mimeType": "text/plain", "parent": "elsewhere"}
+        tree["f3"] = {"name": "c.txt", "mimeType": "text/plain", "parent": "sub"}
+        loader, drive = drive_loader(copy.deepcopy(tree))
+        if target == "sub":
+            original_list = drive.list
+
+            def list_or_refuse(q, **kwargs):
+                if "'sub'" in q:
+                    raise _http_error(403, "insufficientFilePermissions")
+                return original_list(q=q, **kwargs)
+
+            drive.list = list_or_refuse
+        else:
+            drive.get_errors = {"t1": _http_error(404, "notFound")}
+        refused = loader.sync_fingerprint(self.CONFIG)
+
+        granted, _ = self._fingerprint(drive_loader, copy.deepcopy(tree))
+
+        assert refused is not None
+        assert refused != granted
 
     @pytest.mark.unit
-    def test_exception_returns_zero(self, loader, tmp_path):
-        loader.service = None
-        loader.auth.build_drive_service.side_effect = Exception("fail")
-        count = loader._download_folder_contents("folder1", str(tmp_path))
-        assert count == 0
+    def test_none_when_part_of_the_selection_unreadable(self, drive_loader):
+        fingerprint, _ = self._fingerprint(
+            drive_loader, copy.deepcopy(self.TREE), get_errors={"root": _http_error(500, "backendError")}
+        )
+        assert fingerprint is None
+
+    @pytest.mark.unit
+    def test_base_loader_has_no_fingerprint(self):
+        from docsgpt.parser.connectors.base import BaseConnectorLoader
+
+        assert BaseConnectorLoader.sync_fingerprint(MagicMock(), {}) is None
+
+
+class TestPermanentErrors:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "error, permanent",
+        [
+            (_http_error(403, "exportSizeLimitExceeded"), True),
+            (_http_error(403, "fileNotDownloadable"), True),
+            (_http_error(404, "notFound"), True),
+            (_http_error(403, "userRateLimitExceeded"), False),
+            (_http_error(403, "rateLimitExceeded"), False),
+            (_http_error(429, "rateLimitExceeded"), False),
+            (_http_error(401, "authError"), False),
+            (_http_error(503, "backendError"), False),
+            (OSError("reset"), False),
+        ],
+    )
+    def test_classification(self, error, permanent):
+        from docsgpt.parser.connectors.google_drive.loader import _is_permanent_error
+
+        assert _is_permanent_error(error) is permanent
 
 
 class TestEnsureService:
@@ -840,15 +1313,134 @@ class TestEnsureService:
             loader._ensure_service()
 
 
-class TestGetExtensionForMimeType:
+SHORTCUT = "application/vnd.google-apps.shortcut"
+
+
+@pytest.fixture
+def scoped_loader():
+    """A loader whose sign-in sees ``user_items`` and whose service account sees ``sa_items``.
+
+    ``whole_drive`` says whether the sign-in reads the whole Drive; ``sa_items``
+    of None means no service account is configured.
+    """
+    def build(user_items, sa_items=None, whole_drive=False):
+        user = FakeDrive(user_items)
+        sa = FakeDrive(sa_items) if sa_items is not None else None
+        FakeDownloader.drive = user
+        loader = _make_loader(user.service)
+        loader.auth.reads_whole_drive.return_value = whole_drive
+        loader.auth.build_service_account_service.return_value = sa.service if sa else None
+        loader.auth.service_account_email.return_value = "reader@project.iam.gserviceaccount.com" if sa else None
+        return loader, user, sa
+
+    with patch("docsgpt.parser.connectors.google_drive.loader.MediaIoBaseDownload", FakeDownloader):
+        yield build
+
+
+REPORTS = {
+    "root": {"name": "Reports", "mimeType": FOLDER},
+    "sub": {"name": "2026", "mimeType": FOLDER, "parent": "root"},
+    "f1": {"name": "q1.pdf", "mimeType": "application/pdf", "parent": "root"},
+    "f2": {"name": "q2.pdf", "mimeType": "application/pdf", "parent": "sub"},
+}
+
+
+class TestFolderAccess:
 
     @pytest.mark.unit
-    def test_known_mime_types(self, loader):
-        assert loader._get_extension_for_mime_type("application/pdf") == ".pdf"
-        assert loader._get_extension_for_mime_type("text/plain") == ".txt"
-        assert loader._get_extension_for_mime_type("text/html") == ".html"
-        assert loader._get_extension_for_mime_type("text/markdown") == ".md"
+    def test_per_file_sign_in_reads_a_picked_folder_through_the_service_account(self, scoped_loader, tmp_path):
+        loader, user, sa = scoped_loader({"root": REPORTS["root"]}, REPORTS)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 2
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
+        assert user.list_calls == []
+        assert [c["parent"] for c in sa.list_calls] == ["root", "sub"]
+        assert sorted(sa.media_calls) == ["f1", "f2"]
 
     @pytest.mark.unit
-    def test_unknown_returns_bin(self, loader):
-        assert loader._get_extension_for_mime_type("application/unknown") == ".bin"
+    def test_picked_files_are_read_with_the_users_own_sign_in(self, scoped_loader, tmp_path):
+        loader, user, sa = scoped_loader(
+            {"f1": {"name": "a.pdf", "mimeType": "application/pdf"}}, {},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1"]})
+        assert result["files_downloaded"] == 1
+        assert user.media_calls == ["f1"]
+        assert sa.media_calls == []
+
+    @pytest.mark.unit
+    def test_whole_drive_sign_in_reads_folders_itself(self, scoped_loader, tmp_path):
+        loader, user, sa = scoped_loader(REPORTS, REPORTS, whole_drive=True)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 2
+        assert sa.list_calls == [] and sa.media_calls == []
+        loader.auth.build_service_account_service.assert_not_called()
+
+    @pytest.mark.unit
+    def test_folder_the_user_did_not_pick_is_never_read(self, scoped_loader, tmp_path):
+        # The service account can see the folder, but the user's sign-in
+        # cannot: it was not picked, so nothing in it is read.
+        loader, _, sa = scoped_loader({}, REPORTS)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert result["files_downloaded"] == 0
+        assert sa.list_calls == []
+
+    @pytest.mark.unit
+    def test_folder_not_shared_with_the_service_account_is_skipped(self, scoped_loader, tmp_path):
+        loader, _, sa = scoped_loader(
+            {"root": REPORTS["root"], "f9": {"name": "solo.pdf", "mimeType": "application/pdf"}}, {},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["f9"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+        assert sa.list_calls == []
+        assert _files(tmp_path) == ["solo.pdf"]
+
+    @pytest.mark.unit
+    def test_without_a_service_account_folders_are_skipped_and_files_kept(self, scoped_loader, tmp_path):
+        loader, _, _ = scoped_loader(
+            {"root": REPORTS["root"], "f9": {"name": "solo.pdf", "mimeType": "application/pdf"}}, None,
+        )
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"], "file_ids": ["f9"]})
+        assert result["files_downloaded"] == 1
+        assert result["files_skipped"] == 1
+        assert result["sync_fingerprint"] is not None
+
+    @pytest.mark.unit
+    def test_limited_access_items_inside_a_shared_folder_are_skipped(self, scoped_loader, tmp_path):
+        items = {
+            **REPORTS,
+            "locked": {"name": "Board", "mimeType": FOLDER, "parent": "root", "inheritedPermissionsDisabled": True},
+            "f3": {"name": "minutes.pdf", "mimeType": "application/pdf", "parent": "locked"},
+        }
+        loader, _, sa = scoped_loader({"root": REPORTS["root"]}, items)
+        result = loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
+        assert "locked" not in [c["parent"] for c in sa.list_calls]
+        assert result["files_skipped"] == 1
+
+    @pytest.mark.unit
+    def test_shortcut_in_a_shared_folder_needs_the_users_own_access(self, scoped_loader, tmp_path):
+        items = {
+            **REPORTS,
+            "link": {
+                "name": "elsewhere", "mimeType": SHORTCUT, "parent": "root",
+                "shortcutDetails": {"targetId": "secret", "targetMimeType": "application/pdf"},
+            },
+            "secret": {"name": "secret.pdf", "mimeType": "application/pdf"},
+        }
+        loader, _, sa = scoped_loader({"root": REPORTS["root"]}, items)
+        loader.download_to_directory(str(tmp_path), {"folder_ids": ["root"]})
+        assert "secret" not in sa.media_calls
+        assert _files(tmp_path) == ["Reports/2026/q2.pdf", "Reports/q1.pdf"]
+
+    @pytest.mark.unit
+    def test_sync_fingerprint_walks_folders_through_the_service_account(self, scoped_loader):
+        loader, user, sa = scoped_loader({"root": REPORTS["root"]}, REPORTS)
+        assert loader.sync_fingerprint({"folder_ids": ["root"]}) is not None
+        assert [c["parent"] for c in sa.list_calls] == ["root", "sub"]
+        assert user.list_calls == []
+
+    @pytest.mark.unit
+    def test_item_fields_ask_whether_access_is_inherited(self):
+        from docsgpt.parser.connectors.google_drive.loader import _ITEM_FIELDS
+        assert "inheritedPermissionsDisabled" in _ITEM_FIELDS.split(",")

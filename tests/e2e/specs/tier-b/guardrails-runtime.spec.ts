@@ -87,10 +87,16 @@ const EMAIL = 'confidential.person@internal-example.test';
  * answer sizes are chosen to exceed each check's window by more than one model
  * delta, so the release frontier provably sweeps over the sensitive value
  * mid-stream. Keep them above the corresponding `max_match_chars` in
- * `application/guardrails/checks/patterns.py`.
+ * `docsgpt/guardrails/checks/patterns.py`.
+ *
+ * The secrets window is 8192 (it must cover a whole PEM private key). The
+ * secret sits on the first of five mock deltas, so it is released before the
+ * last delta only when 4/5 of the answer minus the window passes it:
+ * 4n/5 - 8192 > n/5 + 10, i.e. n > ~13700. The guard's hard hold ceiling
+ * (MAX_HOLD_CHARS, 16000) is not reached.
  */
-const SECRETS_WINDOW_CHARS = 2048;
-const SECRETS_ANSWER_CHARS = 6000;
+const SECRETS_WINDOW_CHARS = 8192;
+const SECRETS_ANSWER_CHARS = 15000;
 const PII_WINDOW_CHARS = 256;
 const PII_ANSWER_CHARS = 1200;
 

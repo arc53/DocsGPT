@@ -236,4 +236,10 @@ class CheckJobTool(Tool):
             out["output_tail"] = tail_of(job["output_tail"])
         if job.get("cancel_requested_at"):
             out["cancel_requested"] = True
+        if progress.get("waiting_for") == "device":
+            out["waiting_for"] = "device"
+            out["note"] = (
+                "Its device is offline; the command may still be running there, and the job picks up again when "
+                "the device reconnects. " + note
+            )
         return out

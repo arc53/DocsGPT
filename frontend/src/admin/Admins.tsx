@@ -15,9 +15,14 @@ import {
 import { selectToken } from '../preferences/preferenceSlice';
 import { LoadingState } from '@/components/ui/loading-state';
 import { EmptyState } from '../components/ui/empty-state';
-import { LoadError, fmtDate } from './AdminUI';
+import { LoadError, UserIdentity, fmtDate } from './AdminUI';
 
-type Admin = { user_id: string; granted_at?: string; sources?: string[] };
+type Admin = {
+  user_id: string;
+  email?: string | null;
+  granted_at?: string;
+  sources?: string[];
+};
 
 export default function Admins() {
   const token = useSelector(selectToken);
@@ -82,8 +87,8 @@ export default function Admins() {
             <TableBody>
               {admins.map((a) => (
                 <TableRow key={a.user_id}>
-                  <TableCell className="font-medium wrap-anywhere">
-                    {a.user_id}
+                  <TableCell>
+                    <UserIdentity userId={a.user_id} email={a.email} />
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">

@@ -9,6 +9,7 @@ import {
   Send,
   Wrench,
 } from 'lucide-react';
+import type { TFunction } from 'i18next';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -75,6 +76,26 @@ export function StepIcon({
   );
 }
 
+/** Why a call that was not run did not run: the user denied it, or its turn moved on or expired. */
+function deniedText(toolCall: ToolCallsType, t: TFunction): string {
+  if (toolCall.not_run === 'moved_on')
+    return t('conversation.inlineSteps.notRunMovedOn');
+  if (toolCall.not_run === 'expired')
+    return t('conversation.inlineSteps.notRunExpired');
+  return t('conversation.inlineSteps.denied');
+}
+
+/** The muted note on a step's row that the call never ran. */
+export function NotRunBadge({ toolCall }: { toolCall: ToolCallsType }) {
+  const { t } = useTranslation();
+  if (toolCall.status !== 'denied') return null;
+  return (
+    <span className="text-muted-foreground shrink-0 text-xs">
+      {t('conversation.inlineSteps.notRun')}
+    </span>
+  );
+}
+
 /** A call's Arguments and Response panels, opened from its row. */
 export function ToolCallDetail({
   toolCall,
@@ -135,7 +156,7 @@ export function ToolCallDetail({
         )}
         {toolCall.status === 'denied' && (
           <p className="text-muted-foreground text-xs">
-            {t('conversation.inlineSteps.denied')}
+            {deniedText(toolCall, t)}
           </p>
         )}
         {!isRunning &&
@@ -212,6 +233,7 @@ function GroupCallRow({
             {t('conversation.inlineSteps.failed')}
           </span>
         )}
+        <NotRunBadge toolCall={toolCall} />
         <RowChevron open={isOpen} />
       </button>
       <div id={detailId} hidden={!isOpen}>

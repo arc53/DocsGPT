@@ -1,25 +1,39 @@
 """Source document management upload functionality."""
 
+import hashlib
+import hmac
 import json
 import os
+import posixpath
+import re
 import tempfile
 import uuid
 import zipfile
-from typing import Optional
+from typing import Any, Container, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from flask import current_app, jsonify, make_response, request
+from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import Connection
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.user.folders.service import FolderError, ingest_folder
+from docsgpt.api.user.idempotency import _synthesize_guard_key
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
-from docsgpt.api.user.resource_access import AccessDenied
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.resource_access import AccessDenied, workspace_mismatch_refusal, workspace_mismatches
+from docsgpt.api.user.task_owners import TaskOwnersUnavailable, get_task_owner
+from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
+from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
+from docsgpt.parser.remote.base import normalize_page_url
+from docsgpt.parser.remote.github_loader import GitHubLoader
+from docsgpt.parser.remote.website_loader import parse_website_config
 from docsgpt.security.zip_archive import (
     extract_zip_safely,
     safe_zip_error_message,
@@ -32,7 +46,8 @@ from docsgpt.storage.db.repositories.connector_sessions import (
 )
 from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.storage.db import source_defaults
+from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.stt.upload_limits import (
@@ -47,6 +62,14 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import check_required_fields, safe_filename
+from docsgpt.workspaces.context import (
+    PERSONAL,
+    Workspace,
+    WorkspaceError,
+    current_workspace,
+    parse_workspace_ref,
+    require_workspace_role,
+)
 
 
 sources_upload_ns = Namespace(
@@ -55,6 +78,152 @@ sources_upload_ns = Namespace(
 
 
 _IDEMPOTENCY_KEY_MAX_LEN = 256
+
+#: Error code of a source that would read through a person's own connected account, asked for in a team
+#: workspace: a team's source reads only through a connection the team itself holds.
+CODE_CONNECTOR_PERSONAL_ONLY = "connector_personal_only"
+
+
+def connector_personal_only() -> Response:
+    """The 403 for a source in a team workspace that would read through a personal connection."""
+    message = (
+        "A team's source can only read through an account connected for the team. Connect it for the team, "
+        "or add the source in your Personal workspace."
+    )
+    return make_response(
+        jsonify({"success": False, "error": CODE_CONNECTOR_PERSONAL_ONLY, "code": CODE_CONNECTOR_PERSONAL_ONLY,
+                 "message": message}),
+        403,
+    )
+
+
+def connection_paused(err: Any) -> Response:
+    """The 409 for a team's account that can't be used now, saying why.
+
+    Args:
+        err: The ``ConnectionUnavailable`` (``status="paused"``) that refused it.
+
+    Returns:
+        ``{success: false, error: "connection_paused", code, message, paused_for, connection_id}``.
+    """
+    from docsgpt.connectors.team import CONNECTION_PAUSED
+
+    return make_response(
+        jsonify({
+            "success": False, "error": CONNECTION_PAUSED, "code": CONNECTION_PAUSED, "message": str(err),
+            "paused_for": getattr(err, "paused_for", None), "connection_id": getattr(err, "connection_id", None),
+        }),
+        409,
+    )
+
+
+def team_connection_for_new_source(
+    conn: Connection, user: str, owner: str, connection_id: Any, connector_key: str,
+) -> tuple[Optional[dict], Optional[Response]]:
+    """The team's connection a new team source will read through, when ``user`` may build one from it.
+
+    Only the person who connected the team's account (while an Admin) picks
+    what it shares, so only they create sources from it. Any other connection,
+    a person's own included, is refused as before.
+
+    Args:
+        conn: Open connection.
+        user: The caller.
+        owner: The team's principal (the new source's owner).
+        connection_id: The connection the request names.
+        connector_key: The kind of source asked for (``google_drive``, ``s3``, ...).
+
+    Returns:
+        ``(row, None)``, or ``(None, refusal)``: 403 ``connector_personal_only`` for a connection that isn't
+        this team's; the ``resolve_request_connection(..., action="pick")`` refusal (403 ``connection_picker_owner_only`` or
+        ``connection_admin_required``); 401 for a connection of another service; 409 ``connection_paused``.
+    """
+    from docsgpt.connectors import catalog, service
+    from docsgpt.connectors.team import ConnectionDenied
+
+    row = None
+    if connection_id and looks_like_uuid(str(connection_id)):
+        try:
+            row = service.resolve_request_connection(user, None, {"connection_id": str(connection_id)}, action="pick")
+        except ConnectionDenied as err:
+            return None, err.response()
+    if row is None or str(row.get("user_id")) != str(owner):
+        # None of the caller's teams', or a person's own (theirs, or another team's).
+        return None, connector_personal_only()
+    if catalog.connector_key_for_row(row) != connector_key:
+        return None, make_response(jsonify({"success": False, "error": "Invalid or unauthorized connection"}), 401)
+    try:
+        service.ensure_account_usable(conn, row)
+    except service.ConnectionUnavailable as err:
+        return None, connection_paused(err)
+    return row, None
+
+
+def request_workspace(user: str, conn: Optional[Connection] = None) -> Workspace:
+    """The workspace a list or create names, checked against the caller's membership.
+
+    No header (and no ``workspace`` parameter) is Personal and reads nothing,
+    so old clients, scripts and tests without a database keep working.
+
+    Args:
+        user: The caller.
+        conn: An open connection; one is opened when a team is named and none is given.
+
+    Returns:
+        Workspace: Personal, or the named team with the caller's role.
+
+    Raises:
+        WorkspaceError: 404 ``workspace_not_found`` for a team the caller isn't in.
+    """
+    if parse_workspace_ref() is None:
+        return Workspace(kind=PERSONAL, team_id=None, owner_id=user, role="owner")
+    if conn is not None:
+        return current_workspace(conn)
+    with db_readonly() as own:
+        return current_workspace(own)
+
+
+def creation_workspace(user: str) -> tuple[Optional[Workspace], Optional[Response]]:
+    """Where a new source goes: Personal, or a team where the caller is an Editor or above.
+
+    Args:
+        user: The caller.
+
+    Returns:
+        tuple: ``(workspace, None)``, or ``(None, refusal)``: 404 ``workspace_not_found``,
+        403 ``workspace_role_required``.
+    """
+    try:
+        workspace = request_workspace(user)
+        require_workspace_role(workspace, "editor")
+    except WorkspaceError as err:
+        return None, err.response()
+    return workspace, None
+
+
+def owner_task_kwargs(owner: str, user: str) -> dict:
+    """``{"actor_id": user}`` when a task runs as an owner other than the caller (a team's source), else ``{}``.
+
+    Left out otherwise so a personal task's call shape is unchanged.
+    """
+    return {"actor_id": user} if owner != user else {}
+
+
+def _website_config_error(err: ValueError) -> Response:
+    """The 400 for a Website config ``parse_website_config`` refused, with a ``code`` the UI words.
+
+    The parser's typed error carries its ``code`` and ``details`` (the limit
+    passed, say); any other ``ValueError`` is ``invalid_config``.
+
+    Args:
+        err: The parser's error.
+
+    Returns:
+        Response: ``{"success": false, "error", "code", ...details}``.
+    """
+    details = getattr(err, "details", None) or {}
+    details = {k: v for k, v in details.items() if k not in ("message", "status", "code", "success", "error")}
+    return error_response(str(err), code=getattr(err, "code", None) or "invalid_config", **details)
 
 
 def _read_idempotency_key():
@@ -85,11 +254,33 @@ def _scoped_idempotency_key(idempotency_key, scope):
     return f"{scope}:{idempotency_key}"
 
 
+def reingest_idempotency_key(owner: str, source_id: str, client_key: Optional[str] = None) -> str:
+    """The guard key for one reingest dispatch.
+
+    A reingest's ``source_id`` is the same every time, so a key derived from
+    it alone would make ``with_idempotency`` replay the last completed run
+    for 24h instead of reading the source's new state. A client's
+    ``Idempotency-Key`` still collapses its own repeats; without one each
+    request gets a fresh key, and the source's index lock keeps runs apart.
+
+    Args:
+        owner: The source owner the task runs as.
+        source_id: The source being reingested.
+        client_key: The request's ``Idempotency-Key`` header, if any.
+
+    Returns:
+        ``reingest-source:{owner}:{source_id}:{client key or a fresh uuid}``.
+    """
+    return f"reingest-source:{owner}:{source_id}:{client_key or uuid.uuid4().hex}"
+
+
 def _parse_source_config(raw):
     """Strict-validate an optional ``config`` JSON blob from the request.
 
     Returns ``(config_dict_or_None, error_response)``. Absent/empty → ``None``
-    (worker uses classic defaults). Invalid JSON or a config that fails
+    (worker uses classic defaults; the source's retrieval comes from the
+    admin's defaults when it is created). A config's ``retrieval`` is overlaid
+    on those defaults first. Invalid JSON or a config that fails
     ``SourceConfig`` validation → a 400 (strict-on-write, D7).
 
     Dedup note: ``config`` does NOT participate in the idempotency key, so a
@@ -103,11 +294,23 @@ def _parse_source_config(raw):
         parsed = json.loads(raw) if isinstance(raw, str) else raw
         if not isinstance(parsed, dict):
             raise ValueError("config must be a JSON object")
-        # Validate strictly; normalize to a plain dict for the Celery payload.
-        return SourceConfig.model_validate(parsed).model_dump(), None
     except Exception:
         return None, make_response(
             jsonify({"success": False, "message": "Invalid source config"}),
+            400,
+        )
+    # A new source starts from the admin's default retrieval settings; the
+    # fields this request sent win. Without a config the source gets them when
+    # it is created (``/api/upload_index``).
+    parsed = source_defaults.seed_new(parsed)
+    try:
+        # Validate strictly; normalize to a plain dict for the Celery payload.
+        return SourceConfig.model_validate(parsed).model_dump(), None
+    except Exception as err:
+        return None, make_response(
+            jsonify(
+                {"success": False, "message": validation_message(err, "Invalid source config")}
+            ),
             400,
         )
 
@@ -163,10 +366,228 @@ def _release_claim(key):
             "Failed to release task_dedup claim for key=%s", key,
         )
 
+# Config fields that hold credentials. A source's identity never depends on
+# them, so its duplicate-submit key holds no digest of a secret.
+_CREDENTIAL_FIELD = re.compile(
+    r"password|passwd|secret|token|api_?key|credential|auth|session|(^|[_-])key($|[_-])", re.IGNORECASE,
+)
+
+
+def _without_url_credentials(value: str) -> str:
+    """``value`` with a URL's user info and credential-named query parameters dropped."""
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        return value
+    if not parts.scheme or not host:
+        return value
+    netloc = f"{host}:{port}" if port else host
+    query = urlencode(
+        [(name, item) for name, item in parse_qsl(parts.query, keep_blank_values=True)
+         if not _CREDENTIAL_FIELD.search(name)]
+    )
+    return urlunsplit((parts.scheme, netloc, parts.path, query, parts.fragment))
+
+
+def _without_credentials(value):
+    """``value`` with every credential-named field, URL user info and token parameter dropped, recursively.
+
+    Addresses in it are normalised as :func:`_normalized_address` does.
+    """
+    if isinstance(value, dict):
+        return {
+            str(key): _without_credentials(item) for key, item in value.items()
+            if not _CREDENTIAL_FIELD.search(str(key))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_without_credentials(item) for item in value]
+    if isinstance(value, str):
+        return _normalized_address(value)
+    return value
+
+
+def _normalized_address(value: str) -> str:
+    """A remote address as compared for duplicates: case-folded host, no fragment, sorted query, no trailing slash."""
+    value = _without_url_credentials(value.strip())
+    try:
+        parts = urlsplit(normalize_page_url(value))
+    except ValueError:
+        return value
+    if not parts.netloc:
+        return value
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
+
+
+def _remote_source_identity(loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """What names a remote source for duplicate submits, with no credential in it.
+
+    Args:
+        loader: The remote loader (``github``, ``crawler``, ``website``, ...).
+        source_data: What the loader is given: an address, or a config dict.
+        connection_id: The connection whose credentials it reads, if any;
+            it stands for those credentials.
+
+    Returns:
+        The loader, the connection id and the address, one per line; ``None`` when there is no address.
+    """
+    if isinstance(source_data, str):
+        address = (GitHubLoader.normalize_repo(source_data).lower() if loader == "github" else "")
+        address = address or _normalized_address(source_data)
+    elif isinstance(source_data, (dict, list)):
+        address = json.dumps(_without_credentials(source_data), sort_keys=True, default=str)
+    else:
+        return None
+    if not address:
+        return None
+    return f"{loader}\n{connection_id or ''}\n{address}"
+
+
+def _remote_in_flight_key(user: str, loader: str, source_data, connection_id: Optional[str]) -> Optional[str]:
+    """The marker key naming ``user``'s remote source, or ``None`` when there is no address to compare.
+
+    The identity is keyed with ``JWT_SECRET_KEY`` when there is one, so the
+    stored key can't be matched against guessed addresses offline.
+
+    Args:
+        user: The submitting user.
+        loader: The remote loader.
+        source_data: What the loader is given.
+        connection_id: The connection whose credentials it reads, if any.
+
+    Returns:
+        ``{user}:ingest-in-flight:{digest}``, or ``None``.
+    """
+    identity = _remote_source_identity(loader, source_data, connection_id)
+    if identity is None:
+        return None
+    secret = settings.JWT_SECRET_KEY
+    if isinstance(secret, str) and secret:
+        digest = hmac.new(secret.encode("utf-8"), identity.encode("utf-8"), hashlib.sha256).hexdigest()
+    else:
+        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return f"{user}:ingest-in-flight:{digest}"
+
+
+def _join_in_flight_ingest(marker_key: str, task_key: str, task_id: str, source_id: str) -> Optional[dict]:
+    """Mark this ingest as its source's one in flight, or return the one already in flight.
+
+    Args:
+        marker_key: From :func:`_remote_in_flight_key`.
+        task_key: The ``task_dedup`` key the new ingest runs under (claimed).
+        task_id: Its predetermined Celery task id.
+        source_id: Its source id.
+
+    Returns:
+        ``{"task_id", "source_id"}`` of the ingest already in flight, or
+        ``None`` when the new one should be queued.
+    """
+    # Twice: the marked ingest can end between the claim and the read.
+    for _ in range(2):
+        with db_session() as conn:
+            marked = IdempotencyRepository(conn).claim_in_flight_ingest(
+                marker_key, task_key=task_key, task_id=task_id, source_id=source_id,
+            )
+        if marked is not None:
+            return None
+        with db_readonly() as conn:
+            existing = IdempotencyRepository(conn).in_flight_ingest(marker_key)
+        if existing is not None:
+            return {"task_id": existing["task_id"], "source_id": existing["source_id"]}
+    return None
+
+
 def _enforce_audio_path_size_limit(file_path: str, filename: str) -> None:
     if not is_audio_filename(filename):
         return
     enforce_audio_file_size_limit(os.path.getsize(file_path))
+
+
+def _safe_relative_upload_path(filename: str, folder_names: dict[str, str]) -> str:
+    """Return the safe storage path of an uploaded file, keeping its folders.
+
+    A folder upload sends each file with its path inside the folder
+    (``docs/guide/a.md``). Keeping it gives the source the same tree a ZIP of
+    that folder would. Backslashes count as separators, and empty, ``.`` and
+    ``..`` parts are dropped, so the path can never leave the source
+    directory. Every part goes through ``safe_filename``.
+
+    Args:
+        filename: The name the client sent, possibly with folders in it.
+        folder_names: Safe path already chosen for each folder path in this
+            upload; new folders are added as they appear. ``safe_filename``
+            makes up a random name for a part it cannot keep (one written
+            only in non-Latin letters), so reusing the choice keeps every file
+            of such a folder together. Two folders whose names clean up to
+            the same name (``my docs`` and ``my_docs``) get different safe
+            paths, so their files never mix.
+
+    Returns:
+        The ``/``-joined relative path, or a single name for a plain file.
+    """
+    parts = [
+        part
+        for part in filename.replace("\\", "/").split("/")
+        if part not in ("", ".", "..")
+    ] or [""]
+    safe_folder = ""
+    for depth, part in enumerate(parts[:-1], start=1):
+        folder = "/".join(parts[:depth])
+        if folder not in folder_names:
+            folder_names[folder] = _unique_upload_path(
+                posixpath.join(safe_folder, safe_filename(part)),
+                folder_names.values(),
+            )
+        safe_folder = folder_names[folder]
+    return posixpath.join(safe_folder, safe_filename(parts[-1]))
+
+
+def _unique_upload_path(path: str, taken: Container[str]) -> str:
+    """Return ``path``, or ``name_2.ext`` (``_3``, ...) if it is already taken.
+
+    Used so two uploaded files, or two folders, never end up at the same
+    place in the source.
+    """
+    if path not in taken:
+        return path
+    stem, ext = posixpath.splitext(path)
+    count = 2
+    while f"{stem}_{count}{ext}" in taken:
+        count += 1
+    return f"{stem}_{count}{ext}"
+
+
+def _unique_file_path(path: str, taken: set[str]) -> str:
+    """Like ``_unique_upload_path``, for files that must also fit a folder tree.
+
+    A file cannot share a place with a folder, so ``docs`` clashes with an
+    already staged ``docs/a.md`` and ``docs/a.md`` clashes with a staged file
+    ``docs``. The part that clashes gets the ``_2`` (``_3``, ...) suffix, so
+    ``docs/a.md`` next to a file ``docs`` is stored as ``docs_2/a.md``. Without
+    this the local storage fails part way through writing the files.
+    """
+    parts = path.split("/")
+
+    def clashes(candidate: str, is_leaf: bool) -> bool:
+        if candidate in taken:
+            return True
+        return is_leaf and any(t.startswith(f"{candidate}/") for t in taken)
+
+    for depth in range(1, len(parts) + 1):
+        is_leaf = depth == len(parts)
+        parent = parts[: depth - 1]
+        if not clashes("/".join(parts[:depth]), is_leaf):
+            continue
+        stem, ext = posixpath.splitext(parts[depth - 1]) if is_leaf else (
+            parts[depth - 1],
+            "",
+        )
+        count = 2
+        while clashes("/".join([*parent, f"{stem}_{count}{ext}"]), is_leaf):
+            count += 1
+        parts[depth - 1] = f"{stem}_{count}{ext}"
+    return "/".join(parts)
 
 
 def _source_archive_limits() -> ZipExtractionLimits:
@@ -178,6 +599,136 @@ def _source_archive_limits() -> ZipExtractionLimits:
         max_member_bytes=settings.UPLOAD_MAX_FILE_BYTES,
         max_depth=settings.UPLOAD_MAX_ARCHIVE_DEPTH,
     )
+
+
+# ZIP-based document formats: parsed as documents, never unpacked as archives.
+_OFFICE_SUFFIXES = (
+    ".docx",
+    ".docm",
+    ".xlsx",
+    ".xlsm",
+    ".xlsb",
+    ".pptx",
+    ".pptm",
+    ".ppsx",
+    ".ppsm",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".epub",
+)
+
+
+class _UploadStager:
+    """Validate and stage uploaded files in a temporary directory before any storage write.
+
+    A file keeps the folder path it was sent with (a folder upload); a ZIP is
+    unpacked where it sat, keeping its folders. All ZIPs of one request share
+    one expansion budget. Two files that would land on one path are kept apart
+    (``name_2.ext``). Nothing reaches storage until every file has passed, so a
+    later oversized file or unsafe archive leaves no partial change behind.
+
+    Attributes:
+        pending: ``(local path, path relative to the source)`` for each staged file.
+        file_name_map: The name each loose file was sent with, by its relative path.
+        current_name: The file being staged, for an error message.
+    """
+
+    def __init__(self, temp_dir: str) -> None:
+        self.temp_dir = temp_dir
+        self.pending: list[tuple[str, str]] = []
+        self.file_name_map: dict[str, str] = {}
+        self.current_name = "uploaded archive"
+
+    def stage(self, files) -> None:
+        """Stage ``files`` (werkzeug ``FileStorage`` objects).
+
+        Raises:
+            UploadTooLargeError: A file is over ``UPLOAD_MAX_FILE_BYTES``.
+            AudioFileTooLargeError: An audio file is over the transcription limit.
+            ZipExtractionError: An archive failed the safety checks.
+        """
+        archive_budget = ZipExtractionBudget()
+        archive_limits = _source_archive_limits()
+        folder_names: dict[str, str] = {}
+        # Paths (relative to the source) already given to a staged file. A
+        # loose file and a ZIP member, or two names that clean up the same,
+        # would otherwise overwrite each other.
+        claimed_paths: set[str] = set()
+
+        for index, file in enumerate(files):
+            # A folder upload names each file by its path inside the folder;
+            # keep that tree under the source, as a ZIP does.
+            original_path = (file.filename or "").replace("\\", "/")
+            original_filename = os.path.basename(original_path)
+            safe_path = _safe_relative_upload_path(original_path, folder_names)
+            safe_file = posixpath.basename(safe_path)
+            self.current_name = safe_zip_error_message(original_filename or safe_file, max_chars=200)
+
+            upload_dir = os.path.join(self.temp_dir, str(index))
+            os.makedirs(upload_dir, exist_ok=True)
+            temp_file_path = os.path.join(upload_dir, safe_file)
+            copy_upload_to_path(file, temp_file_path)
+            _enforce_audio_path_size_limit(temp_file_path, safe_file)
+
+            if zipfile.is_zipfile(temp_file_path) and not safe_file.lower().endswith(_OFFICE_SUFFIXES):
+                extract_dir = os.path.join(upload_dir, "extracted")
+                extract_zip_safely(temp_file_path, extract_dir, archive_limits, archive_budget)
+                # A ZIP inside an uploaded folder unpacks where it sat.
+                archive_dir = posixpath.dirname(safe_path)
+                for root, _, extracted_files in os.walk(extract_dir):
+                    for extracted_file in extracted_files:
+                        local_path = os.path.join(root, extracted_file)
+                        _enforce_audio_path_size_limit(local_path, extracted_file)
+                        rel_path = _unique_file_path(
+                            posixpath.join(
+                                archive_dir,
+                                os.path.relpath(local_path, extract_dir).replace(os.sep, "/"),
+                            ),
+                            claimed_paths,
+                        )
+                        claimed_paths.add(rel_path)
+                        self.pending.append((local_path, rel_path))
+            else:
+                rel_path = _unique_file_path(safe_path, claimed_paths)
+                claimed_paths.add(rel_path)
+                if original_filename:
+                    self.file_name_map[rel_path] = original_filename
+                self.pending.append((temp_file_path, rel_path))
+
+
+def _requested_folder(
+    user: str, raw: Any, owner: Optional[str] = None
+) -> tuple[Optional[str], Optional[Response]]:
+    """The source folder an ingest request asks to file its new source in.
+
+    The folder must be in the new source's owner's tree: the caller's own in
+    Personal, the team's in a team workspace.
+
+    Args:
+        user: The uploader.
+        raw: The request's ``folder_id`` (empty for none).
+        owner: The new source's owner (a team's principal); the uploader when None.
+
+    Returns:
+        tuple: ``(folder_id, None)``; ``(None, 400 workspace_mismatch)`` for a
+        folder of another workspace on a team upload; ``(None, 404 folder_not_found)``
+        when it isn't in the owner's tree.
+    """
+    if raw in (None, "", "null"):
+        return None, None
+    owner = owner or user
+    try:
+        with db_readonly() as conn:
+            raw_id = str(raw).strip()
+            if looks_like_uuid(raw_id):
+                mismatched = workspace_mismatches(conn, owner, [("folder", raw_id)])
+                if mismatched:
+                    body, status = workspace_mismatch_refusal(conn, mismatched, user)
+                    return None, make_response(jsonify(body), status)
+            return ingest_folder(conn, owner, raw), None
+    except FolderError as err:
+        return None, err.response()
 
 
 def _audit_source_created(
@@ -223,6 +774,9 @@ class UploadFile(Resource):
                 "user": fields.String(required=True, description="User ID"),
                 "name": fields.String(required=True, description="Job name"),
                 "file": fields.Raw(required=True, description="File(s) to upload"),
+                "folder_id": fields.String(
+                    required=False, description="One of the caller's source folders to file the new source in",
+                ),
             },
         )
     )
@@ -246,6 +800,14 @@ class UploadFile(Resource):
         )
         if config_error is not None:
             return config_error
+        # In a team the source is the team's (its principal owns it) and the uploader is recorded as its creator.
+        workspace, workspace_refusal = creation_workspace(user)
+        if workspace_refusal is not None:
+            return workspace_refusal
+        owner = workspace.owner_id
+        folder_id, folder_refusal = _requested_folder(user, request.form.get("folder_id"), owner)
+        if folder_refusal is not None:
+            return folder_refusal
         # User-scoped to avoid cross-user collisions; also feeds
         # ``_derive_source_id`` so uuid5 stays user-disjoint.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
@@ -277,12 +839,13 @@ class UploadFile(Resource):
 
         # Create safe versions for filesystem operations
 
-        safe_user = safe_filename(user)
+        # Stored under the owner, like the rest of the owner's sources.
+        safe_user = safe_filename(owner)
         dir_name = safe_filename(job_name)
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
         file_name_map = {}
 
-        active_upload_name = "uploaded archive"
+        stager: Optional[_UploadStager] = None
         try:
             storage = StorageCreator.get_storage()
 
@@ -290,72 +853,12 @@ class UploadFile(Resource):
             # later oversized file/archive cannot leave a partially accepted
             # source behind. All ZIPs in the request share one expansion budget.
             with tempfile.TemporaryDirectory() as temp_dir:
-                pending_files: list[tuple[str, str]] = []
-                archive_budget = ZipExtractionBudget()
-                archive_limits = _source_archive_limits()
-
-                for index, file in enumerate(files):
-                    original_filename = os.path.basename(file.filename)
-                    safe_file = safe_filename(original_filename)
-                    active_upload_name = safe_zip_error_message(
-                        original_filename or safe_file, max_chars=200
-                    )
-                    if original_filename:
-                        file_name_map[safe_file] = original_filename
-
-                    upload_dir = os.path.join(temp_dir, str(index))
-                    os.makedirs(upload_dir, exist_ok=True)
-                    temp_file_path = os.path.join(upload_dir, safe_file)
-                    copy_upload_to_path(file, temp_file_path)
-                    _enforce_audio_path_size_limit(temp_file_path, safe_file)
-
-                    # Office/e-book containers are ZIP-based formats but must
-                    # be parsed as documents, not expanded as user archives.
-                    is_office_format = safe_file.lower().endswith(
-                        (
-                            ".docx",
-                            ".docm",
-                            ".xlsx",
-                            ".xlsm",
-                            ".xlsb",
-                            ".pptx",
-                            ".pptm",
-                            ".ppsx",
-                            ".ppsm",
-                            ".odt",
-                            ".ods",
-                            ".odp",
-                            ".epub",
-                        )
-                    )
-                    if zipfile.is_zipfile(temp_file_path) and not is_office_format:
-                        extract_dir = os.path.join(upload_dir, "extracted")
-                        extract_zip_safely(
-                            temp_file_path,
-                            extract_dir,
-                            archive_limits,
-                            archive_budget,
-                        )
-                        for root, _, extracted_files in os.walk(extract_dir):
-                            for extracted_file in extracted_files:
-                                local_path = os.path.join(root, extracted_file)
-                                _enforce_audio_path_size_limit(
-                                    local_path, extracted_file
-                                )
-                                rel_path = os.path.relpath(
-                                    local_path, extract_dir
-                                ).replace(os.sep, "/")
-                                pending_files.append(
-                                    (local_path, f"{base_path}/{rel_path}")
-                                )
-                    else:
-                        pending_files.append(
-                            (temp_file_path, f"{base_path}/{safe_file}")
-                        )
-
-                for local_path, storage_path in pending_files:
+                stager = _UploadStager(temp_dir)
+                stager.stage(files)
+                file_name_map = stager.file_name_map
+                for local_path, rel_path in stager.pending:
                     with open(local_path, "rb") as staged_file:
-                        storage.save_file(staged_file, storage_path)
+                        storage.save_file(staged_file, f"{base_path}/{rel_path}")
             # Mint the source UUID up here so the HTTP response and the
             # worker's SSE envelopes share one id. With an idempotency
             # key we reuse the deterministic uuid5 (retried task lands on
@@ -370,7 +873,7 @@ class UploadFile(Resource):
                     settings.UPLOAD_FOLDER,
                     list(SUPPORTED_SOURCE_EXTENSIONS),
                     job_name,
-                    user,
+                    owner,
                 ),
                 kwargs={
                     "file_path": base_path,
@@ -380,6 +883,9 @@ class UploadFile(Resource):
                     # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
+                    # Only when given, so the task's call shape is unchanged otherwise.
+                    **({"folder_id": folder_id} if folder_id else {}),
+                    **owner_task_kwargs(owner, user),
                 },
             )
             if predetermined_task_id is not None:
@@ -398,6 +904,7 @@ class UploadFile(Resource):
                 413,
             )
         except (UploadTooLargeError, ZipExtractionError) as err:
+            active_upload_name = stager.current_name if stager else "uploaded archive"
             if isinstance(err, ZipExtractionError):
                 zip_error_detail = safe_zip_error_message(err)
                 current_app.logger.warning(
@@ -451,7 +958,7 @@ class UploadFile(Resource):
         return make_response(jsonify(response_payload), 200)
 
 
-def _remote_credentials(user, source, config):
+def _remote_credentials(user, source, config, team_owner=None):
     """Split an S3 / Reddit request into loader config and the connection holding its keys.
 
     A request naming a ``connection_id`` uses that connection's stored keys.
@@ -459,6 +966,10 @@ def _remote_credentials(user, source, config):
     connection, so they are entered once and never land in
     ``sources.remote_data``. When a multi-user install still runs on the
     public default encryption key, the keys stay with the source as before.
+
+    ``team_owner`` (a team workspace's principal): only a connection the team
+    holds may be named, by the person who connected it; pasted keys are
+    refused, since they would be stored on the caller's own connection.
 
     Returns:
         ``(source_data, connection_id, error_response)``.
@@ -469,6 +980,16 @@ def _remote_credentials(user, source, config):
     credential_keys = {f.key for f in definition.credential_fields}
     public = {k: v for k, v in config.items() if k not in credential_keys and k != "connection_id"}
     connection_id = config.get("connection_id")
+    if team_owner:
+        if any(config.get(k) not in (None, "") for k in credential_keys):
+            return None, None, connector_personal_only()
+        if not connection_id:
+            return config, None, None
+        with db_readonly() as conn:
+            row, refusal = team_connection_for_new_source(conn, user, team_owner, connection_id, source)
+        if refusal is not None:
+            return None, None, refusal
+        return public, str(row["id"]), None
     if connection_id:
         with db_readonly() as conn:
             row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
@@ -501,8 +1022,21 @@ class UploadRemote(Resource):
                     required=True, description="Source of the data"
                 ),
                 "name": fields.String(required=True, description="Job name"),
-                "data": fields.String(required=True, description="Data to process"),
+                "data": fields.String(
+                    required=True,
+                    description=(
+                        "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, "
+                        "path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: "
+                        "[url or https://host/path/*], keep_links}"
+                    ),
+                ),
                 "repo_url": fields.String(description="GitHub repository URL"),
+                "sync_frequency": fields.String(
+                    description="How often to re-fetch: never (default), daily, weekly or monthly",
+                ),
+                "folder_id": fields.String(
+                    description="One of the caller's source folders to file the new source in",
+                ),
             },
         )
     )
@@ -528,10 +1062,20 @@ class UploadRemote(Resource):
             return config_error
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
         data = request.form
+        workspace, workspace_refusal = creation_workspace(user)
+        if workspace_refusal is not None:
+            return workspace_refusal
+        owner = workspace.owner_id
+        folder_id, folder_refusal = _requested_folder(user, data.get("folder_id"), owner)
+        if folder_refusal is not None:
+            return folder_refusal
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
             return missing_fields
+        sync_frequency = data.get("sync_frequency") or "never"
+        if sync_frequency not in SYNC_FREQUENCIES:
+            return error_response(f"Unknown sync_frequency {sync_frequency!r}", code="bad_sync_frequency")
         task_name_for_dedup = (
             "ingest_connector_task"
             if data.get("source") in ConnectorCreator.get_supported_connectors()
@@ -556,6 +1100,8 @@ class UploadRemote(Resource):
         source_uuid = (
             _derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
         )
+        # The task_dedup key this request holds a claim on, released on failure.
+        claimed_key = scoped_key
         try:
             config = json.loads(data["data"])
             source_data = None
@@ -563,10 +1109,21 @@ class UploadRemote(Resource):
 
             if data["source"] == "github":
                 source_data = config.get("repo_url")
+            elif data["source"] == "website":
+                # Stored as remote_data and repeated by every sync, so it is
+                # validated here rather than failing later in the worker.
+                try:
+                    source_data = parse_website_config(config)
+                except ValueError as err:
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    return _website_config_error(err)
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
             elif data["source"] in ("reddit", "s3"):
-                source_data, connection_id, error = _remote_credentials(user, data["source"], config)
+                source_data, connection_id, error = _remote_credentials(
+                    user, data["source"], config, team_owner=owner if workspace.is_team else None,
+                )
                 if error is not None:
                     if scoped_key:
                         _release_claim(scoped_key)
@@ -586,7 +1143,21 @@ class UploadRemote(Resource):
                     )
                 from docsgpt.connectors import service as connection_service
 
-                connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                if workspace.is_team:
+                    # A team's source reads only through the team's own connection.
+                    with db_readonly() as conn:
+                        connector_session, refusal = team_connection_for_new_source(
+                            conn, user, owner, config.get("connection_id"), data["source"],
+                        )
+                    if refusal is not None:
+                        if scoped_key:
+                            _release_claim(scoped_key)
+                        return refusal
+                else:
+                    connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                    if connector_session is not None and str(connector_session.get("user_id")) != owner:
+                        # A personal source never reads through a team's connection.
+                        connector_session = None
                 if connector_session is None:
                     if scoped_key:
                         _release_claim(scoped_key)
@@ -616,7 +1187,7 @@ class UploadRemote(Resource):
                 connector_kwargs = {
                     "kwargs": {
                         "job_name": data["name"],
-                        "user": user,
+                        "user": owner,
                         "source_type": data["source"],
                         "connection_id": str(connector_session["id"]),
                         "file_ids": file_ids,
@@ -626,6 +1197,10 @@ class UploadRemote(Resource):
                         "config": source_config,
                         "idempotency_key": scoped_key or idempotency_key,
                         "source_id": str(source_uuid),
+                        # Validated above; stored on the new source so its syncs run on schedule.
+                        "sync_frequency": sync_frequency,
+                        **({"folder_id": folder_id} if folder_id else {}),
+                        **owner_task_kwargs(owner, user),
                     },
                 }
                 if predetermined_task_id is not None:
@@ -650,16 +1225,39 @@ class UploadRemote(Resource):
                     "source_id": str(source_uuid),
                 }
                 return make_response(jsonify(response_payload), 200)
+            # The same user submitting a source already being ingested (a
+            # double click, a second tab) joins that ingest instead of
+            # starting another.
+            in_flight_key = _remote_in_flight_key(owner, data["source"], source_data, connection_id)
+            if in_flight_key:
+                if claimed_key is None:
+                    # Keyless: claim the guard key the worker makes from
+                    # source_id, so the ingest counts as in flight while queued.
+                    claimed_key = _synthesize_guard_key("ingest_remote", {"source_id": str(source_uuid)})
+                    predetermined_task_id = str(uuid.uuid4())
+                    with db_session() as conn:
+                        IdempotencyRepository(conn).claim_task(
+                            key=claimed_key, task_name="ingest_remote", task_id=predetermined_task_id,
+                        )
+                joined = _join_in_flight_ingest(
+                    in_flight_key, claimed_key, predetermined_task_id, str(source_uuid),
+                )
+                if joined is not None:
+                    _release_claim(claimed_key)
+                    return make_response(jsonify({"success": True, **joined, "in_flight": True}), 200)
             remote_kwargs = {
                 "kwargs": {
                     "source_data": source_data,
                     "connection_id": connection_id,
                     "job_name": data["name"],
-                    "user": user,
+                    "user": owner,
                     "loader": data["source"],
                     "config": source_config,
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
+                    "sync_frequency": sync_frequency,
+                    **({"folder_id": folder_id} if folder_id else {}),
+                    **owner_task_kwargs(owner, user),
                 },
             }
             if predetermined_task_id is not None:
@@ -669,8 +1267,8 @@ class UploadRemote(Resource):
             current_app.logger.error(
                 f"Error uploading remote source: {err}", exc_info=True
             )
-            if scoped_key:
-                _release_claim(scoped_key)
+            if claimed_key:
+                _release_claim(claimed_key)
             return make_response(jsonify({"success": False}), 400)
         response_task_id = predetermined_task_id or task.id
         _audit_source_created(
@@ -699,7 +1297,10 @@ class ManageSourceFiles(Resource):
                 ),
                 "operation": fields.String(
                     required=True,
-                    description="Operation: 'add', 'remove', or 'remove_directory'",
+                    description=(
+                        "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs "
+                        "become the source's whole file set; files not in the upload are removed)"
+                    ),
                 ),
                 "file_paths": fields.List(
                     fields.String,
@@ -711,7 +1312,7 @@ class ManageSourceFiles(Resource):
                     description="Directory path to remove (for remove_directory operation)",
                 ),
                 "file": fields.Raw(
-                    required=False, description="Files to add (for add operation)"
+                    required=False, description="Files to add (for add operation) or the new file set (for sync)"
                 ),
                 "parent_dir": fields.String(
                     required=False,
@@ -721,7 +1322,10 @@ class ManageSourceFiles(Resource):
         )
     )
     @api.doc(
-        description="Add files, remove files, or remove directories from an existing source",
+        description=(
+            "Add files, remove files, remove directories, or replace the whole file set (sync) of an existing "
+            "source. The source is then re-ingested: only added, removed and edited files are re-embedded."
+        ),
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -747,12 +1351,12 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
-        if operation not in ["add", "remove", "remove_directory"]:
+        if operation not in ["add", "remove", "remove_directory", "sync"]:
             return make_response(
                 jsonify(
                     {
                         "success": False,
-                        "message": "operation must be 'add', 'remove', or 'remove_directory'",
+                        "message": "operation must be 'add', 'remove', 'remove_directory', or 'sync'",
                     }
                 ),
                 400,
@@ -901,7 +1505,8 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -920,6 +1525,114 @@ class ManageSourceFiles(Resource):
                             # (emitted by ``reingest_source_worker``)
                             # back to the reingest task — matches the
                             # upload route's source-id contract.
+                            "source_id": resolved_source_id,
+                        }
+                    ),
+                    200,
+                )
+            elif operation == "sync":
+                files = [file for file in request.files.getlist("file") if file.filename]
+                if parent_dir:
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "parent_dir cannot be used with sync, which replaces the whole source",
+                            }
+                        ),
+                        400,
+                    )
+                # Without a directory of its own (a Website or connector
+                # source) there is nothing to replace, and an empty path
+                # would list the whole storage.
+                if not source_file_path:
+                    return make_response(
+                        jsonify({"success": False, "message": "This source keeps no files to sync"}),
+                        400,
+                    )
+                if not files:
+                    return make_response(
+                        jsonify({"success": False, "message": "No files provided for sync operation"}),
+                        400,
+                    )
+
+                # Claim before any storage mutation. See ``add`` branch
+                # comment for rationale.
+                predetermined_task_id = None
+                if scoped_key:
+                    predetermined_task_id, cached = _claim_task_or_get_cached(
+                        scoped_key, "reingest_source_task",
+                    )
+                    if cached is not None:
+                        cached_task_id = cached.pop("task_id", None)
+                        if cached_task_id is not None:
+                            cached["reingest_task_id"] = cached_task_id
+                        cached["source_id"] = resolved_source_id
+                        return make_response(jsonify(cached), 200)
+
+                # Every file is validated before the first storage write, and
+                # files the upload no longer has are removed only once the new
+                # ones are in place. The reingest re-embeds only what changed.
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    stager = _UploadStager(temp_dir)
+                    stager.stage(files)
+                    if not stager.pending:
+                        # An empty ZIP, or one of folders only: syncing it
+                        # would remove every file of the source.
+                        if scoped_key:
+                            _release_claim(scoped_key)
+                        return make_response(
+                            jsonify({"success": False, "message": "The upload holds no files to sync"}),
+                            400,
+                        )
+                    synced = {rel_path for _, rel_path in stager.pending}
+                    for local_path, rel_path in stager.pending:
+                        with open(local_path, "rb") as staged_file:
+                            storage.save_file(staged_file, f"{source_file_path}/{rel_path}")
+                removed_files = []
+                for storage_path in storage.list_files(source_file_path):
+                    # Local storage on Windows lists with backslashes. Stored
+                    # names never contain one (staging splits on it), so it is
+                    # always a separator here.
+                    rel_path = posixpath.relpath(storage_path.replace("\\", "/"), source_file_path)
+                    # A store that lists by bare prefix can name another
+                    # source's files (``src`` matching ``src-2/...``): never
+                    # delete outside this source's folder.
+                    if rel_path == ".." or rel_path.startswith("../"):
+                        continue
+                    if storage_path.endswith("/") or rel_path in synced:
+                        continue
+                    storage.delete_file(storage_path)
+                    removed_files.append(rel_path)
+                removed_files.sort()
+
+                with db_session() as conn:
+                    SourcesRepository(conn).update(
+                        resolved_source_id, owner,
+                        {"file_name_map": dict(stager.file_name_map)},
+                    )
+
+                from docsgpt.api.user.tasks import reingest_source_task
+
+                task = reingest_source_task.apply_async(
+                    kwargs={
+                        "source_id": resolved_source_id,
+                        "user": owner,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
+                    },
+                    task_id=predetermined_task_id,
+                )
+                claim_transferred = True
+
+                return make_response(
+                    jsonify(
+                        {
+                            "success": True,
+                            "message": f"Synced {len(synced)} files",
+                            "files": sorted(synced),
+                            "removed_files": removed_files,
+                            "reingest_task_id": task.id,
                             "source_id": resolved_source_id,
                         }
                     ),
@@ -1013,7 +1726,8 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -1143,7 +1857,8 @@ class ManageSourceFiles(Resource):
                     kwargs={
                         "source_id": resolved_source_id,
                         "user": owner,
-                        "idempotency_key": scoped_key or idempotency_key,
+                        "idempotency_key": scoped_key or reingest_idempotency_key(owner, resolved_source_id),
+                        "actor_id": user,
                     },
                     task_id=predetermined_task_id,
                 )
@@ -1171,6 +1886,13 @@ class ManageSourceFiles(Resource):
             )
             return make_response(
                 jsonify({"success": False, "message": message}), 413
+            )
+        except ZipExtractionError as err:
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
+            current_app.logger.warning("Rejected unsafe ZIP in a source sync: %s", safe_zip_error_message(err))
+            return make_response(
+                jsonify({"success": False, "message": "ZIP archive failed safety validation"}), 413
             )
         except Exception as err:
             # Release the dedup claim only if it wasn't transferred to
@@ -1215,11 +1937,24 @@ class TaskStatus(Resource):
                 jsonify({"success": False, "message": "Task ID is required"}), 400
             )
         try:
+            owner = get_task_owner(task_id)
+        except TaskOwnersUnavailable:
+            current_app.logger.error("Task owner lookup failed: Redis unavailable")
+            return make_response(
+                jsonify({"success": False, "message": "Service unavailable"}), 503
+            )
+        # An empty owner is a sessionless task (webhook, agent api_key): the id is the credential.
+        decoded_token = getattr(request, "decoded_token", None)
+        caller = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+        if owner is None or (owner and owner != caller):
+            return make_response(
+                jsonify({"success": False, "message": "Task not found"}), 404
+            )
+        try:
             from docsgpt.celery_init import celery
 
             task = celery.AsyncResult(task_id)
             task_meta = task.info
-            print(f"Task status: {task.status}")
 
             if task.status == "PENDING":
                 inspect = celery.control.inspect()

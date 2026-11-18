@@ -41,16 +41,25 @@ function Where() {
 function Harness({
   connectorKey,
   mcpToolId,
+  onNavigate,
+  owner,
 }: {
   connectorKey: string;
   mcpToolId?: string;
+  onNavigate?: (path: string) => void;
+  owner?: 'team';
 }) {
-  const { reconnect, modals } = useSignInAgain();
+  const { reconnect, modals } = useSignInAgain({ onNavigate });
   return (
     <>
       <SignInAgainNotice
         connections={[
-          { id: 'conn-2', connector_key: connectorKey, name: 'Linear' },
+          {
+            id: 'conn-2',
+            connector_key: connectorKey,
+            name: 'Linear',
+            ...(owner && { owner }),
+          },
         ]}
         onReconnect={(connection) => reconnect(connection, mcpToolId)}
       />
@@ -75,7 +84,12 @@ describe('SignInAgainNotice', () => {
     container.remove();
   });
 
-  const render = async (connectorKey: string, mcpToolId?: string) => {
+  const render = async (
+    connectorKey: string,
+    mcpToolId?: string,
+    onNavigate?: (path: string) => void,
+    owner?: 'team',
+  ) => {
     const store = configureStore({
       reducer: { connectors: connectorsReducer },
       preloadedState: {
@@ -97,7 +111,12 @@ describe('SignInAgainNotice', () => {
               <Route
                 path="/"
                 element={
-                  <Harness connectorKey={connectorKey} mcpToolId={mcpToolId} />
+                  <Harness
+                    connectorKey={connectorKey}
+                    mcpToolId={mcpToolId}
+                    onNavigate={onNavigate}
+                    owner={owner}
+                  />
                 }
               />
               <Route path="/settings/connectors" element={<Where />} />
@@ -130,6 +149,17 @@ describe('SignInAgainNotice', () => {
     });
   });
 
+  it("reconnects a team's account as the team's", async () => {
+    await render('mcp:linear', 'tool-lin', undefined, 'team');
+    await act(async () => reconnectButton().click());
+    expect(launch).toHaveBeenCalledWith(LINEAR, {
+      mode: 'reconnect',
+      connectionId: 'conn-2',
+      mcpServer: { id: 'tool-lin' },
+      owner: 'team',
+    });
+  });
+
   it('opens the connector page on that account when the sign-in needs its form', async () => {
     await render('custom_mcp');
     await act(async () => reconnectButton().click());
@@ -137,6 +167,18 @@ describe('SignInAgainNotice', () => {
     expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
       '/settings/connectors?connector=custom_mcp&connection=conn-2',
     );
+  });
+
+  // In a builder the connector page is an exit like any other: it goes
+  // through the leave guard.
+  it('leaves for the connector page through its opener when given one', async () => {
+    const onNavigate = vi.fn();
+    await render('custom_mcp', undefined, onNavigate);
+    await act(async () => reconnectButton().click());
+    expect(onNavigate).toHaveBeenCalledWith(
+      '/settings/connectors?connector=custom_mcp&connection=conn-2',
+    );
+    expect(container.querySelector('[data-testid="where"]')).toBeNull();
   });
 
   it('renders nothing when every connection works', async () => {

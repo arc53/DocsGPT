@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import Mapping, Optional
 
 from flask import request
+from sqlalchemy import text
 
+from docsgpt.api.user.workflow_runs.access import run_in_reach
+from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
@@ -23,7 +26,8 @@ class Principal:
 
     A decoded JWT is a full *owner* session (``agent_id`` is ``None``). An
     ``api_key`` is a low-trust, publicly-distributed *agent* credential -- it is
-    embedded client-side in the widget and accepted from the query string -- so
+    embedded client-side in the widget and accepted from the query string or an
+    ``Authorization: Bearer`` header -- so
     it resolves to the owning ``user_id`` but stays **agent-scoped**: it may reach
     an artifact only when the request also carries that artifact's parent
     ``conversation_id`` (the unguessable per-visitor secret), confining it to a
@@ -45,28 +49,60 @@ def principal_for(decoded_token: Optional[dict], api_key: Optional[str]) -> Prin
 
     Priority: a decoded JWT (owner session) first, then the ``api_key``
     (agent-scoped). An unresolvable caller yields an anonymous principal (both
-    fields ``None``) that only a valid ``share_token`` can authorize.
+    fields ``None``) that only a valid ``share_token`` can authorize. So does a
+    key whose outside access is paused (the agent's team locked, its owner or
+    payer deactivated, nobody paying): the key reaches the agent's artifacts
+    only while it could chat with the agent.
     """
+    # Lazy: owner_pause reaches the quota and workspace modules.
+    from docsgpt.api.owner_pause import outside_access_refusal
+
     if decoded_token:
         return Principal(user_id=decoded_token.get("sub"))
 
     if api_key:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
-        if agent and agent.get("user_id") and agent.get("id"):
+            paused = bool(agent) and outside_access_refusal(conn, agent) is not None
+        if agent and not paused and agent.get("user_id") and agent.get("id"):
             return Principal(user_id=str(agent["user_id"]), agent_id=str(agent["id"]))
     return Principal()
+
+
+def bearer_agent_key(headers: Mapping[str, str]) -> Optional[str]:
+    """The ``Authorization: Bearer`` value when it is an agent API key, else None.
+
+    Agent keys are UUIDs. A session JWT (dot-separated segments) or a personal
+    access token (its own prefix) never is, so those still go through the
+    regular decoder: a JWT authenticates its owner and a PAT stays barred from
+    the artifact routes. Callers that see a key here skip that decoder, which
+    would reject the key as an invalid JWT.
+
+    Args:
+        headers: The request headers.
+
+    Returns:
+        The key, or None.
+    """
+    header = headers.get("Authorization")
+    if not header or not isinstance(header, str):
+        return None
+    scheme, _, value = header.partition(" ")
+    value = value.strip()
+    if scheme.lower() != "bearer" or not looks_like_uuid(value):
+        return None
+    return value
 
 
 def resolve_principal() -> Principal:
     """Resolve the current Flask request's caller to a :class:`Principal`.
 
-    Reads the decoded JWT, then an ``api_key`` query/form param; see
-    :func:`principal_for`.
+    Reads the decoded JWT, then an agent API key sent as ``Authorization:
+    Bearer``, then an ``api_key`` query/form param; see :func:`principal_for`.
     """
     return principal_for(
         getattr(request, "decoded_token", None),
-        request.args.get("api_key") or request.form.get("api_key"),
+        bearer_agent_key(request.headers) or request.args.get("api_key") or request.form.get("api_key"),
     )
 
 
@@ -75,9 +111,19 @@ def _shared_row_for(conn, conversation_id, share_token):
     if not share_token:
         return None
     shared = SharedConversationsRepository(conn).find_by_uuid(share_token)
-    if shared and str(shared.get("conversation_id")) == str(conversation_id):
-        return shared
-    return None
+    if not shared or str(shared.get("conversation_id")) != str(conversation_id):
+        return None
+    # Lazy: the sharing routes module registers its namespace on import.
+    from docsgpt.api.user.sharing.routes import chat_link_paused
+
+    row = conn.execute(
+        text("SELECT team_id, agent_id FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": str(conversation_id)}
+    ).mappings().first()
+    if row is not None and chat_link_paused(conn, dict(row)):
+        # A locked team's chat links are paused, and so are links to its agent's answers, with the artifacts
+        # they reach.
+        return None
+    return shared
 
 
 def user_can_access_conversation(
@@ -158,7 +204,11 @@ def authorize_artifact(
         if not principal.user_id:
             return False
         run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
-        return run is not None and run.get("user_id") == principal.user_id
+        # A team workflow's run closes to someone who left the team.
+        return (
+            run is not None and run.get("user_id") == principal.user_id
+            and run_in_reach(conn, run, principal.user_id)
+        )
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False
 
@@ -184,6 +234,9 @@ def authorize_artifact_write(conn, artifact: dict, principal: Principal) -> bool
         )
     if workflow_run_id is not None:
         run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
-        return run is not None and run.get("user_id") == principal.user_id
+        return (
+            run is not None and run.get("user_id") == principal.user_id
+            and run_in_reach(conn, run, principal.user_id)
+        )
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False

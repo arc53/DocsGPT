@@ -1,3 +1,6 @@
+import type { SourceKindFilter } from '../settings/sourceKinds';
+import type { ResourceUsage } from '../settings/types';
+
 export type ActiveState = 'ACTIVE' | 'INACTIVE';
 
 export type User = {
@@ -17,15 +20,24 @@ export type SourceChunkingConfig = {
   strategy?: ChunkingStrategy; // default 'classic_chunk'
   max_tokens?: number; // default 1250
   min_tokens?: number; // default 150
+  chunk_overlap?: number; // default 0
   duplicate_headers?: boolean; // default false
 };
 
-// Map-reduce candidate-filter config (off unless set).
+// LLM screening, a map-reduce candidate filter (off unless set).
 export type SourcePrescreenConfig = {
   candidate_k?: number; // default 40, must be >= chunks
   model?: string | null; // null → reuse the request model
   batch_size?: number; // default 10
   max_keep?: number; // default 8, <= candidate_k
+};
+
+// A source's relevance: its chunks scored by the relevance model, the most
+// relevant first. Never set together with `prescreen`.
+export type SourceRerankerConfig = {
+  type?: 'decision';
+  min_relevance?: number | null; // null or 0 → reorder only; > 0 → also drop below it
+  candidate_k?: number | null; // 1..100; null → 20
 };
 
 // Where the graph walk starts: matching entities, or matching relationships
@@ -46,7 +58,9 @@ export type SourceRetrievalConfig = {
   chunks?: number; // top-k, default 6
   score_threshold?: number | null; // default null
   rephrase_query?: boolean; // default true
+  show_links?: boolean; // default true; synced sources link each file in its service
   prescreen?: SourcePrescreenConfig | null; // null = off
+  reranker?: SourceRerankerConfig | null; // null = relevance off
   graph?: SourceGraphRetrievalConfig; // graphrag retriever only
 };
 
@@ -87,11 +101,37 @@ export type Doc = {
   team_access?: 'viewer' | 'editor' | null;
   // The connection a synced source comes from (Google Drive account, S3 keys).
   connectionId?: string | null;
+  // A Website source's hosts and page count (also older link, crawler and
+  // sitemap sources); null for every other kind.
+  website?: { hosts: string[]; pages: number } | null;
+  // How many files the source's tree holds; null for a flat source.
+  files?: number | null;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;
   allowed_actions?: string[];
+  // Where it lives, how it reached this list (own, the team's, shared with
+  // the caller, or shared with the team by another team) and who added it
+  // (sources API).
+  workspace?: { kind: 'personal' | 'team'; team_id?: string | null } | null;
+  origin?: 'own' | 'team' | 'shared' | 'team_shared' | null;
+  created_by?: { user_id?: string | null; label?: string | null } | null;
+  // Another team's source shared with this team: the team it comes from.
+  shared_from?: { team_id: string; name: string | null } | null;
+  // The agents that use it (both lists; absent from an older backend).
+  used_by?: ResourceUsage;
+  // The caller's own filing: the source folder it is in (null: none) and that
+  // folder's trail, top-level folder first (sources API).
+  folder_id?: string | null;
+  folder_path?: { id: string; name: string }[];
 };
+
+/**
+ * A source as the app-wide knowledge list (`/api/sources`, `getDocs`) gives
+ * it: the paginated listing's fields, `website` and `files` included, but
+ * the folder flag named `is_nested` (see `asListedDoc`).
+ */
+export type KnowledgeDoc = Doc & { is_nested?: boolean };
 
 export type GetDocsResponse = {
   docs: Doc[];
@@ -100,7 +140,23 @@ export type GetDocsResponse = {
   /** The page served: the one asked for, clamped to the last. */
   currentPage: number;
   nextCursor: string;
+  /** Sources per kind, the search and usage filters applied (paginated list). */
+  kindCounts?: Record<SourceKindFilter, number>;
+  /** Sources per usage, the search and kind filters applied (paginated list). */
+  usageCounts?: Record<UsageFilter, number>;
+  /** With a `folder`: the sources in its whole subtree (the counts' scope). */
+  subtreeTotal?: number;
 };
+
+/**
+ * Where the paginated listing looks: a folder's sources (`root`: the ones in
+ * no folder) with `direct`, or its whole subtree without it. Left out, every
+ * source the caller can see.
+ */
+export type SourceListScope = { folder: string; direct: boolean };
+
+/** The Knowledge page's usage filter, as `/api/sources/paginated` takes it. */
+export type UsageFilter = 'all' | 'in_use' | 'unused';
 
 export type Prompt = {
   name: string;
@@ -112,13 +168,14 @@ export type Prompt = {
   allowed_actions?: string[];
   team_access?: 'viewer' | 'editor' | null;
   updated_at?: string | null;
-};
-
-export type PromptProps = {
-  prompts: Prompt[];
-  selectedPrompt: { name: string; id: string; type: string };
-  onSelectPrompt: (name: string, id: string, type: string) => void;
-  setPrompts: (prompts: { name: string; id: string; type: string }[]) => void;
+  /** The start of its text, whitespace collapsed; none on a preset. */
+  preview?: string;
+  /** The agents that use it (`/api/get_prompts`). */
+  used_by?: ResourceUsage | null;
+  /** How it reached this list; `team_shared` is another team's prompt shared with this team. */
+  origin?: 'own' | 'team' | 'shared' | 'team_shared' | null;
+  /** `team_shared` prompts: the team it comes from. */
+  shared_from?: { team_id: string; name: string | null } | null;
 };
 
 export type DocumentsProps = {

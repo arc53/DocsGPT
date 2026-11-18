@@ -208,6 +208,11 @@ export default function SourceNavigator({
         className={
           isDesktop ? 'max-h-[70svh] overscroll-contain' : 'max-h-none'
         }
+        // cmdk keeps the last hovered row highlighted once the pointer
+        // leaves, so it looked selected beside the open item. Leaving the
+        // list hands the highlight back to the open item (or to no row);
+        // the arrow keys still move it from there.
+        onPointerLeave={() => setHighlight(selectedId ?? NO_HIGHLIGHT)}
       >
         {query.trim() ? (
           matches.length === 0 ? (

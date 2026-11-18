@@ -10,6 +10,7 @@ from docsgpt.utils import (
     check_required_fields,
     clean_text_for_tts,
     convert_pdf_to_images,
+    count_tokens_docs,
     get_encoding,
     get_field_validation_errors,
     get_gpt_model,
@@ -20,11 +21,13 @@ from docsgpt.utils import (
     limit_chat_history,
     num_tokens_from_object_or_list,
     num_tokens_from_string,
+    display_filename,
     safe_filename,
     truncate_to_line_boundary,
     validate_function_name,
     validate_required_fields,
 )
+from tests.parser.counter_fakes import spy_cl100k
 
 
 class TestGetEncoding:
@@ -128,6 +131,52 @@ class TestSafeFilename:
         assert result.endswith(".pdf")
 
 
+class TestDisplayFilename:
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "name",
+        ["report.pdf", "Отчёт за квартал.docx", "\u6587\u4ef6.pdf", "café menu.xlsx", "my  file (v2).txt"],
+    )
+    def test_keeps_readable_names(self, name):
+        assert display_filename(name) == " ".join(name.split())
+
+    @pytest.mark.unit
+    def test_normalizes_to_nfc(self):
+        assert display_filename("cafe\u0301.txt") == "caf\u00e9.txt"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "name, expected",
+        [
+            ("../../etc/passwd", "passwd"),
+            ("a/b\\c.txt", "c.txt"),
+            ('re:po*rt?"<>|.pdf', "report.pdf"),
+            ("..hidden.txt", "hidden.txt"),
+            ("tab\tnew\nline\x00.md", "tab new line.md"),
+        ],
+    )
+    def test_strips_path_and_reserved_characters(self, name, expected):
+        assert display_filename(name) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("name", ["", None, "..", "///", " .docx", "\x00"])
+    def test_falls_back_to_a_generic_name(self, name):
+        result = display_filename(name, fallback="document")
+        assert result.startswith("document")
+        assert "/" not in result and ".." not in result
+
+    @pytest.mark.unit
+    def test_extension_survives_the_fallback(self):
+        assert display_filename("???.docx", fallback="document") == "document.docx"
+
+    @pytest.mark.unit
+    def test_caps_length_in_utf8_bytes_and_keeps_the_extension(self):
+        result = display_filename("ж" * 500 + ".docx")
+        assert result.endswith(".docx")
+        assert len(result.encode("utf-8")) <= 200
+
+
 class TestNumTokens:
 
     @pytest.mark.unit
@@ -168,6 +217,14 @@ class TestNumTokens:
         assert count > 100000
         assert elapsed < 10, f"pathological encode took {elapsed:.1f}s — tiktoken downgraded?"
 
+    @pytest.mark.unit
+    def test_stays_one_shot_beyond_the_chunking_window(self, monkeypatch):
+        text = "Sentence explaining retrieval, ranking and citation.\n" * 40
+        expected = len(get_encoding().encode_ordinary(text))
+        encoding = spy_cl100k(monkeypatch, window=64)
+        assert num_tokens_from_string(text) == expected
+        assert encoding.encode_lengths == [len(text)]
+
 
 class TestNumTokensFromObjectOrList:
 
@@ -207,6 +264,26 @@ class TestCountTokensDocs:
         doc2.page_content = " foo bar"
         result = count_tokens_docs([doc1, doc2])
         assert result > 0
+
+    @pytest.mark.unit
+    def test_counts_each_doc_without_joining_them(self, monkeypatch):
+        contents = ["alpha beta gamma. " * 20, "delta epsilon zeta. " * 70, "eta theta iota. " * 35]
+        expected = sum(num_tokens_from_string(content) for content in contents)
+        encoding = spy_cl100k(monkeypatch)
+        assert count_tokens_docs([MagicMock(page_content=content) for content in contents]) == expected
+        assert max(encoding.encode_lengths) == max(len(content) for content in contents)
+
+    @pytest.mark.unit
+    def test_long_doc_is_counted_in_bounded_windows(self, monkeypatch):
+        # Mostly whitespace, so one chunk can far exceed the window.
+        doc = MagicMock(page_content="a" + " \n\t" * 1_000 + "b")
+        encoding = spy_cl100k(monkeypatch, window=256)
+        assert count_tokens_docs([doc]) > 0
+        assert max(encoding.encode_lengths) <= 2 * 256
+
+    @pytest.mark.unit
+    def test_no_docs_is_zero(self):
+        assert count_tokens_docs([]) == 0
 
 
 class TestCalculateDocTokenBudget:
@@ -602,6 +679,24 @@ class TestConvertPdfToImages:
                 convert_pdf_to_images("/some.pdf")
 
 
+def _fastest_cleanup(text: str, limit: float = 0.5, times: int = 3) -> float:
+    """The seconds of the fastest of up to ``times`` cleanups, stopping at the first under ``limit``.
+
+    A busy machine slows one run down; the quadratic cleanup these tests
+    guard against takes several seconds on every run.
+    """
+    import time
+
+    best = float("inf")
+    for _ in range(times):
+        start = time.perf_counter()
+        clean_text_for_tts(text)
+        best = min(best, time.perf_counter() - start)
+        if best < limit:
+            break
+    return best
+
+
 class TestCleanTextForTts:
 
     @pytest.mark.unit
@@ -625,6 +720,12 @@ class TestCleanTextForTts:
     def test_removes_images(self):
         result = clean_text_for_tts("![alt text](image.png)")
         assert "image.png" not in result
+        assert result == ""
+
+    @pytest.mark.unit
+    def test_removes_inline_image_without_leftover_marker(self):
+        result = clean_text_for_tts("See ![diagram](a.png) and [docs](https://x.io)")
+        assert result == "See and docs"
 
     @pytest.mark.unit
     def test_removes_inline_code(self):
@@ -694,11 +795,130 @@ class TestCleanTextForTts:
         assert "::" not in result
 
     @pytest.mark.unit
-    def test_removes_non_ascii(self):
+    def test_removes_emoji(self):
         result = clean_text_for_tts("hello \U0001f600 world")
-        assert "\U0001f600" not in result
-        assert "hello" in result
-        assert "world" in result
+        assert result == "hello world"
+
+    @pytest.mark.unit
+    def test_removes_emoji_sequences(self):
+        # thumbs-up + skin tone, ZWJ family, heart + variation selector
+        result = clean_text_for_tts(
+            "ok \U0001f44d\U0001f3fd \U0001f468‍\U0001f469‍\U0001f467 ❤️ done"
+        )
+        assert result == "ok done"
+
+    @pytest.mark.unit
+    def test_keycap_emoji_keeps_only_the_digit(self):
+        assert clean_text_for_tts("1️⃣ Install #️⃣ tags") == "1 Install # tags"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        ["Café résumé", "Привет мир", "こんにちは世界", "你好，世界", "Größe über"],
+    )
+    def test_keeps_non_english_letters(self, text):
+        assert clean_text_for_tts(text) == text
+
+    @pytest.mark.unit
+    def test_keeps_zero_width_non_joiner(self):
+        # Persian half-space: part of the spelling, not formatting
+        word = "می\u200cشود"
+        assert clean_text_for_tts(word) == word
+
+    @pytest.mark.unit
+    def test_removes_supplementary_variation_selectors(self):
+        # VS17-VS256 (U+E0100-U+E01EF) go; other combining marks such as
+        # the acute accent in a decomposed "é" stay
+        text = "a\U000e0100b\U000e01ef café"
+        assert clean_text_for_tts(text) == "ab café"
+
+    @pytest.mark.unit
+    def test_removes_multiline_tag_with_closing_bracket_on_own_line(self):
+        # The lone ">" line must not be taken for a blockquote first
+        text = 'Intro\n<video\n  width={1440}\n  controls\n>\n  <source src="a.mp4" />\n</video>\nOutro'
+        assert clean_text_for_tts(text) == "Intro Outro"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("x <b>bold</b> y<br/>z", "x bold y z"),
+            ('<div class="a">d</div>', "d"),
+            ('<Callout type="info">Note</Callout>', "Note"),
+            ("<Steps>One</Steps>", "One"),
+        ],
+    )
+    def test_removes_html_and_jsx_markup(self, text, expected):
+        assert clean_text_for_tts(text) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text, expected",
+        [
+            ("Visible <!-- internal note --> text", "Visible text"),
+            ("A <!-- one\nspans\nlines --> B <!----> C", "A B C"),
+            ("Keep <!-- unclosed comment", "Keep <!-- unclosed comment"),
+        ],
+    )
+    def test_removes_html_comments(self, text, expected):
+        assert clean_text_for_tts(text) == expected
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Use List<int> or Map<String, int>.",
+            "Replace <your-api-key> with your key.",
+            "Press <Enter> to send.",
+            "Check a <= b and c >= d.",
+        ],
+    )
+    def test_keeps_angle_bracket_prose(self, text):
+        assert clean_text_for_tts(text) == text
+
+    @pytest.mark.unit
+    def test_lone_less_than_does_not_swallow_text(self):
+        text = "Keep rows where timestamp < now() and age <30 days.\nNext line > here"
+        assert "now() and age" in clean_text_for_tts(text)
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[a" * 50_000,  # unmatched [text]
+            "{a" * 50_000,  # unmatched {text}
+            "![a](" * 40_000,  # unmatched image url
+            "[a](" * 50_000,  # unmatched link url
+            "<a" * 100_000,  # unmatched html tag
+            "<!--a" * 40_000,  # unclosed html comment
+        ],
+        ids=["bracket", "brace", "image", "link", "tag", "comment"],
+    )
+    def test_unmatched_delimiters_clean_in_linear_time(self, text):
+        # Each pattern used to rescan the rest of the text from every
+        # opener, so malformed markdown took seconds to minutes.
+        elapsed = _fastest_cleanup(text)
+        assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "text", ["\n" * 100_000, " \n" * 50_000, "\t\n" * 50_000], ids=["newlines", "spaces", "tabs"]
+    )
+    def test_blank_lines_clean_in_linear_time(self, text):
+        # The list-marker patterns' leading whitespace crossed newlines and
+        # rescanned the blank tail from every line start.
+        assert clean_text_for_tts(text) == ""
+        elapsed = _fastest_cleanup(text)
+        assert elapsed < 0.5, f"cleanup took {elapsed:.1f}s on {len(text)} chars"
+
+    @pytest.mark.unit
+    def test_indented_list_markers_removed(self):
+        text = "Steps:\n  - first\n\t* second\n    3. third\n\n+ fourth"
+        assert clean_text_for_tts(text) == "Steps: first second third fourth"
+
+    @pytest.mark.unit
+    def test_ascii_handling_unchanged(self):
+        assert clean_text_for_tts("x^2 \x00\x07ok") == "x^2 ok"
 
     @pytest.mark.unit
     def test_empty_string(self):

@@ -6,17 +6,17 @@ validators from every group applied) and that the generated reference page
 tracks the definitions.
 """
 
+import logging
 import types
 import typing
 import warnings
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings, settings
 from docsgpt.core.docs_pages import read_last_updated
-from docsgpt.core.settings.reference import reference_path, render_reference, updated_reference
+from docsgpt.core.settings.reference import render_reference, updated_reference
 
 SECRET_FIELDS = (
     "API_KEY",
@@ -100,7 +100,11 @@ class TestValidators:
         loaded = Settings.model_validate({name: " None " for name in names})
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
-            assert [name for name in names if getattr(loaded, name) is not None] == []
+            assert [name for name in names if getattr(loaded, name) is not None] == ["DECISION_MODE"]
+
+    def test_none_is_a_value_where_the_choices_offer_it(self):
+        assert Settings.model_validate({"DECISION_MODE": " None "}).DECISION_MODE == "none"
+        assert Settings.model_validate({"DECISION_MODE": ""}).DECISION_MODE is None
 
     def test_plain_strings_keep_empty_values(self):
         assert Settings.model_validate({"MILVUS_TOKEN": "", "JWT_SECRET_KEY": ""}).MILVUS_TOKEN == ""
@@ -274,15 +278,21 @@ class TestReference:
             prose = prose.replace("\\{", "").replace("\\}", "")  # escaped braces are fine
             assert "<" not in prose and "{" not in prose and "}" not in prose, f"line {lineno}: {line}"
 
-    def test_checked_in_reference_is_current(self):
-        path: Path = reference_path()
-        if not path.exists():
-            pytest.skip("docs tree not present (installed package, not a checkout)")
-        current = path.read_text(encoding="utf-8")
-        assert current == updated_reference(current), (
-            "docs/content/Deploying/Settings-Reference.mdx is stale; "
-            "run: python -m docsgpt.core.settings.reference --write"
-        )
+
+@pytest.mark.unit
+class TestReferencePath:
+    def test_the_page_lives_in_the_docs_tree(self, tmp_path):
+        from docsgpt.core.settings.reference import reference_path
+
+        assert reference_path(tmp_path) == tmp_path / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
+
+    def test_the_default_root_is_the_checkout(self):
+        from pathlib import Path
+
+        from docsgpt.core.settings.reference import reference_path
+
+        root = Path(__file__).resolve().parents[2]
+        assert reference_path() == root / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
 
 
 @pytest.mark.unit
@@ -311,6 +321,39 @@ class TestCrossFieldRules:
 
     def test_scim_disabled_needs_no_token(self):
         assert Settings.model_validate({"SCIM_ENABLED": False}).SCIM_TOKEN is None
+
+    def test_analytics_backfill_past_retention_is_cut_to_it(self, caplog, monkeypatch):
+        """Labels past retention are purged, so a longer backfill would relabel them; it must not stop startup."""
+        monkeypatch.setattr("docsgpt.core.settings.analytics._WARNED_BACKFILL_CUTS", set())
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            loaded = Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14})
+        assert loaded.ANALYTICS_BACKFILL_DAYS == 14
+        assert "ANALYTICS_BACKFILL_DAYS (30) exceeds ANALYTICS_RETENTION_DAYS (14)" in caplog.text
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            fits = Settings.model_validate({"ANALYTICS_BACKFILL_DAYS": 14, "ANALYTICS_RETENTION_DAYS": 14})
+        assert fits.ANALYTICS_BACKFILL_DAYS == 14
+        assert caplog.text == ""
+
+    def test_the_backfill_cut_is_logged_once_per_process(self, caplog, monkeypatch):
+        """``docsgpt doctor`` builds Settings three times; the same mismatch is one warning, still cut each time."""
+        monkeypatch.setattr("docsgpt.core.settings.analytics._WARNED_BACKFILL_CUTS", set())
+        values = {"ANALYTICS_BACKFILL_DAYS": 30, "ANALYTICS_RETENTION_DAYS": 14}
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            first = Settings.model_validate(values)
+            second = Settings(_env_file=None, **values)
+        assert first.ANALYTICS_BACKFILL_DAYS == second.ANALYTICS_BACKFILL_DAYS == 14
+        assert len(caplog.records) == 1
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.settings.analytics"):
+            Settings.model_validate({**values, "ANALYTICS_BACKFILL_DAYS": 31})
+        assert len(caplog.records) == 2, "a different mismatch is news"
+
+    def test_validation_errors_do_not_echo_the_value(self):
+        """A secret in the environment must not land in a startup traceback or a log."""
+        with pytest.raises(ValidationError) as exc:
+            Settings.model_validate({"ANALYTICS_RETENTION_DAYS": "sk-secret-value-123"})
+        assert "ANALYTICS_RETENTION_DAYS" in str(exc.value)
+        assert "sk-secret-value-123" not in str(exc.value)
 
 
 @pytest.mark.unit

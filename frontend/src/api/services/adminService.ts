@@ -122,6 +122,47 @@ const adminService = {
     token: string | null,
   ): Promise<any> =>
     apiClient.delete(`${quotaUrl(scope, subjectId)}${qs({ bucket })}`, token),
+  getSourceDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.SOURCE_DEFAULTS, token),
+  setSourceDefaults: (
+    retrieval: Record<string, unknown>,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.ADMIN.SOURCE_DEFAULTS, { retrieval }, token),
+  getAgentDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.AGENT_DEFAULTS, token),
+  setAgentDefaults: (
+    guardrails: Record<string, unknown>,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(endpoints.ADMIN.AGENT_DEFAULTS, { guardrails }, token),
+  /**
+   * `{success, task_model_id, task_model_unavailable, fallback_model_id,
+   * models}`: built-in models only; `task_model_unavailable` when the stored
+   * one can't run (null clears it).
+   */
+  getModelDefaults: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.MODEL_DEFAULTS, token),
+  /** Store the instance task model; null clears it. */
+  setModelDefaults: (
+    taskModelId: string | null,
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.put(
+      endpoints.ADMIN.MODEL_DEFAULTS,
+      { task_model_id: taskModelId },
+      token,
+    ),
+  getGuardrails: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.ADMIN.GUARDRAILS, token),
+  /** Store `floor` (null for none) and/or `mcp_description_warnings`. */
+  setGuardrails: (
+    body: {
+      floor?: Record<string, unknown> | null;
+      mcp_description_warnings?: boolean;
+    },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.ADMIN.GUARDRAILS, body, token),
 };
 
 export default adminService;

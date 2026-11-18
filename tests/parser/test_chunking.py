@@ -6,8 +6,11 @@ classic_chunk, chunk), edge cases, token counting.
 
 import pytest
 
+from docsgpt.parser import tokenization
 from docsgpt.parser.chunking import Chunker
 from docsgpt.parser.schema.base import Document
+from docsgpt.parser.tokenization import HuggingFaceCounter
+from tests.parser.counter_fakes import CharTokenizer, wordpiece_counter
 
 
 # =====================================================================
@@ -100,6 +103,43 @@ class TestSplitDocument:
             assert split_doc.doc_id.startswith("doc1-")
             assert split_doc.extra_info is not None
             assert "token_count" in split_doc.extra_info
+
+    def test_wordpiece_collapsed_span_is_token_capped(self):
+        text = "a" * 32_000 + " b" * 3_000
+        chunker = Chunker(max_tokens=4096, min_tokens=1)
+        chunker.counter = wordpiece_counter()
+
+        result = chunker.split_document(Document(text=text, doc_id="doc1"))
+
+        assert "".join(chunk.text for chunk in result) == text
+        assert all(chunk.extra_info["token_count"] <= 4096 for chunk in result)
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_wordpiece_collapsed_span_respects_header_budget(
+        self, duplicate_headers
+    ):
+        header = "h1\nh2\nh3\n"
+        body = "a" * 32_000 + " b" * 3_000
+        chunker = Chunker(
+            max_tokens=4096,
+            min_tokens=1,
+            duplicate_headers=duplicate_headers,
+        )
+        chunker.counter = wordpiece_counter()
+
+        result = chunker.split_document(
+            Document(text=f"{header}{body}", doc_id="doc1")
+        )
+
+        assert all(chunk.extra_info["token_count"] <= 4096 for chunk in result)
+        bodies = [
+            chunk.text[len(header) :] if chunk.text.startswith(header) else chunk.text
+            for chunk in result
+        ]
+        assert "".join(bodies) == body
+        assert result[0].text.startswith(header)
+        if duplicate_headers:
+            assert all(chunk.text.startswith(header) for chunk in result)
 
     def test_split_preserves_header_on_first(self):
         chunker = Chunker(max_tokens=50, min_tokens=5, duplicate_headers=False)
@@ -373,3 +413,72 @@ class TestSpecialTokenText:
         chunks = chunker.chunk([doc])
         assert chunks
         assert all("<|endoftext|>" in c.text for c in chunks[:1])
+
+
+
+# =====================================================================
+# Chunker - bounded tokenizer calls
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestChunkerTokenizerCallsAreBounded:
+    """Through classic_chunk and split_document, no encode sees more than two windows."""
+
+    WINDOW = 256
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_large_document(self, monkeypatch, duplicate_headers):
+        monkeypatch.setattr(tokenization, "_WINDOW_CHARS", self.WINDOW, raising=False)
+        tokenizer = CharTokenizer()
+        chunker = Chunker(max_tokens=100, min_tokens=10, duplicate_headers=duplicate_headers)
+        chunker.counter = HuggingFaceCounter(tokenizer, "spy")
+        header = "Title\nSubtitle\nAuthor\n"
+        body = "検索は自然言語でできます。The quick brown fox jumps.\n" * 400
+
+        chunks = chunker.chunk([Document(text=header + body, doc_id="big")])
+
+        assert max(tokenizer.encode_lengths) <= 2 * self.WINDOW
+        assert all(c.extra_info["token_count"] <= 100 for c in chunks)
+        if duplicate_headers:
+            assert all(c.text.startswith(header) for c in chunks)
+            assert "".join(c.text[len(header):] for c in chunks) == body
+        else:
+            assert "".join(c.text for c in chunks) == header + body
+
+
+# =====================================================================
+# Chunker - header budget edges (found by tests/fuzz/fuzz_chunking.py)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestChunkerHeaderBudgetEdges:
+    """A header that nearly fills the budget must neither crash nor overshoot it."""
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_header_leaving_less_than_one_character(self, duplicate_headers):
+        counter = tokenization.TiktokenCounter()
+        header = "Title\nAuthor\nDate\n"
+        text = header + "\U0001f9ec" * 5  # 3 cl100k tokens per emoji
+        max_tokens = counter.count(header) + 1
+        chunker = Chunker(max_tokens=max_tokens, min_tokens=0, duplicate_headers=duplicate_headers)
+        chunker.counter = counter
+
+        chunks = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert "".join(c.text for c in chunks) == text
+        assert all(counter.count(c.text) <= max_tokens for c in chunks)
+
+    def test_header_seam_does_not_push_a_chunk_over_budget(self):
+        counter = tokenization.TiktokenCounter()
+        # " . \r\n" + "\n\n\n" is 4 cl100k tokens joined but 3 apart.
+        text = "Title\nAuthor\nword . \r\n" + "\n\n\nbody " * 30
+        chunker = Chunker(max_tokens=8, min_tokens=0)
+        chunker.counter = counter
+
+        chunks = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert "".join(c.text for c in chunks) == text
+        assert all(counter.count(c.text) <= 8 for c in chunks)
+        assert all(c.extra_info["token_count"] == counter.count(c.text) for c in chunks)

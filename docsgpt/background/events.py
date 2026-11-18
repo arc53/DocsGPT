@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
+from docsgpt.background.results import job_notices
 from docsgpt.events.publisher import publish_user_event
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ CONVERSATION_CONTINUED = "conversation.continued"
 
 
 def publish_job_updated(job: Dict[str, Any]) -> None:
-    """Tell the user's open tabs a job changed: ``{job_id, conversation_id, status, progress, tool_name}``.
+    """Tell the user's open tabs a job changed: ``{job_id, conversation_id, status, progress, tool_name, ...}``.
 
     Best-effort; a publish failure is logged and never raised.
 
@@ -32,6 +33,8 @@ def publish_job_updated(job: Dict[str, Any]) -> None:
         "progress": job.get("progress") or {},
         "tool_name": job.get("tool_name"),
         "action_name": job.get("action_name"),
+        "status_message": job.get("status_message"),
+        "notices": job_notices(job),
     }
     scope = {"kind": "conversation", "id": str(conversation_id)} if conversation_id else {"kind": "job"}
     try:

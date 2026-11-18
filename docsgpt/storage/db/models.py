@@ -22,6 +22,8 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Computed,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -62,6 +64,24 @@ users_table = Table(
     Column("active", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # ``user`` (a person), ``team`` (a team's principal, ``'__team__' || team_id``,
+    # which owns the team's items) or ``system`` (``__system__``). Migration 0065.
+    Column("kind", Text, nullable=False, server_default="user"),
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="RESTRICT")),
+    CheckConstraint("kind IN ('user', 'team', 'system')", name="users_kind_chk"),
+    CheckConstraint(
+        "((kind = 'team') = (team_id IS NOT NULL)) "
+        "AND (kind <> 'team' OR user_id = '__team__' || team_id::text) "
+        "AND (kind = 'team' OR left(user_id, 8) <> '__team__')",
+        name="users_team_principal_chk",
+    ),
+)
+
+Index(
+    "users_team_id_uidx",
+    users_table.c.team_id,
+    unique=True,
+    postgresql_where=users_table.c.team_id.isnot(None),
 )
 
 auth_events_table = Table(
@@ -114,6 +134,9 @@ teams_table = Table(
     Column("owner_id", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Who may take the team's items outside the team (migration 0065, ``docsgpt/workspaces/outside.py``).
+    Column("outside_policy", Text, nullable=False, server_default="admins"),
+    CheckConstraint("outside_policy IN ('admins', 'editors', 'locked')", name="teams_outside_policy_chk"),
 )
 
 Index("teams_owner_idx", teams_table.c.owner_id)
@@ -131,10 +154,15 @@ team_members_table = Table(
     Column("granted_by", Text),
     Column("granted_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     PrimaryKeyConstraint("team_id", "user_id", "role", "source"),
-    CheckConstraint("role IN ('team_admin', 'team_member')", name="team_members_role_check"),
+    # The owner is ``teams.owner_id`` (with an admin row); migration 0065.
+    CheckConstraint(
+        "role IN ('team_admin', 'team_editor', 'team_viewer')", name="team_members_role_check"
+    ),
     CheckConstraint(
         "source IN ('manual', 'oidc_group', 'scim')", name="team_members_source_check"
     ),
+    # A team principal is never a member.
+    CheckConstraint("left(user_id, 8) <> '__team__'", name="team_members_person_chk"),
 )
 
 Index("team_members_user_idx", team_members_table.c.user_id)
@@ -165,6 +193,10 @@ team_resource_grants_table = Table(
     CheckConstraint(
         "access_level IN ('viewer', 'editor')", name="team_resource_grants_access_check"
     ),
+    # A team's own items are reached by team role, never by grant (migration 0065).
+    CheckConstraint(
+        "left(owner_id, 8) <> '__team__'", name="team_resource_grants_personal_owner_chk"
+    ),
 )
 
 # Functional unique dedup: a whole-team grant (target NULL → '') and each
@@ -187,6 +219,38 @@ Index(
     team_resource_grants_table.c.resource_type,
     team_resource_grants_table.c.resource_id,
 )
+
+# A team's agent, source, tool or prompt shared with a whole other team (migration 0065). Separate from
+# ``team_resource_grants``, whose readers assume a person's item: a team's share outlives its sharer.
+# ``resource_id`` has no FK (polymorphic); triggers drop the rows when the item is deleted or re-owned.
+team_item_shares_table = Table(
+    "team_item_shares",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("owner_team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False),
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False),
+    Column("resource_type", Text, nullable=False),
+    Column("resource_id", UUID(as_uuid=True), nullable=False),
+    Column("shared_by", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint("resource_type IN ('agent', 'source', 'tool', 'prompt')", name="team_item_shares_type_chk"),
+    CheckConstraint("owner_team_id <> team_id", name="team_item_shares_other_team_chk"),
+    CheckConstraint("left(shared_by, 8) <> '__team__'", name="team_item_shares_person_chk"),
+)
+
+Index(
+    "team_item_shares_team_resource_uidx",
+    team_item_shares_table.c.team_id,
+    team_item_shares_table.c.resource_type,
+    team_item_shares_table.c.resource_id,
+    unique=True,
+)
+Index(
+    "team_item_shares_resource_idx",
+    team_item_shares_table.c.resource_type,
+    team_item_shares_table.c.resource_id,
+)
+Index("team_item_shares_owner_team_idx", team_item_shares_table.c.owner_team_id)
 
 # Per-asset sharing switches set by the owner (migration 0038). A missing row
 # means every switch is at its default; keys are validated in
@@ -216,6 +280,8 @@ prompts_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 user_tools_table = Table(
@@ -239,6 +305,10 @@ user_tools_table = Table(
     ),
     # Whose account a shared resource runs with: the owner's, or each member's.
     Column("credential_mode", Text, nullable=False, server_default="owner"),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
+    # The service of a member-mode tool that names no connection; written by the server only (migration 0065).
+    Column("connector_key", Text),
 )
 
 # A grantee's personal "In my chats" switch for a tool shared with them
@@ -296,6 +366,23 @@ token_usage_table = Table(
     # "no first token", not 0.
     Column("duration_ms", Integer),
     Column("ttft_ms", Integer),
+    # Added in ``0065_workspaces``. The workspace the call was made in (NULL =
+    # Personal; no FK, like ``agent_id``, so a deleted team's rows keep their
+    # id) and what kind of run it was part of. NULL on rows written before.
+    Column("team_id", UUID(as_uuid=True)),
+    Column("run_kind", Text),
+    CheckConstraint(
+        "run_kind IS NULL OR run_kind IN ('chat', 'schedule', 'published', 'knowledge', 'monitor', 'drafter')",
+        name="token_usage_run_kind_chk",
+    ),
+)
+
+# A team's usage report: its rows in a window (0065).
+Index(
+    "token_usage_team_ts_idx",
+    token_usage_table.c.team_id,
+    token_usage_table.c.timestamp.desc(),
+    postgresql_where=token_usage_table.c.team_id.isnot(None),
 )
 
 user_logs_table = Table(
@@ -340,18 +427,57 @@ app_metadata_table = Table(
 
 # --- Agents, sources, attachments, artifacts --------------------------------
 
-agent_folders_table = Table(
-    "agent_folders",
+folders_table = Table(
+    "folders",
     metadata,
     Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
-    Column("parent_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
+    Column("parent_id", UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL")),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
+    # The target of the ``folder_items`` FK: a filing sits in a folder of its own user.
+    UniqueConstraint("id", "user_id", name="folders_id_user_uniq"),
 )
+
+# One tree per owner (migration 0064; ``agent_folders`` before it): a folder holds
+# every kind, and sibling names are unique ignoring case.
+Index(
+    "folders_sibling_name_uidx",
+    folders_table.c.user_id,
+    func.coalesce(folders_table.c.parent_id, text("'00000000-0000-0000-0000-000000000000'::uuid")),
+    func.lower(folders_table.c.name),
+    unique=True,
+)
+
+# Filing: each user files an item into one of their own folders, once (migration 0064).
+folder_items_table = Table(
+    "folder_items",
+    metadata,
+    Column("user_id", Text, nullable=False),
+    Column("resource_type", Text, nullable=False),
+    Column("resource_id", UUID(as_uuid=True), nullable=False),
+    Column("folder_id", UUID(as_uuid=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("user_id", "resource_type", "resource_id"),
+    CheckConstraint(
+        "resource_type IN ('agent', 'source', 'tool', 'prompt')", name="folder_items_resource_type_chk"
+    ),
+    ForeignKeyConstraint(
+        ["folder_id", "user_id"],
+        ["folders.id", "folders.user_id"],
+        name="folder_items_folder_fk",
+        ondelete="CASCADE",
+        onupdate="CASCADE",
+    ),
+)
+
+Index("folder_items_folder_idx", folder_items_table.c.folder_id)
+Index("folder_items_resource_idx", folder_items_table.c.resource_type, folder_items_table.c.resource_id)
 
 sources_table = Table(
     "sources",
@@ -384,6 +510,8 @@ sources_table = Table(
     Column("credential_mode", Text, nullable=False, server_default="owner"),
     # A wiki's owner lets API-key and widget runs edit it (off: read only).
     Column("wiki_outside_edits", Boolean, nullable=False, server_default="false"),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 agents_table = Table(
@@ -393,7 +521,7 @@ agents_table = Table(
     Column("user_id", Text, nullable=False),
     Column("name", Text, nullable=False),
     Column("description", Text),
-    Column("agent_type", Text),
+    Column("agent_type", Text, nullable=False, server_default="classic"),
     Column("status", Text, nullable=False),
     Column("key", CITEXT, unique=True),
     # Stable per-user human identifier used to match an agent across
@@ -407,6 +535,10 @@ agents_table = Table(
     Column("chunks", Integer),
     Column("retriever", Text),
     Column("prompt_id", UUID(as_uuid=True), ForeignKey("prompts.id", ondelete="SET NULL")),
+    # A built-in preset with no ``prompts`` row (migration 0060). NULL with a
+    # NULL ``prompt_id`` is the default preset; AgentsRepository reads it back
+    # as ``prompt_id``.
+    Column("prompt_preset", Text),
     Column("tools", JSONB, nullable=False, server_default="[]"),
     Column("json_schema", JSONB),
     Column("models", JSONB),
@@ -416,8 +548,11 @@ agents_table = Table(
     # ``"<type>:<id>" -> user_id`` of the editor vouching for a referenced
     # resource the owner can't use (migration 0039, see resource_access.py).
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # Up to four questions a new chat with the agent offers (migration 0061).
+    Column("starters", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
     Column("default_model_id", Text),
-    Column("folder_id", UUID(as_uuid=True), ForeignKey("agent_folders.id", ondelete="SET NULL")),
+    # Source folders the agent reads live (migration 0064); a deleted folder drops out.
+    Column("knowledge_folder_ids", ARRAY(UUID(as_uuid=True)), nullable=False, server_default="{}"),
     Column("workflow_id", UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="SET NULL")),
     Column("limited_token_mode", Boolean, nullable=False, server_default="false"),
     Column("token_limit", Integer),
@@ -432,6 +567,17 @@ agents_table = Table(
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_used_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
+    # Who pays for outside traffic (key, link, webhook) on a team agent; a person,
+    # NULL meaning the owner when the owner is a person (migration 0065).
+    Column("access_payer_id", Text),
+    CheckConstraint("prompt_preset IN ('creative', 'strict')", name="agents_prompt_preset_chk"),
+    CheckConstraint("prompt_id IS NULL OR prompt_preset IS NULL", name="agents_prompt_preset_exclusive_chk"),
+    CheckConstraint(
+        "access_payer_id IS NULL OR left(access_payer_id, 8) <> '__team__'",
+        name="agents_access_payer_person_chk",
+    ),
 )
 
 # Per-user uniqueness of the export/import slug. Mirrors the partial unique
@@ -444,6 +590,12 @@ Index(
     unique=True,
     postgresql_where=agents_table.c.slug.isnot(None),
 )
+
+# The Workspace ``used_by`` lookups (``tools ?| ids``, ``extra_source_ids && ids``).
+# Mirrors migration 0060.
+Index("agents_tools_gin_idx", agents_table.c.tools, postgresql_using="gin")
+Index("agents_extra_source_ids_gin_idx", agents_table.c.extra_source_ids, postgresql_using="gin")
+Index("agents_knowledge_folder_ids_gin_idx", agents_table.c.knowledge_folder_ids, postgresql_using="gin")
 
 user_custom_models_table = Table(
     "user_custom_models",
@@ -461,6 +613,8 @@ user_custom_models_table = Table(
     Column("enabled", Boolean, nullable=False, server_default="true"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # The person who added it; on a team's model, the Admin who did (migration 0065).
+    Column("created_by", Text),
 )
 
 attachments_table = Table(
@@ -667,6 +821,14 @@ connector_sessions_table = Table(
     # Added in ``0041_connection_account_name``: what the user calls the
     # account; ``account_label`` stays its identity.
     Column("account_name", Text),
+    # The person who connected a team's account (the row is owned by the team's principal);
+    # NULL on anyone else's connection (migration 0065).
+    Column("connected_by", Text),
+    CheckConstraint(
+        "(left(user_id, 8) = '__team__') = (connected_by IS NOT NULL) "
+        "AND (connected_by IS NULL OR left(connected_by, 8) <> '__team__')",
+        name="connector_sessions_connected_by_chk",
+    ),
 )
 
 
@@ -680,6 +842,32 @@ connector_policies_table = Table(
     Column("updated_by", Text),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
+
+# A connector OAuth sign-in in progress, bound to the user who started it
+# (migration 0052). The app's callback page uses up ``state_hash`` with the
+# starter's login; the API callback forwards to ``return_origin``.
+connector_oauth_flows_table = Table(
+    "connector_oauth_flows",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("provider", Text, nullable=False),
+    Column(
+        "connection_id", UUID(as_uuid=True), ForeignKey("connector_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("state_hash", Text, nullable=False, unique=True),
+    Column("return_origin", Text, nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # The team principal a sign-in connects for, NULL for the person's own; ``user_id`` must finish it
+    # (migration 0065).
+    Column("owner_id", Text),
+    # The sign-in replaces the account of an existing team connection in place (migration 0065).
+    Column("replace_account", Boolean, nullable=False, server_default="false"),
+)
+
+Index("connector_oauth_flows_expires_idx", connector_oauth_flows_table.c.expires_at)
 
 
 # --- Conversations, messages, workflows -------------------------------------
@@ -705,6 +893,28 @@ conversations_table = Table(
     Column("legacy_mongo_id", Text),
     # Set when a message arrived the owner has not seen; opening the chat clears it. See migration 0049.
     Column("unread_at", DateTime(timezone=True)),
+    Column("read_at", DateTime(timezone=True)),
+    # The latest turn's request ``passthrough`` values. See migration 0056.
+    Column("passthrough", JSONB),
+    # The team workspace it was started in; NULL is Personal. See migration 0065.
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE")),
+)
+
+# The sidebar query: one person's listed chats in one workspace, newest first (0065).
+Index(
+    "conversations_user_ws_listed_idx",
+    conversations_table.c.user_id,
+    conversations_table.c.team_id,
+    conversations_table.c.date.desc(),
+    postgresql_where=conversations_table.c.visibility == "listed",
+)
+
+# A team's chats by team: its chat export and the cascade when the team goes (0065).
+Index(
+    "conversations_team_idx",
+    conversations_table.c.team_id,
+    conversations_table.c.id,
+    postgresql_where=conversations_table.c.team_id.isnot(None),
 )
 
 conversation_messages_table = Table(
@@ -924,6 +1134,97 @@ Index(
 Index("ix_guardrail_events_message", guardrail_events_table.c.message_id)
 Index("ix_guardrail_events_created", guardrail_events_table.c.created_at)
 
+# What the decision model said about stored conversations: one row per
+# conversation, message (NULL: the conversation itself) and label, written by
+# the analytics sweep. Reaction rows sit on the answer reacted to and name the
+# reply they read; both sides cascade. No user text. Migration 0057.
+conversation_labels_table = Table(
+    "conversation_labels",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "conversation_id", UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False,
+    ),
+    Column("message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("reply_message_id", UUID(as_uuid=True), ForeignKey("conversation_messages.id", ondelete="CASCADE")),
+    Column("user_id", Text, nullable=False),
+    Column("agent_id", UUID(as_uuid=True)),
+    # turn | reaction | message | conversation
+    Column("level", Text, nullable=False),
+    # a question key (answer_status, ..., tag:<id>), a derived label or _error
+    Column("label", Text, nullable=False),
+    Column("top", Text),
+    Column("p_top", Float),
+    Column("probabilities", JSONB, nullable=False),
+    Column("derived", Boolean, nullable=False, server_default="false"),
+    Column("lang", Text),
+    Column("options_hash", Text),
+    Column("schema_hash", Text, nullable=False),
+    Column("model_version", Text, nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # what the row's state was built from, as the sweep read it: the message's (or the conversation's latest)
+    # updated_at and a hash of its content; NULL on derived rows
+    Column("source_updated_at", DateTime(timezone=True)),
+    Column("source_hash", Text),
+    # a resolution still pending (generated): what the sweep's pending pass looks for
+    Column(
+        "pending",
+        Boolean,
+        Computed(
+            "CASE WHEN label = 'resolution' THEN COALESCE((probabilities->>'pending')::float8, 0) > 0"
+            " ELSE false END",
+            persisted=True,
+        ),
+        nullable=False,
+    ),
+)
+
+Index(
+    "conversation_labels_target_uidx",
+    conversation_labels_table.c.conversation_id,
+    func.coalesce(conversation_labels_table.c.message_id, text("'00000000-0000-0000-0000-000000000000'::uuid")),
+    conversation_labels_table.c.label,
+    unique=True,
+)
+Index(
+    "conversation_labels_agent_time_idx",
+    conversation_labels_table.c.agent_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index(
+    "conversation_labels_user_time_idx",
+    conversation_labels_table.c.user_id,
+    conversation_labels_table.c.occurred_at,
+)
+Index("conversation_labels_message_idx", conversation_labels_table.c.message_id)
+Index("conversation_labels_reply_idx", conversation_labels_table.c.reply_message_id)
+Index(
+    "conversation_labels_resolution_idx",
+    conversation_labels_table.c.occurred_at,
+    postgresql_where=text("pending"),
+)
+
+# Calls to the decision model per day, feature, mode, model version and status:
+# counters only, the denominators of the guardrail journal. Each process
+# upserts increments once a minute. Migration 0053.
+decision_usage_table = Table(
+    "decision_usage",
+    metadata,
+    Column("day", Date, nullable=False),
+    Column("feature", Text, nullable=False),
+    Column("mode", Text, nullable=False),
+    Column("model_version", Text, nullable=False, server_default=""),
+    Column("status", Text, nullable=False),
+    Column("calls", BigInteger, nullable=False, server_default="0"),
+    Column("states", BigInteger, nullable=False, server_default="0"),
+    Column("answered", BigInteger, nullable=False, server_default="0"),
+    Column("ms_total", Float, nullable=False, server_default="0"),
+    Column("queue_ms_total", Float, nullable=False, server_default="0"),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    PrimaryKeyConstraint("day", "feature", "mode", "model_version", "status", name="decision_usage_pkey"),
+)
+
 # One execution trace per request (chat turn, continuation, scheduled or
 # webhook run, search, graph extraction): the span tree as a JSONB array,
 # rendered as a waterfall in the Logs UI. ``message_id`` cascades; deleting a
@@ -1013,6 +1314,11 @@ ingest_chunk_progress_table = Table(
     # Added in ``0008_ingest_progress_status``. The reconciler flips
     # this to 'stalled'; ``init_progress`` resets it to 'active'.
     Column("status", Text, nullable=False, server_default="active"),
+    # Added in ``0062_ingest_resume``: the chunk set's hash, the task to
+    # queue again after a restart, and how often the reconciler has.
+    Column("chunk_fingerprint", Text),
+    Column("dispatch", JSONB),
+    Column("resume_attempts", Integer, nullable=False, server_default="0"),
 )
 
 
@@ -1026,9 +1332,13 @@ workflows_table = Table(
     Column("current_graph_version", Integer, nullable=False, server_default="1"),
     # Same shape as ``agents.resource_sponsors``, for node tools and sources.
     Column("resource_sponsors", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    # The retry policy nodes inherit unless they set their own; NULL means none.
+    Column("retry_defaults", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
+    # The person who created it (migration 0065).
+    Column("created_by", Text),
 )
 
 workflow_nodes_table = Table(
@@ -1051,6 +1361,22 @@ workflow_nodes_table = Table(
         "id", "workflow_id", "graph_version",
         name="workflow_nodes_id_wf_ver_key",
     ),
+)
+
+# The Workspace ``used_by`` lookups of workflow agents, over the lower-case ids
+# the SQL function ``workflow_node_refs`` reads from an agent node's config.
+# Mirrors migration 0060.
+Index(
+    "workflow_nodes_tool_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'tools'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
+)
+Index(
+    "workflow_nodes_source_refs_gin_idx",
+    func.workflow_node_refs(workflow_nodes_table.c.config, text("'sources'")),
+    postgresql_using="gin",
+    postgresql_where=text("node_type = 'agent'"),
 )
 
 workflow_edges_table = Table(
@@ -1095,6 +1421,8 @@ workflow_runs_table = Table(
     Column("started_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("ended_at", DateTime(timezone=True)),
     Column("legacy_mongo_id", Text),
+    # The step a running run is on (0053); kept after the run ends.
+    Column("progress", JSONB),
 )
 
 
@@ -1134,6 +1462,8 @@ schedules_table = Table(
     Column("consecutive_failure_count", Integer, nullable=False, server_default="0"),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    # Set on create, a timing edit and a resume; never by the dispatcher (0053).
+    Column("plan_changed_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 schedule_runs_table = Table(
@@ -1195,6 +1525,7 @@ devices_table = Table(
     Column("paired_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("last_seen_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
+    Column("capabilities", Text),
     Column("revoke_reason", Text),
     UniqueConstraint("user_id", "name", name="devices_user_name_uidx"),
 )
@@ -1368,7 +1699,9 @@ background_jobs_table = Table(
     CheckConstraint(
         "status IN ('working', 'completed', 'failed', 'cancelled', 'lost')", name="background_jobs_status_chk"
     ),
-    CheckConstraint("runner IN ('inprocess', 'celery', 'sandbox', 'mcp')", name="background_jobs_runner_chk"),
+    CheckConstraint(
+        "runner IN ('inprocess', 'celery', 'sandbox', 'mcp', 'device')", name="background_jobs_runner_chk"
+    ),
     CheckConstraint(
         "delivery_state IN ('pending', 'claimed_by_poll', 'resumed', 'folded', 'suppressed', 'failed')",
         name="background_jobs_delivery_state_chk",
@@ -1405,7 +1738,8 @@ conversation_wakes_table = Table(
     Column("claimed_at", DateTime(timezone=True)),
     Column("delivered_at", DateTime(timezone=True)),
     CheckConstraint(
-        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost')",
+        "source IN ('job', 'monitor', 'monitor_paused', 'monitor_expired', 'trigger', 'approval', 'lost', "
+        "'continuation')",
         name="conversation_wakes_source_chk",
     ),
     CheckConstraint(
@@ -1496,15 +1830,32 @@ trigger_links_table = Table(
     Column("last_hit_at", DateTime(timezone=True)),
     Column("revoked_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("ref", Text),
+    Column("expose_secret", Boolean, nullable=False, server_default=text("false")),
+    Column("allow_get", Boolean, nullable=False, server_default=text("false")),
+    Column("signature_header", Text),
     CheckConstraint("kind IN ('webhook', 'approval')", name="trigger_links_kind_chk"),
     CheckConstraint(
-        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256')",
+        "signature_scheme IN ('none', 'standard_webhooks', 'github', 'hmac_sha256', 'stripe', 'slack', "
+        "'header_token', 'bearer')",
         name="trigger_links_signature_scheme_chk",
     ),
     UniqueConstraint("token_hash", name="trigger_links_token_hash_uidx"),
 )
 
 Index("trigger_links_monitor_idx", trigger_links_table.c.monitor_id)
+Index(
+    "trigger_links_exposed_idx",
+    trigger_links_table.c.user_id,
+    postgresql_where=trigger_links_table.c.expose_secret,
+)
+Index(
+    "trigger_links_user_ref_uidx",
+    trigger_links_table.c.user_id,
+    trigger_links_table.c.ref,
+    unique=True,
+    postgresql_where=trigger_links_table.c.ref.isnot(None),
+)
 
 trigger_hits_table = Table(
     "trigger_hits",
@@ -1524,6 +1875,29 @@ trigger_hits_table = Table(
 )
 
 Index("trigger_hits_received_idx", trigger_hits_table.c.received_at)
+
+# --- Monitor events (migration 0050) -----------------------------------------
+# An ingest event a monitor watches, stored before its task is queued so a lost
+# task can be queued again; settled like a trigger hit.
+monitor_events_table = Table(
+    "monitor_events",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("monitor_id", UUID(as_uuid=True), ForeignKey("schedules.id", ondelete="CASCADE"), nullable=False),
+    Column("dedupe_key", Text, nullable=False),
+    Column("payload", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("attempts", Integer, nullable=False, server_default="0"),
+    Column("error", Text),
+    Column("received_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("processed_at", DateTime(timezone=True)),
+    CheckConstraint(
+        "status IN ('pending', 'processed', 'ignored', 'failed')", name="monitor_events_status_chk"
+    ),
+    UniqueConstraint("monitor_id", "dedupe_key", name="monitor_events_monitor_dedupe_uidx"),
+)
+
+Index("monitor_events_status_received_idx", monitor_events_table.c.status, monitor_events_table.c.received_at)
 
 # --- Web Push subscriptions (migration 0049) ---------------------------------
 # One browser's push subscription: the push service endpoint and the keys the

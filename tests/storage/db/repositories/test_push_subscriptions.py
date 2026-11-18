@@ -90,6 +90,16 @@ class TestUnread:
         assert repo.mark_read(cid, "u1") is True
         assert repo.mark_read(cid, "u1") is False
 
+    def test_reading_records_when_even_if_nothing_was_unread(self, pg_conn):
+        # Activity tells a failure seen before from a new one by this time.
+        repo = ConversationUnreadRepository(pg_conn)
+        cid = self._conversation(pg_conn)
+        assert repo.mark_read(cid, "u1") is False
+        read_at = pg_conn.execute(
+            text("SELECT read_at FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": cid}
+        ).scalar()
+        assert read_at is not None
+
     def test_only_the_owner(self, pg_conn):
         repo = ConversationUnreadRepository(pg_conn)
         cid = self._conversation(pg_conn)

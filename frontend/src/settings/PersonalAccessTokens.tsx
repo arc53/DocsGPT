@@ -3,6 +3,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
+import { baseURL } from '../api/client';
 import patService, {
   AccessTokenApiError,
   AccessTokenPolicy,
@@ -458,6 +459,20 @@ export default function PersonalAccessTokens() {
         token={created?.token ?? null}
         name={created?.personal_access_token.name ?? ''}
         regenerated={createdByRegenerate}
+        onCreateTool={
+          created && !createdByRegenerate
+            ? async () => {
+                const tool = await patService.createAgentTool(
+                  created.personal_access_token.id,
+                  created.token,
+                  // Where agents reach the API: the host this app talks to.
+                  new URL(baseURL, window.location.href).href,
+                  token,
+                );
+                return tool.inactive;
+              }
+            : undefined
+        }
         onClose={() => setCreated(null)}
       />
       {policy && (

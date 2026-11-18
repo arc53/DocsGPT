@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Data Retention
-description: The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
-lastUpdated: 2026-09-30
+description: The periodic tasks the Celery beat scheduler runs in DocsGPT - source syncs, scheduled agent runs, reconciliation, conversation analytics and cleanups - what each one trims and when, what is kept until someone deletes it, and how to make sure beat is running.
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -23,31 +23,123 @@ At least one beat scheduler must run. Beat uses RedBeat, which keeps its schedul
 | Development | `celery -A docsgpt.app.celery worker -l INFO -B`, or `docsgpt worker`. See [Development Environment](/Deploying/Development-Environment). |
 | Windows | The worker can't embed beat. Run `docsgpt beat` (or `celery -A docsgpt.app.celery beat -l INFO`) in a separate process. |
 
-If you write your own worker command, keep `-B` on it or run `celery -A docsgpt.app.celery beat -l INFO` next to it. Signs that beat isn't running: scheduled agent runs and source syncs never fire, and a request stuck after a crash is never marked failed.
+If you write your own worker command, keep `-B` on it or run `celery -A docsgpt.app.celery beat -l INFO` next to it. Signs that beat isn't running:
+
+- Scheduled agent runs and source syncs never fire.
+- A request stuck after a crash is never marked failed.
+- In [Activity](/Using/activity), **Now** shows items under **Up next** as **Overdue**, and the **Calendar** marks the times schedules should have run as **Missed**.
+- Coming knowledge syncs disappear from the **Calendar**: their next time is already in the past.
 
 ## Periodic tasks
 
-Beat schedules these tasks. Each runs on the worker, so the worker must also be running and consuming the `docsgpt` queue. The cleanups skip themselves when `POSTGRES_URI` is not set.
+Beat schedules these tasks. Each runs on the worker, so the worker must also be running and consuming the `docsgpt` queue, and for `analytics-sweep` and `analytics-gap-digest` the [`analytics` queue](#the-analytics-queue). The cleanups skip themselves when `POSTGRES_URI` is not set.
 
 | Task | Every | What it does | Controlled by |
 | --- | --- | --- | --- |
-| `schedule-syncs-daily` | day | Re-ingests sources whose sync frequency is **Daily**. | The source's **Sync** setting in Knowledge. |
-| `schedule-syncs-weekly` | week | The same for **Weekly** sources. | The source's **Sync** setting. |
-| `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Sync** setting. |
+| `schedule-syncs-daily` | day | Re-ingests sources whose sync frequency is **Daily**. | **Keep up to date** in the source's **Settings** in Knowledge. |
+| `schedule-syncs-weekly` | week | The same for **Weekly** sources. | The source's **Keep up to date** setting. |
+| `schedule-syncs-monthly` | 30 days | The same for **Monthly** sources. | The source's **Keep up to date** setting. |
 | `dispatch-scheduled-runs` | 30 s | Queues [scheduled agent runs](/Agents/schedules) that are due. | `SCHEDULE_DISPATCHER_INTERVAL` (`30`, minimum 15 s). |
 | `cleanup-schedule-runs` | day | Deletes scheduled-run records and their output older than the retention window, keeping the 50 most recent runs of each schedule. | `SCHEDULE_RUN_OUTPUT_RETENTION_DAYS` (`90`). |
-| `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. | None. |
+| `reconciliation` | 30 s | Marks stuck work as failed and logs an alert: answers that stopped streaming, tool calls left mid-way, stalled ingests, stuck idempotency claims and scheduled runs. An ingest that a restart killed is queued again first; see [Ingests stopped by a restart](#ingests-stopped-by-a-restart). | `INGEST_RESUME_MAX_ATTEMPTS` (`3`). |
+| `cleanup-orphaned-ingests` | hour | Deletes the vectors of ingests that ended without a source, and their progress records. See [Vectors of failed ingests](#vectors-of-failed-ingests). | `INGEST_ORPHAN_TTL_HOURS` (`72`; `0` keeps them). |
 | `cleanup-pending-tool-state` | 60 s | Deletes paused conversations waiting for a tool approval or a client-side tool result once they expire (30 minutes), and clears their approval prompts. | None. |
-| `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. | None. |
+| `cleanup-idempotency-dedup` | hour | Deletes idempotency keys for uploads, tasks and webhooks older than 24 hours. A task's key is kept while the task is still running, and for 24 hours after its last heartbeat. | None. |
 | `cleanup-message-events` | day | Deletes the per-chunk stream journal that lets a client reconnect to an answer, and the markers left by regenerated answers. Conversations themselves are kept. | `MESSAGE_EVENTS_RETENTION_DAYS` (`14`). |
 | `cleanup-guardrail-events` | day | Deletes [guardrail](/Agents/guardrails) events. | `GUARDRAILS_EVENTS_RETENTION_DAYS` (`30`). |
+| `cleanup-content-scores` | day | Deletes cached [prompt-injection scores](/Agents/guardrails#where-a-documents-score-comes-from) whose text was not scored or seen within the retention window. | `GUARDRAILS_CONTENT_SCORES_RETENTION_DAYS` (`180`). |
+| `cleanup-decision-usage` | day | Deletes the per-day counts of [decision model](/Models/decision-model) calls. | `DECISION_USAGE_RETENTION_DAYS` (`90`). |
+| `analytics-sweep` | 5 min | Labels new and changed conversations for [Insights](/Using/analytics-and-logs#conversation-insights), newest first, for up to 4 minutes. Scheduled only while `DECISION_ANALYTICS_ENABLED` is on, read when beat starts. Runs on the `analytics` queue. | `ANALYTICS_SWEEP_SECONDS` (`300`), `ANALYTICS_SWEEP_BUDGET_SECONDS` (`240`). |
+| `cleanup-conversation-labels` | day | Deletes conversation labels older than the retention window, by message time. Labels are also deleted with their conversation. | `ANALYTICS_RETENTION_DAYS` (`90`). |
+| `analytics-gap-digest` | week | Sends the [weekly docs-gap summary](/Using/analytics-and-logs#weekly-docs-gap-summary) to the owners of agents that turned it on. Scheduled only while `DECISION_ANALYTICS_ENABLED` is on. Runs on the `analytics` queue. | The agent's **Weekly docs-gap summary**. |
 | `cleanup-traces` | day | Deletes request traces (the trace viewer and per-agent logs). | `TRACES_RETENTION_DAYS` (`30`). |
 | `cleanup-orphan-memories` | day | Deletes memory entries whose tool was deleted. | None. |
+| `sse-connections-gauge` | 60 s | Logs an `sse_gauge` line with the number of open live-update connections and, for each Celery queue, its depth, head-of-line wait and running tasks. See [Queue and connection gauge](/Deploying/Observability#queue-and-connection-gauge). | None. |
 | `reap-sandbox-sessions` | 60 s | Closes [sandbox](/Deploying/Sandbox) sessions in the worker that have been idle longer than their keep-alive time. | `SANDBOX_MAX_TTL` (`1200`) caps the keep-alive. |
 | `reap-stale-workflow-runs` | 5 min | Marks workflow runs still `running` after a disconnect or crash as failed. | `WORKFLOW_RUN_STALE_SECONDS` (`3600`). |
 | `version-check` | 7 hours | Checks gptcloud.arc53.com for security advisories for your version and logs any it finds. | `VERSION_CHECK` (`true`); set `false` to turn it off. |
 
 All the settings above are listed in the [Settings Reference](/Deploying/Settings-Reference).
+
+## Ingests stopped by a restart
+
+A deploy, reboot or out-of-memory kill can stop an ingest halfway through embedding. The broker usually hands the task to another worker, but not always. When the progress of an ingest has not moved for 30 minutes and nothing holds its task, the `reconciliation` task queues it again on the ingest queue, under its original task id.
+
+The new task reads and chunks the files again. If the chunks and the embeddings model are the same, it continues after the last embedded chunk. Otherwise it starts again from the first chunk. FAISS keeps an unfinished index only in the stopped task's temporary folder, so on FAISS a resumed ingest always starts again.
+
+An ingest is not queued again, and is marked failed, when:
+
+- it has been queued again `INGEST_RESUME_MAX_ATTEMPTS` times (`3`; `0` turns this off),
+- its uploaded files are no longer in storage, or
+- its task already finished or failed.
+
+Upload, remote and source sync ingests can be queued again. Connector ingests (Google Drive and the like) are marked failed, as before. **Re-ingest** on a Website, crawler or connector source resumes its unfinished embed the same way.
+
+## Large sources
+
+A large remote source, such as a big GitHub repository, can turn into hundreds of thousands of chunks and hold an ingest worker for a day. Two caps stop such a source before anything is embedded:
+
+| Setting | Default | Checked |
+| --- | --- | --- |
+| `INGEST_MAX_FILES` | `10000` | As soon as the files are listed: a GitHub repository's tree (or while its archive is read), an S3 prefix, a connector's downloaded files, an upload's files once unpacked. A remote source is counted again after it loads. |
+| `INGEST_MAX_TOKENS` | `20000000` | After the files are parsed and chunked, before the first chunk is embedded. |
+
+A source over a cap fails at once, without retries. Its `source.ingest.failed` event carries `reason` (`too_many_files` or `too_many_tokens`) and `limit`, and the upload shows a message naming the limit. A scheduled sync of a source that has grown past a cap fails the same way and keeps the index it had. Re-ingest of an existing source is not checked. `0` turns a cap off.
+
+The file cap's default is the same number as `UPLOAD_MAX_ARCHIVE_FILES`'s, but the two are separate settings: if you raise the archive limit, raise `INGEST_MAX_FILES` too, or a zip that unpacks can still fail its ingest (as can one over the token cap). 20 million tokens is about 80 MB of plain text, more than a 100 MB upload (`UPLOAD_MAX_FILE_BYTES`) of documents usually holds, and several hours of embedding on a CPU model. Raise either cap if your sources are bigger and your workers can take it.
+
+### The same source twice
+
+When a user adds a remote source they are already ingesting (the same GitHub repository, website, crawler or sitemap address, S3 bucket or subreddit), no second ingest starts: the request answers with the running ingest's `task_id` and `source_id`, and `in_flight: true`. A double click or a second tab therefore costs one ingest. Addresses, including each entry of a Website source, are compared with the host in lower case and without a trailing slash, fragment, user info or `.git`; a source's credentials (passwords, keys, tokens) are left out of the comparison, so changing only them still joins the running ingest. Once that ingest has finished or failed, the same address starts a new one; so does an address whose ingest is waiting out a retry after an error, or whose worker died. Uploaded files and connector selections are not compared.
+
+## Ingests per user
+
+`INGEST_MAX_CONCURRENT_PER_USER` (`3`) caps the whole-source ingests one user runs at a time: uploads, remote and connector ingests, re-ingests and syncs. Scheduled syncs of connector sources (Google Drive and the like) are not counted. A further task for that user goes back on the ingest queue for 30 to 45 seconds without starting, so the other worker slots stay free for other users, and it starts once one of the user's ingests ends. The worker logs `ingest <task id> deferred` each time.
+
+Waiting for a slot is not an attempt: it doesn't count toward the task's retries or the idempotency guard's attempt limit, and a resumed ingest that waits keeps its progress fresh, so the reconciler doesn't take the wait for a stall. Each running ingest holds a lease in Redis (`user:<id>:ingest_slots`) and renews it while it runs; the lease of a worker that was killed lapses within two minutes. With `0`, or without Redis, nothing is capped.
+
+Three running ingests per user leave room for a few uploads at once while a multi-user instance keeps slots for everyone else. On a single-user instance with many worker processes, raise it or set `0`; on a busy shared one, `1` is the fairest.
+
+## The analytics queue
+
+The analytics sweep spends most of its time waiting for the [decision model](/Models/decision-model#conversation-analytics), up to a few minutes per run, so it has a queue of its own, `analytics` (`ANALYTICS_QUEUE`). The worker only reads messages, builds the model's input and writes labels; it never loads the model. The sweep holds a lock in Redis, so overlapping runs and several workers are safe.
+
+- **A bare prefork worker** (`celery ... worker` with no `-Q`, or `docsgpt worker` on Linux) consumes every queue, `analytics` included. While a backlog is being labelled, one of its processes is busy with the sweep and the others take ingestion and query embedding.
+- **A solo-pool worker must not consume it.** The solo pool runs one task at a time, so a sweep would hold the whole worker and searches would time out waiting for their query embedding. On macOS and Windows, `docsgpt worker` runs the solo pool and leaves `analytics` out; `docsgpt worker --analytics` takes it in a second process. `docsgpt up --native` installs both; `docsgpt dev` starts the second only while `DECISION_ANALYTICS_ENABLED` is on, read when it starts. With raw Celery and `--pool=solo`, add `-X analytics` and run `celery -A docsgpt.app.celery worker -l INFO -Q analytics -n analytics@%h --pool=solo` next to it; `-n` gives it a node name of its own on the shared host.
+- **The shipped Compose files and Kubernetes manifest** list it: `-Q docsgpt,parsing,embeddings,ingest,analytics`.
+- **On a single-CPU host** a prefork worker starts one process (the default concurrency is the CPU count), so with `DECISION_ANALYTICS_ENABLED` on, a sweep holds it for up to `ANALYTICS_SWEEP_BUDGET_SECONDS` plus one call's `DECISION_BACKGROUND_TIMEOUT`, and searches time out waiting for their query embedding. There, run a dedicated `-Q analytics -c 1` worker as below and drop `analytics` from the main worker's `-Q`, or give the main worker `-c 2`. The shipped files leave concurrency at its default, since each process holds its own memory.
+- **A worker you start with your own `-Q`** must list `analytics` too, or the sweep never runs and the Insights pages stay at **Analyzing conversations**, with none analyzed. Nothing else depends on it.
+
+Beat schedules the sweep and the digest only while `DECISION_ANALYTICS_ENABLED` is on, so the queue gets no messages otherwise; restart beat (the worker that embeds it) after turning the switch on or off. A message no worker takes stays in Redis until one does, which then drops it if its interval has passed.
+
+`docsgpt doctor` reads that backlog from the broker while `DECISION_ANALYTICS_ENABLED` is on. Three or more messages waiting is a warning that names the fix, `docsgpt worker --analytics` next to the worker or `analytics` in its `-Q`, along with the workers that answer a one-second ping and consume the queue. A worker busy with a sweep may not answer, and doctor run before any worker starts sees at most a message or two, so neither is reported as a problem.
+
+To keep the sweep apart from the rest, run one worker for it alone and leave `analytics` out of the others:
+
+```bash
+celery -A docsgpt.app.celery worker -l INFO -Q analytics -c 1 -n analytics@%h
+```
+
+One process is enough: only one sweep runs at a time. `-n` keeps its node name apart from a worker on the same host.
+
+### Labelling past conversations
+
+When labelling is turned on, the sweep labels the last `ANALYTICS_BACKFILL_DAYS` (7) days, newest first, within its time budget. To label further back, or all at once, run the same sweep in the foreground with no time budget:
+
+```bash
+docsgpt analytics backfill --days 30 --dry-run   # the unlabelled messages, turns and an estimated time; labels nothing
+docsgpt analytics backfill --days 30             # label them; --agent <id> limits it to one agent
+```
+
+Run it where a worker runs, with the worker's settings: in a Docker stack, `docker compose exec worker python -m docsgpt analytics backfill --days 30` from the stack's folder; in Kubernetes, `kubectl exec deploy/docsgpt-worker -- python -m docsgpt analytics backfill --days 30`. Its model calls go where the worker's go, at background priority, so chat still comes first. `--days` can't exceed `ANALYTICS_RETENTION_DAYS`, since older labels would be deleted and made again. `--dry-run` counts the messages that have no labels from the model a real run would use; with a decision server (`DECISION_MODE=api`) it first asks the server which model it runs, and if the server does not answer, or `DECISION_BASE_URL` is not set, the output carries a `warning` that the counts assume the default model. The estimate in `--dry-run` comes from this server's measured speed, and is `null` until the model has been timed; the wall time is longer than the compute time, since background work takes at most a quarter of the cores. The command does nothing while `DECISION_ANALYTICS_ENABLED` is off. While a scheduled sweep is running it says so and waits for it to finish, for up to one sweep's length (`ANALYTICS_SWEEP_BUDGET_SECONDS` plus `DECISION_BACKGROUND_TIMEOUT` plus a minute); `--no-wait` exits with `{"skipped": "locked"}` instead. `--agent` takes an agent's id.
+
+## Vectors of failed ingests
+
+An ingest writes its chunks to the vector store as it goes, and saves the source only at the end. An ingest that fails, runs out of [resumes](#ingests-stopped-by-a-restart), or stops after the last chunk but before the source is saved leaves vectors that no source owns and no search reaches.
+
+Every hour, `cleanup-orphaned-ingests` deletes them once the ingest has made no progress for `INGEST_ORPHAN_TTL_HOURS` (`72`). It deletes them through the configured vector store, 1,000 at a time on pgvector, then removes the progress record. It never touches the vectors of a source that exists, so a sync or re-ingest of an existing source is safe, and it skips an ingest that may still be resumed. On FAISS an unfinished index is never saved, so only the progress record goes.
+
+`docsgpt ingest orphans` reports what is left; see the [CLI reference](/Deploying/cli#database-and-maintenance-commands). On pgvector it also lists vectors with no ingest record at all, such as those left by older versions. The cleanup does not delete those; delete them yourself after checking the source IDs, for example `DELETE FROM documents WHERE source_id = '<id>'`.
 
 ## Kept until deleted
 

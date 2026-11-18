@@ -26,6 +26,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from docsgpt.activity.flags import stop_requested
 from docsgpt.background import jobs, pool
 from docsgpt.background.context import BackgroundContext
 from docsgpt.background.results import running_payload
@@ -36,13 +37,18 @@ logger = logging.getLogger(__name__)
 #: that called them (``view_image`` shows this turn's model an image), or they
 #: are the background machinery itself (``monitor`` hands back the link or
 #: baseline the user is waiting for).
-NEVER_BACKGROUND_TOOLS = frozenset({"check_job", "view_image", "attachments", "monitor"})
+NEVER_BACKGROUND_TOOLS = frozenset(
+    {"check_job", "view_image", "attachments", "monitor", "ask_user", "report_cannot_complete"}
+)
 
 #: Arguments the background layer reads and the tool never sees.
 CONTROL_ARGS = ("background", "watch")
 
 #: How long a finished pool thread waits for the request thread to write the job row.
 _JOB_READY_TIMEOUT = 300.0
+
+#: How often the yield-window wait checks whether the turn was stopped.
+_STOP_POLL_SECONDS = 1.0
 
 #: Returned by a tool whose work a background job's poller took over (a
 #: detached sandbox run): the pool thread then has nothing left to finish.
@@ -161,9 +167,9 @@ class _Flight:
 class CallHandle:
     """What a running tool sees of its background call (``current_call()``).
 
-    A tool that can run detached (``code_executor``) polls its run and, once
-    the turn handed the call off, moves it to a poller with :meth:`detach`
-    instead of holding a pool thread for the rest of the run.
+    A tool that can run detached (``code_executor``, ``remote_device``) polls
+    its run and, once the turn handed the call off, moves it to a poller with
+    :meth:`detach` instead of holding a pool thread for the rest of the run.
 
     Attributes:
         key: A unique key for this call's detached run.
@@ -187,11 +193,13 @@ class CallHandle:
         else:
             self._flight.job_ready.wait(seconds)
 
-    def detach(self, external: Dict[str, Any]) -> bool:
-        """Hand the rest of the run to the sandbox poller; True when it took it.
+    def detach(self, external: Dict[str, Any], *, runner: str = "sandbox") -> bool:
+        """Hand the rest of the run to a poller; True when it took it.
 
         Args:
             external: Everything the poller needs (run handle, finish state).
+            runner: ``sandbox`` (a detached code run) or ``device`` (a command
+                on a paired remote device).
 
         Returns:
             False when the job could not be moved (keep polling here).
@@ -199,7 +207,10 @@ class CallHandle:
         job_id = self._flight.job_id
         if job_id is None:
             return False
-        from docsgpt.background.sandbox_runner import detach_job
+        if runner == "device":
+            from docsgpt.background.device_runner import detach_job
+        else:
+            from docsgpt.background.sandbox_runner import detach_job
 
         if not detach_job(job_id, external):
             return False
@@ -208,7 +219,7 @@ class CallHandle:
 
 
 def _detaches(tool: Any) -> bool:
-    """Whether the tool can move a running call to a sandbox poller (``code_executor``)."""
+    """Whether the tool can move a running call to a poller (``code_executor``, ``remote_device``)."""
     supports = getattr(tool, "supports_detached", None)
     try:
         return bool(callable(supports) and supports())
@@ -247,7 +258,12 @@ def run_call(
             queued = _run_in_worker(context, spec)
             if queued is not None:
                 return queued
-        yield_seconds = 0
+        elif _detaches(tool) and not _caps_allow(context):
+            # Over the cap the call runs in the foreground; it must not take a
+            # background run's longer limits (an hour-long device command) there.
+            explicit = False
+        if explicit:
+            yield_seconds = 0
 
     flight = _Flight()
     handle = CallHandle(flight, explicit=explicit, watch=_watch_of(spec))
@@ -291,6 +307,15 @@ def run_call(
     return _await_or_hand_off(context, spec, flight, future, window_override=yield_seconds)
 
 
+def _caps_allow(context: BackgroundContext) -> bool:
+    """``jobs.within_caps``, False when it can't be read (the call then stays in the foreground)."""
+    try:
+        return jobs.within_caps(context)
+    except Exception:
+        logger.exception("background job cap check failed; the call stays in the foreground")
+        return False
+
+
 def _await_or_hand_off(
     context: BackgroundContext,
     spec: CallSpec,
@@ -302,17 +327,11 @@ def _await_or_hand_off(
     """Wait out the yield window, then hand the call off if it is still running."""
     yield_seconds = window_override
     window = context.yield_seconds if yield_seconds is None else max(0.0, float(yield_seconds))
-    try:
-        return Outcome(False, value=future.result(timeout=window))
-    except FuturesTimeout:
-        pass
+    done, value = _wait_unless_stopped(context, future, window)
+    if done:
+        return Outcome(False, value=value)
 
-    try:
-        allowed = jobs.within_caps(context)
-    except Exception:
-        logger.exception("background job cap check failed; the call stays in the foreground")
-        allowed = False
-    if not allowed:
+    if not _caps_allow(context):
         return Outcome(False, value=future.result())
 
     with flight.lock:
@@ -357,6 +376,33 @@ def _await_or_hand_off(
         extra={"job_id": flight.job_id, "tool_name": spec.tool_name, "action_name": spec.action_name},
     )
     return Outcome(True, payload=payload, job=job)
+
+
+def _wait_unless_stopped(context: BackgroundContext, future: Any, window: float) -> Tuple[bool, Any]:
+    """Wait up to ``window`` for the call, giving up early once the user stopped the turn.
+
+    A Stop is only seen between streamed chunks, and a call in its yield window
+    streams nothing, so without this the Stop waited out the whole window. A
+    stopped turn hands the call off at once; its Stop then cancels the job.
+
+    Returns:
+        ``(True, value)`` when the call finished in time (its exception
+        propagates), else ``(False, None)``.
+    """
+    message_id = context.origin_message_id
+    deadline = time.monotonic() + window
+    while True:
+        remaining = deadline - time.monotonic()
+        step = min(remaining, _STOP_POLL_SECONDS) if message_id else remaining
+        try:
+            return True, future.result(timeout=max(0.0, step))
+        except FuturesTimeout:
+            # The tool itself may have raised TimeoutError (the same class on 3.12):
+            # a finished call hands back its own result or exception.
+            if future.done():
+                return True, future.result()
+        if remaining <= step or (message_id and stop_requested(message_id)):
+            return False, None
 
 
 def _watch_of(spec: CallSpec) -> Optional[dict]:

@@ -106,4 +106,25 @@ describe('TeamNotificationToast', () => {
     });
     expect(container.innerHTML).toBe('');
   });
+
+  it('waits while the stack folds it', async () => {
+    vi.useFakeTimers();
+    addMember('e1');
+    await renderToast();
+    const card = container.querySelector<HTMLElement>('[data-slot="toast"]')!;
+    await act(async () => {
+      card.hidden = true;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(container.querySelector('[data-slot="toast"]')).not.toBeNull();
+    await act(async () => {
+      card.hidden = false;
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(8000);
+    });
+    expect(container.innerHTML).toBe('');
+  });
 });

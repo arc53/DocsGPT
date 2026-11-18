@@ -24,6 +24,12 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
   hour12: false,
 });
 
+const CLOCK_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
 function parseDateValue(value: string): Date | null {
   const dateOnlyMatch = DATE_ONLY_REGEX.exec(value);
   if (dateOnlyMatch) {
@@ -73,6 +79,20 @@ export function formatDateTime(dateString: string): string {
   return formatDateValue(dateString, 'dateTime');
 }
 
+/**
+ * A time of day as en-GB 24-hour ("15:00", "08:05"), as every time in the app
+ * reads, whatever the UI language.
+ *
+ * Args:
+ *   date: the moment, read in the browser's time zone.
+ *
+ * Returns:
+ *   The hours and minutes.
+ */
+export function formatClock(date: Date): string {
+  return CLOCK_FORMATTER.format(date);
+}
+
 /** The one placeholder for a missing value: a date, a count, an id. */
 export const EMPTY_VALUE = '—';
 
@@ -89,9 +109,6 @@ export function formatTimestamp(value?: string | null): string {
   return value ? formatDateTime(value) : EMPTY_VALUE;
 }
 
-// The app's language codes (locale/i18n.ts) that aren't BCP 47 tags.
-const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
-
 /**
  * The current UI language as a tag `Intl` understands. A value that is not a
  * valid tag (old builds stored the string "undefined") gives `en`, since every
@@ -100,10 +117,27 @@ const INTL_LOCALES: Record<string, string> = { jp: 'ja', zhTW: 'zh-TW' };
 export function intlLocale(language: string = i18next.language): string {
   if (!language) return 'en';
   try {
-    return Intl.getCanonicalLocales(INTL_LOCALES[language] ?? language)[0];
+    return Intl.getCanonicalLocales(language)[0];
   } catch {
     return 'en';
   }
+}
+
+/**
+ * The locale for a date heading that spells out day or month names ("Monday
+ * 12 October", "October 2026", a week's "12–18 October 2026"): the reader's
+ * language, except English, which reads en-GB (day before month, as the
+ * app's dates and its Monday-first weeks do) rather than the US order.
+ *
+ * Args:
+ *   language: an app language code; defaults to the current one.
+ *
+ * Returns:
+ *   A tag for `Intl.DateTimeFormat`.
+ */
+export function headingLocale(language: string = i18next.language): string {
+  const locale = intlLocale(language);
+  return locale === 'en' || locale.startsWith('en-') ? 'en-GB' : locale;
 }
 
 /**

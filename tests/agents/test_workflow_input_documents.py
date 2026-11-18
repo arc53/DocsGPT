@@ -21,12 +21,12 @@ from docsgpt.agents.workflows.workflow_engine import (
     _EXTRACT_TRUNCATION_ID,
     WorkflowEngine,
 )
-from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.artifacts import RUN_INPUT_SOURCE, ArtifactsRepository
 from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
 from docsgpt.storage.local import LocalStorage
 from docsgpt.storage.storage_creator import StorageCreator
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.fresh_db]
 
 OWNER = "user-bridge"
 # A distinct caller for the shared-agent case (caller != workflow owner).
@@ -83,6 +83,7 @@ def _agent(workflow_id, attachments, owner: str = OWNER) -> WorkflowAgent:
     agent._engine = None
     agent._run_persisted = False
     agent._bridge_error = None
+    agent.passthrough = None
     return agent
 
 
@@ -170,11 +171,15 @@ def test_attachments_bridge_to_run_scoped_artifacts(pg_engine, tmp_path, monkeyp
             assert artifact is not None
             assert artifact["kind"] == "file"
             version = repo.get_version(ref["artifact_id"], 1)
+            assert version["produced_by"] == {"source": RUN_INPUT_SOURCE}
             assert version["size"] == len(payload)
             assert version["sha256"] == hashlib.sha256(payload).hexdigest()
             by_name[version["filename"]] = version
     assert set(by_name) == {"report.txt", "data.csv"}
     assert by_name["report.txt"]["size"] == len(a1)
+    # The answer lists only what the run produced, not the documents it was given.
+    with pg_engine.connect() as conn:
+        assert ArtifactsRepository(conn).list_artifacts(workflow_run_id=run_id, include_run_inputs=False) == []
 
     # A node/template can read agent.input_documents from the engine state.
     context = engine._build_template_context()
@@ -307,6 +312,60 @@ def test_run_row_precreated_before_execute(pg_engine, tmp_path, monkeypatch):
     assert run["ended_at"] is not None
 
 
+def test_run_row_names_what_started_it(pg_engine, tmp_path, monkeypatch):
+    """The run row keeps the agent's ``started_by``, which Activity matches its host by."""
+    _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+    agent = _agent(wf_id, [])
+    agent.started_by = "message-1"
+    _patch_engine(monkeypatch)
+
+    list(agent._gen_inner("go", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    with pg_engine.connect() as conn:
+        run = WorkflowRunsRepository(conn).get(engine.workflow_run_id)
+    assert run["inputs"] == {"query": "go", "started_by": "message-1"}
+
+
+def test_run_row_names_the_agent_that_ran_it(pg_engine, tmp_path, monkeypatch):
+    """Several agents can share a workflow; Activity names the run by the one that ran it."""
+    _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+    agent = _agent(wf_id, [])
+    agent.agent_id = "11111111-1111-1111-1111-111111111111"
+    _patch_engine(monkeypatch)
+
+    list(agent._gen_inner("go", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    with pg_engine.connect() as conn:
+        run = WorkflowRunsRepository(conn).get(engine.workflow_run_id)
+    assert run["inputs"]["agent_id"] == "11111111-1111-1111-1111-111111111111"
+
+
+def test_a_run_row_written_at_the_end_names_its_agent_too(pg_engine, tmp_path, monkeypatch):
+    """When the up-front row couldn't be written, the one written at the end keeps the same inputs."""
+    _wire(pg_engine, tmp_path, monkeypatch)
+    wf_id = _make_workflow(pg_engine)
+    agent = _agent(wf_id, [])
+    agent.agent_id = "11111111-1111-1111-1111-111111111111"
+    agent.started_by = "message-1"
+    monkeypatch.setattr(agent, "_precreate_workflow_run", lambda *a, **kw: None)
+    _patch_engine(monkeypatch)
+
+    list(agent._gen_inner("go", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    with pg_engine.connect() as conn:
+        run = WorkflowRunsRepository(conn).get(engine.workflow_run_id)
+    assert run["inputs"] == {
+        "query": "go",
+        "started_by": "message-1",
+        "agent_id": "11111111-1111-1111-1111-111111111111",
+    }
+
+
 def test_unowned_workflow_creates_no_run_row(pg_engine, tmp_path, monkeypatch):
     """A draft/unowned workflow id never persists a run row and skips the bridge."""
     storage = _wire(pg_engine, tmp_path, monkeypatch)
@@ -332,6 +391,48 @@ def test_unowned_workflow_creates_no_run_row(pg_engine, tmp_path, monkeypatch):
     assert run is None
     assert n == 0
     assert engine.captured_inputs["input_documents"] == []
+
+
+def test_team_workflow_preview_persists_bridges_and_reads_team_folders(pg_engine, tmp_path, monkeypatch):
+    """An embedded Preview of a team's saved workflow runs as the team: the run is
+    saved for the member who ran it, their files bridge, and a node's team folder expands."""
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+    from docsgpt.workspaces.principal import principal_id
+
+    storage = _wire(pg_engine, tmp_path, monkeypatch)
+    with pg_engine.begin() as conn:
+        team = TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", OWNER)
+        principal = principal_id(str(team["id"]))
+        folder = str(FoldersRepository(conn).create(principal, "Carriers", resource_type="source")["id"])
+        source = str(SourcesRepository(conn).create("doc", user_id=principal)["id"])
+        FolderItemsRepository(conn).file(principal, "source", source, folder)
+    wf_id = _make_workflow(pg_engine, owner=principal)
+
+    attachments = [_stage_attachment(storage, b"member-doc", "m.txt", "text/plain")]
+    agent = _agent(wf_id, attachments, owner=principal)
+    agent._workflow_data = _EMBEDDED_GRAPH
+    agent.initial_user_id = RUNNER
+    agent.user = RUNNER
+    agent.decoded_token = {"sub": RUNNER}
+    _patch_engine(monkeypatch)
+
+    list(agent._gen_inner("go", log_context=None))
+    engine = _RecordingEngine.instances[-1]
+
+    with pg_engine.connect() as conn:
+        run = WorkflowRunsRepository(conn).get(engine.workflow_run_id)
+        n = conn.execute(
+            text("SELECT count(*) FROM artifacts WHERE workflow_run_id = CAST(:r AS uuid)"),
+            {"r": engine.workflow_run_id},
+        ).scalar()
+    assert run is not None and run["user_id"] == RUNNER
+    assert n == 1
+    assert len(engine.captured_inputs["input_documents"]) == 1
+    # The saved row backs the holder checks (its id and sponsors) that folders and node sources read.
+    assert agent.workflow_row is not None and str(agent.workflow_row["id"]) == wf_id
+    assert engine._with_folder_sources([], [folder]) == [source]
 
 
 def test_no_attachments_run_still_works(pg_engine, tmp_path, monkeypatch):

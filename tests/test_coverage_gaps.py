@@ -1122,72 +1122,6 @@ class TestConversationServiceEdge:
 
 
 # ---------------------------------------------------------------------------
-# 32. docsgpt/parser/remote/crawler_markdown.py  (lines 28,36,38,53,58-59,62)
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-class TestCrawlerMarkdownEdge:
-    def test_load_data_list_input(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-
-        loader = CrawlerLoader(limit=1)
-
-        with patch.object(loader, "_fetch_page", return_value=None):
-            with patch(
-                "docsgpt.parser.remote.crawler_markdown.validate_url",
-                side_effect=lambda u: u,
-            ):
-                docs = loader.load_data(["https://example.com"])
-        assert docs == []
-
-    def test_load_data_ssrf_error(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-        from docsgpt.core.url_validation import SSRFError
-
-        loader = CrawlerLoader(limit=1)
-        with patch(
-            "docsgpt.parser.remote.crawler_markdown.validate_url",
-            side_effect=SSRFError("blocked"),
-        ):
-            docs = loader.load_data("http://169.254.169.254")
-        assert docs == []
-
-    def test_fetch_page_ssrf_error(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-        from docsgpt.core.url_validation import SSRFError
-
-        loader = CrawlerLoader()
-        with patch(
-            "docsgpt.parser.remote.crawler_markdown.validate_url",
-            side_effect=SSRFError("blocked"),
-        ):
-            result = loader._fetch_page("http://internal")
-        assert result is None
-
-    def test_fetch_page_request_error(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-        import requests
-
-        loader = CrawlerLoader()
-        with patch(
-            "docsgpt.parser.remote.crawler_markdown.pinned_request",
-            side_effect=requests.exceptions.ConnectionError("fail"),
-        ):
-            result = loader._fetch_page("http://fail.com")
-        assert result is None
-
-    def test_url_to_virtual_path(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-
-        loader = CrawlerLoader()
-        assert loader._url_to_virtual_path("https://example.com/") == "index.md"
-        assert loader._url_to_virtual_path("https://example.com/page.html") == "page.md"
-        assert (
-            loader._url_to_virtual_path("https://example.com/docs/guide")
-            == "docs/guide.md"
-        )
-
-
-# ---------------------------------------------------------------------------
 # 34. docsgpt/agents/tools/api_body_serializer.py  (lines 145,155,159,162,166,271)
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
@@ -2389,7 +2323,7 @@ class TestAppJWTLogic:
 
     def test_simple_jwt_token_encode_decode(self):
         """Cover lines 62-64: JWT encode/decode for simple_jwt mode."""
-        from jose import jwt
+        import jwt
 
         payload = {"sub": "local"}
         secret = "test_secret_key"
@@ -2401,7 +2335,7 @@ class TestAppJWTLogic:
     def test_session_jwt_token_generation(self):
         """Cover lines 91-96: session_jwt token generation logic."""
         import uuid
-        from jose import jwt
+        import jwt
 
         new_user_id = str(uuid.uuid4())
         secret = "test_secret"

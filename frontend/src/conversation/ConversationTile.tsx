@@ -19,8 +19,7 @@ import { Input } from '../components/ui/input';
 import { cn } from '../lib/utils';
 import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { useOutsideAlerter } from '../hooks';
-import WatchingMark from '../monitors/WatchingMark';
-import UnreadDot from '../backgroundJobs/UnreadDot';
+import ConversationMark from '../activity/ConversationMark';
 
 interface ConversationProps {
   name: string;
@@ -221,8 +220,7 @@ export default function ConversationTile({
                 className="flex shrink-0 items-center gap-1.5"
                 data-testid="conversation-marks"
               >
-                <WatchingMark conversationId={conversation.id} />
-                <UnreadDot conversationId={conversation.id} />
+                <ConversationMark conversationId={conversation.id} />
               </span>
             </Link>
           </Button>

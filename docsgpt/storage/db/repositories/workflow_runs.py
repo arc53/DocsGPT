@@ -7,13 +7,70 @@ written once after workflow execution completes and never updated.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Iterable, Optional
 
 from sqlalchemy import Connection, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.storage.db.models import workflow_runs_table
+from docsgpt.workspaces.outside import POLICIES, POLICY_LOCKED
+
+# Outside policies under which a team's shares are live (a lock pauses them).
+_OPEN_POLICIES = tuple(p for p in POLICIES if p != POLICY_LOCKED)
+
+
+def shared_run_sql(run: str, workflow: str, user_param: str) -> str:
+    """SQL that holds while the workflow's agent a run went through is shared into a team the user is in.
+
+    The same live share that lets them use that agent: the agent is the workflow's own, the share
+    names its owning team, that team isn't locked, and the user is in the receiving team (a member,
+    or its owner). The policies are written in as constants, so the clause needs no extra parameter.
+
+    Args:
+        run: The SQL alias of the ``workflow_runs`` row.
+        workflow: The SQL alias of its ``workflows`` row.
+        user_param: The bound parameter naming the user, with its colon (``:user_id``).
+
+    Returns:
+        str: A parenthesized ``EXISTS`` expression.
+    """
+    policies = ", ".join(f"'{p}'" for p in _OPEN_POLICIES)
+    return (
+        "(EXISTS (SELECT 1 FROM agents wrs_a"
+        f" JOIN teams wrs_o ON '__team__' || wrs_o.id::text = wrs_a.user_id AND wrs_o.outside_policy IN ({policies})"
+        " JOIN team_item_shares wrs_s ON wrs_s.resource_type = 'agent' AND wrs_s.resource_id = wrs_a.id"
+        " AND wrs_s.owner_team_id = wrs_o.id"
+        " JOIN teams wrs_r ON wrs_r.id = wrs_s.team_id"
+        f" WHERE wrs_a.id::text = lower({run}.inputs ->> 'agent_id') AND wrs_a.workflow_id = {workflow}.id"
+        f" AND (wrs_r.owner_id = {user_param} OR EXISTS (SELECT 1 FROM team_members wrs_m"
+        f" WHERE wrs_m.team_id = wrs_r.id AND wrs_m.user_id = {user_param}))))"
+    )
+
+
+def run_reach_sql(run: str, workflow: str, user_param: str) -> str:
+    """SQL that holds while the user may still reach the workflow a run ran (the run-access rule).
+
+    A person's workflow always; a team's while the user is in that team (its
+    owner, or a member), or while the workflow's agent the run went through
+    is shared into a team they are in (:func:`shared_run_sql`). Whose run it
+    is stays the caller's own check.
+
+    Args:
+        run: The SQL alias of the ``workflow_runs`` row.
+        workflow: The SQL alias of its ``workflows`` row.
+        user_param: The bound parameter naming the user, with its colon (``:user_id``).
+
+    Returns:
+        str: A parenthesized boolean SQL expression.
+    """
+    return (
+        f"(left({workflow}.user_id, 8) <> '__team__'"
+        f" OR EXISTS (SELECT 1 FROM teams wrr_t WHERE '__team__' || wrr_t.id::text = {workflow}.user_id"
+        f" AND (wrr_t.owner_id = {user_param} OR EXISTS (SELECT 1 FROM team_members wrr_m"
+        f" WHERE wrr_m.team_id = wrr_t.id AND wrr_m.user_id = {user_param})))"
+        f" OR {shared_run_sql(run, workflow, user_param)})"
+    )
 
 
 class WorkflowRunsRepository:
@@ -87,6 +144,27 @@ class WorkflowRunsRepository:
         res = self._conn.execute(stmt)
         return res.rowcount > 0
 
+    def set_progress(self, run_id: str, user_id: str, progress: dict) -> bool:
+        """Record the step a running run is on; owner-scoped.
+
+        Args:
+            run_id: The run.
+            user_id: The run's owner (the person who started it).
+            progress: ``{done, total, current: {node_id, title, type, started_at}}``.
+
+        Returns:
+            True when a running run was updated. A finished run keeps its
+            last progress.
+        """
+        stmt = (
+            workflow_runs_table.update()
+            .where(workflow_runs_table.c.id == run_id)
+            .where(workflow_runs_table.c.user_id == user_id)
+            .where(workflow_runs_table.c.status == "running")
+            .values(progress=progress)
+        )
+        return self._conn.execute(stmt).rowcount > 0
+
     def mark_stale_running_failed(self, older_than: datetime) -> int:
         """Fail runs left in ``running`` (no ``ended_at``) since before ``older_than``.
 
@@ -140,5 +218,69 @@ class WorkflowRunsRepository:
                 "ORDER BY started_at DESC"
             ),
             {"wf_id": workflow_id},
+        )
+        return [row_to_dict(r) for r in res.fetchall()]
+
+    def list_for_user(
+        self,
+        user_id: str,
+        *,
+        agent_id: Optional[str] = None,
+        agent_ids: Optional[Iterable[str]] = None,
+        since: Optional[datetime] = None,
+        status: Optional[str] = None,
+        limit: int = 20,
+    ) -> list[dict]:
+        """The runs a user started, newest first, without their state and steps.
+
+        A run belongs to the agent that ran it, recorded as
+        ``inputs.agent_id``; a run started from the builder preview has none.
+
+        Args:
+            user_id: The person who started the runs.
+            agent_id: Only runs of this agent.
+            agent_ids: An allowlist of agents; runs of other agents, and runs
+                without an agent, are left out. ``None`` means no allowlist.
+            since: Only runs started at or after this moment.
+            status: Only runs in this status.
+            limit: Most rows to return.
+
+        A run of a team's workflow lists only while the user is still in
+        that team (its owner, or a member), as their chats there do, or
+        while the workflow's agent the run went through is shared into a
+        team they are in and the owning team isn't locked.
+
+        Returns:
+            Run rows with ``step_count`` in place of ``steps`` and no ``result``.
+        """
+        clauses = [
+            "user_id = :user_id",
+            "EXISTS (SELECT 1 FROM workflows w WHERE w.id = workflow_runs.workflow_id"
+            f" AND {run_reach_sql('workflow_runs', 'w', ':user_id')})",
+        ]
+        params: dict = {"user_id": user_id, "limit": int(limit)}
+        if agent_ids is not None:
+            allowed = sorted({str(a).lower() for a in agent_ids})
+            if not allowed:
+                return []
+            clauses.append("lower(inputs ->> 'agent_id') = ANY(:agent_ids)")
+            params["agent_ids"] = allowed
+        if agent_id is not None:
+            clauses.append("lower(inputs ->> 'agent_id') = :agent_id")
+            params["agent_id"] = str(agent_id).lower()
+        if since is not None:
+            clauses.append("started_at >= :since")
+            params["since"] = since
+        if status is not None:
+            clauses.append("status = :status")
+            params["status"] = status
+        res = self._conn.execute(
+            text(
+                "SELECT id, workflow_id, user_id, status, inputs, started_at, ended_at, progress, "
+                "jsonb_array_length(steps) AS step_count "
+                f"FROM workflow_runs WHERE {' AND '.join(clauses)} "
+                "ORDER BY started_at DESC, id DESC LIMIT :limit"
+            ),
+            params,
         )
         return [row_to_dict(r) for r in res.fetchall()]

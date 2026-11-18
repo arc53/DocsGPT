@@ -1,3 +1,4 @@
+import { workspaceHeader } from '../../workspace/requestWorkspace';
 import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
@@ -6,8 +7,29 @@ const userService = {
     throttledApiClient.get(endpoints.USER.CONFIG, null),
   getMe: (token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.ME, token),
-  getQuota: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.QUOTA, token),
+  /**
+   * `{success, chat_prompt_id, chat_prompt_set, task_model_id,
+   * task_model_unavailable, instance_task_model_id}`: the prompt chats
+   * without an agent use, whether one was ever stored, the model DocsGPT's
+   * own jobs run on for the caller (null: none picked, or the pick can't
+   * run, which `task_model_unavailable` tells apart) and the one that runs
+   * without a usable pick.
+   */
+  getPreferences: (token: string | null): Promise<any> =>
+    apiClient.get(endpoints.USER.PREFERENCES, token),
+  /**
+   * 400 `invalid_prompt`; 403/404 for a prompt the caller can't read.
+   * `only_if_unset`: write only when no chat prompt was ever stored; the
+   * answer's `applied` is false and `chat_prompt_id` the stored one if not.
+   * `task_model_id`: null goes back to the instance's; 400 `invalid_model`
+   * for a model the caller can't use.
+   */
+  updatePreferences: (
+    data:
+      | { chat_prompt_id: string; only_if_unset?: boolean }
+      | { task_model_id: string | null },
+    token: string | null,
+  ): Promise<any> => apiClient.put(endpoints.USER.PREFERENCES, data, token),
   getNewToken: (): Promise<any> =>
     throttledApiClient.get(endpoints.USER.NEW_TOKEN, null),
   // Token deliberately null: a stale Authorization header must not be able
@@ -18,14 +40,31 @@ const userService = {
     apiClient.post(endpoints.USER.OIDC_REFRESH, {}, token),
   getDocs: (token: string | null): Promise<any> =>
     apiClient.get(`${endpoints.USER.DOCS}`, token),
-  getDocsWithPagination: (query: string, token: string | null): Promise<any> =>
-    apiClient.get(`${endpoints.USER.DOCS_PAGINATED}?${query}`, token),
+  /**
+   * One page of the workspace's knowledge. `origin` narrows it: `own` the
+   * workspace's own sources, `shared` those shared with the caller (Personal
+   * only); left out, both. The answer carries `origin_counts {own, shared}`.
+   */
+  getDocsWithPagination: (
+    query: string,
+    token: string | null,
+    origin?: 'own' | 'shared',
+  ): Promise<any> =>
+    apiClient.get(
+      `${endpoints.USER.DOCS_PAGINATED}?${query}${
+        origin ? `${query ? '&' : ''}origin=${origin}` : ''
+      }`,
+      token,
+    ),
   getAgent: (id: string, token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENT(id), token),
   getAgents: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.AGENTS, token),
   getGuardrailCatalog: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.GUARDRAIL_CATALOG, token),
+  /** The guardrails a new agent starts with (Admin › Defaults). */
+  getAgentDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_DEFAULTS, token),
   getGuardrailEvents: (
     agentId: string,
     token: string | null,
@@ -107,6 +146,25 @@ const userService = {
     apiClient.post(endpoints.USER.TOOL_ANALYTICS, data, token),
   getScheduleAnalytics: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SCHEDULE_ANALYTICS, data, token),
+  getConversationInsights: (
+    data: { api_key_id?: string; filter_option: string },
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.CONVERSATION_INSIGHTS, data, token),
+  getDocsGaps: (
+    data: {
+      api_key_id?: string;
+      filter_option: string;
+      group_by: 'page' | 'source' | 'topic';
+      limit: number;
+    },
+    token: string | null,
+  ): Promise<Response> => apiClient.post(endpoints.USER.DOCS_GAPS, data, token),
+  /** The `auto` topic rule's topics for an agent (needs edit access). */
+  getTopicFolders: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.TOPIC_FOLDERS(agentId), token),
+  getAgentTopics: (agentId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.AGENT_TOPICS(agentId), token),
   getLogs: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.LOGS, data, token),
   getTraces: (
@@ -124,6 +182,29 @@ const userService = {
     apiClient.post(endpoints.USER.MANAGE_SYNC, data, token),
   syncSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SYNC_SOURCE, data, token),
+  // A Website source: its settings, and adding, refreshing and removing pages.
+  getWebsite: (sourceId: string, token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.WEBSITE(sourceId), token),
+  saveWebsite: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_SAVE, data, token),
+  addWebsitePages: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_PAGES, data, token),
+  refreshWebsitePage: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_REFRESH, data, token),
+  removeWebsitePages: (
+    data: Record<string, unknown>,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(endpoints.USER.WEBSITE_REMOVE, data, token),
   reingestSource: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.REINGEST_SOURCE, data, token),
   createSourceFromAttachments: (
@@ -143,6 +224,8 @@ const userService = {
     token: string | null,
   ): Promise<Response> =>
     apiClient.patch(endpoints.USER.SOURCE_CONFIG(sourceId), config, token),
+  getSourceDefaults: (token: string | null): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_DEFAULTS, token),
   testSourceRetrieval: (
     sourceId: string,
     data: { query: string; retrieval?: any },
@@ -150,7 +233,7 @@ const userService = {
   ): Promise<Response> =>
     apiClient.post(endpoints.USER.SOURCE_SEARCH(sourceId), data, token),
   createWiki: (
-    data: { name: string; initial_content?: string },
+    data: { name: string; initial_content?: string; folder_id?: string },
     token: string | null,
   ): Promise<Response> =>
     apiClient.post(endpoints.USER.CREATE_WIKI, data, token),
@@ -283,11 +366,30 @@ const userService = {
     token: string | null,
     path?: string,
     search?: string,
+    injection?: 'flagged',
   ): Promise<any> =>
     throttledApiClient.get(
-      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search),
+      endpoints.USER.GET_CHUNKS(docId, page, perPage, path, search, injection),
       token,
     ),
+  /** Mark a chunk text safe from prompt-injection screening for its source (`allow`), or undo it (`clear`). */
+  reviewChunkInjection: (
+    sourceId: string,
+    contentHash: string,
+    decision: 'allow' | 'clear',
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.post(
+      endpoints.USER.INJECTION_REVIEW(sourceId),
+      { content_hash: contentHash, decision },
+      token,
+    ),
+  /** Where a source lives (`{kind, team_id}`); 404 for one out of reach. */
+  getSourceWorkspace: (
+    sourceId: string,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(endpoints.USER.SOURCE_WORKSPACE(sourceId), token),
   /** The chunk behind a citation, by the content key retrieval labelled it with. */
   getSourceChunk: (
     sourceId: string,
@@ -317,21 +419,30 @@ const userService = {
     apiClient.post(endpoints.USER.MCP_TEST_CONNECTION, data, token),
   saveMCPServer: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.MCP_SAVE_SERVER, data, token),
+  cancelMCPOAuth: (taskId: string, token: string | null): Promise<any> =>
+    apiClient.post(endpoints.USER.MCP_OAUTH_CANCEL, { task_id: taskId }, token),
   getMCPAuthStatus: (token: string | null): Promise<any> =>
     throttledApiClient.get(endpoints.USER.MCP_AUTH_STATUS, token),
   // The source's own connection syncs it; no browser token is involved.
   syncConnector: (docId: string, token: string | null): Promise<any> =>
     apiClient.post(endpoints.USER.SYNC_CONNECTOR, { source_id: docId }, token),
+  // `owner: 'team'` signs a new account in for the current team (Admins).
   getConnectorAuthUrl: (
     provider: string,
     token: string | null,
     connectionId?: string,
     install?: boolean,
+    owner?: 'personal' | 'team',
   ): Promise<any> =>
     apiClient.get(
-      endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install),
+      endpoints.USER.CONNECTOR_AUTH(provider, connectionId, install, owner),
       token,
     ),
+  completeConnectorAuth: (
+    data: { code: string; state: string },
+    token: string | null,
+  ): Promise<any> =>
+    apiClient.post(endpoints.USER.CONNECTOR_AUTH_COMPLETE, data, token),
   getConnectorFiles: (
     data: any,
     token: string | null,
@@ -350,27 +461,57 @@ const userService = {
     signal?: AbortSignal,
   ): Promise<any> =>
     apiClient.post(endpoints.USER.TTS, { text }, token, {}, signal),
-  getAgentFolders: (token: string | null): Promise<any> =>
-    throttledApiClient.get(endpoints.USER.AGENT_FOLDERS, token),
-  createAgentFolder: (
-    data: { name: string; parent_id?: string },
+  /**
+   * The workspace's folder tree, oldest first: `{folders: [{id, name,
+   * parent_id, created_by, counts {agent, source, tool, prompt}, item_count,
+   * folder_count, used_by}], workspace}`. `workspace` reads another
+   * workspace's tree than the current one (a move's target).
+   */
+  getFolders: (
     token: string | null,
-  ): Promise<any> => apiClient.post(endpoints.USER.AGENT_FOLDERS, data, token),
-  getAgentFolder: (id: string, token: string | null): Promise<any> =>
-    apiClient.get(endpoints.USER.AGENT_FOLDER(id), token),
-  updateAgentFolder: (
+    options: { workspace?: string } = {},
+  ): Promise<any> =>
+    apiClient.get(
+      endpoints.USER.FOLDERS(),
+      token,
+      options.workspace ? workspaceHeader(options.workspace) : {},
+    ),
+  /**
+   * 201 with the folder, in the current workspace's tree; 409
+   * `folder_name_taken`, 400 `folder_too_deep`, 403 `workspace_role_required`.
+   */
+  createFolder: (
+    data: { name: string; parent_id?: string | null },
+    token: string | null,
+  ): Promise<any> => apiClient.post(endpoints.USER.FOLDERS_CREATE, data, token),
+  /** Rename or move a folder; `parent_id: null` moves it to the top level. */
+  updateFolder: (
     id: string,
-    data: { name?: string; parent_id?: string },
+    data: { name?: string; parent_id?: string | null },
     token: string | null,
-  ): Promise<any> =>
-    apiClient.put(endpoints.USER.AGENT_FOLDER(id), data, token),
-  deleteAgentFolder: (id: string, token: string | null): Promise<any> =>
-    apiClient.delete(endpoints.USER.AGENT_FOLDER(id), token),
-  moveAgentToFolder: (
-    data: { agent_id: string; folder_id?: string | null },
+  ): Promise<any> => apiClient.put(endpoints.USER.FOLDER(id), data, token),
+  /**
+   * `{moved_items, moved_folders, renamed: [{id, from, to}]}`: the contents
+   * move to the parent, and a child folder whose name is taken there is
+   * renamed.
+   */
+  deleteFolder: (id: string, token: string | null): Promise<any> =>
+    apiClient.delete(endpoints.USER.FOLDER(id), token),
+  /**
+   * File items of one kind (up to 500) into a folder; `folder_id: null`
+   * unfiles them from the current workspace's tree. `{moved, skipped}`:
+   * skipped ids are ones the caller can't see. 409 `team_item_not_fileable`
+   * (a team's item into a personal folder) or `item_not_in_team` (anything
+   * else into a team's folder), with `ids`; nothing is filed then.
+   */
+  fileFolderItems: (
+    data: {
+      type: 'agent' | 'source' | 'tool' | 'prompt';
+      folder_id: string | null;
+      ids: string[];
+    },
     token: string | null,
-  ): Promise<any> =>
-    apiClient.post(endpoints.USER.MOVE_AGENT_TO_FOLDER, data, token),
+  ): Promise<any> => apiClient.post(endpoints.USER.FOLDER_ITEMS, data, token),
   getArtifact: (artifactId: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.GET_ARTIFACT(artifactId), token),
   getDocumentArtifact: (
@@ -384,6 +525,15 @@ const userService = {
   ): Promise<Response> =>
     apiClient.get(
       endpoints.USER.LIST_WORKFLOW_RUN_ARTIFACTS(workflowRunId),
+      token,
+    ),
+  getWorkflowRunStep: (
+    workflowRunId: string,
+    stepIndex: number,
+    token: string | null,
+  ): Promise<Response> =>
+    apiClient.get(
+      endpoints.USER.WORKFLOW_RUN_STEP(workflowRunId, stepIndex),
       token,
     ),
   downloadArtifact: (

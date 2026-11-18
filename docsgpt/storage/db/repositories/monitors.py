@@ -256,6 +256,18 @@ class MonitorsRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def find_ingest_monitors_by_source(self, source_id: str) -> List[dict]:
+        """Active ingest monitors watching ``source_id``, whoever set them (the caller checks they may read it)."""
+        rows = self._conn.execute(
+            text(
+                _SELECT
+                + " WHERE m.source_type = 'ingest' AND s.status = 'active' "
+                "AND m.monitor_spec->'source'->>'source_id' = :source_id"
+            ),
+            {"source_id": str(source_id)},
+        ).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     # ------------------------------------------------------------------ writes
 
     def update(self, monitor_id: str, fields: Dict[str, Any]) -> None:

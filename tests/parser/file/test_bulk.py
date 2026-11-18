@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docsgpt.parser.schema.base import Document
+from tests.parser.counter_fakes import real_cl100k, spy_cl100k
 
 
 # =====================================================================
@@ -247,6 +248,51 @@ class TestSimpleDirectoryReaderLoadData:
         with pytest.raises(NoTextLayerError, match="scanned PDF"):
             reader.load_data()
 
+    def test_malformed_json_is_skipped_not_fatal(self, tmp_path):
+        """One malformed .json must not cost the rest of the folder/zip upload.
+
+        ``JSONParser`` used to let the raw ``JSONDecodeError`` escape;
+        ``load_data`` catches only ``DocumentParseError``, so a single
+        truncated export aborted the whole multi-file ingest.
+        """
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.json_parser import JSONParser
+
+        (tmp_path / "good1.md").write_text("first")
+        (tmp_path / "data.json").write_text('{"key": "value", "list": [1, 2')
+        (tmp_path / "good2.md").write_text("second")
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path),
+            file_extractor={".json": JSONParser()},
+            recursive=False,
+        )
+        docs = reader.load_data()
+
+        texts = sorted(doc.text for doc in docs)
+        assert texts == ["first", "second"]
+        # The skip is recorded, not silent.
+        assert [Path(p).name for p, _ in reader.failed_files] == ["data.json"]
+
+    def test_single_malformed_json_still_raises_document_parse_error(self, tmp_path):
+        """The attachment path fails loudly, as ``DocumentParseError``.
+
+        ``dont_autoretry_for`` exempts only that type, so a poison .json
+        attachment must fail once with it instead of burning every autoretry.
+        """
+        from docsgpt.parser.file.base_parser import DocumentParseError
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.json_parser import JSONParser
+
+        (tmp_path / "bad.json").write_text("{oops")
+
+        reader = SimpleDirectoryReader(
+            input_files=[str(tmp_path / "bad.json")],
+            file_extractor={".json": JSONParser()},
+        )
+        with pytest.raises(DocumentParseError, match="bad.json"):
+            reader.load_data()
+
     def test_all_files_unparseable_raises(self, tmp_path):
         """Nothing parsed is a failed ingest, not an empty success."""
         from docsgpt.parser.file.base_parser import DocumentParseError
@@ -429,6 +475,25 @@ class TestSimpleDirectoryReaderLoadData:
         assert hasattr(reader, "file_token_counts")
         assert len(reader.file_token_counts) >= 1
 
+    _PROSE = "\n".join(f"Sentence {i} explains how chunk {i % 7} is retrieved and cited." for i in range(80))
+
+    @pytest.mark.parametrize("parsed", [_PROSE, [_PROSE, ""]], ids=["str", "list"])
+    def test_file_token_count_is_windowed(self, tmp_path, monkeypatch, parsed):
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        expected = len(real_cl100k().encode_ordinary(self._PROSE))
+        encoding = spy_cl100k(monkeypatch, window=128)
+        (tmp_path / "big.md").write_text("placeholder")
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.return_value = parsed
+        mock_parser.get_file_metadata.return_value = {}
+        reader = SimpleDirectoryReader(input_dir=str(tmp_path), file_extractor={".md": mock_parser})
+
+        reader.load_data()
+        assert list(reader.file_token_counts.values()) == [expected]
+        assert max(encoding.encode_lengths) <= 2 * 128
+
 
 # =====================================================================
 # Directory Structure Building
@@ -476,6 +541,27 @@ class TestBuildDirectoryStructure:
         for key, val in struct.items():
             if isinstance(val, dict) and "type" in val:
                 assert "size_bytes" in val
+
+    def test_structure_records_each_files_sha256(self, tmp_path):
+        import hashlib
+
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "guide").mkdir()
+        (tmp_path / "guide" / "a.md").write_bytes(b"alpha")
+        (tmp_path / "b.md").write_bytes(b"beta")
+        mock_parser = MagicMock()
+        mock_parser.parser_config_set = True
+        mock_parser.parse_file.return_value = "content"
+        mock_parser.get_file_metadata.return_value = {}
+
+        reader = SimpleDirectoryReader(
+            input_dir=str(tmp_path), recursive=True, file_extractor={".md": mock_parser},
+        )
+        reader.load_data()
+        struct = reader.directory_structure
+        assert struct["b.md"]["sha256"] == hashlib.sha256(b"beta").hexdigest()
+        assert struct["guide"]["a.md"]["sha256"] == hashlib.sha256(b"alpha").hexdigest()
 
     def test_structure_excludes_hidden(self, temp_dir):
         from docsgpt.parser.file.bulk import SimpleDirectoryReader
@@ -802,3 +888,47 @@ def test_gained_suffix_without_a_parser_is_rejected_not_read_as_text(tmp_path):
 
     with pytest.raises(DocumentParseError, match="firecrawl-anydoc"):
         reader.load_data()
+
+
+_LEGACY_XLS = Path(__file__).parent / "fixtures" / "legacy.xls"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("engine", ["anydoc", "docling"])
+def test_a_workbook_without_its_reader_is_skipped_by_name(tmp_path, monkeypatch, engine):
+    """One workbook pandas has no reader for costs that file, not the source (ledger #90).
+
+    Legacy bytes under an .xlsx name reach ``ExcelParser``: directly on the plain
+    map, through anydoc's fallback when anydoc refuses the file.
+    """
+    import shutil
+    import sys
+
+    from docsgpt.parser.file import anydoc_parser
+    from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
+
+    monkeypatch.setitem(sys.modules, "python_calamine", None)
+    monkeypatch.setitem(sys.modules, "docling", None)
+    if engine == "anydoc":
+        import anydoc
+
+        def _refuse(path):
+            if path.endswith(".xlsx"):
+                raise anydoc.MalformedError("not an OOXML workbook")
+            return Path(path).read_text()
+
+        monkeypatch.setattr(anydoc, "to_markdown", _refuse)
+        assert anydoc_parser.anydoc_available()
+    (tmp_path / "notes.md").write_text("first file")
+    (tmp_path / "guide.md").write_text("second file")
+    shutil.copy(_LEGACY_XLS, tmp_path / "budget.xlsx")
+
+    reader = SimpleDirectoryReader(
+        input_dir=str(tmp_path),
+        file_extractor=get_default_file_extractor(ocr_enabled=False, engine=engine),
+    )
+    docs = reader.load_data()
+
+    assert sorted(doc.text for doc in docs) == ["first file", "second file"]
+    assert [Path(p).name for p, _ in reader.failed_files] == ["budget.xlsx"]
+    assert "python-calamine" in reader.failed_files[0][1]

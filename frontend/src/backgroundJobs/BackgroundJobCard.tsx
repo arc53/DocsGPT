@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
-import type { BackgroundJobStatus } from '../api/services/backgroundService';
+import type {
+  BackgroundJobNotice,
+  BackgroundJobStatus,
+} from '../api/services/backgroundService';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
@@ -54,6 +57,27 @@ export function effectiveJobStatus(
   if (toolCall.status === 'completed') return 'completed';
   if (toolCall.status === 'error') return 'failed';
   return 'working';
+}
+
+/** The card's line for a notice the server attached to a job. */
+export function noticeText(
+  notice: BackgroundJobNotice,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string | null {
+  switch (notice.code) {
+    case 'cancel_unsupported':
+      return t('backgroundJobs.card.noticeCancelUnsupported');
+    case 'device_interrupted':
+      return notice.pid
+        ? t('backgroundJobs.card.noticeDeviceInterrupted', { pid: notice.pid })
+        : t('backgroundJobs.card.noticeDeviceInterruptedNoPid');
+    case 'device_shutdown':
+      return t('backgroundJobs.card.noticeDeviceShutdown');
+    case 'output_truncated':
+      return t('backgroundJobs.card.noticeOutputTruncated');
+    default:
+      return null;
+  }
 }
 
 /** `1h 4m`, `3m 12s`, `45s`. */
@@ -135,10 +159,15 @@ export default function BackgroundJobCard({
   const status = effectiveJobStatus(toolCall, job);
   const running = status === 'working';
   const now = useNow(running);
-  const knownFinal = !job && FINAL_JOB_STATUSES.has(status);
+  // A call saved with its outcome needs no fetch; one saved before the
+  // outcome carried its notices (a device's pid) still fetches them once.
+  const knownFinal =
+    !job &&
+    FINAL_JOB_STATUSES.has(status) &&
+    Array.isArray(toolCall.job_notices);
 
   // The card's own snapshot (the start time, a progress the stream missed),
-  // once per job; a call saved with its outcome needs none.
+  // once per job.
   const fetchedFor = useRef<string | null>(null);
   useEffect(() => {
     if (knownFinal || fetchedFor.current === jobId) return;
@@ -195,92 +224,139 @@ export default function BackgroundJobCard({
   const elapsed = elapsedSeconds(job, now, toolCall);
   const percent = job?.progress?.percent;
   const lastLine = job?.progress?.last?.trim();
+  const waitingForDevice = running && job?.progress?.waiting_for === 'device';
+  const notices = (
+    job?.notices ??
+    (toolCall.job_notices as BackgroundJobNotice[] | undefined) ??
+    []
+  )
+    .map((notice) => ({ code: notice.code, text: noticeText(notice, t) }))
+    .filter(
+      (notice): notice is { code: BackgroundJobNotice['code']; text: string } =>
+        Boolean(notice.text),
+    );
+  // A device job interrupted by its client says why itself; the generic hint would repeat it.
+  const deviceExplained = notices.some(
+    (notice) => notice.code === 'device_interrupted',
+  );
   const cancelRequested = Boolean(job?.cancel_requested) || cancelling;
 
   return (
-    <div className="my-2 mr-5 ml-6" data-testid="background-job-card">
-      <ToolCallCard
-        icon={<StepIcon call={toolCall} pulse={running} />}
-        title={label}
-        meta={
-          elapsed !== null ? (
-            <span className="text-muted-foreground text-xs tabular-nums">
-              {formatElapsed(elapsed, t)}
-            </span>
-          ) : null
-        }
-        state={
-          <Badge variant={STATUS_BADGE[status]}>
-            {t(`backgroundJobs.card.status.${status}`)}
-          </Badge>
-        }
-        actions={
-          running && !unavailable ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              shape="pill"
-              onClick={() => void cancel()}
-              disabled={cancelRequested}
+    // Stretched to the column, like the approval card: in the bubble's
+    // wrapping flex column a shrink-to-fit card sizes to its title and
+    // spills past a phone's width instead of truncating it.
+    <div className="w-full min-w-0" data-testid="background-job-card">
+      <div className="my-2 mr-5 ml-6 min-w-0">
+        <ToolCallCard
+          icon={<StepIcon call={toolCall} pulse={running} />}
+          title={label}
+          meta={
+            elapsed !== null ? (
+              <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+                {formatElapsed(elapsed, t)}
+              </span>
+            ) : null
+          }
+          state={
+            waitingForDevice ? (
+              <Badge variant="warning" data-testid="job-badge-waiting-device">
+                {t('backgroundJobs.card.waitingBadge')}
+              </Badge>
+            ) : (
+              <Badge variant={STATUS_BADGE[status]}>
+                {t(`backgroundJobs.card.status.${status}`)}
+              </Badge>
+            )
+          }
+          actions={
+            running && !unavailable ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                shape="pill"
+                onClick={() => void cancel()}
+                disabled={cancelRequested}
+              >
+                {cancelRequested
+                  ? t('backgroundJobs.card.cancelling')
+                  : t('backgroundJobs.card.cancel')}
+              </Button>
+            ) : null
+          }
+        >
+          {running && typeof percent === 'number' && (
+            <div className="flex items-center gap-2">
+              <Progress
+                size="sm"
+                variant="info"
+                value={percent}
+                className="flex-1"
+                aria-label={t('backgroundJobs.card.progress', {
+                  percent: Math.round(percent),
+                })}
+              />
+              <span
+                className="text-muted-foreground shrink-0 text-xs tabular-nums"
+                data-testid="job-percent"
+              >
+                {t('backgroundJobs.card.progress', {
+                  percent: Math.round(percent),
+                })}
+              </span>
+            </div>
+          )}
+          {running && lastLine && (
+            <p
+              className="text-muted-foreground mt-2 truncate font-mono text-xs"
+              title={lastLine}
             >
-              {cancelRequested
-                ? t('backgroundJobs.card.cancelling')
-                : t('backgroundJobs.card.cancel')}
-            </Button>
-          ) : null
-        }
-      >
-        {running && typeof percent === 'number' && (
-          <div className="flex items-center gap-2">
-            <Progress
-              size="sm"
-              variant="info"
-              value={percent}
-              className="flex-1"
-              aria-label={t('backgroundJobs.card.progress', {
-                percent: Math.round(percent),
-              })}
-            />
-            <span
-              className="text-muted-foreground shrink-0 text-xs tabular-nums"
-              data-testid="job-percent"
+              {lastLine}
+            </p>
+          )}
+          {waitingForDevice && (
+            <p
+              className="text-warning mt-2 text-sm"
+              role="status"
+              data-testid="job-waiting-device"
             >
-              {t('backgroundJobs.card.progress', {
-                percent: Math.round(percent),
-              })}
-            </span>
-          </div>
-        )}
-        {running && lastLine && (
-          <p
-            className="text-muted-foreground mt-2 truncate font-mono text-xs"
-            title={lastLine}
-          >
-            {lastLine}
-          </p>
-        )}
-        {running && !lastLine && typeof percent !== 'number' && (
-          <p className="text-muted-foreground text-xs">
-            {job?.auto_resume === false
-              ? t('backgroundJobs.card.pollOnly')
-              : t('backgroundJobs.card.willResume')}
-          </p>
-        )}
-        {status === 'failed' && job?.error && (
-          <p
-            className="text-destructive mt-1 line-clamp-3 font-mono text-xs wrap-break-word"
-            title={job.error}
-          >
-            {job.error}
-          </p>
-        )}
-        {status === 'lost' && (
-          <p className="text-muted-foreground text-xs">
-            {t('backgroundJobs.card.lostHint')}
-          </p>
-        )}
-      </ToolCallCard>
+              {t('backgroundJobs.card.waitingForDevice')}
+            </p>
+          )}
+          {running &&
+            !waitingForDevice &&
+            !lastLine &&
+            typeof percent !== 'number' && (
+              <p className="text-muted-foreground text-xs">
+                {job?.auto_resume === false
+                  ? t('backgroundJobs.card.pollOnly')
+                  : t('backgroundJobs.card.willResume')}
+              </p>
+            )}
+          {notices.map((notice) => (
+            <p
+              key={notice.code}
+              className="text-muted-foreground mt-1 text-xs"
+              data-testid={`job-notice-${notice.code}`}
+            >
+              {notice.text}
+            </p>
+          ))}
+          {status === 'failed' && job?.error && (
+            <p
+              className="text-destructive mt-1 line-clamp-3 font-mono text-xs wrap-break-word"
+              title={job.error}
+            >
+              {job.error}
+            </p>
+          )}
+          {status === 'lost' && !deviceExplained && (
+            <p className="text-muted-foreground text-xs">
+              {t('backgroundJobs.card.lostHint')}
+            </p>
+          )}
+        </ToolCallCard>
+      </div>
     </div>
   );
 }

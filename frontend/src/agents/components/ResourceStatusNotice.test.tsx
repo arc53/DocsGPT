@@ -127,9 +127,9 @@ describe('ResourceStatusNotice', () => {
   it('names people by email or a short id, the reader as you', async () => {
     const LONG_SUB = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
     await i18n.use(initReactI18next).init({
-      lng: 'jp',
+      lng: 'ja',
       resources: {
-        jp: {
+        ja: {
           translation: {
             agents: {
               form: {
@@ -233,11 +233,38 @@ describe('ResourceStatusNotice', () => {
     ['connection_needs_reconnect', 'reason.connectionNeedsReconnect'],
     ['connection_removed', 'reason.connectionRemoved'],
     ['connector_disabled', 'reason.connectorDisabled'],
+    ['connection_paused', 'reason.connectionPaused'],
   ] as const)('says why an item stopped: %s', async (reason, key) => {
     await render(baseAgent, [stoppedItem({ reason })]);
     expect(container.textContent).toContain(
       `agents.form.resourceStates.${key}`,
     );
+  });
+
+  it("says a team's account is paused, with no Reconnect or ask line", async () => {
+    const drive = { id: null, connector_key: 'github', name: 'GitHub' };
+    await render(editorAgent, [
+      stoppedItem({
+        name: 'Create issue',
+        reason: 'connection_paused',
+        connection: drive,
+      }),
+      stoppedItem({
+        key: 'tool:t2',
+        id: 't2',
+        name: 'GitHub',
+        reason: 'connection_paused',
+        connection: drive,
+      }),
+    ]);
+    const [named, same] = Array.from(container.querySelectorAll('li')).map(
+      (li) => li.textContent ?? '',
+    );
+    expect(named).toMatch(/reason\.connectionPaused(?!NoService)/);
+    expect(same).toContain('reason.connectionPausedNoService');
+    expect(container.textContent).not.toContain('reason.unknown');
+    // A team Admin reconnects it on the Connectors page, not from here.
+    expect(buttonWith('settings.connectors.status.reconnect')).toHaveLength(0);
   });
 
   it('says someone else for a sponsor the reader does not know', async () => {
@@ -277,6 +304,28 @@ describe('ResourceStatusNotice', () => {
     await render(editorAgent, [item]);
     expect(container.textContent).not.toContain('reason.ownerLostAccessYou');
     expect(container.textContent).toContain('reason.ownerLostAccess');
+  });
+
+  it("says another team's share ended or that team is locked", async () => {
+    await render(editorAgent, [
+      stoppedItem({
+        key: 'source:s1',
+        type: 'source',
+        id: 's1',
+        reason: 'team_share_ended',
+      }),
+      stoppedItem({ key: 'tool:t2', id: 't2', reason: 'team_locked' }),
+    ]);
+    const [ended, locked] = Array.from(container.querySelectorAll('li'));
+    expect(ended.textContent).toContain(
+      'agents.form.resourceStates.reason.teamShareEnded',
+    );
+    expect(locked.textContent).toContain(
+      'agents.form.resourceStates.reason.teamLocked',
+    );
+    // Nothing for the reader to take over or reconnect: only the team acts.
+    expect(container.textContent).not.toContain('reason.unknown');
+    expect(container.textContent).not.toContain('resourceStates.ask');
   });
 
   it('says whom to ask when the reader cannot fix it', async () => {

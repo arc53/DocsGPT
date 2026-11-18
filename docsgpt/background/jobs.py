@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from docsgpt.background import pool
 from docsgpt.background.context import BackgroundContext
 from docsgpt.background.events import publish_job_updated
-from docsgpt.background.results import LOST_NOTE, stored_result, tail_of
+from docsgpt.background.results import LOST_NOTE, job_notices, stored_result, tail_of
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.redaction import redact_secrets
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
@@ -89,6 +89,9 @@ def create_job(
     Returns:
         ``(row, created)``.
     """
+    if context.continuation:
+        # A woken turn's own job: its wake offers no fixed re-run, so a crashing script can't loop.
+        external = {**(external or {}), "started_by_continuation": True}
     with db_session() as conn:
         row, created = BackgroundJobsRepository(conn).create(
             user_id=context.user_id,
@@ -210,6 +213,8 @@ def complete_from_tool(
     artifact_id, artifacts = tool_outputs(tool, action_name, parameters)
     text_value = bound_result_full(result_text(result))
     in_band = result_status(result)
+    script_error_of = getattr(tool, "job_script_error", None)
+    script_error = script_error_of() if callable(script_error_of) and in_band == "error" else None
     with db_readonly() as conn:
         row = BackgroundJobsRepository(conn).get(job_id)
     if row is not None:
@@ -217,7 +222,9 @@ def complete_from_tool(
     return finalize(
         job_id,
         status="completed" if in_band == "completed" else "failed",
-        result=stored_result(text_value, status=in_band, artifacts=artifacts, artifact_id=artifact_id),
+        result=stored_result(
+            text_value, status=in_band, artifacts=artifacts, artifact_id=artifact_id, script_error=script_error
+        ),
     )
 
 
@@ -336,7 +343,8 @@ def _guard_final(
         return result, output_tail
     guarded_text, guarded_tail = guard_job_texts(job, text_value, output_tail)
     if guarded_text != text_value:
-        result = {**result, "text": guarded_text}
+        # A result the guardrails changed is not offered for a re-run.
+        result = {**{k: v for k, v in result.items() if k != "script_error"}, "text": guarded_text}
     return result, guarded_tail
 
 
@@ -375,6 +383,8 @@ def patch_origin_entry(conn: Any, row: Dict[str, Any]) -> None:
     patch: Dict[str, Any] = {
         "status": "completed" if row.get("status") == "completed" and in_band != "error" else "error",
         "job_status": row.get("status"),
+        # So a reload still says why (a device's pid, dropped output) without fetching the job.
+        "job_notices": job_notices(row),
     }
     # So a reload shows how long it ran without fetching the job.
     for key in ("started_at", "finished_at"):

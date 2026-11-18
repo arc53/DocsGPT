@@ -31,7 +31,10 @@ def start_retrieval_span(
 
 
 def describe_documents(span: Any, docs: Optional[List[Dict[str, Any]]], *, query: Optional[str] = None) -> None:
-    """Record what a retrieval returned: counts, sources, top scores and a chunk preview."""
+    """Record what a retrieval returned: counts, sources, top scores and a chunk preview.
+
+    A chunk the decision model scored shows its ``relevance`` in the preview.
+    """
     if not span:
         return
     docs = docs or []
@@ -56,6 +59,7 @@ def describe_documents(span: Any, docs: Optional[List[Dict[str, Any]]], *, query
                         "title": d.get("title") or d.get("filename"),
                         "source": d.get("source"),
                         "score": d.get("score"),
+                        "relevance": d.get("relevance"),
                         "text": str(d.get("text") or "")[:_SNIPPET_CHARS],
                     }.items()
                     if v not in (None, "")
@@ -64,6 +68,29 @@ def describe_documents(span: Any, docs: Optional[List[Dict[str, Any]]], *, query
                 if isinstance(d, dict)
             ],
         )
+
+
+def mark_retrieval_degraded(*, status_code: Optional[int] = None) -> None:
+    """Flag the open ``retrieval`` span: it is going on with no retrieved context.
+
+    Set on this thread's innermost container span when that is a retrieval, so
+    the trace waterfall shows which turn answered without its sources.
+
+    Args:
+        status_code: HTTP status of the failure behind it, when there is one.
+    """
+    trace = core.current_trace()
+    if trace is None:
+        return
+    span = trace.current_parent()
+    if not isinstance(span, core.Span) or span.kind != core.KIND_RETRIEVAL:
+        return
+    span.set(
+        **{
+            "docsgpt.retrieval_degraded": True,
+            "docsgpt.retrieval_degraded.status_code": status_code,
+        }
+    )
 
 
 def start_embedding_span(model: Optional[str], *, inputs: int = 1, **attributes: Any) -> Any:

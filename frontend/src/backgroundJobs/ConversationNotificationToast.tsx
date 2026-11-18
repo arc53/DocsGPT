@@ -14,6 +14,7 @@ import {
   ToastMessage,
   ToastTitle,
 } from '../components/ui/toast';
+import { useToastShown } from '../components/ui/toast-layout';
 import {
   selectRecentEvents,
   type SSEEvent,
@@ -27,7 +28,7 @@ import {
   selectDismissedNotifications,
 } from './backgroundSlice';
 import { notificationHeadingKey, userTitle } from './kinds';
-import { usePageVisible } from './usePageVisible';
+import { usePageAttended, usePageVisible } from './usePageVisible';
 import { safeAppPath } from './webPush';
 
 /** A replayed notification older than this is not shown again (the unread dot stays). */
@@ -43,6 +44,24 @@ type Payload = {
   body?: string;
   url?: string;
   conversation_id?: string | null;
+  schedule_id?: string | null;
+};
+
+/**
+ * Schedule events after which a notice about that schedule (it paused
+ * itself, or started failing) is out of date: it was resumed, a run went
+ * fine, or it was deleted.
+ */
+const SCHEDULE_SETTLED: ReadonlySet<string> = new Set([
+  'schedule.resumed',
+  'schedule.run.completed',
+  'schedule.cancelled',
+]);
+
+const scheduleIdOf = (event: SSEEvent): string | null => {
+  const id = (event.payload as { schedule_id?: unknown } | undefined)
+    ?.schedule_id;
+  return typeof id === 'string' && id ? id : null;
 };
 
 function clip(text: string | undefined, limit: number): string {
@@ -65,24 +84,25 @@ function NotificationCard({
 }) {
   const { t } = useTranslation();
   const visible = usePageVisible();
+  const [shown, cardRef] = useToastShown();
   const id = event.id as string;
   const payload = (event.payload ?? {}) as Payload;
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !shown) return;
     const timer = window.setTimeout(
       () => onDismiss(id),
       NOTIFICATION_DISMISS_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [id, visible, onDismiss]);
+  }, [id, visible, shown, onDismiss]);
 
   const title =
     userTitle(payload.title) || t('backgroundJobs.notify.fallbackTitle');
   const body = clip(payload.body, BODY_MAX_CHARS);
 
   return (
-    <Toast data-testid="conversation-notification">
+    <Toast ref={cardRef} data-testid="conversation-notification">
       <ToastHeader variant="default">
         <ToastTitle wrap>{t(notificationHeadingKey(payload.kind))}</ToastTitle>
         <ToastActions>
@@ -118,13 +138,18 @@ function NotificationCard({
  * `notification.created` events as toasts with an Open button that goes to
  * the conversation. The server sends them only when a tab is open and the
  * user is not watching that conversation; a card for the conversation on
- * screen is skipped anyway, in case presence lagged.
+ * screen is skipped anyway, in case presence lagged. Once the user is looking
+ * at that conversation (visible, window focused) its cards are seen and
+ * dismissed, so they don't surface later when the user moves to another chat.
+ * A notice about a schedule (it paused itself) opens the schedule, and is
+ * dismissed once a later event shows the schedule resumed, ran fine or gone.
  */
 export default function ConversationNotificationToast() {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
   const location = useLocation();
   const visible = usePageVisible();
+  const attended = usePageAttended();
   const events = useSelector(selectRecentEvents);
   const dismissed = useSelector(selectDismissedNotifications);
   const dismissedIds = useMemo(
@@ -154,19 +179,43 @@ export default function ConversationNotificationToast() {
 
   const now = Date.now();
   const shown: SSEEvent[] = [];
+  const seen: string[] = [];
+  // Newest first: a schedule settled here is settled for every older notice about it.
+  const settled = new Set<string>();
   for (const event of events) {
+    if (SCHEDULE_SETTLED.has(event.type)) {
+      const scheduleId = scheduleIdOf(event);
+      if (scheduleId) settled.add(scheduleId);
+      continue;
+    }
     if (event.type !== 'notification.created' || !event.id) continue;
     if (dismissedIds.has(event.id)) continue;
+    const scheduleId = scheduleIdOf(event);
+    if (scheduleId && settled.has(scheduleId)) {
+      seen.push(event.id);
+      continue;
+    }
     if (event.ts) {
       const age = now - Date.parse(event.ts);
       if (Number.isFinite(age) && age > NOTIFICATION_MAX_AGE_MS) continue;
     }
     const payload = (event.payload ?? {}) as Payload;
     const conversationId = payload.conversation_id || event.scope?.id;
-    if (onScreen && conversationId === onScreen) continue;
-    shown.push(event);
-    if (shown.length >= MAX_VISIBLE) break;
+    if (onScreen && conversationId === onScreen) {
+      if (attended) seen.push(event.id);
+      continue;
+    }
+    // No early break: a seen card further down is still dismissed.
+    if (shown.length < MAX_VISIBLE) shown.push(event);
   }
+
+  const seenKey = seen.join(' ');
+  useEffect(() => {
+    if (!seenKey) return;
+    for (const id of seenKey.split(' ')) {
+      dispatch(dismissConversationNotification(id));
+    }
+  }, [seenKey, dispatch]);
 
   if (shown.length === 0) return null;
   return (

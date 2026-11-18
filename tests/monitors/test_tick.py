@@ -16,6 +16,9 @@ from docsgpt.monitors.spec import parse_iso
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository, TriggerLinksRepository
 
+
+pytestmark = pytest.mark.fresh_db
+
 THRESHOLD = {"type": "threshold", "value_path": "", "op": "<", "value": 90.0}
 
 
@@ -650,6 +653,105 @@ class TestIngest:
             MonitorsRepository(conn).acquire_tick(monitor["id"], stale_seconds=900)
         assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "failed"}
 
+    @staticmethod
+    def _events(engine):
+        with engine.connect() as conn:
+            return [dict(r._mapping) for r in conn.execute(text("SELECT * FROM monitor_events ORDER BY received_at"))]
+
+    def test_an_ingest_event_is_stored_before_it_is_queued(self, mon_db, conversation_id, queued, wakes, events):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={}
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1", "filename": "a.pdf"})
+        stored = self._events(mon_db)
+        assert len(stored) == 1 and stored[0]["status"] == "pending"
+        assert stored[0]["payload"]["filename"] == "a.pdf"
+        monitor_id, event = queued["events"][0]
+        assert event["row_id"] == str(stored[0]["id"])
+        assert tick.process_event(monitor_id, event) == {"state": "woken"}
+        assert self._events(mon_db)[0]["status"] == "processed"
+        assert "row_id" not in wakes[0]["payload"]["ingest"]
+        assert reload(mon_db, monitor["id"])["status"] == "completed"
+
+    def test_a_lost_task_is_queued_again_by_the_sweep(self, mon_db, conversation_id, wakes, events, monkeypatch):
+        """The broker refused the task: the event is not dropped, the dispatcher's sweep runs it later."""
+        import docsgpt.api.user.tasks as tasks
+
+        def refuse(*args, **kwargs):
+            raise ConnectionError("broker down")
+
+        monkeypatch.setattr(tasks.process_monitor_event, "apply_async", refuse)
+        make_monitor(mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={})
+        tick.on_ingest_event("u1", "source.ingest.failed", {"source_id": "src-1", "error": "bad pdf"})
+        assert self._events(mon_db)[0]["status"] == "pending"
+
+        sent = []
+        monkeypatch.setattr(tasks.process_monitor_event, "apply_async", lambda args, **kw: sent.append(args))
+        with mon_db.begin() as conn:
+            conn.execute(text("UPDATE monitor_events SET received_at = now() - interval '1 hour'"))
+        assert tick.dispatch_due_monitors()["requeued"] == 1
+        monitor_id, event = sent[0]
+        assert tick.process_event(monitor_id, event) == {"state": "woken"}
+        assert "failed: bad pdf" in wakes[0]["payload"]["summary"]
+
+    def test_an_undecided_stored_event_goes_back_to_pending(
+        self, mon_db, conversation_id, queued, wakes, events, monkeypatch
+    ):
+        make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={},
+            condition="the ingest failed",
+        )
+        monkeypatch.setattr(tick, "_decide", lambda *args: ("retry", None, None))
+        tick.on_ingest_event("u1", "source.ingest.failed", {"source_id": "src-1"})
+        monitor_id, event = queued["events"][0]
+        assert tick.process_event(monitor_id, event) == {"state": "retry"}
+        stored = self._events(mon_db)[0]
+        assert stored["status"] == "pending" and stored["attempts"] == 1
+        assert queued["events"][1] == [monitor_id, event, 1]
+        assert tick.process_event(monitor_id, event, tick.MAX_HIT_DEFERRALS - 1) == {"state": "failed"}
+        assert self._events(mon_db)[0]["status"] == "failed"
+
+    def test_a_busy_monitor_leaves_the_stored_event_pending(self, mon_db, conversation_id, queued, wakes, events):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={}
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        monitor_id, event = queued["events"][0]
+        with mon_db.begin() as conn:
+            MonitorsRepository(conn).acquire_tick(monitor["id"], stale_seconds=900)
+        assert tick.process_event(monitor_id, event, tick.MAX_HIT_DEFERRALS - 1) == {"state": "busy"}
+        assert self._events(mon_db)[0]["status"] == "pending" and wakes == []
+
+    def test_an_event_that_never_gets_processed_is_given_up_with_a_note(
+        self, mon_db, conversation_id, queued, wakes, events
+    ):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={}
+        )
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        with mon_db.begin() as conn:
+            conn.execute(
+                text("UPDATE monitor_events SET attempts = :n - 1, received_at = now() - interval '1 hour'"),
+                {"n": tick.MAX_EVENT_REQUEUES},
+            )
+        assert tick.dispatch_due_monitors()["requeued"] == 0
+        assert self._events(mon_db)[0]["status"] == "failed"
+        assert "never got processed" in reload(mon_db, monitor["id"])["last_error"]
+
+    def test_settled_events_are_cleaned_up(self, mon_db, conversation_id, queued, events, monkeypatch):
+        from docsgpt.monitors.tasks import cleanup_hits
+
+        make_monitor(mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None, state={})
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        tick.on_ingest_event("u1", "source.ingest.completed", {"source_id": "src-1"})
+        with mon_db.begin() as conn:
+            conn.execute(text(
+                "UPDATE monitor_events SET status = CASE WHEN dedupe_key = (SELECT min(dedupe_key) FROM "
+                "monitor_events) THEN 'processed' ELSE 'pending' END, received_at = now() - interval '30 days'"
+            ))
+        assert cleanup_hits()["events"] == 1
+        assert [row["status"] for row in self._events(mon_db)] == ["pending"]
+
     def test_publish_user_event_feeds_the_hook_even_without_sse(self, monkeypatch):
         seen = []
         monkeypatch.setattr(tick, "on_ingest_event", lambda *args: seen.append(args))
@@ -705,7 +807,7 @@ class TestJudgeCall:
 
         monkeypatch.setattr(judge, "_build_llm", build)
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "judge-model")
-        monkeypatch.setattr("docsgpt.core.model_utils.validate_model_id", lambda m, user_id=None: True)
+        monkeypatch.setattr("docsgpt.core.model_utils.model_is_usable", lambda m, user_id=None: True)
         verdict = judge.judge(
             user_id="u1",
             monitor_id="m1",
@@ -748,6 +850,9 @@ class TestJudgeCall:
         monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
         monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda m, user_id=None: "openai")
         monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda p: "provider-key")
+        # Nothing stored: the task model falls to the default model.
+        monkeypatch.setattr("docsgpt.core.model_utils._stored_task_models", lambda user_id: (None, None))
+        monkeypatch.setattr(settings, "TASK_MODEL_ID", None)
         for configured in (None, "gpt-5.6-sol-foundry", "not-in-the-catalog"):
             monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", configured)
             verdict = judge.judge(user_id="u1", monitor_id="m1", description="d", condition="c",
@@ -795,14 +900,27 @@ class TestJudgeCall:
                         content="x")
         assert caught.value.refused is True
 
-    def test_default_model_when_unset(self, monkeypatch):
+    def test_the_owners_task_model_when_unset(self, monkeypatch):
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", None)
-        from docsgpt.core.model_registry import ModelRegistry
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
 
-        monkeypatch.setattr(
-            ModelRegistry, "get_instance", classmethod(lambda cls: SimpleNamespace(default_model_id="m"))
+    def test_the_owners_task_model_when_the_setting_is_unknown(self, monkeypatch):
+        monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "not-in-the-catalog")
+        monkeypatch.setattr("docsgpt.core.model_utils.model_is_usable", lambda m, user_id=None: False)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
+
+    def test_the_owners_task_model_when_the_setting_is_disabled(self, monkeypatch):
+        """A disabled model is in the catalog but never runs, as with ``TASK_MODEL_ID``."""
+        registry = SimpleNamespace(
+            get_model=lambda model_id, user_id=None: SimpleNamespace(id=model_id, enabled=False),
+            model_exists=lambda model_id, user_id=None: True,
         )
-        assert judge.judge_model_id("u1") == "m"
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "disabled-model")
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
 
     def test_build_llm_tags_token_usage(self, monkeypatch):
         captured = {}
@@ -856,6 +974,40 @@ class TestConversationNoLongerResumable:
             )
         assert tick.run_tick(monitor["id"]) == {"state": "cancelled"}
         assert page["calls"] == 0 and wakes == []
+        assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+
+    def _share(self, mon_db, conversation_id):
+        with mon_db.begin() as conn:
+            conn.execute(
+                text("UPDATE conversations SET is_shared_usage = true WHERE id = CAST(:id AS uuid)"),
+                {"id": conversation_id},
+            )
+
+    def test_a_webhook_delivery_ends_its_monitor_without_the_judge(
+        self, mon_db, conversation_id, no_judge, wakes, events
+    ):
+        monitor, link = _webhook(mon_db, conversation_id, check=None, condition="the build passed", state={})
+        self._share(mon_db, conversation_id)
+        hit_id = _hit(mon_db, link, "a", {"status": "success"})
+
+        assert tick.process_hit(hit_id) == {"state": "cancelled"}
+        assert wakes == []
+        assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+        with mon_db.connect() as conn:
+            assert TriggerHitsRepository(conn).get(hit_id)["status"] == "ignored"
+            assert TriggerLinksRepository(conn).get_live(link["token_hash"], "webhook") is None
+
+    def test_an_ingest_event_ends_its_monitor_without_the_judge(
+        self, mon_db, conversation_id, no_judge, wakes, events
+    ):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None,
+            condition="the ingest failed", state={},
+        )
+        self._share(mon_db, conversation_id)
+
+        assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "cancelled"}
+        assert wakes == []
         assert reload(mon_db, monitor["id"])["status"] == "cancelled"
 
 

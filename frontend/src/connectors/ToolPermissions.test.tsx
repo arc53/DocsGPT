@@ -89,12 +89,20 @@ describe('ToolPermissions', () => {
     container.remove();
   });
 
+  let lastStore: ReturnType<typeof store> | null = null;
+  const toastMessage = () =>
+    (
+      lastStore!.getState() as {
+        actionToast: { current: { message: string } | null };
+      }
+    ).actionToast.current?.message;
   const render = async (
     value: ConnectionTool,
     children?: ReactNode,
     groupHeadingAs?: 'h4' | 'h5' | 'h6',
   ) => {
     const s = store();
+    lastStore = s;
     await act(async () => {
       root.render(
         <Provider store={s}>
@@ -411,5 +419,70 @@ describe('ToolPermissions', () => {
     expect(container.textContent).not.toContain(
       'settings.connectors.permission.hint',
     );
+  });
+
+  describe('prompt-injection warnings', () => {
+    const scored = (name: string, p: number | null) => ({
+      ...action(name, 'write', 'ask'),
+      injection: p === null ? null : { p, scorer: 'arc-decide:v0.2' },
+    });
+
+    it('warns once above the groups and marks each flagged action', async () => {
+      await render(
+        tool([
+          scored('create_issue', 0.83),
+          scored('delete_issue', 0.12),
+          scored('archive_issue', null),
+          { ...scored('get_issue', 0.5), access: 'read' as const },
+        ]),
+      );
+      const warning = container.querySelector<HTMLElement>(
+        '[data-testid="tool-injection-warning"]',
+      )!;
+      expect(warning.dataset.slot).toBe('alert');
+      expect(warning.className).toContain('text-warning');
+      expect(warning.textContent).toBe(
+        'settings.connectors.injection.notice:2',
+      );
+      await customize('write');
+      const flagged = Array.from(container.querySelectorAll('li'))
+        .filter((li) =>
+          li.textContent?.includes('settings.connectors.injection.flagged'),
+        )
+        .map((li) => li.querySelector('p')?.title);
+      expect(flagged).toEqual(['create_issue']);
+      // Warn only: the flagged action keeps its permission.
+      expect(connectors.setToolPermissions).not.toHaveBeenCalled();
+    });
+
+    it('says nothing when no description was flagged', async () => {
+      await render(tool([scored('create_issue', 0.2), scored('b', null)]));
+      expect(
+        container.querySelector('[data-testid="tool-injection-warning"]'),
+      ).toBeNull();
+    });
+  });
+  it("says only a team's Admins change its account's tools when the server refuses", async () => {
+    connectors.setToolPermissions.mockResolvedValue({
+      success: false,
+      error: 'connection_admin_required',
+    });
+    await render(tool([action('get_issue', 'read', 'always')]));
+    await act(async () => choice('read', 'ask').click());
+    expect(toastMessage()).toBe(
+      'settings.connectors.team.errors.adminRequired',
+    );
+    // The choice goes back.
+    expect(choice('read', 'always').getAttribute('data-state')).toBe('on');
+  });
+
+  it('keeps the generic line for any other failure', async () => {
+    connectors.setToolPermissions.mockResolvedValue({
+      success: false,
+      error: 'Tool not found',
+    });
+    await render(tool([action('get_issue', 'read', 'always')]));
+    await act(async () => choice('read', 'ask').click());
+    expect(toastMessage()).toBe('settings.connectors.permission.saveFailed');
   });
 });

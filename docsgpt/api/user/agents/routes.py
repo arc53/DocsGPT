@@ -3,15 +3,17 @@
 import datetime
 import json
 import uuid
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError as PydanticValidationError
 
+from docsgpt.analytics.config import STORED_CONTEXT, AnalyticsConfigError
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
-from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys
-from docsgpt.guardrails.config import AgentConfig
+from docsgpt.api.pat.rules import filter_listing, mask_agent_key, may_see_agent_keys, missing_scope_response
+from docsgpt.guardrails.config import AgentConfig, GuardrailsConfig
 from docsgpt.api.user.base import (
     copy_agent_image_for_user,
     handle_image_upload,
@@ -25,16 +27,23 @@ from docsgpt.core.json_schema_utils import (
     normalize_json_schema_payload,
 )
 from docsgpt.core.settings import settings
+from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import canonical_uuid, looks_like_uuid
 from docsgpt.api.user.resource_access import (
     AccessDenied,
     agent_refs,
     best_effort,
+    borrowed_refusal,
     cached_resolves,
+    created_by_payload,
+    creator_payloads,
     delete_settings,
+    has_outside_access,
     parse_confirmations,
     payload_for,
     plan_sponsors,
+    ref_attachable,
+    refusal_plan,
     require,
     resolve,
     resource_states,
@@ -42,18 +51,20 @@ from docsgpt.api.user.resource_access import (
     sponsor_audience,
     sponsor_details,
     sponsor_refusal,
+    workspace_allowed_actions,
+    workspace_mismatch_refusal,
+    workspace_mismatches,
 )
+from docsgpt.api.user.agents.sharing import LINK_SHARED_ACCESS, access_payer_fields, outside_access_state
 from docsgpt.api.user.team_sharing import (
     can_access,
     visible_with_access,
 )
-from docsgpt.agents.default_tools import is_synthesized_tool_id
-from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
-from docsgpt.storage.db.repositories.agents import AgentsRepository
-from docsgpt.storage.db.repositories.user_custom_models import (
-    UserCustomModelsRepository,
+from docsgpt.storage.db.repositories.agents import (
+    AgentsRepository,
+    expose_prompt_preset,
+    is_agent_prompt_ref,
 )
-from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 from docsgpt.storage.db.repositories.shared_conversations import (
     SharedConversationsRepository,
@@ -62,7 +73,49 @@ from docsgpt.storage.db.repositories.stack_logs import StackLogsRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+from docsgpt.api.user.workflows.routes import (
+    custom_model_refusal,
+    graph_model_ids,
+    parse_workflow_graph,
+    plan_graph_save,
+    refused_custom_models,
+    workflow_graph_errors,
+    write_graph_save,
+)
+from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
+from docsgpt.api.user.folders.service import FolderError, filing_owner, resolve_folder
+from docsgpt.api.user.folder_knowledge import (
+    FOLDER_NOT_ACCESSIBLE,
+    FolderRefError,
+    folder_confirmations,
+    parse_folder_refs,
+    plan_folder_confirmations,
+    resolve_folder_details,
+    unattachable_folder,
+)
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+from docsgpt.api.user.received_shares import in_request_workspace, is_received, received_into
+from docsgpt.api.user.agents.graph_checks import (
+    WorkflowReads,
+    agent_borrowed_refs as _agent_borrowed_refs,
+    agent_team_connection_tools as _agent_team_connection_tools,
+    graph_validation_failed as _graph_validation_failed,
+    refuse_borrowed_outside_access as _refuse_borrowed_outside_access,
+    runs_outside_builder as _runs_outside_builder,
+    stored_graph_errors as _stored_graph_errors,
+    team_connection_added_refusal as _team_connection_added_refusal,
+    team_connection_tools_by_save as _team_connection_tools_by_save,
+    team_items_shared_outside_refusal as _team_items_shared_outside_refusal,
+    team_refs_added_by_save as _team_refs_added_by_save,
+    workflow_runs_elsewhere as _workflow_runs_elsewhere,
+)
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.context import WorkspaceError, current_workspace, require_workspace_role
+from docsgpt.workspaces.locks import lock_owner_items
+# The adoption strip of a template's tools and graph node refs, under the names this module's callers use.
+from docsgpt.workspaces.node_refs import adoptable_tool_ids as _filter_adoptable_tool_ids
+from docsgpt.workspaces.node_refs import adoption_node_transform as _strip_foreign_node_refs
+from docsgpt.workspaces.principal import is_principal_id
 from docsgpt.utils import (
     check_required_fields,
     generate_image_url,
@@ -78,6 +131,27 @@ agents_ns = Namespace("agents", description="Agent management operations", path=
 INVALID_CONFIG_MESSAGE = (
     "Invalid config: one or more guardrail controls failed validation."
 )
+# The same for a rejected ``config.analytics`` (the insights settings), by the
+# field that failed; static for the same reason.
+ANALYTICS_INVALID_CONFIG_MESSAGES = {
+    "topics": "Invalid config: the insights topics failed validation.",
+    "hidden_folders": "Invalid config: the insights hidden folders failed validation.",
+}
+ANALYTICS_INVALID_CONFIG_MESSAGE = "Invalid config: the insights settings failed validation."
+
+
+def invalid_config_message(exc: ValueError) -> str:
+    """The static 400 message for a rejected ``config``: the insights part that failed, else the guardrails one.
+
+    Args:
+        exc: The error ``normalize_agent_config`` raised.
+
+    Returns:
+        A message free of the validator's own text.
+    """
+    if isinstance(exc, AnalyticsConfigError):
+        return ANALYTICS_INVALID_CONFIG_MESSAGES.get(exc.part or "", ANALYTICS_INVALID_CONFIG_MESSAGE)
+    return INVALID_CONFIG_MESSAGE
 
 
 AGENT_TYPE_SCHEMAS = {
@@ -105,6 +179,7 @@ AGENT_TYPE_SCHEMAS = {
             "image",
             "source_id",
             "extra_source_ids",
+            "knowledge_folder_ids",
             "chunks",
             "retriever",
             "prompt_id",
@@ -112,13 +187,13 @@ AGENT_TYPE_SCHEMAS = {
             "json_schema",
             "models",
             "default_model_id",
-            "folder_id",
             "limited_token_mode",
             "token_limit",
             "limited_request_mode",
             "request_limit",
             "allow_system_prompt_override",
             "config",
+            "starters",
         ],
     },
     "workflow": {
@@ -132,14 +207,15 @@ AGENT_TYPE_SCHEMAS = {
             "agent_type",
             "status",
             "key",
+            "image",
             "workflow_id",
-            "folder_id",
             "limited_token_mode",
             "token_limit",
             "limited_request_mode",
             "request_limit",
             "allow_system_prompt_override",
             "config",
+            "starters",
         ],
     },
 }
@@ -195,26 +271,83 @@ def _resolve_workflow_for_user(conn, workflow_value, user):
     return str(workflow["id"]), None
 
 
+def _workflow_taken(conn, workflow_id: str, agent_id: str | None = None):
+    """A 409 response when another agent already uses ``workflow_id``, else None.
+
+    A workflow belongs to one agent: deleting a workflow agent deletes its
+    workflow, and Activity names a run after the agent the workflow is on.
+
+    Args:
+        conn: An open connection.
+        workflow_id: The workflow's PG UUID.
+        agent_id: The agent being saved, which may already use it.
+
+    Returns:
+        The error response, or None when the workflow is free.
+    """
+    from sqlalchemy import text as _sql_text
+
+    taken = conn.execute(
+        _sql_text(
+            "SELECT 1 FROM agents WHERE workflow_id = CAST(:workflow_id AS uuid) "
+            "AND (CAST(:agent_id AS uuid) IS NULL OR id <> CAST(:agent_id AS uuid)) LIMIT 1"
+        ),
+        {"workflow_id": workflow_id, "agent_id": agent_id},
+    ).first()
+    if taken is None:
+        return None
+    return make_response(
+        jsonify({"success": False, "message": "This workflow belongs to another agent"}), 409,
+    )
+
+
 def _resolve_folder_id(conn, folder_id, user):
-    """Resolve a folder id (UUID or legacy) to its PG UUID; error response otherwise."""
+    """The caller's agent folder for a requested id (UUID or legacy): ``(pg_id, None)`` or ``(None, 404)``."""
     if not folder_id:
         return None, None
-    repo = AgentFoldersRepository(conn)
-    folder = None
-    if looks_like_uuid(folder_id):
-        folder = repo.get(folder_id, user)
-    if folder is None:
-        folder = repo.get_by_legacy_id(folder_id, user)
-    if folder is None:
-        return None, make_response(
-            jsonify({"success": False, "message": "Folder not found"}), 404
-        )
-    return str(folder["id"]), None
+    try:
+        return str(resolve_folder(conn, folder_id, user, "agent")["id"]), None
+    except FolderError as err:
+        return None, err.response()
 
 
-# What a caller who reached an agent only through its public share link may
-# do: chat with it and pin it. A team grant, when there is one, wins.
-LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
+def _folder_not_accessible():
+    """403 for a knowledge folder the caller may not attach (only its owner may)."""
+    return make_response(
+        jsonify({"success": False, "error": FOLDER_NOT_ACCESSIBLE, "message": "Folder not accessible"}), 403
+    )
+
+
+def _mismatch_response(conn, owner_id: Optional[str], refs: list, user: str):
+    """400 ``workspace_mismatch`` for refs a team agent may not hold (only the team's own items), or None.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The agent's owner; only a team's principal is judged.
+        refs: ``(type, id)`` pairs the save adds, folders as ``("folder", id)``.
+        user: The caller, whose reach decides which names the refusal shows.
+
+    Returns:
+        The error response, or None.
+    """
+    bad = workspace_mismatches(conn, owner_id, refs)
+    if not bad:
+        return None
+    body, status = workspace_mismatch_refusal(conn, bad, user)
+    current_app.logger.warning("Agent save refused: workspace mismatch (user=%s, refs=%s)", user, bad)
+    return make_response(jsonify(body), status)
+
+
+def _legacy_team_access(access: Optional[str]) -> Optional[str]:
+    """The legacy ``team_access`` value of a non-owner: today's UI knows ``viewer`` and ``editor``.
+
+    A team Admin edits like an Editor there; what they may do beyond that
+    comes from ``allowed_actions``.
+    """
+    if not access or access == "owner":
+        return None
+    return "editor" if access in ("editor", "admin") else "viewer"
+
 
 # Agent fields that are the owner's policy (guardrails and the pooled quota).
 POLICY_FIELDS = (
@@ -222,61 +355,76 @@ POLICY_FIELDS = (
 )
 
 
+def _inline_graph(data: dict, agent_type: Optional[str]):
+    """The ``workflow_graph`` of an agent save, or the error response that refuses it.
+
+    Args:
+        data: The parsed request body.
+        agent_type: The agent's type after the save.
+
+    Returns:
+        ``(graph, error)``: ``graph`` None when none was sent.
+    """
+    raw = data.get("workflow_graph")
+    if raw is None or raw == "":
+        return None, None
+    refusal = missing_scope_response(request, "workflows:write")
+    if refusal is not None:
+        body, status = refusal
+        return None, make_response(jsonify(body), status)
+    if agent_type != "workflow":
+        return None, make_response(
+            jsonify({"success": False, "message": "workflow_graph is only for workflow agents"}), 400
+        )
+    if "workflow" in data:
+        return None, make_response(
+            jsonify({"success": False, "message": "Send workflow or workflow_graph, not both"}), 400
+        )
+    graph, error = parse_workflow_graph(raw)
+    if error:
+        return None, make_response(jsonify({"success": False, "message": error}), 400)
+    return graph, None
+
+
+def _discard_image(path: Optional[str]) -> None:
+    """Delete an image stored for a save that didn't go through; a failure is logged, not raised.
+
+    Args:
+        path: The stored image's path, or None/empty when nothing was stored.
+    """
+    if not path:
+        return
+    try:
+        storage.delete_file(path)
+    except Exception as err:  # noqa: BLE001 - the save's own answer matters more
+        current_app.logger.warning(f"Could not delete unsaved agent image {path}: {err}")
+
+
+def _image_output(image: Optional[str], agent_id: str, owner: Optional[str]) -> str:
+    """The agent image URL a save response carries, as ``get_agent`` shows it."""
+    return generate_image_url(image, agent_id, owner) if image else ""
+
+
 def _denied(err: AccessDenied):
-    """The JSON error response for an :class:`AccessDenied`."""
+    """The JSON error response for an :class:`AccessDenied`; a refused graph save keeps its own body."""
+    body = getattr(err, "body", None)
+    if body is not None:
+        return make_response(jsonify(body), err.status)
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
 
 
-def _tool_attachable(conn, tool_id: str, caller: str) -> bool:
-    """Whether ``caller`` may newly attach ``tool_id`` to an agent.
-
-    Builtin synthetic ids belong to no one. Otherwise the caller must own the
-    tool or reach it with ``use_in_own``. The agent owner owning it is not
-    enough: an editor could otherwise wire the owner's private tool (run with
-    the owner's credentials) into an agent the editor controls.
-
-    Args:
-        conn: Open database connection.
-        tool_id: The tool id being attached.
-        caller: The user making the change.
-
-    Returns:
-        True when the attachment is allowed.
-    """
-    tid = str(tool_id)
-    if is_synthesized_tool_id(tid):
-        return True
-    ra = resolve(conn, "tool", tid, caller)
-    return ra is not None and ra.can("use_in_own")
-
-
-def _ref_attachable(conn, resource_type: str, resource_id: str, caller: str) -> bool:
-    """Whether ``caller`` may newly reference a source/prompt from an agent.
-
-    Like tools, the caller's own access counts, not the agent owner's.
-
-    Args:
-        conn: Open database connection.
-        resource_type: ``source`` or ``prompt``.
-        resource_id: The referenced id.
-        caller: The user making the change.
-
-    Returns:
-        True when the caller owns it or a team grant reaches them.
-    """
-    if not resource_id:
-        return True
-    return can_access(conn, resource_type, str(resource_id), caller)
-
-
 def _policy_changed(existing: dict, update_fields: dict) -> bool:
-    """True when ``update_fields`` changes any guardrail or quota value."""
+    """True when ``update_fields`` changes any guardrail or quota value.
+
+    ``config.analytics`` (topics, tags, the digest) is the owner's labelling
+    choice, not policy, so it is left out of the comparison.
+    """
     for key in POLICY_FIELDS:
         if key not in update_fields:
             continue
         new, old = update_fields[key], existing.get(key)
         if key == "config":
-            if (new or {}) != (old or {}):
+            if _without_analytics(new) != _without_analytics(old) or _drops_controls(new, old):
                 return True
         elif key.startswith("limited_"):
             if bool(new) != bool(old):
@@ -284,6 +432,108 @@ def _policy_changed(existing: dict, update_fields: dict) -> bool:
         elif int(new or 0) != int(old or 0):
             return True
     return False
+
+
+def _without_analytics(config) -> dict:
+    """``config`` normalized, without its ``analytics`` key.
+
+    Both sides are read through ``AgentConfig.parse`` so a stored config that was
+    never normalized (``{}`` on a workflow or an older agent) compares equal to the
+    defaults an update fills in, and an insights-only save is not a policy change.
+
+    Args:
+        config: A stored or inbound ``config`` value, or ``None``.
+
+    Returns:
+        The normalized config without ``analytics``.
+    """
+    normalized = AgentConfig.parse(config if isinstance(config, dict) else None).model_dump(mode="json")
+    return {key: value for key, value in normalized.items() if key != "analytics"}
+
+
+def _controls(config) -> set:
+    """The ``(check, stage)`` of each guardrail control stored in ``config``, as written, valid or not."""
+    guardrails = config.get("guardrails") if isinstance(config, dict) else None
+    entries = guardrails.get("controls") if isinstance(guardrails, dict) else None
+    return {
+        (str(entry.get("check")), str(entry.get("stage")))
+        for entry in entries if isinstance(entry, dict)
+    } if isinstance(entries, list) else set()
+
+
+def _drops_controls(new, old) -> bool:
+    """``new`` leaves out a control stored in ``old``.
+
+    The normalized comparison reads ``old`` leniently, which drops a control
+    that stopped validating (its check turned off by the operator, or renamed);
+    such a control comes back once its check does, so leaving it out removes
+    protection all the same.
+    """
+    return not _controls(old) <= _controls(new)
+
+
+def _custom_model_refusal(conn, owner_id: str, data: dict, graph: Optional[dict], user: str):
+    """The 400 that refuses a save naming a custom model the agent's owner can't run with, or None.
+
+    An agent runs with its owner's models: a team agent (or its inline graph)
+    on a person's custom model, or a personal or other team's agent on a
+    team's model, would fail on every run, so it is refused at save.
+
+    Args:
+        conn: Open database connection.
+        owner_id: The agent's owner.
+        data: The request body (``default_model_id``, ``models``).
+        graph: The inline ``workflow_graph``, or None.
+        user: The caller, for the log line.
+
+    Returns:
+        A 400 response with ``error`` ``custom_model_personal_only`` or
+        ``custom_model_team_only``, its ``message`` and the offending
+        ``models``, or None when the save may go ahead.
+    """
+    model_ids: list = []
+    if isinstance(data.get("default_model_id"), str):
+        model_ids.append(data["default_model_id"])
+    if isinstance(data.get("models"), list):
+        model_ids += [m for m in data["models"] if isinstance(m, str)]
+    if graph:
+        model_ids += graph_model_ids(graph.get("nodes"))
+    refusal = custom_model_refusal(conn, owner_id, model_ids)
+    if refusal is None:
+        return None
+    current_app.logger.warning("Agent save rejected: %s (user=%s)", refusal.code, user)
+    return make_response(
+        jsonify({"success": False, "message": refusal.message, "error": refusal.code, "models": refusal.models}),
+        400,
+    )
+
+
+def _team_items_by_save(
+    conn, agent: dict, update_fields: dict, inline_graph: Optional[dict], *, with_current: bool,
+) -> tuple[dict, list[dict], list[dict]]:
+    """The team items an agent save adds, and the tools on a team's account it uses after it and adds.
+
+    Both read the agent's workflow and stored graph as they are before the save writes it, so they share one
+    :class:`WorkflowReads`; a call after the owner lock is taken builds its own.
+
+    Args:
+        conn: Open database connection.
+        agent: The stored agent row.
+        update_fields: The columns the save writes.
+        inline_graph: The graph the save brings, if any.
+        with_current: Read the team's tools the agent uses even when the save changes none of its items (a save
+            that mints a key).
+
+    Returns:
+        ``(team items added by owning team, team's-account tools after the save, those the save adds)``.
+    """
+    reads = WorkflowReads(conn)
+    nodes = inline_graph["nodes"] if inline_graph is not None else None
+    team_added = _team_refs_added_by_save(conn, agent, update_fields, nodes, reads=reads)
+    connection_tools, connection_tools_added = _team_connection_tools_by_save(
+        conn, agent, update_fields, nodes, with_current=with_current, reads=reads,
+    )
+    return team_added, connection_tools, connection_tools_added
 
 
 def _reject(message: str, user: str, field: str = "-"):
@@ -319,6 +569,9 @@ def _format_agent_output(
     team_access: str | None = None,
     resolve_names: bool = False,
     access: dict | None = None,
+    folder_id: str | None = None,
+    viewer: str | None = None,
+    created_by: dict | None = None,
 ) -> dict:
     """Shape a PG agent row into the outward API response dict.
 
@@ -336,6 +589,16 @@ def _format_agent_output(
     decides what leaves the server: the full guardrail ``config`` needs
     ``view``, the (masked) ``key`` and public ``shared_token`` need
     ``manage_access_details``.
+
+    ``folder_id`` is the caller's own filing of the agent (``folder_items``),
+    not a column of the agent. ``folders`` are the source folders the agent
+    reads live (``knowledge_folder_ids``); with ``resolve_names``,
+    ``folder_details`` names them as ``viewer`` sees them.
+
+    The workspace fields come from ``access`` (``workspace``, ``team_role``,
+    ``origin``); ``created_by`` is ``{user_id, label}`` from
+    ``resource_access.creator_payloads``. ``ownership`` and ``team_access``
+    stay for today's UI: a team's agent reads ``team``, its Admins ``editor``.
     """
     if access is None:
         access = payload_for("agent", "owner", {})
@@ -350,6 +613,8 @@ def _format_agent_output(
         "name": agent.get("name", ""),
         "slug": agent.get("slug", "") or "",
         "description": agent.get("description", "") or "",
+        # Shown on a new chat to anyone who may use the agent, unlike ``config``.
+        "starters": stored_starters(agent),
         "image": (
             generate_image_url(
                 agent["image"], agent["id"], agent.get("user_id")
@@ -359,6 +624,7 @@ def _format_agent_output(
         ),
         "source": source_value,
         "sources": sources_list,
+        "folders": [str(f).lower() for f in agent.get("knowledge_folder_ids") or [] if f],
         "chunks": str(agent["chunks"]) if agent.get("chunks") is not None else "6",
         "retriever": agent.get("retriever", "") or "",
         "prompt_id": str(agent["prompt_id"]) if agent.get("prompt_id") else "",
@@ -381,7 +647,7 @@ def _format_agent_output(
         "shared_token": agent.get("shared_token", "") or "",
         "models": agent.get("models", []) or [],
         "default_model_id": agent.get("default_model_id", "") or "",
-        "folder_id": str(agent["folder_id"]) if agent.get("folder_id") else None,
+        "folder_id": folder_id,
         "workflow": str(agent["workflow_id"]) if agent.get("workflow_id") else None,
         "allow_system_prompt_override": bool(
             agent.get("allow_system_prompt_override", False)
@@ -390,7 +656,14 @@ def _format_agent_output(
         "team_access": team_access,
         "access": access.get("access"),
         "allowed_actions": sorted(allowed),
+        "workspace": access.get("workspace") or {"kind": "personal", "team_id": None},
+        "team_role": access.get("team_role"),
+        "origin": access.get("origin"),
+        "created_by": created_by,
     }
+    # An agent another team shares with the caller's team names that team.
+    if access.get("shared_from"):
+        out["shared_from"] = access["shared_from"]
     # Guardrail policy is edit-page config; a chat-only caller doesn't need it
     # (and reading the banned-term list makes evading it trivial).
     if "view" not in allowed:
@@ -404,6 +677,7 @@ def _format_agent_output(
         out["source_details"] = resolve_source_details(
             ([source_id] if source_id else []) + list(extra_source_ids)
         )
+        out["folder_details"] = resolve_folder_details(out["folders"], viewer, "agent", agent)
     # The public ``shared_token`` and the (masked) agent ``key`` are access
     # details: only a caller who may manage them sees them.
     if "manage_access_details" not in allowed:
@@ -438,14 +712,15 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["source_id"] = data["source_id"]
     if "extra_source_ids" in allowed_fields and data.get("extra_source_ids"):
         kwargs["extra_source_ids"] = data["extra_source_ids"]
+    if "knowledge_folder_ids" in allowed_fields and data.get("knowledge_folder_ids"):
+        kwargs["knowledge_folder_ids"] = data["knowledge_folder_ids"]
 
     if "prompt_id" in allowed_fields:
+        # A preset name or a prompt's id; the repository stores a preset in
+        # ``prompt_preset``. ``default`` stays NULL.
         prompt_val = data.get("prompt_id")
-        if prompt_val and prompt_val != "default" and looks_like_uuid(prompt_val):
+        if prompt_val and prompt_val != "default" and is_agent_prompt_ref(prompt_val):
             kwargs["prompt_id"] = prompt_val
-
-    if "folder_id" in allowed_fields and data.get("folder_id"):
-        kwargs["folder_id"] = data["folder_id"]
 
     if "workflow_id" in allowed_fields and data.get("workflow_id"):
         kwargs["workflow_id"] = data["workflow_id"]
@@ -485,6 +760,8 @@ def _build_create_kwargs(data: dict, *, image_url: str, agent_type: str) -> dict
         kwargs["models"] = data["models"]
     if "config" in allowed_fields and data.get("config") is not None:
         kwargs["config"] = data["config"]
+    if "starters" in allowed_fields and data.get("starters") is not None:
+        kwargs["starters"] = data["starters"]
 
     return kwargs
 
@@ -510,21 +787,26 @@ def keep_owner_only_config(config: dict, existing_agent: dict, is_team_editor: b
     return {**config, "api_write_allowlist": stored}
 
 
-def normalize_agent_config(raw):
+def normalize_agent_config(raw, stored: Optional[dict] = None) -> Optional[dict]:
     """Validate an inbound ``config`` payload, returning the normalized dict.
 
     Strict on write: an unknown check, an action a stage cannot honour, or bad
     per-check settings is a 400 rather than a silently-ignored control that the
-    operator believes is protecting them.
+    operator believes is protecting them. The one leniency is the insights
+    topic limits on an update: a kind past a limit lowered since the agent was
+    saved may keep its stored count (``STORED_CONTEXT``), so an unrelated save
+    such as a rename still goes through.
 
     Args:
         raw: The ``config`` value from the request (dict, JSON string, or None).
+        stored: The agent's stored config on an update; None on a create.
 
     Returns:
         The normalized config dict, or None when nothing was supplied.
 
     Raises:
-        ValueError: When the payload cannot be validated.
+        AnalyticsConfigError: When the ``analytics`` block cannot be validated.
+        ValueError: When anything else in the payload cannot be validated.
     """
     if raw is None or raw == "":
         return None
@@ -535,10 +817,28 @@ def normalize_agent_config(raw):
             raise ValueError("config must be a JSON object")
     if not isinstance(raw, dict):
         raise ValueError("config must be a JSON object")
+    context = {STORED_CONTEXT: stored.get("analytics")} if isinstance(stored, dict) else None
+    # Guardrails sent back as stored are not validated again: a control that
+    # stopped validating since (its check turned off by the operator) would
+    # otherwise block every save of the agent, such as an insights change,
+    # and is kept as it is, so it applies again once its check does.
+    kept = (
+        isinstance(stored, dict) and isinstance(raw.get("guardrails"), dict)
+        and raw["guardrails"] == stored.get("guardrails")
+    )
+    if kept:
+        raw = {**raw, "guardrails": GuardrailsConfig.parse(raw["guardrails"]).model_dump(mode="json")}
     try:
-        return AgentConfig.model_validate(raw).model_dump(mode="json")
+        normalized = AgentConfig.model_validate(raw, context=context).model_dump(mode="json")
     except PydanticValidationError as exc:
+        loc = tuple(exc.errors()[0].get("loc", ())) if exc.errors() else ()
+        if loc[:1] == ("analytics",):
+            part = str(loc[1]) if len(loc) > 1 else None
+            raise AnalyticsConfigError(_first_pydantic_error(exc), part)
         raise ValueError(_first_pydantic_error(exc))
+    if kept:
+        normalized["guardrails"] = stored["guardrails"]
+    return normalized
 
 
 def _first_pydantic_error(exc: PydanticValidationError) -> str:
@@ -566,12 +866,26 @@ class GetAgent(Resource):
             sponsored: list = []
             states: list = []
             audience = None
+            folder_id = None
+            owner_inactive = False
+            creator = None
+            outside_access = None
             with db_readonly() as conn, cached_resolves():
                 # Anyone who can see the agent reads it (a viewer needs it to
                 # chat); what they get back is trimmed by their actions.
-                ra = resolve(conn, "agent", agent_id, user)
+                ra = in_request_workspace(conn, resolve(conn, "agent", agent_id, user), user)
                 if ra is not None:
                     agent = AgentsRepository(conn).get_by_id(ra.resource_id)
+                # Another team's agent shared with the caller's team is filed in no tree of theirs.
+                if agent and not is_received(ra):
+                    folder_id = FolderItemsRepository(conn).filing(filing_owner(ra, user), "agent", str(agent["id"]))
+                if agent:
+                    owner_inactive = bool(UsersRepository(conn).deactivated_among([agent.get("user_id")]))
+                    creator = created_by_payload(agent, creator_payloads(conn, user, [agent]))
+                    # Who pays for its key, link and webhook, and why they are paused: for
+                    # those who manage them (the person owner always does).
+                    if ra.can("manage_access_details"):
+                        outside_access = outside_access_state(conn, agent, ra, user)
                 # Edit-page detail: who vouches for resources the owner can't
                 # use, and which attached resources stopped running and why,
                 # with their names. Only for people who may edit the agent:
@@ -589,16 +903,25 @@ class GetAgent(Resource):
                     )
             if not agent:
                 return {"status": "Not found"}, 404
-            is_owner = ra.access == "owner"
+            # ``access == "owner"`` is the row's person-owner only: a team's
+            # agent reads as ``team`` to every member, Owner and Admins included.
+            is_owner = ra.access == "owner" and not ra.is_team_item
             data = _format_agent_output(
                 agent,
                 ownership="user" if is_owner else "team",
-                team_access=None if is_owner else ra.access,
+                team_access=None if is_owner else _legacy_team_access(ra.access),
                 resolve_names=True,
                 access=ra.payload(),
+                folder_id=folder_id,
+                viewer=user,
+                created_by=creator,
             )
             data["resource_sponsors"] = sponsored
             data["resource_states"] = states
+            # Its key, link, webhook and schedules pause while the owner is deactivated.
+            data["owner_inactive"] = owner_inactive
+            if outside_access is not None:
+                data["outside_access"] = outside_access
             if audience is not None:
                 data["sponsor_audience"] = audience
             return make_response(jsonify(data), 200)
@@ -609,13 +932,24 @@ class GetAgent(Resource):
 
 @agents_ns.route("/get_agents")
 class GetAgents(Resource):
-    @api.doc(description="Retrieve agents for the user")
+    @api.doc(
+        description=(
+            "Retrieve the agents of the current workspace (X-DocsGPT-Workspace: personal or a team id). "
+            "Personal: the caller's own plus those shared with their teams; a team: the team's agents, each "
+            "with the caller's role, then those other teams share with it (origin team_shared, shared_from "
+            "{team_id, name}, the receiver's actions). Every row carries workspace, team_role, origin and created_by."
+        )
+    )
     def get(self):
         if not (decoded_token := request.decoded_token):
             return {"success": False}, 401
         user = decoded_token.get("sub")
         try:
             with db_session() as conn:
+                try:
+                    workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
                 users_repo = UsersRepository(conn)
                 user_doc = users_repo.upsert(user)
                 pinned_ids = set(
@@ -624,40 +958,90 @@ class GetAgents(Resource):
                     else []
                 )
                 agents_repo = AgentsRepository(conn)
-                agents = agents_repo.list_for_user(user)
-                owned_ids = {str(a["id"]) for a in agents}
-                # Append agents shared with the caller's teams (dedup vs owned).
-                team_shared = visible_with_access(conn, user, "agent")
-                shared_ids = [aid for aid in team_shared if aid not in owned_ids]
-                shared_agents = agents_repo.list_by_ids(shared_ids)
-
-                switches = settings_many(
-                    conn, "agent", [str(a["id"]) for a in agents + shared_agents]
-                )
+                if workspace.is_team:
+                    # The team's own agents, each with the caller's team role, then those other teams
+                    # share with it; a list shows one workspace.
+                    agents = agents_repo.list_for_user(workspace.owner_id)
+                    team_shared: dict = {}
+                    received = received_into(conn, workspace, "agent")
+                    shared_agents = agents_repo.list_by_ids(list(received))
+                    switches: dict = {}
+                else:
+                    agents = agents_repo.list_for_user(user)
+                    owned_ids = {str(a["id"]) for a in agents}
+                    # Append agents shared with the caller's teams (dedup vs
+                    # owned). A team's own agents never come in here, even
+                    # through a stale grant row.
+                    team_shared = visible_with_access(conn, user, "agent")
+                    shared_ids = [aid for aid in team_shared if aid not in owned_ids]
+                    shared_agents = agents_repo.list_by_ids(shared_ids, personal_only=True)
+                    switches = settings_many(
+                        conn, "agent", [str(a["id"]) for a in agents + shared_agents]
+                    )
+                # The filing of each agent in this workspace's tree.
+                filings = FolderItemsRepository(conn).filings(workspace.owner_id, "agent")
+                # Whose account is deactivated: their agents' outside access pauses.
+                inactive_owners = users_repo.deactivated_among(a.get("user_id") for a in agents + shared_agents)
+                creators = creator_payloads(conn, user, agents + shared_agents)
 
             # Every agent is listed: one with no source skips retrieval and
             # answers from the model and its tools, so it is still runnable.
-            list_agents = [
-                _format_agent_output(
-                    agent,
-                    pinned=str(agent["id"]) in pinned_ids,
-                    access=payload_for("agent", "owner", switches[str(agent["id"])]),
+            if workspace.is_team:
+                team_access = payload_for(
+                    "agent", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                    policy=workspace.outside_policy,
                 )
-                for agent in agents
-            ]
-            list_agents += [
-                _format_agent_output(
-                    agent,
-                    ownership="team",
-                    team_access=team_shared.get(str(agent["id"])),
-                    access=payload_for(
-                        "agent",
-                        team_shared.get(str(agent["id"])),
-                        switches[str(agent["id"])],
-                    ),
-                )
-                for agent in shared_agents
-            ]
+                list_agents = [
+                    _format_agent_output(
+                        agent,
+                        pinned=str(agent["id"]) in pinned_ids,
+                        ownership="team",
+                        team_access=_legacy_team_access(team_access["access"]),
+                        access=team_access,
+                        folder_id=filings.get(str(agent["id"]).lower()),
+                        created_by=created_by_payload(agent, creators),
+                    )
+                    for agent in agents
+                ]
+                list_agents += [
+                    _format_agent_output(
+                        agent,
+                        pinned=str(agent["id"]) in pinned_ids,
+                        ownership="team",
+                        team_access="viewer",
+                        access=received[str(agent["id"]).lower()],
+                        created_by=created_by_payload(agent, creators),
+                    )
+                    for agent in shared_agents
+                ]
+            else:
+                list_agents = [
+                    _format_agent_output(
+                        agent,
+                        pinned=str(agent["id"]) in pinned_ids,
+                        access=payload_for("agent", "owner", switches[str(agent["id"])]),
+                        folder_id=filings.get(str(agent["id"]).lower()),
+                        created_by=created_by_payload(agent, creators),
+                    )
+                    for agent in agents
+                ]
+                list_agents += [
+                    _format_agent_output(
+                        agent,
+                        ownership="team",
+                        team_access=team_shared.get(str(agent["id"])),
+                        access=payload_for(
+                            "agent",
+                            team_shared.get(str(agent["id"])),
+                            switches[str(agent["id"])],
+                        ),
+                        folder_id=filings.get(str(agent["id"]).lower()),
+                        created_by=created_by_payload(agent, creators),
+                    )
+                    for agent in shared_agents
+                ]
+            for out, agent in zip(list_agents, agents + shared_agents):
+                out["owner_inactive"] = agent.get("user_id") in inactive_owners
         except Exception as err:
             current_app.logger.error(f"Error retrieving agents: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
@@ -684,9 +1068,20 @@ class CreateAgent(Resource):
                 required=False,
                 description="List of source identifiers for multiple sources",
             ),
+            "folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Source folders the agent reads live: every source their owner files in them, subfolders "
+                    "included. A folder is attached by its owner only (403 folder_not_accessible); ones "
+                    "already on the agent stay. Must be a list (a JSON string in a multipart form)"
+                ),
+            ),
             "chunks": fields.Integer(required=False, description="Chunks count"),
             "retriever": fields.String(required=False, description="Retriever ID"),
-            "prompt_id": fields.String(required=False, description="Prompt ID"),
+            "prompt_id": fields.String(
+                required=False, description="Prompt id, or a preset: default, creative or strict"
+            ),
             "tools": fields.List(
                 fields.String, required=False, description="List of tool identifiers"
             ),
@@ -699,6 +1094,16 @@ class CreateAgent(Resource):
             ),
             "workflow": fields.String(
                 required=False, description="Workflow ID for workflow-type agents"
+            ),
+            "workflow_graph": fields.Raw(
+                required=False,
+                description=(
+                    "Workflow agents only, instead of workflow: the graph saved with the agent in the same "
+                    "transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft "
+                    "only its builder runs is checked for shape only; a published agent, one a key, webhook, "
+                    "schedule or public link runs, or one sharing its workflow with such an agent gets the "
+                    "full validation. Needs workflows:write for a token."
+                ),
             ),
             "json_schema": fields.Raw(
                 required=False,
@@ -727,17 +1132,32 @@ class CreateAgent(Resource):
                 required=False, description="Default model ID for this agent"
             ),
             "folder_id": fields.String(
-                required=False, description="Folder ID to organize the agent"
+                required=False,
+                description="One of the caller's agent folders to file the agent in (the caller's own filing)",
             ),
             "allow_system_prompt_override": fields.Boolean(
                 required=False,
                 description="Allow API callers to override the system prompt via the v1 endpoint",
             ),
+            "starters": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Up to 4 questions a new chat with the agent offers, each at most 200 characters; "
+                    "trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string"
+                ),
+            ),
         },
     )
 
     @api.expect(create_agent_model)
-    @api.doc(description="Create a new agent")
+    @api.doc(
+        description=(
+            "Create a new agent. JSON or multipart (multipart for an image). 201 {id, key, image, "
+            "workflow_id (workflow agents)}. A workflow agent may send workflow_graph to create its workflow "
+            "in the same request; a graph that fails validation is 400 {success: false, message, error, errors}."
+        )
+    )
     def post(self):
         if not (decoded_token := request.decoded_token):
             return {"success": False}, 401
@@ -756,6 +1176,11 @@ class CreateAgent(Resource):
                     data["sources"] = json.loads(data["sources"])
                 except json.JSONDecodeError:
                     data["sources"] = []
+            if "folders" in data:
+                try:
+                    data["folders"] = json.loads(data["folders"])
+                except json.JSONDecodeError:
+                    pass
             if "json_schema" in data:
                 try:
                     data["json_schema"] = json.loads(data["json_schema"])
@@ -767,6 +1192,16 @@ class CreateAgent(Resource):
                 except json.JSONDecodeError:
                     data["models"] = []
 
+        # A token's resource rules read the ids of a list only, so an object
+        # here would attach tools or sources the token may not name.
+        for field, label in (("tools", "Tools"), ("sources", "Sources")):
+            if data.get(field) not in (None, "") and not isinstance(data[field], list):
+                return _reject(f"{label} must be a list", user, field)
+        try:
+            folder_refs = parse_folder_refs(data.get("folders"))
+        except FolderRefError as exc:
+            return _reject(str(exc), user, "folders")
+
         if "json_schema" in data:
             try:
                 data["json_schema"] = normalize_json_schema_payload(
@@ -777,6 +1212,7 @@ class CreateAgent(Resource):
                     jsonify({"success": False, "message": "Invalid JSON schema"}),
                     400,
                 )
+        requested_config = data.get("config")
         if "config" in data:
             try:
                 normalized_config = normalize_agent_config(data.get("config"))
@@ -789,13 +1225,18 @@ class CreateAgent(Resource):
                     "Agent config rejected on create (user=%s): %s", user, exc
                 )
                 return make_response(
-                    jsonify({"success": False, "message": INVALID_CONFIG_MESSAGE}),
+                    jsonify({"success": False, "message": invalid_config_message(exc)}),
                     400,
                 )
             if normalized_config is None:
                 data.pop("config", None)
             else:
                 data["config"] = normalized_config
+        if "starters" in data:
+            try:
+                data["starters"] = normalize_starters(data.get("starters"))
+            except StartersError as exc:
+                return _reject(str(exc), user, "starters")
         if data.get("status") not in ["draft", "published"]:
             return make_response(
                 jsonify(
@@ -820,35 +1261,70 @@ class CreateAgent(Resource):
         else:
             required_fields = schema["required_draft"]
             validate_fields = schema["validate_draft"]
+        # A workflow agent may bring its graph inline instead of a workflow id:
+        # a draft's graph is checked for shape only, a published one in full.
+        inline_graph, graph_error = _inline_graph(data, agent_type)
+        if graph_error is not None:
+            return graph_error
+        if inline_graph is not None:
+            required_fields = [f for f in required_fields if f != "workflow"]
+            validate_fields = [f for f in validate_fields if f != "workflow"]
+            graph_errors = workflow_graph_errors(inline_graph, draft=not is_published, user_id=user)
+            if graph_errors:
+                return _graph_validation_failed(graph_errors)
         missing_fields = check_required_fields(data, required_fields)
         invalid_fields = validate_required_fields(data, validate_fields)
         if missing_fields:
             return missing_fields
         if invalid_fields:
             return invalid_fields
-        image_url, error = handle_image_upload(request, "", user, storage)
-        if error:
-            return make_response(
-                jsonify({"success": False, "message": "Image upload failed"}), 400
-            )
-
+        if "prompt_id" in schema["fields"] and not is_agent_prompt_ref(data.get("prompt_id")):
+            return _reject(f"Invalid prompt_id: {data.get('prompt_id')}", user, "prompt_id")
+        image_url = ""
         try:
             key = str(uuid.uuid4()) if is_published else ""
             with db_session() as conn:
+                # The agent lands in the current workspace: in a team it needs
+                # the Editor role and is owned by the team's principal.
+                try:
+                    workspace = current_workspace(conn)
+                    require_workspace_role(workspace, "editor")
+                except WorkspaceError as err:
+                    return err.response()
+                owner_id, created_by = workspace.owner_for_create(user)
+                model_refusal = _custom_model_refusal(conn, owner_id, data, inline_graph, user)
+                if model_refusal is not None:
+                    return model_refusal
+                # Publishing a team agent (and the key that comes with it) is
+                # outward exposure: the team's outside policy says whose, and they pay for the key.
+                team_actions = (
+                    workspace_allowed_actions("agent", workspace.role, policy=workspace.outside_policy)
+                    if workspace.is_team else None
+                )
+                if is_published and team_actions is not None and "publish" not in team_actions:
+                    return WorkspaceError(
+                        403, "workspace_role_required", "Publishing a team's agent needs the admin role in the team",
+                    ).response()
+                if key and team_actions is not None and "manage_access_details" not in team_actions:
+                    key = ""
+                if key:
+                    # The borrowed-item check before the key runs wholly before or after a move of the
+                    # owner's items.
+                    lock_owner_items(conn, owner_id)
                 # Resolve folder.
                 pg_folder_id = None
                 if data.get("folder_id"):
                     pg_folder_id, err = _resolve_folder_id(
-                        conn, data["folder_id"], user,
+                        conn, data["folder_id"], owner_id,
                     )
                     if err:
                         return err
 
                 # Resolve workflow for workflow-type agents.
                 pg_workflow_id = None
-                if agent_type == "workflow":
+                if agent_type == "workflow" and inline_graph is None:
                     pg_workflow_id, err = _resolve_workflow_for_user(
-                        conn, data.get("workflow"), user,
+                        conn, data.get("workflow"), owner_id,
                     )
                     if err and is_published:
                         return err
@@ -857,6 +1333,14 @@ class CreateAgent(Resource):
                             jsonify({"success": False, "message": "Workflow is required"}),
                             400,
                         )
+                    if pg_workflow_id is not None:
+                        taken = _workflow_taken(conn, pg_workflow_id)
+                        if taken is not None:
+                            return taken
+                    if is_published:
+                        graph_errors = _stored_graph_errors(conn, pg_workflow_id, owner_id)
+                        if graph_errors:
+                            return _graph_validation_failed(graph_errors)
 
                 # Resolve sources — only UUIDs accepted post-cutover.
                 source_id_resolved = None
@@ -879,15 +1363,33 @@ class CreateAgent(Resource):
                 referenced_sources = (
                     [source_id_resolved] if source_id_resolved else []
                 ) + extra_source_ids
+                if agent_type == "workflow":
+                    folder_refs = []
+                # A team agent holds the team's own items only.
+                prompt_ref = data.get("prompt_id")
+                mismatch = _mismatch_response(
+                    conn,
+                    owner_id,
+                    [("source", sid) for sid in referenced_sources]
+                    + ([("prompt", str(prompt_ref))] if prompt_ref else [])
+                    + [("tool", str(tid)) for tid in data.get("tools") or []]
+                    + [("folder", fid) for fid in folder_refs],
+                    user,
+                )
+                if mismatch is not None:
+                    return mismatch
                 for sid in referenced_sources:
-                    if not can_access(conn, "source", sid, user):
+                    if not ref_attachable(conn, "source", sid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}),
                             403,
                         )
-                prompt_ref = data.get("prompt_id")
-                if prompt_ref and prompt_ref != "default" and looks_like_uuid(prompt_ref):
-                    if not can_access(conn, "prompt", prompt_ref, user):
+                # A knowledge folder reads as its owner's filing: only its owner
+                # attaches it (on a team agent, any of the team's own folders).
+                if unattachable_folder(conn, folder_refs, user, holder_owner=owner_id) is not None:
+                    return _folder_not_accessible()
+                if prompt_ref and looks_like_uuid(prompt_ref):
+                    if not ref_attachable(conn, "prompt", prompt_ref, user):
                         return make_response(
                             jsonify({"success": False, "message": "Prompt not accessible"}),
                             403,
@@ -895,7 +1397,7 @@ class CreateAgent(Resource):
                 # Tools run with the agent owner's credentials: attach only your
                 # own, or ones a team lets you use in your agents.
                 for tid in data.get("tools") or []:
-                    if not _tool_attachable(conn, tid, user):
+                    if not ref_attachable(conn, "tool", tid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Tool not accessible"}),
                             403,
@@ -906,10 +1408,10 @@ class CreateAgent(Resource):
                     build_data["tools"] = [canonical_uuid(t) for t in data["tools"]]
                 if looks_like_uuid(data.get("prompt_id")):
                     build_data["prompt_id"] = canonical_uuid(data["prompt_id"])
-                build_data["folder_id"] = pg_folder_id
                 build_data["workflow_id"] = pg_workflow_id
                 build_data["source_id"] = source_id_resolved
                 build_data["extra_source_ids"] = extra_source_ids
+                build_data["knowledge_folder_ids"] = folder_refs
                 build_data["key"] = key
                 build_data["agent_type"] = agent_type
 
@@ -924,16 +1426,60 @@ class CreateAgent(Resource):
                     ):
                         build_data["retriever"] = "classic"
 
+                # A new agent starts from the admin's default guardrails, under
+                # the guardrails fields this request sets.
+                seeded_config = agent_defaults.seed(conn, requested_config)
+                if seeded_config is not requested_config:
+                    build_data["config"] = normalize_agent_config(seeded_config)
+
+                # The image and the inline graph are written last, after every
+                # check above, so a refused save leaves no file or workflow behind.
+                graph_save = None
+                if inline_graph is not None:
+                    graph_save = plan_graph_save(conn, None, owner_id, user, inline_graph, set())
+                    if isinstance(graph_save, AccessDenied):
+                        return _denied(graph_save)
+                # Avatars are validated against the agent's owner, so a team's go under its principal.
+                image_url, error = handle_image_upload(request, "", owner_id, storage)
+                if error:
+                    return make_response(
+                        jsonify({"success": False, "message": "Image upload failed"}), 400
+                    )
+                if graph_save is not None:
+                    pg_workflow_id = write_graph_save(
+                        conn, graph_save, owner_id, data["name"], data.get("description") or "",
+                        created_by=created_by,
+                    )
+                    build_data["workflow_id"] = pg_workflow_id
+
+                # Someone else's tool or source, or a tool on the team's account,
+                # goes out through no key: the agent is published for its
+                # owner's own chats, keyless.
+                key_view = {**build_data, "user_id": owner_id}
+                key_nodes = graph_save.graph["nodes"] if graph_save is not None else None
+                key_reads = WorkflowReads(conn)
+                if key and (
+                    _agent_borrowed_refs(conn, key_view, nodes=key_nodes, reads=key_reads)
+                    or _agent_team_connection_tools(conn, key_view, nodes=key_nodes, reads=key_reads)
+                ):
+                    key = ""
+                    build_data["key"] = key
                 kwargs = _build_create_kwargs(
                     build_data, image_url=image_url, agent_type=agent_type,
                 )
+                kwargs["created_by"] = created_by
+                if key and workspace.is_team:
+                    # The Admin who publishes it with a key pays for that traffic.
+                    kwargs["access_payer_id"] = user
                 agent_row = AgentsRepository(conn).create(
-                    user,
+                    owner_id,
                     data["name"],
                     data["status"],
                     **kwargs,
                 )
                 new_id = str(agent_row["id"])
+                if pg_folder_id:
+                    FolderItemsRepository(conn).file(owner_id, "agent", new_id, pg_folder_id)
                 record_event(
                     conn,
                     "agent.created",
@@ -945,10 +1491,20 @@ class CreateAgent(Resource):
                 )
         except Exception as err:
             current_app.logger.error(f"Error creating agent: {err}", exc_info=True)
+            _discard_image(image_url)
             return make_response(jsonify({"success": False}), 400)
         # A token without agents:keys never receives the plaintext agent key.
         visible_key = key if may_see_agent_keys(request) else mask_agent_key(key)
-        return make_response(jsonify({"id": new_id, "key": visible_key}), 201)
+        created = {
+            "id": new_id,
+            "key": visible_key,
+            "image": _image_output(image_url, new_id, owner_id),
+            # The stamp the builder's next save sends as ``expected_updated_at``.
+            "updated_at": agent_row.get("updated_at"),
+        }
+        if agent_type == "workflow":
+            created["workflow_id"] = pg_workflow_id
+        return make_response(jsonify(created), 201)
 
 
 @agents_ns.route("/update_agent/<string:agent_id>")
@@ -971,9 +1527,20 @@ class UpdateAgent(Resource):
                 required=False,
                 description="List of source identifiers for multiple sources",
             ),
+            "folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Source folders the agent reads live: every source their owner files in them, subfolders "
+                    "included. A folder is attached by its owner only (403 folder_not_accessible); ones "
+                    "already on the agent stay. Must be a list (a JSON string in a multipart form)"
+                ),
+            ),
             "chunks": fields.Integer(required=False, description="Chunks count"),
             "retriever": fields.String(required=False, description="Retriever ID"),
-            "prompt_id": fields.String(required=False, description="Prompt ID"),
+            "prompt_id": fields.String(
+                required=False, description="Prompt id, or a preset: default, creative or strict"
+            ),
             "tools": fields.List(
                 fields.String, required=False, description="List of tool identifiers"
             ),
@@ -986,6 +1553,16 @@ class UpdateAgent(Resource):
             ),
             "workflow": fields.String(
                 required=False, description="Workflow ID for workflow-type agents"
+            ),
+            "workflow_graph": fields.Raw(
+                required=False,
+                description=(
+                    "Workflow agents only, instead of workflow: the graph saved with the agent in the same "
+                    "transaction, {nodes, edges, retry_defaults?} (a JSON string in a multipart form). A draft "
+                    "only its builder runs is checked for shape only; a published agent, one a key, webhook, "
+                    "schedule or public link runs, or one sharing its workflow with such an agent gets the "
+                    "full validation. Needs workflows:write for a token."
+                ),
             ),
             "json_schema": fields.Raw(
                 required=False,
@@ -1014,17 +1591,34 @@ class UpdateAgent(Resource):
                 required=False, description="Default model ID for this agent"
             ),
             "folder_id": fields.String(
-                required=False, description="Folder ID to organize the agent"
+                required=False,
+                description="One of the caller's agent folders to file the agent in (the caller's own filing)",
             ),
             "allow_system_prompt_override": fields.Boolean(
                 required=False,
                 description="Allow API callers to override the system prompt via the v1 endpoint",
             ),
+            "starters": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Up to 4 questions a new chat with the agent offers, each at most 200 characters; "
+                    "trimmed, blanks and case-insensitive duplicates dropped. Multipart sends a JSON string"
+                ),
+            ),
         },
     )
 
     @api.expect(update_agent_model)
-    @api.doc(description="Update an existing agent")
+    @api.doc(
+        description=(
+            "Update an existing agent. JSON or multipart (multipart for an image). 200 {success, id, message, "
+            "image, key (when first published), workflow_id (workflow agents)}. A workflow agent may send "
+            "workflow_graph to write its next graph version in the same transaction (or create its workflow); "
+            "confirm_sponsor covers the agent's and the graph's resources. Publishing a draft without a graph "
+            "validates the stored one."
+        )
+    )
     def put(self, agent_id):
         if not (decoded_token := request.decoded_token):
             return make_response(
@@ -1037,7 +1631,7 @@ class UpdateAgent(Resource):
                 data = request.get_json()
             else:
                 data = request.form.to_dict()
-                json_fields = ["tools", "sources", "json_schema", "models", "config"]
+                json_fields = ["tools", "sources", "folders", "json_schema", "models", "config", "starters"]
                 for field in json_fields:
                     if field in data and data[field]:
                         try:
@@ -1058,6 +1652,8 @@ class UpdateAgent(Resource):
                 jsonify({"success": False, "message": "Invalid request data"}), 400
             )
 
+        # An image stored for this save, deleted again when the save doesn't land.
+        stored_image: Optional[str] = None
         try:
             with db_session() as conn:
                 agents_repo = AgentsRepository(conn)
@@ -1068,6 +1664,10 @@ class UpdateAgent(Resource):
                 # Every write lands as the owner; the row is fetched only after
                 # the access check above.
                 owner_id = ra.owner_id
+                # Not the row's person-owner: an editor through a grant, or any
+                # member of the team that owns it (``access`` is never ``owner``
+                # on a team item). Such a caller keeps the owner-only config
+                # and writes by id.
                 is_team_editor = ra.access != "owner"
                 existing_agent = agents_repo.get_by_id(ra.resource_id)
                 if not existing_agent:
@@ -1079,6 +1679,14 @@ class UpdateAgent(Resource):
                     )
                 pg_agent_id = str(existing_agent["id"])
                 existing_image = existing_agent.get("image", "") or ""
+                inline_graph, graph_error = _inline_graph(
+                    data, data.get("agent_type") or existing_agent.get("agent_type"),
+                )
+                if graph_error is not None:
+                    return graph_error
+                model_refusal = _custom_model_refusal(conn, owner_id, data, inline_graph, user)
+                if model_refusal is not None:
+                    return model_refusal
                 # The image is stored only once the save is known to go
                 # ahead, so a refused save (a sponsor confirmation round
                 # trip, a validation error) leaves no orphaned file.
@@ -1086,11 +1694,14 @@ class UpdateAgent(Resource):
                 has_new_image = bool(image_file and image_file.filename)
 
                 update_fields: dict = {}
+                # ``(folder_id,)`` when the save files the agent for the caller.
+                filing: Optional[tuple] = None
                 allowed_fields = [
                     "name",
                     "description",
                     "source",
                     "sources",
+                    "folders",
                     "chunks",
                     "retriever",
                     "prompt_id",
@@ -1108,6 +1719,7 @@ class UpdateAgent(Resource):
                     "folder_id",
                     "workflow",
                     "allow_system_prompt_override",
+                    "starters",
                 ]
 
                 for field in allowed_fields:
@@ -1150,6 +1762,11 @@ class UpdateAgent(Resource):
                                     f"Invalid source ID in list: {src}", user, field
                                 )
                         update_fields["extra_source_ids"] = valid
+                    elif field == "folders":
+                        try:
+                            update_fields["knowledge_folder_ids"] = parse_folder_refs(data.get("folders"))
+                        except FolderRefError as exc:
+                            return _reject(str(exc), user, field)
                     elif field == "chunks":
                         chunks_value = data.get("chunks")
                         if chunks_value in ("", None):
@@ -1186,14 +1803,16 @@ class UpdateAgent(Resource):
                             update_fields["json_schema"] = None
                     elif field == "config":
                         try:
-                            normalized_config = normalize_agent_config(data.get("config"))
+                            normalized_config = normalize_agent_config(
+                                data.get("config"), stored=existing_agent.get("config") or {},
+                            )
                         except ValueError as exc:
                             current_app.logger.warning(
                                 "Agent config rejected on update (user=%s): %s",
                                 user,
                                 exc,
                             )
-                            return _reject(INVALID_CONFIG_MESSAGE, user, field)
+                            return _reject(invalid_config_message(exc), user, field)
                         update_fields["config"] = keep_owner_only_config(
                             normalized_config or {}, existing_agent, is_team_editor,
                         )
@@ -1250,30 +1869,14 @@ class UpdateAgent(Resource):
                                 field,
                             )
                     elif field == "folder_id":
-                        # Folders are the owner's own organisation; re-sending
-                        # the current folder is a no-op anyone may do.
-                        folder_input = data.get("folder_id") or None
-                        current_folder = (
-                            str(existing_agent["folder_id"])
-                            if existing_agent.get("folder_id")
-                            else None
+                        # The caller's own filing (folder_items), written once
+                        # the save lands; it never touches the agent row.
+                        pg_folder_id, folder_err = _resolve_folder_id(
+                            conn, data.get("folder_id") or None, filing_owner(ra, user),
                         )
-                        if folder_input == current_folder:
-                            update_fields["folder_id"] = current_folder
-                            continue
-                        if not ra.can("move_folder"):
-                            return _denied(
-                                AccessDenied(403, "Only the owner can move this agent between folders")
-                            )
-                        if folder_input:
-                            pg_folder_id, folder_err = _resolve_folder_id(
-                                conn, folder_input, owner_id,
-                            )
-                            if folder_err:
-                                return folder_err
-                            update_fields["folder_id"] = pg_folder_id
-                        else:
-                            update_fields["folder_id"] = None
+                        if folder_err:
+                            return folder_err
+                        filing = (pg_folder_id,)
                     elif field == "workflow":
                         workflow_required = (
                             data.get("status", existing_agent.get("status")) == "published"
@@ -1300,13 +1903,23 @@ class UpdateAgent(Resource):
                         # workflow of another of the owner's agents would hand
                         # that graph to the editor. Editing the graph itself
                         # goes through the workflow routes.
+                        # A team's workflows are all its members' to edit by
+                        # role, so on a team agent an Editor may switch it.
                         current_workflow = existing_agent.get("workflow_id")
-                        if is_team_editor and pg_workflow_id != (
+                        if is_team_editor and not ra.is_team_item and pg_workflow_id != (
                             str(current_workflow) if current_workflow else None
                         ):
                             return _denied(
                                 AccessDenied(403, "Only the owner can change this agent's workflow")
                             )
+                        # Checked only on a change, so an agent that already
+                        # shares its workflow (made before this check) saves.
+                        if pg_workflow_id is not None and pg_workflow_id != (
+                            str(current_workflow) if current_workflow else None
+                        ):
+                            taken = _workflow_taken(conn, pg_workflow_id, pg_agent_id)
+                            if taken is not None:
+                                return taken
                         update_fields["workflow_id"] = pg_workflow_id
                     elif field == "prompt_id":
                         value = data["prompt_id"]
@@ -1314,8 +1927,18 @@ class UpdateAgent(Resource):
                             update_fields["prompt_id"] = None
                         elif looks_like_uuid(value):
                             update_fields["prompt_id"] = canonical_uuid(value)
+                        elif is_agent_prompt_ref(value):
+                            # ``creative`` / ``strict``: no row, so nothing to gate.
+                            update_fields["prompt_id"] = value
                         else:
                             return _reject(f"Invalid prompt_id: {value}", user, field)
+                    elif field == "starters":
+                        # Content like the description: anyone who may edit
+                        # the agent may change them.
+                        try:
+                            update_fields["starters"] = normalize_starters(data.get("starters"))
+                        except StartersError as exc:
+                            return _reject(str(exc), user, field)
                     elif field == "allow_system_prompt_override":
                         raw_value = data.get("allow_system_prompt_override", False)
                         update_fields["allow_system_prompt_override"] = (
@@ -1325,13 +1948,18 @@ class UpdateAgent(Resource):
                         )
                     else:
                         value = data[field]
-                        if field in ["name", "description", "agent_type"]:
+                        # A workflow agent's description is optional (publishing
+                        # doesn't need one), so it may be cleared.
+                        optional = field == "description" and (
+                            data.get("agent_type") or existing_agent.get("agent_type")
+                        ) == "workflow"
+                        if field in ["name", "description", "agent_type"] and not optional:
                             if not value or not str(value).strip():
                                 return _reject(
                                     f"Field '{field}' cannot be empty", user, field
                                 )
                         update_fields[field] = value
-                if not update_fields and not has_new_image:
+                if not update_fields and not has_new_image and inline_graph is None and filing is None:
                     return _reject("No valid update data provided", user)
 
                 newly_generated_key = None
@@ -1339,6 +1967,13 @@ class UpdateAgent(Resource):
                 final_agent_type = update_fields.get(
                     "agent_type", existing_agent.get("agent_type")
                 )
+                # A workflow agent reads folders on its nodes only, as create and
+                # import leave it: folders sent for it, or kept from before a
+                # switch, would feed its run and search while usage leaves them out.
+                if final_agent_type == "workflow" and (
+                    update_fields.get("knowledge_folder_ids") or existing_agent.get("knowledge_folder_ids")
+                ):
+                    update_fields["knowledge_folder_ids"] = []
 
                 if final_status == "published":
                     if final_agent_type == "workflow":
@@ -1348,7 +1983,7 @@ class UpdateAgent(Resource):
                         workflow_final = update_fields.get(
                             "workflow_id", existing_agent.get("workflow_id"),
                         )
-                        if not workflow_final:
+                        if not workflow_final and inline_graph is None:
                             missing_published_fields.append("Workflow")
                         if missing_published_fields:
                             return _reject(
@@ -1385,16 +2020,81 @@ class UpdateAgent(Resource):
                                 user,
                                 ",".join(missing_published_fields),
                             )
-                    if not existing_agent.get("key"):
+                    # A key on a team agent is outward exposure: only an Admin
+                    # mints one (and pays for it); an Editor's save keeps it keyless.
+                    if not existing_agent.get("key") and (
+                        not ra.is_team_item or ra.can("manage_access_details")
+                    ):
                         newly_generated_key = str(uuid.uuid4())
                         update_fields["key"] = newly_generated_key
+                # The team's items and team's-account tools the save adds, judged below against who the
+                # agent reaches. Read here to tell whether the save takes the owner lock, and again under it.
+                team_added, connection_tools, connection_tools_added = _team_items_by_save(
+                    conn, existing_agent, update_fields, inline_graph, with_current=bool(newly_generated_key),
+                )
+                if newly_generated_key or has_outside_access(existing_agent) or team_added or connection_tools_added:
+                    # The borrowed-item checks below run wholly before or after a move of the owner's
+                    # items. Taken before the graph save locks its workflow row, which a move updates.
+                    lock_owner_items(conn, owner_id)
+                    # Lock, then read again: a publish, public link, share or save that held the lock has
+                    # committed, and every check below judges the agent as it left it (its key, link, webhook
+                    # and items), not as it was before the wait.
+                    existing_agent = agents_repo.get_by_id(pg_agent_id)
+                    if not existing_agent:
+                        return make_response(
+                            jsonify({"success": False, "message": "Agent not found or not authorized"}), 404,
+                        )
+                    if newly_generated_key and existing_agent.get("key"):
+                        # Published while this save waited: the key it got stays.
+                        update_fields.pop("key", None)
+                        newly_generated_key = None
+                    team_added, connection_tools, connection_tools_added = _team_items_by_save(
+                        conn, existing_agent, update_fields, inline_graph, with_current=bool(newly_generated_key),
+                    )
+
+                # A workflow agent's graph: an inline one is checked for shape
+                # on a draft and in full on an agent that runs. Without one, an
+                # agent that starts running a stored graph (it is published now,
+                # becomes a workflow agent, or switches workflow) validates that
+                # graph, which a draft save may have left unfinished. A draft
+                # that its key, a webhook or a schedule runs counts as running
+                # (``_runs_outside_builder``).
+                if final_agent_type == "workflow":
+                    graph_errors: list = []
+                    was_live = _runs_outside_builder(conn, existing_agent)
+                    runs_live = final_status == "published" or was_live
+                    if inline_graph is not None:
+                        # The graph lands in the agent's workflow, which an
+                        # older agent may share and run (``_workflow_taken``).
+                        live_graph = runs_live or _workflow_runs_elsewhere(
+                            conn, existing_agent.get("workflow_id"), pg_agent_id,
+                        )
+                        graph_errors = workflow_graph_errors(
+                            inline_graph, draft=not live_graph, user_id=owner_id, editor_id=user,
+                        )
+                    elif runs_live:
+                        existing_workflow_id = existing_agent.get("workflow_id")
+                        final_workflow_id = update_fields.get("workflow_id", existing_workflow_id)
+                        # Publishing checks the stored graph too: a draft that
+                        # already ran may hold one from before such drafts
+                        # were checked in full.
+                        starts_running = (
+                            not was_live
+                            or (final_status == "published" and existing_agent.get("status") != "published")
+                            or existing_agent.get("agent_type") != "workflow"
+                            or str(final_workflow_id or "") != str(existing_workflow_id or "")
+                        )
+                        if starts_running:
+                            graph_errors = _stored_graph_errors(conn, final_workflow_id, owner_id)
+                    if graph_errors:
+                        return _graph_validation_failed(graph_errors)
 
                 # Re-validate referenced sources/prompt on write — a team editor
                 # must not ATTACH a source/prompt they can't access. References
                 # already on the agent (set by the owner) are exempt: an editor
                 # may keep them even when they aren't independently shared, so a
                 # plain save of an owner-configured agent isn't rejected — only
-                # NEWLY added refs need a grant. Owners pass can_access for their
+                # NEWLY added refs need a grant. Owners pass ref_attachable for their
                 # own resources regardless, so this carve-out is a no-op for them
                 # and the gate stays effective against an editor adding new refs.
                 # Mirrors the unchanged-tool carve-out below.
@@ -1410,18 +2110,46 @@ class UpdateAgent(Resource):
                     ([update_fields["source_id"]] if update_fields.get("source_id") else [])
                     + (update_fields.get("extra_source_ids") or [])
                 )
+                # A team agent takes on only the team's own items; refs
+                # already on it stay, like the other gates here.
+                if ra.is_team_item:
+                    existing_refs = {(t, str(i).lower()) for t, i in agent_refs(existing_agent)}
+                    existing_folders = {str(f).lower() for f in existing_agent.get("knowledge_folder_ids") or []}
+                    added = [("source", str(sid)) for sid in referenced_sources]
+                    if update_fields.get("prompt_id"):
+                        added.append(("prompt", str(update_fields["prompt_id"])))
+                    added += [("tool", str(tid)) for tid in update_fields.get("tools") or []]
+                    added = [ref for ref in added if (ref[0], ref[1].lower()) not in existing_refs]
+                    added += [
+                        ("folder", fid) for fid in update_fields.get("knowledge_folder_ids") or []
+                        if str(fid).lower() not in existing_folders
+                    ]
+                    mismatch = _mismatch_response(conn, owner_id, added, user)
+                    if mismatch is not None:
+                        return mismatch
                 for sid in referenced_sources:
                     if str(sid) in existing_source_refs:
                         continue
-                    if not _ref_attachable(conn, "source", sid, user):
+                    if not ref_attachable(conn, "source", sid, user):
                         return make_response(
                             jsonify({"success": False, "message": "Source not accessible"}), 403
                         )
+                # A newly attached knowledge folder must be the caller's own;
+                # folders already on the agent stay whoever saves it.
+                if "knowledge_folder_ids" in update_fields and unattachable_folder(
+                    conn,
+                    update_fields["knowledge_folder_ids"],
+                    user,
+                    existing_agent.get("knowledge_folder_ids") or [],
+                    holder_owner=owner_id,
+                ) is not None:
+                    return _folder_not_accessible()
                 new_prompt_id = update_fields.get("prompt_id")
                 if (
                     new_prompt_id
+                    and looks_like_uuid(str(new_prompt_id))
                     and str(new_prompt_id) != str(existing_agent.get("prompt_id") or "")
-                    and not _ref_attachable(conn, "prompt", new_prompt_id, user)
+                    and not ref_attachable(conn, "prompt", new_prompt_id, user)
                 ):
                     return make_response(
                         jsonify({"success": False, "message": "Prompt not accessible"}), 403
@@ -1439,7 +2167,7 @@ class UpdateAgent(Resource):
                     for tid in update_fields["tools"] or []:
                         if str(tid) in existing_tools:
                             continue
-                        if not _tool_attachable(conn, tid, user):
+                        if not ref_attachable(conn, "tool", tid, user):
                             return make_response(
                                 jsonify(
                                     {"success": False, "message": "Tool not accessible"}
@@ -1474,8 +2202,82 @@ class UpdateAgent(Resource):
                     previous_refs=agent_refs(existing_agent),
                     confirmed=parse_confirmations(data.get("confirm_sponsor")),
                 )
+                # A teammate's own knowledge folder feeds the agent their
+                # sources, later filings too: confirmed like a sponsored source.
+                confirmed_folders = folder_confirmations(data.get("confirm_sponsor"))
+                if "knowledge_folder_ids" in update_fields:
+                    plan_folder_confirmations(
+                        plan,
+                        owner_id,
+                        user,
+                        update_fields["knowledge_folder_ids"],
+                        existing_agent.get("knowledge_folder_ids") or [],
+                        confirmed_folders,
+                    )
+                # The inline graph: the node ref gate and the workflow's own
+                # sponsor plan, as PUT /api/workflows/<id> runs them. Nothing
+                # is written until every check has passed.
+                graph_save = None
+                if inline_graph is not None:
+                    graph_workflow = None
+                    if existing_agent.get("workflow_id"):
+                        graph_workflow = WorkflowsRepository(conn).get(
+                            str(existing_agent["workflow_id"]), owner_id,
+                        )
+                        if graph_workflow is None:
+                            return _denied(AccessDenied(404, "Workflow not found"))
+                    graph_save = plan_graph_save(
+                        conn, graph_workflow, owner_id, user, inline_graph,
+                        parse_confirmations(data.get("confirm_sponsor")),
+                        confirmed_folders=confirmed_folders,
+                    )
+                    if isinstance(graph_save, AccessDenied):
+                        return _denied(graph_save)
+                # A team's item reaches only people who already reach it: none is
+                # added to an agent shared with a team, or a person, who can't use it.
+                if team_added:
+                    refusal = _team_items_shared_outside_refusal(conn, [existing_agent], team_added, user)
+                    if refusal is not None:
+                        body, status = refusal
+                        return make_response(jsonify(body), status)
+                refusal = _team_connection_added_refusal(conn, [existing_agent], connection_tools_added)
+                if refusal is not None:
+                    body, status = refusal
+                    return make_response(jsonify(body), status)
+                if newly_generated_key and connection_tools:
+                    # Published for the team's own chats, keyless, as with a borrowed item below.
+                    update_fields.pop("key", None)
+                    newly_generated_key = None
+                # Someone else's tool or source, reached through a grant, never
+                # goes out through a key, link or webhook: none is added to an
+                # agent that has one (those already on it stay), and an agent
+                # that uses one is published without a key.
+                if newly_generated_key or has_outside_access(existing_agent):
+                    outside_view = dict(after_save)
+                    for ref_field in ("knowledge_folder_ids", "agent_type", "workflow_id"):
+                        if ref_field in update_fields:
+                            outside_view[ref_field] = update_fields[ref_field]
+                    borrowed = _agent_borrowed_refs(
+                        conn, outside_view, nodes=graph_save.graph["nodes"] if graph_save is not None else None,
+                    )
+                    if borrowed and has_outside_access(existing_agent):
+                        before = set(_agent_borrowed_refs(conn, existing_agent))
+                        added = [ref for ref in borrowed if ref not in before]
+                        if added:
+                            body, status = borrowed_refusal(conn, added, user, existing_agent, attaching=True)
+                            return make_response(jsonify(body), status)
+                    if borrowed and newly_generated_key:
+                        update_fields.pop("key", None)
+                        newly_generated_key = None
+                if newly_generated_key:
+                    # The Admin who publishes a team agent with a key pays for it.
+                    update_fields.update(access_payer_fields(ra, existing_agent, user, turning_on=True))
                 refusal = sponsor_refusal(
-                    conn, "agent", existing_agent, plan, api_key=bool(update_fields.get("key")) or None
+                    conn,
+                    "agent",
+                    existing_agent,
+                    refusal_plan([plan, graph_save.plan]) if graph_save is not None else plan,
+                    api_key=bool(update_fields.get("key")) or None,
                 )
                 if refusal is not None:
                     body, status = refusal
@@ -1494,41 +2296,71 @@ class UpdateAgent(Resource):
                         return image_error
                     if image_url and image_url != existing_image:
                         update_fields["image"] = image_url
+                        stored_image = image_url
 
                 # Apply update. Owner writes use the dual-key guard; team-editor
-                # writes go by-id (already authorized) with an optimistic-lock
-                # check when the client supplies the row's expected updated_at.
-                if is_team_editor:
+                # writes go by-id (already authorized). Both take the
+                # optimistic-lock check when the client supplies the row's
+                # expected updated_at.
+                changed_fields = sorted(update_fields)
+                if graph_save is not None:
+                    # The agent row is written with its graph even when only the
+                    # graph changes: the stale-write check applies and
+                    # updated_at moves. ``workflow_id`` is re-sent as it is (a new
+                    # workflow is linked below, after it is written).
+                    update_fields.setdefault("workflow_id", existing_agent.get("workflow_id"))
+                expected_updated_at = data.get("expected_updated_at") or None
+                if not update_fields and filing is not None:
+                    # Only the caller's filing changes: the agent row stays as it is.
+                    result = True
+                elif is_team_editor:
                     result = agents_repo.update_by_id(
-                        pg_agent_id,
-                        update_fields,
-                        expected_updated_at=data.get("expected_updated_at"),
+                        pg_agent_id, update_fields, expected_updated_at=expected_updated_at,
                     )
-                    if result is None:
-                        return make_response(
-                            jsonify(
-                                {
-                                    "success": False,
-                                    "message": "Agent was modified by someone else",
-                                    "code": "stale_write",
-                                }
-                            ),
-                            409,
-                        )
-                    updated = bool(result)
                 else:
-                    updated = agents_repo.update(pg_agent_id, user, update_fields)
+                    result = agents_repo.update(
+                        pg_agent_id, user, update_fields, expected_updated_at=expected_updated_at,
+                    )
+                if result is None:
+                    _discard_image(stored_image)
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "message": "Agent was modified by someone else",
+                                "code": "stale_write",
+                            }
+                        ),
+                        409,
+                    )
+                updated = bool(result)
+                # The graph last: a stale or failed agent write above returns
+                # before it, so the agent and its graph change together.
+                saved_workflow_id = None
+                if updated and graph_save is not None:
+                    saved_workflow_id = write_graph_save(
+                        conn,
+                        graph_save,
+                        owner_id,
+                        update_fields.get("name", existing_agent.get("name")),
+                        update_fields.get("description", existing_agent.get("description")),
+                        created_by=user,
+                    )
+                    if graph_save.workflow is None:
+                        agents_repo.update_by_id(pg_agent_id, {"workflow_id": saved_workflow_id})
                 # An update that changed no field is not an event.
-                if updated and update_fields:
+                event_fields = sorted([*changed_fields, *(["workflow_graph"] if saved_workflow_id else [])])
+                if updated and event_fields:
                     record_event(
                         conn,
                         "agent.updated",
                         actor=user,
                         agent_id=pg_agent_id,
                         # Names only: values can hold prompts and credentials.
-                        fields=sorted(update_fields),
+                        fields=event_fields,
                     )
                 if not updated:
+                    _discard_image(stored_image)
                     return make_response(
                         jsonify(
                             {
@@ -1538,10 +2370,16 @@ class UpdateAgent(Resource):
                         ),
                         404,
                     )
+                if filing is not None:
+                    FolderItemsRepository(conn).file(filing_owner(ra, user), "agent", pg_agent_id, filing[0])
+                # The row's new stamp: the builder's next save sends it as
+                # ``expected_updated_at``.
+                saved_row = agents_repo.get_by_id(pg_agent_id) or {}
         except Exception as err:
             current_app.logger.error(
                 f"Error updating agent {agent_id}: {err}", exc_info=True
             )
+            _discard_image(stored_image)
             return make_response(
                 jsonify({"success": False, "message": "Database error during update"}),
                 500,
@@ -1551,7 +2389,16 @@ class UpdateAgent(Resource):
             "success": True,
             "id": pg_agent_id,
             "message": "Agent updated successfully",
+            "updated_at": saved_row.get("updated_at"),
+            "image": _image_output(
+                update_fields.get("image", existing_image), pg_agent_id, existing_agent.get("user_id"),
+            ),
         }
+        if final_agent_type == "workflow":
+            final_workflow_id = saved_workflow_id or update_fields.get(
+                "workflow_id", existing_agent.get("workflow_id"),
+            )
+            response_data["workflow_id"] = str(final_workflow_id) if final_workflow_id else None
         # A freshly minted key is an access detail: returned only to a caller
         # who may manage it (the key is still stored either way).
         if newly_generated_key and ra.can("manage_access_details"):
@@ -1605,6 +2452,11 @@ class RegenerateAgentKey(Resource):
                 pg_agent_id = str(existing_agent["id"])
                 old_key = existing_agent.get("key")
                 if not old_key:
+                    # An agent using someone else's tool or source gets no key
+                    # (publishing one mints none); say so rather than "publish".
+                    refusal = _refuse_borrowed_outside_access(conn, existing_agent, user)
+                    if refusal is not None:
+                        return refusal
                     # Draft agents have no key; the first key is minted on
                     # publish. Nothing to rotate.
                     return make_response(
@@ -1618,7 +2470,11 @@ class RegenerateAgentKey(Resource):
                     )
 
                 new_key = str(uuid.uuid4())
-                updated = agents_repo.update(pg_agent_id, ra.owner_id, {"key": new_key})
+                # Rotating keeps who pays; a team agent with none recorded gets the Admin rotating it.
+                updated = agents_repo.update(
+                    pg_agent_id, ra.owner_id,
+                    {"key": new_key, **access_payer_fields(ra, existing_agent, user, turning_on=False)},
+                )
                 if not updated:
                     return make_response(
                         jsonify(
@@ -1765,9 +2621,35 @@ def _user_may_pin(conn, agent: dict, user_id: str, shared_with_me: set) -> bool:
     return can_access(conn, "agent", agent_id, user_id)
 
 
+def _pin_in_workspace(agent: dict, workspace, received: Optional[dict] = None) -> bool:
+    """Whether a pinned agent shows in ``workspace``.
+
+    A team's agent shows in that team, and in each team it is shared with while the share is live; any
+    other agent in Personal.
+
+    Args:
+        agent: The agent row (needs ``id`` and ``user_id``).
+        workspace: The request's :class:`~docsgpt.workspaces.context.Workspace`.
+        received: The agents other teams share with this team workspace (``received_into``).
+
+    Returns:
+        bool: True when the pin belongs to this workspace's list.
+    """
+    owner = agent.get("user_id")
+    if workspace.is_team:
+        return owner == workspace.owner_id or str(agent["id"]).lower() in (received or {})
+    return not is_principal_id(owner)
+
+
 @agents_ns.route("/pinned_agents")
 class PinnedAgents(Resource):
-    @api.doc(description="Get pinned agents for the user")
+    @api.doc(
+        description=(
+            "Get the caller's pinned agents in the current workspace: a pin shows in the workspace its agent "
+            "lives in (a team's agents in that team and in each team it is shared with, every other agent in "
+            "Personal)"
+        )
+    )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -1776,6 +2658,10 @@ class PinnedAgents(Resource):
 
         try:
             with db_session() as conn:
+                try:
+                    workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
                 users_repo = UsersRepository(conn)
                 user_doc = users_repo.upsert(user_id)
                 prefs = (
@@ -1801,7 +2687,7 @@ class PinnedAgents(Resource):
                         ),
                         {"ids": uuid_pinned},
                     )
-                    pinned_agents = [dict(row._mapping) for row in result.fetchall()]
+                    pinned_agents = [expose_prompt_preset(dict(row._mapping)) for row in result.fetchall()]
                 else:
                     pinned_agents = []
 
@@ -1814,15 +2700,21 @@ class PinnedAgents(Resource):
                 # A pin is not proof of access: a share or team grant can be
                 # revoked long after the agent was pinned, so re-check every
                 # row on read rather than trusting the stored id list.
+                received = received_into(conn, workspace, "agent")
                 pinned_agents = [
                     agent
                     for agent in pinned_agents
-                    if _user_may_pin(conn, agent, user_id, shared_with_me)
+                    if _pin_in_workspace(agent, workspace, received)
+                    and _user_may_pin(conn, agent, user_id, shared_with_me)
                 ]
                 # A pin reached only through a share link (or a template)
                 # has no grant: chat + pin, nothing more.
                 access_by_id = {}
                 for agent in pinned_agents:
+                    # Another team's agent shows as this team receives it, even to a member of both.
+                    if agent.get("user_id") != workspace.owner_id and str(agent["id"]).lower() in received:
+                        access_by_id[str(agent["id"])] = received[str(agent["id"]).lower()]
+                        continue
                     ra = resolve(conn, "agent", str(agent["id"]), user_id)
                     access_by_id[str(agent["id"])] = (
                         ra.payload() if ra is not None else dict(LINK_SHARED_ACCESS)
@@ -1837,6 +2729,7 @@ class PinnedAgents(Resource):
                         "id": str(agent["id"]),
                         "name": agent.get("name", ""),
                         "description": agent.get("description", ""),
+                        "starters": stored_starters(agent),
                         "image": (
                             generate_image_url(
                                 agent["image"], agent["id"], agent.get("user_id")
@@ -1886,12 +2779,13 @@ class GetTemplateAgents(Resource):
                         "ORDER BY name"
                     ),
                 )
-                template_rows = [dict(row._mapping) for row in result.fetchall()]
+                template_rows = [expose_prompt_preset(dict(row._mapping)) for row in result.fetchall()]
             template_agents = [
                 {
                     "id": str(agent["id"]),
                     "name": agent.get("name"),
                     "description": agent.get("description") or "",
+                    "starters": stored_starters(agent),
                     "image": (
                         generate_image_url(
                             agent["image"], agent["id"], agent.get("user_id")
@@ -1908,74 +2802,16 @@ class GetTemplateAgents(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
-def _filter_adoptable_tool_ids(conn, user: str, tool_ids) -> list:
-    """Keep only tool ids the adopter can actually run.
-
-    Builtin synthetic ids resolve for everyone; a ``user_tools`` row must be
-    the adopter's own — the runtime resolves tools strictly owner-scoped, so
-    a template owner's tool id would just be dropped (with a log line) on
-    every run. Filtering at adopt time makes the gap visible in the builder
-    instead of at run time.
-    """
-    tools_repo = UserToolsRepository(conn)
-    kept = []
-    for tid in tool_ids or []:
-        tid = str(tid)
-        if is_synthesized_tool_id(tid) or (
-            looks_like_uuid(tid) and tools_repo.get_any(tid, user)
-        ):
-            kept.append(tid)
-    return kept
-
-
-def _strip_foreign_node_refs(conn, user: str):
-    """Build a ``clone_to_user`` node-config transform for adoption.
-
-    Agent nodes carry raw tool/source/model ids from the template owner. The
-    engine resolves all three owner-scoped at run time (dropping misses with
-    only a log line), so unresolvable refs would survive the clone as ghost
-    references — shown in the builder, never used. Strip them instead, so
-    the adopter sees empty fields to fill in.
-    """
-
-    def transform(node_type: str, config: dict) -> dict:
-        if node_type != "agent":
-            return config
-        # Node settings may sit nested under ``config`` — mirror the engine,
-        # which reads ``node.config.get("config", node.config)``.
-        nested = config.get("config")
-        cfg = nested if isinstance(nested, dict) else config
-        if cfg.get("tools"):
-            cfg["tools"] = _filter_adoptable_tool_ids(conn, user, cfg["tools"])
-        if cfg.get("sources"):
-            sources = cfg["sources"]
-            if not isinstance(sources, list):
-                sources = [sources]
-            cfg["sources"] = [
-                str(s)
-                for s in sources
-                if s and can_access(conn, "source", str(s), user)
-            ]
-        model_id = cfg.get("model_id")
-        if (
-            model_id
-            and looks_like_uuid(str(model_id))
-            and not UserCustomModelsRepository(conn).get(str(model_id), user)
-        ):
-            cfg["model_id"] = None
-        if cfg is not config:
-            # Flat leftovers of these keys are ignored by the engine but would
-            # carry the template owner's raw ids along; drop them.
-            for key in ("tools", "sources", "model_id"):
-                config.pop(key, None)
-        return config
-
-    return transform
-
-
 @agents_ns.route("/adopt_agent")
 class AdoptAgent(Resource):
-    @api.doc(params={"id": "Agent ID"}, description="Adopt an agent by ID")
+    @api.doc(
+        params={"id": "Agent ID"},
+        description=(
+            "Adopt a template agent into the current workspace: a copy the caller owns, or in a team (Editor "
+            "and up) one the team owns. A team's copy keeps only the team's own items and gets a key only "
+            "when an Admin adopts it."
+        ),
+    )
     def post(self):
         if not (decoded_token := request.decoded_token):
             return make_response(jsonify({"success": False}), 401)
@@ -1988,6 +2824,13 @@ class AdoptAgent(Resource):
             from sqlalchemy import text as _sql_text
 
             with db_session() as conn:
+                # The copy lands in the current workspace, by the create rule.
+                try:
+                    workspace = current_workspace(conn)
+                    require_workspace_role(workspace, "editor")
+                except WorkspaceError as err:
+                    return err.response()
+                owner_id, created_by = workspace.owner_for_create(user)
                 # Template lookup: user_id must be 'system' or '__system__'.
                 if looks_like_uuid(agent_id):
                     template_row = conn.execute(
@@ -2009,10 +2852,19 @@ class AdoptAgent(Resource):
                     ).fetchone()
                 if template_row is None:
                     return make_response(jsonify({"status": "Not found"}), 404)
-                template = dict(template_row._mapping)
+                template = expose_prompt_preset(dict(template_row._mapping))
 
                 now = datetime.datetime.now(datetime.timezone.utc)
-                new_key = str(uuid.uuid4())
+                # Publishing a team agent and its key follow the team's outside
+                # policy (and whoever makes the key pays): a copy the policy keeps
+                # in lands as a draft, and a locked team's copy is published without a key.
+                team_actions = (
+                    workspace_allowed_actions("agent", workspace.role, policy=workspace.outside_policy)
+                    if workspace.is_team else set()
+                )
+                publishes = workspace.is_personal or "publish" in team_actions
+                keyed = workspace.is_personal or "manage_access_details" in team_actions
+                new_key = str(uuid.uuid4()) if publishes and keyed else ""
                 # Copy content columns only. Identity / idempotency columns
                 # (key, slug, shared_token, incoming_webhook_token) are
                 # deliberately NOT copied — the adopted agent is a fresh copy
@@ -2021,12 +2873,27 @@ class AdoptAgent(Resource):
                 for col in (
                     "description", "agent_type", "retriever",
                     "default_model_id",
-                    "source_id", "prompt_id", "folder_id",
+                    "source_id", "prompt_id",
                     "extra_source_ids",
                 ):
                     val = template.get(col)
                     if val not in (None, ""):
                         create_kwargs[col] = val
+                if workspace.is_team:
+                    # A team agent holds the team's own items only: the
+                    # template's sources and stored prompt don't come along.
+                    for col, kind in (("source_id", "source"), ("prompt_id", "prompt")):
+                        if create_kwargs.get(col) and workspace_mismatches(
+                            conn, owner_id, [(kind, str(create_kwargs[col]))],
+                        ):
+                            create_kwargs.pop(col)
+                    if create_kwargs.get("extra_source_ids"):
+                        bad = set(workspace_mismatches(
+                            conn, owner_id, [("source", str(sid)) for sid in create_kwargs["extra_source_ids"]],
+                        ))
+                        create_kwargs["extra_source_ids"] = [
+                            sid for sid in create_kwargs["extra_source_ids"] if ("source", str(sid).lower()) not in bad
+                        ]
 
                 # ``workflow_id`` must NOT be copied by reference: the runtime
                 # resolves it strictly owner-scoped, so the adopter would get
@@ -2037,9 +2904,10 @@ class AdoptAgent(Resource):
                 if template.get("workflow_id"):
                     cloned_workflow = WorkflowsRepository(conn).clone_to_user(
                         str(template["workflow_id"]),
-                        user,
+                        owner_id,
                         from_owner=template.get("user_id"),
-                        node_config_transform=_strip_foreign_node_refs(conn, user),
+                        node_config_transform=_strip_foreign_node_refs(conn, owner_id),
+                        created_by=created_by,
                     )
                     if cloned_workflow is None:
                         # A workflow agent without its graph can never run —
@@ -2068,19 +2936,36 @@ class AdoptAgent(Resource):
                 # so a copied reference to the template owner's blob would
                 # fail closed and render blank.
                 adopted_image = copy_agent_image_for_user(
-                    template.get("image"), user, storage
+                    template.get("image"), owner_id, storage
                 )
                 if adopted_image:
                     create_kwargs["image"] = adopted_image
-                for col in ("json_schema", "models", "shared_metadata", "config"):
+                for col in ("json_schema", "models", "shared_metadata", "config", "starters"):
                     if template.get(col) is not None:
                         create_kwargs[col] = template[col]
+                # The copy runs on its owner's models: a custom model the save
+                # rule refuses (a person's on a team's copy, a team's on a
+                # personal or other team's copy) would fail every run, so it is dropped.
+                named = [create_kwargs.get("default_model_id")] + list(create_kwargs.get("models") or [])
+                refused = {str(m).lower() for m in refused_custom_models(conn, owner_id, named)}
+                if refused:
+                    if str(create_kwargs.get("default_model_id") or "").lower() in refused:
+                        create_kwargs.pop("default_model_id")
+                    if isinstance(create_kwargs.get("models"), list):
+                        create_kwargs["models"] = [
+                            m for m in create_kwargs["models"] if str(m).lower() not in refused
+                        ]
+                # The adopted agent starts from the admin's default guardrails,
+                # under any the template sets.
+                adopted_config = agent_defaults.seed(conn, create_kwargs.get("config"))
+                if adopted_config is not None:
+                    create_kwargs["config"] = adopted_config
                 # Tool ids resolve owner-scoped at run time, so the template
                 # owner's rows would silently drop on every run — keep only
                 # what the adopter can actually use (builtins, own tools).
                 if template.get("tools") is not None:
                     create_kwargs["tools"] = _filter_adoptable_tool_ids(
-                        conn, user, template["tools"]
+                        conn, owner_id, template["tools"]
                     )
                 for col in ("chunks", "token_limit", "request_limit"):
                     if template.get(col) is not None:
@@ -2094,15 +2979,28 @@ class AdoptAgent(Resource):
 
                 create_kwargs["key"] = new_key
                 create_kwargs["last_used_at"] = now
+                create_kwargs["created_by"] = created_by
+                if new_key and workspace.is_team:
+                    create_kwargs["access_payer_id"] = user
 
                 new_agent = AgentsRepository(conn).create(
-                    user,
+                    owner_id,
                     template.get("name") or "",
-                    "published",
+                    "published" if publishes else "draft",
                     **create_kwargs,
                 )
 
-            response_agent = _format_agent_output(new_agent, include_key_masked=False)
+            if workspace.is_team:
+                access = payload_for(
+                    "agent", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                    policy=workspace.outside_policy,
+                )
+                response_agent = _format_agent_output(
+                    new_agent, include_key_masked=False, ownership="team",
+                    team_access=_legacy_team_access(access["access"]), access=access,
+                )
+            else:
+                response_agent = _format_agent_output(new_agent, include_key_masked=False)
             response_agent["key"] = (
                 new_key if may_see_agent_keys(request) else mask_agent_key(new_key)
             )

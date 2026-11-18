@@ -13,6 +13,62 @@ describe('eventLabel', () => {
     expect(eventLabel('oidc_login_denied')).toBe('Login denied');
     expect(eventLabel('source.deleted')).toBe('Source deleted');
     expect(eventLabel('device.run_command')).toBe('Device command');
+    expect(eventLabel('source_defaults_set')).toBe('Source defaults changed');
+  });
+
+  it('names the team workspace events', () => {
+    expect(eventLabel('team.member_role_changed')).toBe('Member role changed');
+    // Rows written before the rename keep their label.
+    expect(eventLabel('team.member_role')).toBe('Member role changed');
+    expect(eventLabel('team.item_moved_in')).toBe('Item moved into team');
+    expect(eventLabel('team.item_moved_out')).toBe('Item moved out of team');
+    expect(eventLabel('team.folder_moved_in')).toBe('Folder moved into team');
+    expect(eventLabel('team.folder_moved_out')).toBe(
+      'Folder moved out of team',
+    );
+  });
+
+  it('names the payer events', () => {
+    expect(eventLabel('team.schedule_taken_over')).toBe('Schedule taken over');
+    expect(eventLabel('team.outside_access_taken_over')).toBe(
+      'Outside access taken over',
+    );
+    expect(eventLabel('team.chats_exported')).toBe('Team chats exported');
+  });
+
+  it("names the events of taking a team's items outside", () => {
+    expect(eventLabel('team.outside_policy_changed')).toBe(
+      'Outside policy changed',
+    );
+    expect(eventLabel('team.item_shared_with_team')).toBe(
+      'Item shared with another team',
+    );
+    expect(eventLabel('team.item_unshared_from_team')).toBe(
+      'Item unshared from another team',
+    );
+  });
+
+  it("names the events of a team's connections", () => {
+    expect(eventLabel('team.connection_added')).toBe('Team account connected');
+    expect(eventLabel('team.connection_reconnected')).toBe(
+      'Team account reconnected',
+    );
+    expect(eventLabel('team.connection_disconnected')).toBe(
+      'Team account disconnected',
+    );
+    expect(eventLabel('team.connection_removed')).toBe('Team account removed');
+  });
+
+  it("names the events of a team's custom models, a copy apart", () => {
+    expect(eventLabel('team.model_added')).toBe('Team model added');
+    expect(eventLabel('team.model_added', { copied: false })).toBe(
+      'Team model added',
+    );
+    expect(eventLabel('team.model_added', { copied: true })).toBe(
+      'Team model copied from Personal',
+    );
+    expect(eventLabel('team.model_updated')).toBe('Team model changed');
+    expect(eventLabel('team.model_removed')).toBe('Team model removed');
   });
 
   it('stays legible for an event a newer release added', () => {
@@ -30,6 +86,18 @@ describe('eventTone', () => {
   it('flags revocations as a warning, not a failure', () => {
     expect(eventTone('role_revoked')).toBe('warning');
     expect(eventTone('agent.key_regenerated')).toBe('warning');
+    expect(eventTone('team.item_unshared_from_team')).toBe('warning');
+  });
+
+  it("flags a team account's removal and its disconnect", () => {
+    expect(eventTone('team.connection_removed')).toBe('warning');
+    expect(eventTone('team.connection_disconnected')).toBe('warning');
+    expect(eventTone('team.connection_added')).toBe('neutral');
+  });
+
+  it("flags a team model's removal", () => {
+    expect(eventTone('team.model_removed')).toBe('warning');
+    expect(eventTone('team.model_added')).toBe('neutral');
   });
 
   it('marks an admin grant with the brand (default) variant', () => {

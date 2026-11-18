@@ -220,6 +220,44 @@ def test_response_usage_reports_cumulative_turn_totals():
 
 
 @pytest.mark.unit
+def test_response_usage_reports_the_turns_cached_prompt_tokens():
+    from types import SimpleNamespace
+
+    from docsgpt.api.v1.routes import _response_usage
+
+    # The cache bins are the sum over the turn's calls, in the
+    # Chat Completions ``prompt_tokens_details`` shape.
+    agent = SimpleNamespace(
+        llm=SimpleNamespace(
+            token_usage={
+                "prompt_tokens": 9000,
+                "generated_tokens": 40,
+                "cached_tokens": 7400,
+                "cache_write_tokens": 1500,
+            }
+        )
+    )
+    assert _response_usage(agent) == {
+        "prompt_tokens": 9000,
+        "completion_tokens": 40,
+        "total_tokens": 9040,
+        "prompt_tokens_details": {"cached_tokens": 7400, "cache_write_tokens": 1500},
+    }
+
+
+@pytest.mark.unit
+def test_response_usage_reports_a_cache_miss_as_zero_cached_tokens():
+    from types import SimpleNamespace
+
+    from docsgpt.api.v1.routes import _response_usage
+
+    agent = SimpleNamespace(
+        llm=SimpleNamespace(token_usage={"prompt_tokens": 10, "generated_tokens": 2, "cached_tokens": 0})
+    )
+    assert _response_usage(agent)["prompt_tokens_details"] == {"cached_tokens": 0}
+
+
+@pytest.mark.unit
 class TestLookupAgentHappy:
     def test_returns_agent_for_valid_key(self, pg_conn):
         from docsgpt.api.v1.routes import _lookup_agent
@@ -506,6 +544,122 @@ class TestChatCompletionsHappyPath:
                 )
         assert resp.status_code == 409
         assert resp.get_json()["error"]["code"] == "resume_in_progress"
+
+    def test_results_for_a_pause_no_longer_waiting_are_a_conflict(self, pg_conn):
+        """A client answering an abandoned pause while a later one waits is refused, not resumed."""
+        from docsgpt.api.answer.services.continuation_service import (
+            NOT_PENDING_MESSAGE,
+            ContinuationNotPendingError,
+        )
+
+        app = _build_app()
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u-test"}
+        fake_processor.resume_from_tool_actions.side_effect = ContinuationNotPendingError(NOT_PENDING_MESSAGE)
+        with _patch_v1_db(pg_conn), patch(
+            "docsgpt.api.v1.routes.translate_request",
+            return_value={
+                "conversation_id": "conv-1",
+                "tool_actions": [{"call_id": "call-old", "result": "ok"}],
+                "messages": [],
+            },
+        ), patch(
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
+            return_value=True,
+        ), patch(
+            "docsgpt.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
+            return_value={"pending_tool_calls": [{"call_id": "call-new"}]},
+        ):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "tool", "content": "ok"}]},
+                )
+        assert resp.status_code == 409
+        error = resp.get_json()["error"]
+        assert error["code"] == "tool_call_not_pending"
+        assert error["message"] == NOT_PENDING_MESSAGE
+
+    def test_mixed_up_tool_actions_are_an_invalid_request_with_the_problem(self, pg_conn, caplog):
+        """Actions that don't fit the calls the pause waits on are told why, without an ERROR traceback."""
+        from docsgpt.api.answer.services.continuation_service import InvalidToolActionsError
+
+        problem = "A question call takes an answer or skipped, not a decision or a result."
+        app = _build_app()
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u-test"}
+        fake_processor.resume_from_tool_actions.side_effect = InvalidToolActionsError(problem)
+        with _patch_v1_db(pg_conn), patch(
+            "docsgpt.api.v1.routes.translate_request",
+            return_value={
+                "conversation_id": "conv-1",
+                "tool_actions": [{"call_id": "call-q", "result": "ok"}],
+                "messages": [],
+            },
+        ), patch(
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
+            return_value=True,
+        ), patch(
+            "docsgpt.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
+            return_value={"pending_tool_calls": [{"call_id": "call-q", "pause_type": "awaiting_answer"}]},
+        ), caplog.at_level("ERROR", logger="docsgpt.api.v1.routes"):
+            with app.test_client() as c:
+                resp = c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "tool", "content": "ok"}]},
+                )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == {
+            "message": problem,
+            "type": "invalid_request_error",
+            "code": "invalid_tool_actions",
+        }
+        assert not caplog.records
+
+    def test_a_resume_hands_its_new_attachments_to_the_resumed_turn(self, pg_conn):
+        from docsgpt.api.answer.services.continuation_service import (
+            NOT_PENDING_MESSAGE,
+            ContinuationNotPendingError,
+        )
+
+        app = _build_app()
+        fake_processor = MagicMock()
+        fake_processor.decoded_token = {"sub": "u-test"}
+        fake_processor.resume_from_tool_actions.side_effect = ContinuationNotPendingError(NOT_PENDING_MESSAGE)
+        with _patch_v1_db(pg_conn), patch(
+            "docsgpt.api.v1.routes.translate_request",
+            return_value={
+                "conversation_id": "conv-1",
+                "tool_actions": [{"call_id": "call-1", "result": "uploaded"}],
+                "messages": [],
+                "attachments": ["att-new"],
+            },
+        ), patch(
+            "docsgpt.api.v1.routes._conversation_belongs_to_agent",
+            return_value=True,
+        ), patch(
+            "docsgpt.api.v1.routes.StreamProcessor",
+            return_value=fake_processor,
+        ), patch(
+            "docsgpt.api.v1.routes.ContinuationService.claim_state",
+            return_value={"pending_tool_calls": [{"call_id": "call-1"}]},
+        ):
+            with app.test_client() as c:
+                c.post(
+                    "/v1/chat/completions",
+                    headers={"Authorization": "Bearer x"},
+                    json={"messages": [{"role": "tool", "content": "uploaded"}]},
+                )
+        kwargs = fake_processor.resume_from_tool_actions.call_args.kwargs
+        assert kwargs["extra_attachment_ids"] == ["att-new"]
 
     def test_unsupported_n_and_logprobs_are_explicit(self, pg_conn):
         app = _build_app()
@@ -824,3 +978,27 @@ class TestChatCompletionsHappyPath:
         assert "message_id" not in types_translated
         assert "id" in types_translated
         assert "answer" in types_translated
+
+
+@pytest.mark.unit
+class TestChatCompletionsOwnerPaused:
+    def test_a_deactivated_owners_key_is_refused_without_naming_them(self, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        AgentsRepository(pg_conn).create("owner-p", "A", "published", key="paused-key")
+        UsersRepository(pg_conn).upsert("owner-p")
+        pg_conn.execute(text("UPDATE users SET active = false WHERE user_id = 'owner-p'"))
+        app = _build_app()
+        with _patch_v1_db(pg_conn), app.test_client() as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "Hi"}]},
+                headers={"Authorization": "Bearer paused-key"},
+            )
+        assert resp.status_code == 403
+        error = resp.get_json()["error"]
+        assert error["code"] == "agent_paused"
+        assert "owner-p" not in error["message"]

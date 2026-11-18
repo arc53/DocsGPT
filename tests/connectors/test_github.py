@@ -123,14 +123,64 @@ class TestTokenSignIn:
         assert pg_conn.execute(text("SELECT count(*) FROM connector_sessions")).scalar() == 0
 
 
+class TestRateLimit:
+    """GitHub rate-limited the account: say until when, as a 429, not a generic 502."""
+
+    @staticmethod
+    def _limited():
+        import time
+
+        return _response({"message": "API rate limit exceeded for user ID 1."}, 403, headers={
+            "X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(time.time()) + 2800),
+        })
+
+    def test_the_token_check_reports_the_reset_time(self):
+        from docsgpt.connectors import github
+
+        with patch("docsgpt.connectors.github.requests.get", return_value=self._limited()):
+            with pytest.raises(github.RateLimited) as caught:
+                github.token_account("github_pat_abc")
+        # Callers that only know transient errors keep working.
+        assert isinstance(caught.value, service.TransientConnectionError)
+        assert caught.value.reset_at is not None
+        assert "UTC" in str(caught.value)
+
+    def test_connecting_while_rate_limited_is_a_429_with_the_reset(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionsList
+
+        with _db(pg_conn), patch("docsgpt.connectors.github.requests.get", return_value=self._limited()):
+            resp = _call(app, ConnectionsList, "post", "/api/connections",
+                         body={"connector_key": "github", "credentials": {"access_token": "github_pat_abc"}})
+        assert resp.status_code == 429
+        data = resp.get_json()
+        assert data["code"] == "rate_limited"
+        assert data["retry_at"].endswith("+00:00")
+        assert int(resp.headers["Retry-After"]) > 0
+        assert pg_conn.execute(text("SELECT count(*) FROM connector_sessions")).scalar() == 0
+
+    def test_listing_repositories_while_rate_limited_is_a_429(self, app, pg_conn):
+        from docsgpt.api.connector.connections import ConnectionRepositories
+
+        cid = _connection(pg_conn)
+        with _db(pg_conn), patch("docsgpt.connectors.github.requests.get", return_value=self._limited()), \
+                patch.object(service, "mark_reconnect_needed") as flag:
+            resp = _call(app, ConnectionRepositories, "get", f"/api/connections/{cid}/repositories", args=[cid])
+        assert resp.status_code == 429
+        assert resp.get_json()["code"] == "rate_limited"
+        # A rate limit is not a bad token.
+        flag.assert_not_called()
+
+
 class TestAppSignIn:
-    def test_callback_stores_the_app_token_under_the_login(self, app, pg_conn, app_settings):
-        import base64
-        import json
+    def test_sign_in_stores_the_app_token_under_the_login(self, app, pg_conn, app_settings):
+        from urllib.parse import parse_qs, urlsplit
 
-        from docsgpt.api.connector.routes import ConnectorsCallback, build_authorization
+        from flask import request
 
-        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"):
+        from docsgpt.api.connector.routes import ConnectorAuthComplete, ConnectorsCallback, build_authorization
+
+        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"), \
+                app.test_request_context("/api/connectors/auth?provider=github"):
             started = build_authorization("github", "alice")
         assert started["authorization_url"].startswith("https://github.com/login/oauth/authorize?")
         state = started["state"]
@@ -141,19 +191,26 @@ class TestAppSignIn:
         with _db(pg_conn), patch("docsgpt.parser.connectors.github.auth.GitHubAuth.exchange_code_for_tokens",
                                  return_value=token_info):
             with app.test_request_context(f"/api/connectors/callback?code=c&state={state}"):
-                page = ConnectorsCallback().get()
-        assert page.status_code == 200
-        assert b"github_auth_success" in page.data
+                forwarded = ConnectorsCallback().get()
+            assert forwarded.status_code == 302
+            params = parse_qs(urlsplit(forwarded.location).query)
+            with app.test_request_context(
+                "/api/connectors/auth/complete", method="POST",
+                json={"code": params["code"][0], "state": params["state"][0]},
+            ):
+                request.decoded_token = {"sub": "alice"}
+                done = ConnectorAuthComplete().post()
+        assert done.status_code == 200 and done.json["provider"] == "github"
         row = pg_conn.execute(text("SELECT * FROM connector_sessions WHERE provider = 'github'")).one()._mapping
         assert row["account_label"] == "octocat" and row["auth_kind"] == "oauth"
         assert service.read_secrets(dict(row))["token_info"]["refresh_token"] == "ghr_r"
-        assert json.loads(base64.urlsafe_b64decode(state))["provider"] == "github"
 
-    def test_installation_link_carries_the_same_state(self, pg_conn, app_settings):
+    def test_installation_link_carries_the_same_state(self, app, pg_conn, app_settings):
         from docsgpt.api.connector.routes import build_authorization
 
         cid = _connection(pg_conn, auth_kind="oauth", secrets={"token_info": {"access_token": "ghu"}})
-        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"):
+        with _db(pg_conn), patch("docsgpt.api.connector.routes.service.ensure_can_store_credentials"), \
+                app.test_request_context("/api/connectors/auth?provider=github&install=1"):
             started = build_authorization("github", "alice", cid, install=True)
         assert started["authorization_url"].startswith(
             "https://github.com/apps/docsgpt-acme/installations/new?state="

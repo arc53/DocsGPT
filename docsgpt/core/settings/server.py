@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator
+from pydantic_settings import NoDecode
 
-from docsgpt.core.settings._shared import SettingsGroup
+from docsgpt.core.settings._shared import EnvList, SettingsGroup
+from docsgpt.security.client_ip import expand_trusted_proxies
 
 
 class ServerSettings(SettingsGroup):
@@ -32,8 +34,51 @@ class ServerSettings(SettingsGroup):
         ),
     )
     PUBLIC_API_BASE_URL: Optional[str] = Field(
-        default=None, description="Public base URL for user-facing endpoint references in prompts."
+        default=None,
+        description=(
+            "Public base URL for user-facing endpoint references in prompts, and the prefix of the artifact "
+            "download URLs API responses carry (relative paths when unset)."
+        ),
     )
+    SAFE_URL_ALLOWED_HOSTS: Annotated[list[str], NoDecode, EnvList()] = Field(
+        default_factory=list,
+        description=(
+            "Private-network hosts that user-supplied URLs (API and MCP tools, read_webpage, monitors, custom model "
+            "base URLs, the API tool a personal access token makes) may reach, as a comma list or JSON list. An "
+            "entry is an exact hostname (`wiki.corp.example`, not its subdomains), which passes for any private "
+            "address it resolves to, or an IP or CIDR range (`10.16.0.0/16`), which passes the addresses inside "
+            "it. Loopback passes only through an IP entry (`127.0.0.1`), never a name. Link-local and cloud "
+            "metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`, `fd20:ce::254`, `metadata.google.internal`) and `0.0.0.0` "
+            "are refused whatever is listed. Empty, every private address is refused."
+        ),
+    )
+    TRUSTED_PROXIES: Annotated[list[str], NoDecode, EnvList(none_is_empty=True)] = Field(
+        default=["private"],
+        description=(
+            "Proxies whose X-Forwarded-For and X-Forwarded-Proto the API believes, as a comma list or JSON list "
+            "of IPs and CIDR ranges plus two keywords: private (loopback, 10.0.0.0/8, 172.16.0.0/12, "
+            "192.168.0.0/16, fc00::/7) and cloudflare (Cloudflare's published ranges). The client IP recorded in "
+            "the audit log and access log is the rightmost X-Forwarded-For entry outside this list, so a client "
+            "cannot spoof it. Add cloudflare, or your load balancer's range, when one sits in front of a private "
+            "hop. * trusts every peer and takes the leftmost entry, which any client can forge. none trusts no "
+            "one and records the peer's address."
+        ),
+    )
+    TRUST_CF_CONNECTING_IP: bool = Field(
+        default=False,
+        description=(
+            "Take the client IP from Cloudflare's CF-Connecting-IP header when the request reaches the API from a "
+            "Cloudflare address, directly or through TRUSTED_PROXIES. The header is ignored from any other "
+            "address, so a request that bypasses Cloudflare cannot set it."
+        ),
+    )
+
+    @field_validator("TRUSTED_PROXIES")
+    @classmethod
+    def _check_trusted_proxies(cls, value: list[str]) -> list[str]:
+        expand_trusted_proxies(value)
+        return value
+
     GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: int = Field(
         default=30,
         description=(

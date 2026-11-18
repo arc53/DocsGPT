@@ -28,13 +28,15 @@ def dispatch_monitors_safely() -> Dict[str, int]:
 
 
 def cleanup_hits() -> Dict[str, int]:
-    """Delete settled webhook deliveries older than ``BACKGROUND_RESULT_RETENTION_DAYS``."""
+    """Delete settled webhook deliveries and ingest events older than ``BACKGROUND_RESULT_RETENTION_DAYS``."""
     if not settings.POSTGRES_URI:
         return {"deleted": 0}
+    from docsgpt.storage.db.repositories.monitor_events import MonitorEventsRepository
     from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository
     from docsgpt.storage.db.session import db_session
 
     days = max(1, int(settings.BACKGROUND_RESULT_RETENTION_DAYS))
     with db_session() as conn:
         deleted = TriggerHitsRepository(conn).cleanup_older_than(days)
-    return {"deleted": deleted, "days": days}
+        events = MonitorEventsRepository(conn).cleanup_older_than(days)
+    return {"deleted": deleted, "events": events, "days": days}

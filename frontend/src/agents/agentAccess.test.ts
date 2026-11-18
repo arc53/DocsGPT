@@ -31,21 +31,28 @@ describe('canOpenAgentEditor', () => {
 
 describe('canAgent', () => {
   const all = ['view', 'view_logs', 'manage_schedules', 'pin'];
+  const pages = [...all, 'view_analytics'];
   it('follows allowed_actions on a published agent', () => {
     const a = agent({
       status: 'published',
       access: 'editor',
       allowed_actions: all,
     });
-    expect(all.every((x) => canAgent(a, x))).toBe(true);
+    expect(pages.every((x) => canAgent(a, x))).toBe(true);
   });
 
-  it('drops Logs, Schedules and Pin on a draft, keeps the editor', () => {
+  it('keeps the editor and Logs on a draft, drops the rest', () => {
     const a = agent({ status: 'draft', access: 'owner', allowed_actions: all });
     expect(canAgent(a, 'view')).toBe(true);
-    expect(canAgent(a, 'view_logs')).toBe(false);
+    expect(canAgent(a, 'view_logs')).toBe(true);
+    expect(canAgent(a, 'view_analytics')).toBe(false);
     expect(canAgent(a, 'manage_schedules')).toBe(false);
     expect(canAgent(a, 'pin')).toBe(false);
+  });
+
+  it('allows Analytics only to a role that may view logs', () => {
+    const viewer = agent({ status: 'published', allowed_actions: ['use'] });
+    expect(canAgent(viewer, 'view_analytics')).toBe(false);
   });
 
   it('treats an agent with no status yet as published', () => {

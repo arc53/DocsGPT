@@ -65,6 +65,20 @@ describe('ActionMenu', () => {
     expect(trigger().getAttribute('data-size')).toBe('icon');
   });
 
+  // A panel or reader header: the same trigger at 32px, the size of the
+  // panel's Expand and X and the reader's sm pills.
+  it('renders a 32px ghost-muted trigger with size="panel"', async () => {
+    await render(
+      <ActionMenu
+        options={options()}
+        triggerLabel="Node actions"
+        size="panel"
+      />,
+    );
+    expect(trigger().getAttribute('data-variant')).toBe('ghost-muted');
+    expect(trigger().getAttribute('data-size')).toBe('icon-sm');
+  });
+
   it('passes layout classes, disabled and a test id to the trigger', async () => {
     await render(
       <ActionMenu
@@ -135,6 +149,28 @@ describe('ActionMenu', () => {
     );
     expect(separators).toHaveLength(1);
     expect(separators[0].nextElementSibling?.textContent).toBe('Remove');
+  });
+
+  // An item bar drops View, leaving the set-apart Delete first.
+  it('opens on an item, never on a rule, when the first option asks for one', async () => {
+    await render(
+      <ActionMenu
+        options={[
+          {
+            label: 'Delete',
+            onClick: vi.fn(),
+            variant: 'destructive',
+            separatorBefore: true,
+          },
+        ]}
+        triggerLabel="Menu"
+        open
+      />,
+    );
+    expect(
+      document.querySelectorAll('[data-slot="dropdown-menu-separator"]'),
+    ).toHaveLength(0);
+    expect(items().map((item) => item.textContent)).toEqual(['Delete']);
   });
 
   it('marks a disabled option', async () => {

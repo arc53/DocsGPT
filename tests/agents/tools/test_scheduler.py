@@ -130,6 +130,12 @@ class TestScheduleTask:
         out = tool.execute_action("schedule_task", instruction="x", run_at=far)
         assert "horizon" in out
 
+    def test_rejects_a_delay_past_the_calendar(self, pg_conn, patch_sessions):
+        agent_id = _make_agent(pg_conn)
+        tool = _make_tool(user_id="u1", agent_id=agent_id)
+        out = tool.execute_action("schedule_task", instruction="x", delay="999999999d")
+        assert out.startswith("Error:") and "too long" in out
+
 
 class TestQuota:
     def test_quota_enforced(self, pg_conn, patch_sessions, monkeypatch):
@@ -145,6 +151,75 @@ class TestQuota:
             "schedule_task", instruction="x", delay="1h",
         )
         assert "maximum" in out
+
+
+class TestTeamAgent:
+    """On a team's agent only someone who may manage its schedules sets one from chat."""
+
+    def _team_agent(self, conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        team = TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "alice")
+        tid = str(team["id"])
+        members = TeamMembersRepository(conn)
+        members.add_member(tid, "alice", role="team_admin")
+        members.add_member(tid, "eddie", role="team_editor")
+        members.add_member(tid, "vera", role="team_viewer")
+        principal = principal_id(tid)
+        return tid, principal, _make_agent(conn, user_id=principal)
+
+    def _schedule(self, principal, agent_id, payer):
+        from docsgpt.quotas.payer import billed_to
+
+        tool = _make_tool(user_id=principal, agent_id=agent_id)
+        with billed_to(payer):
+            return tool.execute_action("schedule_task", instruction="ping", delay="1h")
+
+    def _count(self, conn, agent_id):
+        return conn.execute(
+            text("SELECT count(*) FROM schedules WHERE agent_id = CAST(:a AS uuid)"), {"a": agent_id}
+        ).scalar()
+
+    def test_an_editor_sets_one(self, pg_conn, patch_sessions):
+        _, principal, agent_id = self._team_agent(pg_conn)
+
+        out = self._schedule(principal, agent_id, "eddie")
+
+        assert "task_id" in json.loads(out)
+        assert self._count(pg_conn, agent_id) == 1
+
+    def test_a_viewer_is_refused(self, pg_conn, patch_sessions):
+        _, principal, agent_id = self._team_agent(pg_conn)
+
+        out = self._schedule(principal, agent_id, "vera")
+
+        assert out.startswith("Error:") and "schedule" in out
+        assert self._count(pg_conn, agent_id) == 0
+
+    def test_someone_outside_the_team_is_refused(self, pg_conn, patch_sessions):
+        _, principal, agent_id = self._team_agent(pg_conn)
+
+        out = self._schedule(principal, agent_id, "outsider")
+
+        assert out.startswith("Error:")
+        assert self._count(pg_conn, agent_id) == 0
+
+    def test_a_member_of_a_team_it_is_shared_with_is_refused(self, pg_conn, patch_sessions):
+        from docsgpt.storage.db.repositories.team_item_shares import TeamItemSharesRepository
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        tid, principal, agent_id = self._team_agent(pg_conn)
+        other = str(TeamsRepository(pg_conn).create("Sales", f"s-{uuid.uuid4().hex[:6]}", "sam")["id"])
+        TeamMembersRepository(pg_conn).add_member(other, "sam", role="team_admin")
+        TeamItemSharesRepository(pg_conn).share(tid, other, "agent", agent_id, "alice")
+
+        out = self._schedule(principal, agent_id, "sam")
+
+        assert out.startswith("Error:")
+        assert self._count(pg_conn, agent_id) == 0
 
 
 class TestListAndCancel:

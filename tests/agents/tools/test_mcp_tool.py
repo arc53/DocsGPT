@@ -9,6 +9,7 @@ MCPOAuthManager.
 import asyncio
 import concurrent.futures
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,7 +36,7 @@ def _patch_mcp_globals(monkeypatch):
 
     monkeypatch.setattr(mcp_mod, "_mcp_clients_cache", {})
     # Bypass DNS-resolving URL validation for tests using fake hostnames.
-    monkeypatch.setattr(mcp_mod, "validate_url", lambda u, **kw: u)
+    monkeypatch.setattr(mcp_mod, "validate_user_base_url", lambda u: None)
 
 
 @pytest.fixture
@@ -141,30 +142,78 @@ class TestMCPToolInit:
 
     def test_rejects_metadata_ip(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://169.254.169.254/latest/meta-data", "auth_type": "none"})
 
     def test_rejects_localhost(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://localhost:8080/mcp", "auth_type": "none"})
 
     def test_rejects_private_ip(self, monkeypatch):
         from docsgpt.agents.tools.mcp_tool import MCPTool
-        from docsgpt.core.url_validation import validate_url as real_validate_url
+        from docsgpt.security.safe_url import validate_user_base_url
         import docsgpt.agents.tools.mcp_tool as mcp_mod
 
-        monkeypatch.setattr(mcp_mod, "validate_url", real_validate_url)
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
         with pytest.raises(ValueError, match="Invalid MCP server URL"):
             MCPTool(config={"server_url": "http://10.0.0.1/mcp", "auth_type": "none"})
+
+    def test_rejects_host_with_a_private_aaaa_record(self, monkeypatch):
+        # The client prefers IPv6, so a public A record beside AAAA ::1 dials loopback.
+        import socket
+
+        from docsgpt.security.safe_url import validate_user_base_url
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+
+        monkeypatch.setattr(mcp_mod, "validate_user_base_url", validate_user_base_url)
+        answers = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("104.18.6.192", 0)),
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("::1", 0, 0, 0)),
+        ]
+        monkeypatch.setattr("socket.getaddrinfo", lambda *a, **kw: answers)
+        with pytest.raises(ValueError, match="Invalid MCP server URL"):
+            mcp_mod.MCPTool(config={"server_url": "https://mcp.attacker.example/mcp", "auth_type": "none"})
+
+    def test_transport_client_checks_every_request(self):
+        from docsgpt.security.safe_url import _GuardedAsyncTransport
+
+        tool = _make_tool({"server_url": "https://mcp.example.com/mcp", "transport_type": "http"})
+        # FastMCP passes follow_redirects=True; the SDK follows same-origin redirects itself.
+        client = tool._http_client_factory()(headers={"X-A": "1"}, auth=None, follow_redirects=True)
+        try:
+            assert isinstance(client._transport, _GuardedAsyncTransport)
+            assert client.follow_redirects is False
+            assert client.headers["X-A"] == "1"
+            assert client.timeout.read == 300.0
+        finally:
+            asyncio.run(client.aclose())
+
+    def test_transport_refuses_a_host_rebound_to_a_private_address(self, monkeypatch):
+        import socket
+
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        tool = _make_tool({"server_url": "https://mcp.attacker.example/mcp", "transport_type": "http"})
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 0))],
+        )
+
+        async def call():
+            async with tool._http_client_factory()(headers=None, auth=None) as client:
+                await client.post("https://mcp.attacker.example/mcp", json={})
+
+        with pytest.raises(UnsafeUserUrlError):
+            asyncio.run(call())
 
     def test_accepts_public_url(self):
         tool = _make_tool({
@@ -201,11 +250,14 @@ class TestResolveRedirectUri:
         from docsgpt.core.settings import settings
 
         monkeypatch.setattr(settings, "API_URL", "https://api.docsgpt.co")
+        monkeypatch.setattr(settings, "WORKER_API_URL", "http://worker.docsgpt.co")
+        monkeypatch.setattr(settings, "MCP_OAUTH_REDIRECT_URI", None)
+        monkeypatch.setattr(settings, "CONNECTOR_REDIRECT_BASE_URI", None)
         tool = _make_tool({
             "server_url": "https://mcp.example.com",
             "auth_type": "none",
         })
-        assert "/api/mcp_server/callback" in tool.redirect_uri
+        assert tool.redirect_uri == "https://api.docsgpt.co/api/mcp_server/callback"
 
 
 # =====================================================================
@@ -461,6 +513,25 @@ class TestFormatResult:
         assert result["content"][0]["text"] == "Hello"
         assert result["isError"] is False
 
+    def test_structured_content_is_used_when_content_is_empty(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        result = SimpleNamespace(content=[], structured_content={"bases": [{"name": "Deals"}]}, is_error=False)
+
+        formatted = tool._format_result(result)
+        assert formatted["isError"] is False
+        assert json.loads(formatted["content"][0]["text"]) == {"bases": [{"name": "Deals"}]}
+
+    def test_text_content_is_kept_when_structured_content_is_also_sent(self, mcp_config):
+        from types import SimpleNamespace
+
+        tool = _make_tool(mcp_config)
+        text = SimpleNamespace(type="text", text="one base")
+        result = SimpleNamespace(content=[text], structured_content={"bases": []}, is_error=False)
+
+        assert tool._format_result(result)["content"] == [{"type": "text", "text": "one base"}]
+
     def test_an_image_is_shown_to_the_model_not_inlined(self, mcp_config):
         import base64
         import io
@@ -580,6 +651,611 @@ class TestExecuteAction:
         assert "param1" not in call_kwargs
         assert "param2" not in call_kwargs
         assert call_kwargs["param3"] == "real"
+
+    @pytest.mark.parametrize(
+        "operation, args, expected",
+        [
+            pytest.param(
+                "call_tool_raw",
+                ("read_ticket", {"ticket_id": "123"}),
+                "raw-result",
+                id="call-tool-raw",
+            ),
+            pytest.param(
+                "read_resource",
+                ("resource://example",),
+                "resource-result",
+                id="read-resource",
+            ),
+        ],
+    )
+    def test_execute_on_remaining_operation_branches(self, mcp_config, operation, args, expected):
+
+        tool = _make_tool(mcp_config)
+
+        class FakeClient:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def call_tool(self, name, arguments, raise_on_error=True):
+                assert name == "read_ticket"
+                assert arguments == {"ticket_id": "123"}
+                assert raise_on_error is False
+                return "raw-result"
+
+            async def read_resource(self, uri):
+                assert uri == "resource://example"
+                return "resource-result"
+
+        result = asyncio.run(
+            tool._execute_on(
+                FakeClient(),
+                operation,
+                *args,
+            )
+        )
+
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        "method, content",
+        [
+            pytest.param(
+                "GET",
+                '{"jsonrpc": "2.0", "id": 1}',
+                id="non-post-request",
+            ),
+            pytest.param(
+                "POST",
+                "not valid json",
+                id="malformed-json",
+            ),
+            pytest.param(
+                "POST",
+                '["not", "an", "object"]',
+                id="json-array",
+            ),
+            pytest.param(
+                "POST",
+                '{"jsonrpc": "2.0", "method": "ping"}',
+                id="missing-request-id",
+            ),
+            pytest.param(
+                "POST",
+                '{"jsonrpc": "2.0", "id": null}',
+                id="null-request-id",
+            ),
+        ],
+    )
+    def test_capture_mcp_http_status_ignores_invalid_requests(self, method, content):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import (
+            _MCPRequestStatus,
+            _capture_mcp_http_status,
+            _mcp_request_status,
+        )
+
+        request = httpx2.Request(
+            method,
+            "https://mcp.example.com/api",
+            content=content,
+        )
+        response = httpx2.Response(
+            401,
+            request=request,
+        )
+
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+
+        try:
+            asyncio.run(_capture_mcp_http_status(response))
+            assert status.status_code is None
+        finally:
+            _mcp_request_status.reset(token)
+
+    def test_capture_mcp_http_status_records_valid_request(self):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import (
+            _MCPRequestStatus,
+            _capture_mcp_http_status,
+            _mcp_request_status,
+        )
+
+        request = httpx2.Request(
+            "POST",
+            "https://mcp.example.com/api",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+            },
+        )
+
+        status = _MCPRequestStatus()
+        token = _mcp_request_status.set(status)
+
+        try:
+            asyncio.run(_capture_mcp_http_status(httpx2.Response(401, request=request)))
+            assert status.status_code == 401
+
+            asyncio.run(_capture_mcp_http_status(httpx2.Response(200, request=request)))
+            assert status.status_code == 200
+        finally:
+            _mcp_request_status.reset(token)
+
+    def test_capture_mcp_http_status_without_active_request(self):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import (
+            _capture_mcp_http_status,
+            _mcp_request_status,
+        )
+
+        request = httpx2.Request(
+            "POST",
+            "https://mcp.example.com/api",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "ping",
+            },
+        )
+
+        token = _mcp_request_status.set(None)
+
+        try:
+            asyncio.run(_capture_mcp_http_status(httpx2.Response(401, request=request)))
+        finally:
+            _mcp_request_status.reset(token)
+
+    @pytest.mark.parametrize(
+        "error_message",
+        [
+            "Ticket 401 could not be found",
+            "Record 401 is unavailable",
+            "Error 1401: invalid ticket",
+        ],
+    )
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    def test_non_auth_error_containing_401_does_not_retry(self, mock_run, mcp_config, error_message):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = _make_tool(mcp_config)
+        tool._client = MagicMock()
+
+        mock_run.side_effect = [
+            Exception(error_message),
+            {"status": "unexpected second execution"},
+        ]
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            with pytest.raises(
+                Exception,
+                match=re.escape(error_message),
+            ):
+                tool.execute_action("create_ticket", ticket_id="401")
+
+            mock_run.assert_called_once()
+            mock_setup.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error_message",
+        [
+            "HTTP 401",
+            "HTTP/1.1 401 Unauthorized",
+            "Request failed with status code 401",
+        ],
+    )
+    @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
+    def test_http_401_errors_trigger_auth_recovery(
+        self, mock_run, mcp_config, error_message
+    ):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        tool = _make_tool(mcp_config)
+        tool._client = MagicMock()
+
+        mock_run.side_effect = [
+            Exception(error_message),
+            {"status": "retry_successful"},
+        ]
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            result = tool.execute_action("read_ticket")
+
+            assert result == {"status": "retry_successful"}
+            assert mock_run.call_count == 2
+            mock_setup.assert_called_once()
+
+    def test_transport_http_401_with_generic_rpc_error_triggers_recovery(
+        self, monkeypatch, mcp_config
+    ):
+        import httpx2
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+        methods_seen = []
+
+        def handler(request):
+            if request.method == "GET":
+                return httpx2.Response(405)
+
+            assert request.method == "POST"
+            payload = json.loads(request.content)
+            method = payload["method"]
+            methods_seen.append(method)
+
+            if method == "server/discover":
+                # Tell FastMCP to fall back to the initialize handshake.
+                status = 200
+                reply = {
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            elif method == "initialize":
+                status = 200
+                reply = {
+                    "result": {
+                        "protocolVersion": payload["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                    },
+                }
+            elif method == "notifications/initialized":
+                return httpx2.Response(202)
+            else:
+                assert method == "tools/call", method
+                status = 401
+                reply = {
+                    "error": {
+                        "code": -32000,
+                        "message": "Request could not be completed",
+                    },
+                }
+
+            return httpx2.Response(status, json={"jsonrpc": "2.0", "id": payload["id"], **reply},)
+
+        def mock_http_client(**kwargs):
+            return httpx2.AsyncClient(
+                transport=httpx2.MockTransport(handler),
+                **kwargs,
+            )
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+            mock_http_client,
+        )
+
+        tool = _make_tool(mcp_config)
+        tool._client = tool._build_client()
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            with pytest.raises(Exception):
+                tool.execute_action("read_ticket")
+
+            mock_setup.assert_called_once()
+
+        assert "initialize" in methods_seen
+        assert "tools/call" in methods_seen
+        assert methods_seen.index("initialize") < methods_seen.index("tools/call")
+
+    def test_transport_resolved_http_401_preserves_unrelated_rpc_error(self, monkeypatch, mcp_config):
+        import httpx2
+
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        methods_seen = []
+        tool_call_attempts = []
+
+        class ChallengeAuth(httpx2.Auth):
+            def auth_flow(self, request):
+                response = yield request
+                if response.status_code == 401:
+                    request.headers["Authorization"] = "Bearer refreshed-test-token"
+                    yield request
+
+        def handler(request):
+            if request.method == "GET":
+                return httpx2.Response(405)
+
+            assert request.method == "POST"
+            payload = json.loads(request.content)
+            method = payload["method"]
+            methods_seen.append(method)
+
+            if method == "server/discover":
+                # Tell FastMCP to fall back to the initialize handshake.
+                status = 200
+                reply = {
+                    "error": {"code": -32601, "message": "Method not found"},
+                }
+            elif method == "initialize":
+                status = 200
+                reply = {
+                    "result": {
+                        "protocolVersion": payload["params"]["protocolVersion"],
+                        "capabilities": {"tools": {}},
+                        "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                    },
+                }
+            elif method == "notifications/initialized":
+                return httpx2.Response(202)
+            else:
+                assert method == "tools/call", method
+                authenticated = request.headers.get("Authorization") == "Bearer refreshed-test-token"
+                status = 200 if authenticated else 401
+                tool_call_attempts.append((payload["id"], status))
+                reply = {
+                    "error": {
+                        "code": -32000,
+                        "message": ("Unrelated RPC failure" if authenticated else "Request could not be completed"),
+                    },
+                }
+
+            return httpx2.Response(
+                status,
+                json={"jsonrpc": "2.0", "id": payload["id"], **reply},
+            )
+
+        def mock_http_client(**kwargs):
+            kwargs["auth"] = ChallengeAuth()
+            return httpx2.AsyncClient(
+                transport=httpx2.MockTransport(handler),
+                **kwargs,
+            )
+
+        monkeypatch.setattr(
+            "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+            mock_http_client,
+        )
+
+        tool = _make_tool(mcp_config)
+        tool._client = tool._build_client()
+
+        with patch.object(MCPTool, "_setup_client") as mock_setup:
+            with pytest.raises(Exception, match=r"^Failed to execute action 'read_ticket': Unrelated RPC failure$"):
+                tool.execute_action("read_ticket")
+
+            mock_setup.assert_not_called()
+
+        assert methods_seen.index("initialize") < methods_seen.index("tools/call")
+        assert [status for _, status in tool_call_attempts] == [401, 200]
+        assert tool_call_attempts[0][0] == tool_call_attempts[1][0]
+
+    @pytest.mark.parametrize(
+        "first_status, second_status, expected_error",
+        [
+            pytest.param(401, 200, "HTTP 401 Unauthorized", id="401-then-200"),
+            pytest.param(200, 401, "Unrelated RPC failure", id="200-then-401"),
+        ],
+    )
+    def test_transport_correlates_status_with_failing_request(
+        self, monkeypatch, mcp_config, first_status, second_status, expected_error
+    ):
+        import asyncio
+        import httpx2
+        from mcp import MCPError
+
+        def run():
+            first_in_flight = asyncio.Event()
+            second_in_flight = asyncio.Event()
+            release_second = asyncio.Event()
+            ping_ids = []
+
+            async def handler(request):
+                if request.method == "GET":
+                    return httpx2.Response(405)
+
+                assert request.method == "POST"
+                payload = json.loads(request.content)
+                method = payload["method"]
+                envelope = {"jsonrpc": "2.0", "id": payload.get("id")}
+
+                if method == "server/discover":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "error": {"code": -32601, "message": "Method not found"},
+                        },
+                    )
+                if method == "initialize":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "result": {
+                                "protocolVersion": payload["params"]["protocolVersion"],
+                                "capabilities": {},
+                                "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                            },
+                        },
+                    )
+                if method == "notifications/initialized":
+                    return httpx2.Response(202)
+
+                assert method == "ping", method
+                ping_ids.append(payload["id"])
+
+                if len(ping_ids) == 1:
+                    first_in_flight.set()
+                    await second_in_flight.wait()
+                    message = "Request could not be completed" if first_status == 401 else "Unrelated RPC failure"
+                    return httpx2.Response(
+                        first_status,
+                        json={
+                            **envelope,
+                            "error": {"code": -32000, "message": message},
+                        },
+                    )
+
+                assert len(ping_ids) == 2
+                second_in_flight.set()
+                await release_second.wait()
+                if second_status == 401:
+                    return httpx2.Response(
+                        401,
+                        json={
+                            **envelope,
+                            "error": {
+                                "code": -32000,
+                                "message": "Request could not be completed",
+                            },
+                        },
+                    )
+                return httpx2.Response(200, json={**envelope, "result": {}})
+
+            def mock_http_client(**kwargs):
+                return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
+
+            monkeypatch.setattr(
+                "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+                mock_http_client,
+            )
+            tool = _make_tool(mcp_config)
+            client = tool._build_client()
+
+            async def ping_with_overlapping_request(client):
+                assert client.initialize_result is not None
+                async with asyncio.TaskGroup() as tasks:
+
+                    async def capture_ping():
+                        try:
+                            return await client.session.send_ping()
+                        except MCPError as exc:
+                            return exc
+
+                    first = tasks.create_task(capture_ping())
+                    await first_in_flight.wait()
+                    second = tasks.create_task(capture_ping())
+
+                    first_error = await first
+                    release_second.set()
+                    second_outcome = await second
+
+                assert len(set(ping_ids)) == 2
+                assert isinstance(first_error, MCPError)
+                assert first_error.message == (
+                    "Request could not be completed" if first_status == 401 else "Unrelated RPC failure"
+                )
+                assert isinstance(second_outcome, MCPError) == (second_status == 401)
+                raise first_error
+
+            monkeypatch.setattr(type(client), "ping", ping_with_overlapping_request)
+
+            async def execute():
+                # Capture the outcome so a timeout or failed setup assertion
+                # cannot accidentally satisfy the classification assertion.
+                try:
+                    await asyncio.wait_for(tool._execute_on(client, "ping"), timeout=5)
+                except Exception as exc:
+                    return exc
+                pytest.fail("Expected the first ping to fail")
+
+            return asyncio.run(execute())
+
+        error = run()
+        assert str(error) == expected_error
+
+    def test_concurrent_operations_isolate_http_statuses(
+        self,monkeypatch, mcp_config
+    ):
+        import asyncio
+        import httpx2
+        from mcp import MCPError
+        auth_host = "auth.mcp.example.com"
+        unrelated_host = "unrelated.mcp.example.com"
+        generic_error = "Request could not be completed"
+        unrelated_error = "Unrelated RPC failure"
+
+        async def run():
+            both_pings_arrived = asyncio.Event()
+            ping_ids = {}
+
+            async def handler(request):
+                if request.method == "GET":
+                    return httpx2.Response(405)
+
+                assert request.method == "POST"
+                payload = json.loads(request.content)
+                method = payload["method"]
+                envelope = {"jsonrpc": "2.0", "id": payload.get("id")}
+
+                if method == "server/discover":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "error": {"code": -32601, "message": "Method not found"},
+                        },
+                    )
+                if method == "initialize":
+                    return httpx2.Response(
+                        200,
+                        json={
+                            **envelope,
+                            "result": {
+                                "protocolVersion": payload["params"]["protocolVersion"],
+                                "capabilities": {},
+                                "serverInfo": {"name": "test-mcp", "version": "1.0"},
+                            },
+                        },
+                    )
+                if method == "notifications/initialized":
+                    return httpx2.Response(202)
+
+                assert method == "ping", method
+                host = request.url.host
+                assert host in (auth_host, unrelated_host)
+                assert host not in ping_ids
+                ping_ids[host] = payload["id"]
+                if len(ping_ids) == 2:
+                    both_pings_arrived.set()
+                await both_pings_arrived.wait()
+
+                status, message = (401, generic_error) if host == auth_host else (200, unrelated_error)
+                return httpx2.Response(
+                    status,
+                    json={
+                        **envelope,
+                        "error": {"code": -32000, "message": message},
+                    },
+                )
+
+            def mock_http_client(**kwargs):
+                return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
+
+            monkeypatch.setattr(
+                "docsgpt.agents.tools.mcp_tool._mcp_http_client",
+                mock_http_client,
+            )
+
+            async def ping(host):
+                tool = _make_tool({**mcp_config, "server_url": f"https://{host}/mcp"})
+                return await tool._execute_on(tool._build_client(), "ping")
+
+            errors = await asyncio.wait_for(
+                asyncio.gather(
+                    ping(auth_host),
+                    ping(unrelated_host),
+                    return_exceptions=True,
+                ),
+                timeout=10,
+            )
+            assert set(ping_ids) == {auth_host, unrelated_host}
+            assert ping_ids[auth_host] == ping_ids[unrelated_host]
+            return errors
+
+        auth_error, ordinary_error = asyncio.run(run())
+
+        assert str(auth_error) == "HTTP 401 Unauthorized"
+        assert isinstance(auth_error.__cause__, MCPError)
+        assert auth_error.__cause__.message == generic_error
+        assert isinstance(ordinary_error, MCPError)
+        assert ordinary_error.message == unrelated_error
 
     @patch("docsgpt.agents.tools.mcp_tool.MCPTool._run_async_operation")
     def test_auth_error_retries_for_non_oauth(self, mock_run, mcp_config):
@@ -758,9 +1434,20 @@ class TestMapError:
         err = tool._map_error("test", Exception("403 Forbidden"))
         assert "Access denied" in str(err)
 
-    def test_401_unauthorized(self, mcp_config):
+    @pytest.mark.parametrize(
+        "error_message",
+        [
+            "401 Unauthorized",
+            "HTTP 401",
+            "http 401",
+            "Request failed with status code 401",
+            "HTTP/1.1 401 Unauthorized",
+            "Client error '401 Unauthorized' for url https://example.com",
+        ],
+    )
+    def test_401_unauthorized(self, mcp_config, error_message):
         tool = _make_tool(mcp_config)
-        err = tool._map_error("test", Exception("401 Unauthorized"))
+        err = tool._map_error("test", Exception(error_message))
         assert "Authentication failed" in str(err)
 
     def test_econnrefused_pattern(self, mcp_config):
@@ -778,6 +1465,15 @@ class TestMapError:
         original = RuntimeError("something weird")
         err = tool._map_error("test", original)
         assert err is original
+
+    def test_ticket_number_401_is_not_authentication_error(self, mcp_config):
+        tool = _make_tool(mcp_config)
+
+        original_error = Exception("Ticket 401 could not be found")
+
+        mapped_error = tool._map_error("call_tool", original_error)
+
+        assert str(mapped_error) == "Ticket 401 could not be found"
 
 
 # =====================================================================
@@ -819,6 +1515,31 @@ class TestGetActionsMetadata:
         tool.available_tools = [{"name": "ping", "description": "Ping"}]
         meta = tool.get_actions_metadata()
         assert meta[0]["parameters"]["properties"] == {}
+
+    @pytest.mark.parametrize(
+        "input_schema",
+        [
+            {"type": "object"},
+            {"type": "object", "properties": None},
+        ],
+    )
+    def test_tools_without_property_definitions(self, mcp_config, input_schema):
+        tool = _make_tool(mcp_config)
+        tool.available_tools = [
+            {
+                "name": "no_args",
+                "description": "Takes no arguments",
+                "inputSchema": input_schema,
+            }
+        ]
+
+        meta = tool.get_actions_metadata()
+
+        assert meta[0]["parameters"] == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
 
     def test_tools_with_flat_schema(self, mcp_config):
         tool = _make_tool(mcp_config)
@@ -886,7 +1607,7 @@ class TestSetupClient:
 
         mock_client = MagicMock()
         with patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
-             patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client):
+            patch("docsgpt.agents.tools.mcp_tool.Client", return_value=mock_client):
             tool._setup_client()
             assert tool._client is mock_client
 
@@ -1407,7 +2128,7 @@ class TestStoredSignInRenewal:
         def client(**kwargs):
             return httpx2.AsyncClient(transport=httpx2.MockTransport(handler), **kwargs)
 
-        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool.create_mcp_http_client", client)
+        monkeypatch.setattr("docsgpt.agents.tools.mcp_tool._mcp_http_client", client)
         return seen
 
     @staticmethod
@@ -1460,6 +2181,37 @@ class TestStoredSignInRenewal:
             asyncio.run(oauth._initialize())
         assert oauth.context.oauth_metadata is None
         assert "Could not read OAuth metadata" in caplog.text
+
+    def test_discovery_does_not_reach_a_private_authorization_server(self, monkeypatch):
+        # The MCP server picks the authorization server; it must not be able to
+        # point the backend at internal addresses.
+        import socket
+        import time
+
+        import httpx2
+
+        seen = []
+
+        async def handler(transport, request):
+            seen.append(request.url.host)
+            if request.url.path.startswith("/.well-known/oauth-protected-resource"):
+                return httpx2.Response(200, json={
+                    "resource": "https://mcp.example.com/mcp",
+                    "authorization_servers": ["http://169.254.169.254/latest"],
+                })
+            return httpx2.Response(404)
+
+        monkeypatch.setattr("httpx2.AsyncHTTPTransport.handle_async_request", handler)
+        monkeypatch.setattr(
+            "socket.getaddrinfo",
+            lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("104.18.6.192", 0))],
+        )
+        oauth = self._oauth(_StoredTokens(
+            self._token(refresh_token="rt", expires_in=3600), time.time() - 5, client_info=self._client_info(),
+        ))
+        asyncio.run(oauth._initialize())
+        assert seen and set(seen) == {"104.18.6.192"}
+        assert oauth.context.oauth_metadata is None
 
     def test_a_valid_token_needs_no_discovery(self, monkeypatch):
         import time
@@ -1569,6 +2321,167 @@ class TestRunAsyncOperation:
         with patch.object(tool, "_execute_with_client", side_effect=fake_execute):
             result = tool._run_in_new_loop("ping")
             assert result == "ok"
+
+    def test_a_shared_client_runs_one_operation_at_a_time(self, mcp_config):
+        # A cached client is shared by every tool on the same server; its session
+        # is bound to the loop that opened it, so two loops at once hang.
+        import threading
+        import time as _time
+
+        shared = MagicMock()
+        tools = [_make_tool(mcp_config) for _ in range(2)]
+        lock = threading.Lock()
+        state = {"inside": 0, "most": 0}
+
+        async def fake_execute(*args, **kwargs):
+            with lock:
+                state["inside"] += 1
+                state["most"] = max(state["most"], state["inside"])
+            await asyncio.sleep(0.05)
+            with lock:
+                state["inside"] -= 1
+            return "ok"
+
+        for tool in tools:
+            tool._client = shared
+        results = []
+        with patch.object(tools[0], "_execute_with_client", side_effect=fake_execute), \
+             patch.object(tools[1], "_execute_with_client", side_effect=fake_execute):
+            threads = [
+                threading.Thread(target=lambda t=t: results.append(t._run_in_new_loop("ping"))) for t in tools
+            ]
+            started = _time.monotonic()
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=5)
+        assert results == ["ok", "ok"]
+        assert state["most"] == 1
+        assert _time.monotonic() - started < 5
+
+    def test_a_wait_for_a_busy_client_gives_up_after_the_timeout(self, mcp_config):
+        import threading
+
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+
+        tool = _make_tool({**mcp_config, "timeout": 0.05})
+        tool._client = MagicMock()
+        busy = threading.Event()
+        release = threading.Event()
+
+        def hold():
+            with mcp_mod._client_lock(tool._client):
+                busy.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        try:
+            busy.wait(5)
+            with pytest.raises(Exception, match="Timed out"):
+                tool._run_async_operation("ping")
+        finally:
+            release.set()
+            holder.join(5)
+
+    def test_a_busy_shared_client_does_not_hold_up_other_calls(self, mcp_config):
+        # The no-auth Excalidraw preset shares one cached client across users.
+        import threading
+
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+
+        tool = _make_tool({**mcp_config, "timeout": 5})
+        tool._client = MagicMock()
+        tool._shared_client = True
+        fresh = MagicMock()
+        ran_on = []
+
+        async def fake_execute_on(client, operation, /, *args, **kwargs):
+            ran_on.append(client)
+            return "ok"
+
+        busy, release = threading.Event(), threading.Event()
+
+        def hold():
+            with mcp_mod._client_lock(tool._client):
+                busy.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        try:
+            busy.wait(5)
+            with patch.object(tool, "_build_client", return_value=fresh), \
+                 patch.object(tool, "_execute_on", side_effect=fake_execute_on):
+                assert tool._run_in_new_loop("call_tool", "create_view", client="x") == "ok"
+        finally:
+            release.set()
+            holder.join(5)
+        assert ran_on == [fresh]
+
+    def test_a_busy_shared_oauth_client_is_waited_for(self, mcp_config):
+        # Its tokens refresh through it; a second client could race the refresh.
+        import threading
+
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+
+        tool = _make_tool({**mcp_config, "auth_type": "oauth", "timeout": 0.05})
+        tool._client = MagicMock()
+        tool._shared_client = True
+        busy, release = threading.Event(), threading.Event()
+
+        def hold():
+            with mcp_mod._client_lock(tool._client):
+                busy.set()
+                release.wait(5)
+
+        holder = threading.Thread(target=hold)
+        holder.start()
+        try:
+            busy.wait(5)
+            with patch.object(tool, "_build_client") as build, pytest.raises(Exception, match="Timed out"):
+                tool._run_async_operation("ping")
+            build.assert_not_called()
+        finally:
+            release.set()
+            holder.join(5)
+
+    def test_a_cached_client_is_marked_shared(self, mcp_config):
+        from docsgpt.agents.tools import mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        mcp_mod._mcp_clients_cache.clear()
+        try:
+            with patch.object(MCPTool, "_build_client", return_value=MagicMock()):
+                first, second = MCPTool(dict(mcp_config)), MCPTool(dict(mcp_config))
+            assert first._client is second._client
+            assert first._shared_client and second._shared_client
+        finally:
+            mcp_mod._mcp_clients_cache.clear()
+
+    def test_separate_clients_run_side_by_side(self, mcp_config):
+        import threading
+
+        tools = [_make_tool(mcp_config) for _ in range(2)]
+        both_inside = threading.Barrier(2, timeout=5)
+
+        async def fake_execute(*args, **kwargs):
+            both_inside.wait()
+            return "ok"
+
+        for tool in tools:
+            tool._client = MagicMock()
+        results = []
+        with patch.object(tools[0], "_execute_with_client", side_effect=fake_execute), \
+             patch.object(tools[1], "_execute_with_client", side_effect=fake_execute):
+            threads = [
+                threading.Thread(target=lambda t=t: results.append(t._run_in_new_loop("ping"))) for t in tools
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=10)
+        assert results == ["ok", "ok"]
 
 
 # =====================================================================
@@ -2179,7 +3092,7 @@ class TestRegularConnectionExtended:
         tool = _make_tool(mcp_config)
         tool._client = MagicMock()
         mock_run.side_effect = [None]  # ping ok
-        with patch.object(tool, "discover_tools", return_value=[
+        with patch.object(tool,"discover_tools",return_value=[
             {"name": "t1", "description": "d1"},
             {"name": "t2", "description": "d2"},
         ]):
@@ -3010,3 +3923,170 @@ class TestMCPToolExecuteActionErrorHandling:
         )
         with pytest.raises(Exception, match="Failed to execute action"):
             tool.execute_action("some_action", key="value")
+
+
+# =====================================================================
+# Cancelling a sign-in frees the worker
+# =====================================================================
+
+
+class _FakeRedis:
+    """The few Redis calls the sign-in makes, kept in a dict."""
+
+    def __init__(self):
+        self.data: dict = {}
+
+    def get(self, key):
+        value = self.data.get(key)
+        return value.encode() if isinstance(value, str) else value
+
+    def setex(self, key, _ttl, value):
+        self.data[key] = value
+
+    def delete(self, key):
+        self.data.pop(key, None)
+
+
+def _oauth(redis, task_id="task-1", redirect_publish=None):
+    from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+
+    return DocsGPTOAuth(
+        mcp_url="https://mcp.example.com/mcp",
+        redirect_uri="http://localhost:7091/api/mcp_server/callback",
+        redis_client=redis,
+        task_id=task_id,
+        user_id="alice",
+        redirect_publish=redirect_publish,
+    )
+
+
+@pytest.mark.unit
+class TestCancelOAuth:
+    def test_only_the_user_who_started_a_sign_in_can_cancel_it(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+
+        assert manager.cancel("task-1", "mallory") is False
+        assert "mcp_oauth:cancel:task-1" not in redis.data
+        assert manager.cancel("task-1", "alice") is True
+        assert redis.data["mcp_oauth:cancel:task-1"] == "1"
+
+    def test_an_unknown_sign_in_is_not_cancelled(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        assert MCPOAuthManager(_FakeRedis()).cancel("missing", "alice") is False
+        assert MCPOAuthManager(None).cancel("task-1", "alice") is False
+
+    def test_the_wait_for_the_callback_ends_when_cancelled(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        oauth = _oauth(redis)
+        oauth.extracted_state = "state-1"
+        redis.setex("mcp_oauth:auth_url:state-1", 600, "https://provider.example/authorize")
+        manager.cancel("task-1", "alice")
+
+        with patch("docsgpt.agents.tools.mcp_tool.asyncio.sleep") as sleep:
+            with pytest.raises(Exception, match="OAuth cancelled"):
+                asyncio.run(oauth.callback_handler())
+        sleep.assert_not_called()
+        assert "mcp_oauth:auth_url:state-1" not in redis.data
+
+    def test_a_sign_in_cancelled_while_queued_never_redirects(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+        publish = MagicMock()
+        oauth = _oauth(redis, redirect_publish=publish)
+
+        with pytest.raises(Exception, match="OAuth cancelled"):
+            asyncio.run(oauth.redirect_handler("https://provider.example/authorize?state=s"))
+        publish.assert_not_called()
+
+    def test_another_sign_in_is_not_affected(self):
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+        publish = MagicMock()
+        oauth = _oauth(redis, task_id="task-2", redirect_publish=publish)
+
+        asyncio.run(oauth.redirect_handler("https://provider.example/authorize?state=s"))
+        publish.assert_called_once()
+
+
+def _sign_in_tool(task_id, publish):
+    """A worker's sign-in ``MCPTool`` for one task, as ``mcp_oauth`` builds it."""
+    from docsgpt.agents.tools.mcp_tool import MCPTool
+
+    tool = MCPTool.__new__(MCPTool)
+    tool.server_url = "https://mcp.example.com/mcp"
+    tool.transport_type = "http"
+    tool.auth_type = "oauth"
+    tool.custom_headers = {}
+    tool.auth_credentials = {}
+    tool.oauth_scopes = []
+    tool.oauth_task_id = task_id
+    tool.oauth_client_name = "DocsGPT-MCP"
+    tool.oauth_redirect_publish = publish
+    tool.redirect_uri = "http://localhost:7091/api/mcp_server/callback"
+    tool.query_mode = False
+    tool.user_id = "alice"
+    tool.connection_id = None
+    tool._client = None
+    tool._cache_key = tool._generate_cache_key()
+    return tool
+
+
+@pytest.mark.unit
+class TestSignInClientsAreNotShared:
+    """The worker keeps one process; each sign-in task needs its own OAuth handler."""
+
+    def _setup(self, tool, redis):
+        from docsgpt.agents.tools.mcp_tool import MCPTool
+
+        with patch("docsgpt.agents.tools.mcp_tool.get_redis_instance", return_value=redis), \
+                patch.object(MCPTool, "_create_transport", return_value=MagicMock()), \
+                patch("docsgpt.agents.tools.mcp_tool.Client",
+                      side_effect=lambda transport, auth=None, **_kwargs: MagicMock(auth=auth)):
+            tool._setup_client()
+
+    def test_a_retry_after_a_cancel_reaches_the_provider(self):
+        import docsgpt.agents.tools.mcp_tool as mcp_mod
+        from docsgpt.agents.tools.mcp_tool import MCPOAuthManager
+
+        redis = _FakeRedis()
+        manager = MCPOAuthManager(redis)
+        first = _sign_in_tool("task-1", MagicMock())
+        self._setup(first, redis)
+        manager.register_task("task-1", "alice")
+        manager.cancel("task-1", "alice")
+
+        publish = MagicMock()
+        retry = _sign_in_tool("task-2", publish)
+        self._setup(retry, redis)
+
+        assert retry._client is not first._client
+        assert retry._client.auth.task_id == "task-2"
+        asyncio.run(retry._client.auth.redirect_handler("https://provider.example/authorize?state=s2"))
+        publish.assert_called_once_with("https://provider.example/authorize?state=s2")
+        assert retry._cache_key not in mcp_mod._mcp_clients_cache
+
+    def test_clients_without_a_sign_in_task_are_still_shared(self):
+        redis = _FakeRedis()
+        first = _sign_in_tool(None, None)
+        self._setup(first, redis)
+        second = _sign_in_tool(None, None)
+        self._setup(second, redis)
+
+        assert second._client is first._client

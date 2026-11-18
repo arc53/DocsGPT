@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
 from docsgpt.background.results import stored_result
+from docsgpt.sandbox.activity import shared_activity
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -145,6 +146,9 @@ def poll_job(job_id: str) -> Dict[str, Any]:
             backend.refresh_activity(session_id)
         except Exception:
             logger.debug("background job %s: activity refresh failed", job_id, exc_info=True)
+        # The run's session may be idle in every manager while the job runs; this
+        # keeps another process's idle expiry from deleting the sandbox under it.
+        shared_activity().touch(session_id)
     except Exception as exc:
         return _poll_failed(job_id, external, exc)
 
@@ -213,6 +217,7 @@ def finish_detached(row: Dict[str, Any], backend: Any, state: Any) -> Optional[D
             status="completed" if status == "completed" else "error",
             artifacts=tool.get_artifacts("run_code"),
             artifact_id=tool.get_artifact_id("run_code"),
+            script_error=tool.job_script_error() if status == "failed" else None,
         ),
         output_tail=(state.output or None),
     )

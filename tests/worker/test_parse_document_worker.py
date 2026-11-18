@@ -264,3 +264,44 @@ def test_persist_full_but_view_respects_max_chars(monkeypatch):
     assert json.loads(captured["data"].decode("utf-8"))["content"] == big  # full persisted
     assert len(out["content"]) == 100  # view capped by max_chars
     assert out["truncated"] is True
+
+
+@pytest.mark.unit
+def test_lines_output_returns_every_line_unbounded(monkeypatch):
+    import docsgpt.parser.document_lines as dl
+    import docsgpt.parser.document_reader as dr
+
+    _patch_repo(monkeypatch, found=True, run="run-1")
+    lines = ["Z" * 50000, "(p.2) tail"]
+    seen: Dict[str, Any] = {}
+
+    def _extract(data, filename, mime_type=None):
+        seen.update(data=data, filename=filename, mime_type=mime_type)
+        return {"lines": lines, "tables": []}
+
+    monkeypatch.setattr(dl, "extract_document_lines", _extract)
+    monkeypatch.setattr(
+        dr, "parse_document_bytes", lambda *a, **k: (_ for _ in ()).throw(AssertionError("not the view parser"))
+    )
+
+    out = worker.parse_document_worker(
+        None, _ART_ID, {"workflow_run_id": "run-1"}, "u-1", {"output": "lines", "persist": True}
+    )
+
+    assert out == {"status": "ok", "lines": lines, "tables": []}
+    assert seen["filename"] == "statement.pdf"
+    assert seen["data"] == b"%PDF-1.4 fake"
+
+
+@pytest.mark.unit
+def test_lines_output_surfaces_a_read_error(monkeypatch):
+    import docsgpt.parser.document_lines as dl
+
+    _patch_repo(monkeypatch, found=True, run="run-1")
+    monkeypatch.setattr(dl, "extract_document_lines", lambda *a, **k: {"error": "could not read the pdf document."})
+
+    out = worker.parse_document_worker(
+        None, _ART_ID, {"workflow_run_id": "run-1"}, "u-1", {"output": "lines"}
+    )
+
+    assert out == {"status": "error", "error": "could not read the pdf document."}

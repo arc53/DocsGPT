@@ -3,7 +3,10 @@ from docsgpt.agents.tools.base import Tool
 
 THINK_TOOL_ID = "think"
 
+# The executor loads a tool by its row ``id``; think has no DB row, so it
+# carries its sentinel id or is dropped with ``tool_missing_row_id``.
 THINK_TOOL_ENTRY = {
+    "id": THINK_TOOL_ID,
     "name": "think",
     "actions": [
         {

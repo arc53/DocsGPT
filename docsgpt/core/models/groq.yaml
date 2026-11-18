@@ -14,10 +14,13 @@ models:
   - id: llama-3.3-70b-versatile
     display_name: Llama 3.3 70B Versatile
     description: Meta's Llama 3.3 70B for general-purpose chat with parallel tool use
+    # Groq serves strict json_schema outputs only on its newer models.
+    supports_structured_output: false
     input_cost_per_million: 0.59
     output_cost_per_million: 0.79
   - id: llama-3.1-8b-instant
     display_name: Llama 3.1 8B Instant
     description: Small, very low-latency Llama model (~560 tok/s) with parallel tool use
+    supports_structured_output: false
     input_cost_per_million: 0.05
     output_cost_per_million: 0.08

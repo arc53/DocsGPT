@@ -11,6 +11,9 @@ from docsgpt.background.context import BackgroundContext
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 class TestNormalize:
     def test_cleans_and_bounds(self):
         spec = watch.normalize(

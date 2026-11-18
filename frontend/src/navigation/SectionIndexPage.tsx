@@ -4,10 +4,14 @@ import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { ListRow, ListRows } from '@/components/ui/list-row';
-import { selectIsAdmin } from '@/preferences/preferenceSlice';
+import {
+  selectAnalyticsEnabled,
+  selectIsAdmin,
+} from '@/preferences/preferenceSlice';
 
 import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
+import { selectInTeam } from '../settings/workspaceAccess';
 import { getVisibleGroups, type Section } from './sections';
 
 /**
@@ -20,9 +24,12 @@ export default function SectionIndexPage({ section }: { section: Section }) {
   const { t } = useTranslation();
   const isAdmin = useSelector(selectIsAdmin);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
+  const analyticsEnabled = useSelector(selectAnalyticsEnabled);
+  const inTeam = useSelector(selectInTeam);
   const groups = getVisibleGroups(section, {
     isAdmin,
-    features: { connectors: connectorsEnabled },
+    features: { connectors: connectorsEnabled, analytics: analyticsEnabled },
+    inTeam,
   });
 
   return (

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Collapsible } from '../components/ui/collapsible';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
@@ -13,7 +14,12 @@ import ActionParameters, {
   ActionParametersToggle,
   type ParameterValue,
 } from './ActionParameters';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from './connectionErrors';
 import { actionTitle } from './i18n';
+import { InjectionFlagBadge, injectionFlagged } from './injectionWarning';
 import PermissionGroup, {
   PermissionRow,
   PermissionSelect,
@@ -51,14 +57,17 @@ function ActionRow({
       name={action.name}
       description={action.description}
       badge={
-        fixedCount > 0 && (
-          <Badge variant="neutral">
-            {t('settings.connectors.parameters.fixedCount', {
-              count: fixedCount,
-              formatted: formatCount(fixedCount),
-            })}
-          </Badge>
-        )
+        <>
+          {injectionFlagged(action) && <InjectionFlagBadge />}
+          {fixedCount > 0 && (
+            <Badge variant="neutral">
+              {t('settings.connectors.parameters.fixedCount', {
+                count: fixedCount,
+                formatted: formatCount(fixedCount),
+              })}
+            </Badge>
+          )}
+        </>
       }
       control={
         <PermissionSelect
@@ -131,6 +140,10 @@ export default function ToolPermissions({
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const [actions, setActions] = useState<ConnectionToolAction[]>(tool.actions);
+  // A refusal about a team's account (only its Admins change its tools, and
+  // not while it is paused) says so; anything else is the generic line.
+  const refusalText = (data: unknown, fallback: string) =>
+    connectionErrorCode(data) ? connectionErrorMessage(t, data) : t(fallback);
   // A refreshed tool brings its new list of actions.
   useEffect(() => setActions(tool.actions), [tool.actions]);
 
@@ -143,48 +156,55 @@ export default function ToolPermissions({
           : action,
       ),
     );
+    const refuse = (data: unknown) => {
+      setActions(previous);
+      dispatch(
+        showActionToast({
+          variant: 'destructive',
+          message: refusalText(
+            data,
+            'settings.connectors.permission.saveFailed',
+          ),
+        }),
+      );
+    };
     connectorsService
       .setToolPermissions(connectionId, tool.id, changes, token)
       .then((data) => {
-        if (!data?.success) throw new Error('save failed');
-        onChange?.(data.tool);
+        if (!data?.success) refuse(data);
+        else onChange?.(data.tool);
       })
-      .catch(() => {
-        setActions(previous);
-        dispatch(
-          showActionToast({
-            variant: 'destructive',
-            message: t('settings.connectors.permission.saveFailed'),
-          }),
-        );
-      });
+      .catch(() => refuse(null));
   };
 
   const setParameters = async (
     actionName: string,
     changes: Record<string, ParameterValue>,
   ) => {
+    let data: { success?: boolean; tool?: ConnectionTool } | null;
     try {
-      const data = await connectorsService.setToolParameters(
+      data = await connectorsService.setToolParameters(
         connectionId,
         tool.id,
         actionName,
         changes,
         token,
       );
-      if (!data?.success) throw new Error('save failed');
+    } catch {
+      data = null;
+    }
+    if (data?.success && data.tool) {
       setActions(data.tool.actions);
       onChange?.(data.tool);
       return true;
-    } catch {
-      dispatch(
-        showActionToast({
-          variant: 'destructive',
-          message: t('settings.connectors.parameters.saveFailed'),
-        }),
-      );
-      return false;
     }
+    dispatch(
+      showActionToast({
+        variant: 'destructive',
+        message: refusalText(data, 'settings.connectors.parameters.saveFailed'),
+      }),
+    );
+    return false;
   };
 
   const groups = (['read', 'write'] as const)
@@ -193,10 +213,23 @@ export default function ToolPermissions({
       actions: actions.filter((action) => action.access === access),
     }))
     .filter((group) => group.actions.length > 0);
+  // Warn only: a flagged action keeps its permission, and the rows that say
+  // which ones show under Customize.
+  const flagged = actions.filter(injectionFlagged).length;
 
   return (
     <Card variant={variant} padding="sm" className="gap-4">
       {children}
+      {flagged > 0 && (
+        <Alert variant="warning" data-testid="tool-injection-warning">
+          <AlertDescription>
+            {t('settings.connectors.injection.notice', {
+              count: flagged,
+              formatted: formatCount(flagged),
+            })}
+          </AlertDescription>
+        </Alert>
+      )}
       {groups.map((group) => {
         const name = t(`settings.connectors.capabilityPlain.${group.access}`);
         return (

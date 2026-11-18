@@ -56,6 +56,68 @@
       }
     }
   },
+  "ask_user.ask_user": {
+    "type": "object",
+    "required": [
+      "questions"
+    ],
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "questions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "text",
+            "options"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "multi": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "label"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "input": {
+                        "type": "string"
+                      },
+                      "exclusive": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "placeholder": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
   "attachments.attachments_list": {
     "type": "object",
     "required": [],
@@ -464,10 +526,27 @@
             "type": "string",
             "enum": [
               "none",
-              "standard_webhooks",
               "github",
+              "stripe",
+              "slack",
+              "standard_webhooks",
+              "header_token",
+              "bearer",
               "hmac_sha256"
             ]
+          },
+          "signature_header": {
+            "type": "string"
+          },
+          "methods": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "POST",
+                "GET"
+              ]
+            }
           },
           "question": {
             "type": "string"
@@ -654,14 +733,8 @@
   },
   "postgres.postgres_get_schema": {
     "type": "object",
-    "required": [
-      "db_name"
-    ],
-    "properties": {
-      "db_name": {
-        "type": "string"
-      }
-    }
+    "required": [],
+    "properties": {}
   },
   "read_document.read_document": {
     "type": "object",
@@ -740,6 +813,17 @@
       },
       "timeout_ms": {
         "type": "integer"
+      }
+    }
+  },
+  "report_cannot_complete.report_cannot_complete": {
+    "type": "object",
+    "required": [
+      "reason"
+    ],
+    "properties": {
+      "reason": {
+        "type": "string"
       }
     }
   },

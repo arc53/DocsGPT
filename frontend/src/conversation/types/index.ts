@@ -1,3 +1,5 @@
+import type { McpCallToolResult } from '../../api/services/mcpAppsService';
+
 export type ToolCallsType = {
   tool_name: string;
   action_name: string;
@@ -8,23 +10,51 @@ export type ToolCallsType = {
   sent_arguments?: Record<string, any>;
   result?: Record<string, any>;
   error?: string;
+  /** Set on a refused call (``tool_not_allowed``, ``connection_required``). */
+  error_type?: string;
+  /**
+   * A call its turn waited on that never ran: the user started a new message
+   * instead of answering it, or the request expired. Its status is ``denied``.
+   */
+  not_run?: 'moved_on' | 'expired';
   status?:
     | 'pending'
     | 'completed'
+    | 'success'
     | 'error'
     | 'awaiting_approval'
+    | 'awaiting_answer'
+    | 'skipped'
     | 'denied'
     | 'requires_client_execution';
+  /**
+   * An `ask_user` call paused on `awaiting_answer`: the model's lead-in line
+   * and its questions, normalized. Once answered they are its `arguments`.
+   */
+  message?: string | null;
+  questions?: unknown;
   artifact_id?: string;
   // Every artifact this call produced, with display names. A single call can
   // write several files (``run_code``), and ``artifact_id`` names only the
   // first — the rest had no way into the UI without this.
   // ``ref`` is the model-facing handle (``A1``) — stable per conversation, so
   // a ref the model typed cannot be resolved by position within one turn.
-  artifacts?: { id: string; filename?: string | null; ref?: string | null }[];
+  artifacts?: {
+    id: string;
+    filename?: string | null;
+    ref?: string | null;
+    /** The artifact's title, when its tool named it (the artifact tool). */
+    title?: string | null;
+    /** The version this call produced. */
+    version?: number | null;
+  }[];
   // Remote-device tool calls carry the device id so the approval UI can
   // offer a "don't ask again" sticky-pattern action without a lookup.
   device_id?: string;
+  /** Link secret references approving this call fills in (`{{link_secret:REF}}` ids). */
+  secret_refs?: string[];
+  /** `{ref: the monitor's description}`, to name each link on the approval card. */
+  secret_ref_labels?: Record<string, string>;
   // A connection-backed tool whose account needs signing in pauses on a
   // Connect card instead of an approval. Never carries an account or secret.
   connection_required?: {
@@ -51,6 +81,19 @@ export type ToolCallsType = {
   /** When the job behind a handed-off call started and finished (patched on when it ends). */
   job_started_at?: string;
   job_finished_at?: string;
+  /** What the job's card says beyond its status (patched on when it ends; absent on older calls). */
+  job_notices?: { code: string; pid?: number }[];
+  /**
+   * The MCP App view the call renders inline (`docsgpt/agents/mcp_apps.py`):
+   * its `ui://` resource, the tool row to read it through, and the call's full
+   * `CallToolResult`, which the view is handed. `result` is on the live call
+   * only; a saved one reads it back from `/api/mcp_apps/result`.
+   */
+  ui?: {
+    resource_uri: string;
+    tool_id: string;
+    result?: McpCallToolResult;
+  };
 };
 
 /** The arguments to show for a call: what it sends, not what the model asked. */

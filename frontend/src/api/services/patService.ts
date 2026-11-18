@@ -47,6 +47,15 @@ export interface CreateAccessTokenPayload {
   expires_in_days?: number | null;
 }
 
+export interface CreateAgentToolResponse {
+  /** The new API tool's id. */
+  id: string;
+  /** Its actions: the endpoints the token may call. */
+  actions: string[];
+  /** The actions that start switched off (deletes, asking another agent). */
+  inactive: string[];
+}
+
 export interface CreateAccessTokenResponse {
   /** Plaintext secret. The server returns it exactly once. */
   token: string;
@@ -68,7 +77,7 @@ export class AccessTokenApiError extends Error {
 // here and turn `{success:false, message}` / non-2xx into a thrown error so
 // callers can show the server's message inline.
 const parse = async <T>(response: Response): Promise<T> => {
-  let body: { success?: boolean; message?: unknown } | null = null;
+  let body: { success?: boolean; message?: unknown } | null;
   try {
     body = await response.json();
   } catch {
@@ -111,6 +120,25 @@ const patService = {
       await apiClient.post(
         endpoints.USER.ACCESS_TOKEN_REGENERATE(encodeURIComponent(id)),
         expiresInDays === undefined ? {} : { expires_in_days: expiresInDays },
+        token,
+      ),
+    ),
+
+  /**
+   * API tool on the account that reads it with this token: the token's
+   * secret (just shown, held only by the caller) becomes its sealed
+   * `Authorization` header. `baseUrl` is where agents reach the API.
+   */
+  createAgentTool: async (
+    id: string,
+    secret: string,
+    baseUrl: string,
+    token: string | null,
+  ): Promise<CreateAgentToolResponse> =>
+    parse<CreateAgentToolResponse>(
+      await apiClient.post(
+        endpoints.USER.ACCESS_TOKEN_TOOL(encodeURIComponent(id)),
+        { token: secret, base_url: baseUrl },
         token,
       ),
     ),

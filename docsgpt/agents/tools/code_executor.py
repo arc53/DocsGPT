@@ -31,6 +31,7 @@ from docsgpt.agents.tools.code_executor_hints import (
     error_signature,
     exception_of,
     fix_hints,
+    script_exception,
 )
 from docsgpt.core.settings import settings
 from docsgpt.llm.tool_images import image_ref
@@ -48,13 +49,13 @@ from docsgpt.sandbox.artifacts_capture import (
 from docsgpt.sandbox.artifacts_capture import (
     kind_for_mime as _kind_for_mime,
 )
-from docsgpt.sandbox.base import ExecResult
+from docsgpt.sandbox.base import ExecResult, SandboxGoneError
 from docsgpt.sandbox import manifest
 from docsgpt.sandbox.sandbox_creator import SandboxCreator
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.storage.storage_creator import StorageCreator
-from docsgpt.utils import safe_filename
+from docsgpt.utils import display_filename
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,9 @@ class CodeExecutorTool(Tool):
         self.tool_id: Optional[str] = self.config.get("tool_id")
         self.conversation_id: Optional[str] = self.config.get("conversation_id")
         self.workflow_run_id: Optional[str] = self.config.get("workflow_run_id")
+        # A scheduled or webhook run with no conversation: the session lives for
+        # the run, and no files are saved since there is nothing to attach them to.
+        self.run_scope_id: Optional[str] = self.config.get("run_scope_id")
         self.message_id: Optional[str] = self.config.get("message_id")
         # Static, deployment-level approval gate (mirrors the action metadata flag).
         self._require_approval: bool = bool(self.config.get("require_approval", False))
@@ -186,6 +190,8 @@ class CodeExecutorTool(Tool):
         self._native_queue: List[Dict[str, Any]] = []
         # Files the last run produced that were over the sandbox's file cap (not saved).
         self._too_large: List[Dict[str, Any]] = []
+        # The exception the last run's own code raised (``job_script_error``).
+        self._script_error: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -418,6 +424,7 @@ class CodeExecutorTool(Tool):
         self._last_artifact_id = None
         self._last_artifacts = []
         self._native_queue = []
+        self._script_error = None
         return self._run_code(**kwargs)
 
     def _run_code(self, **kwargs: Any) -> Dict[str, Any]:
@@ -427,13 +434,13 @@ class CodeExecutorTool(Tool):
 
         session_id = self._resolve_session_id()
         if session_id is None:
-            return {"status": "error", "error": "code_executor requires a conversation_id or workflow_run_id."}
+            return {"status": "error", "error": "code_executor requires a conversation_id, workflow_run_id or agent run."}
 
         code = kwargs.get("code")
         if not isinstance(code, str) or not code.strip():
             return {"status": "error", "error": "code is required."}
 
-        should_capture = kwargs.get("capture_artifacts", True)
+        should_capture = kwargs.get("capture_artifacts", True) and bool(self.conversation_id or self.workflow_run_id)
         outputs = self._normalize_outputs(kwargs.get("outputs"))
         ttl = self._coerce_int(kwargs.get("ttl"))
         keep_alive = self._keep_alive(kwargs.get("persist"), ttl)
@@ -448,70 +455,91 @@ class CodeExecutorTool(Tool):
         inputs = kwargs.get("inputs") or []
 
         manager = SandboxCreator.get_manager()
-        try:
-            opened = manager.open_session(session_id, ttl=open_ttl)
-        except Exception as exc:
-            logger.exception("code_executor: failed to open sandbox session")
-            return {"status": "error", "error": f"sandbox unavailable: {type(exc).__name__}: {exc}"}
-        # Tells the model whether earlier files/installs/variables can still be there.
-        session_state = "new" if opened.created else "reused"
-        if opened.created:
-            self._make_scratch_dir(manager, session_id)
+        # A reused session's sandbox can be gone (another process or the backend
+        # deleted it), which shows on the first call that touches it, before the code
+        # runs. The run then starts over once on a fresh session with its inputs
+        # staged again, and reports ``session: new`` so the model knows its earlier
+        # files and installs are gone.
+        for attempt in range(2):
+            try:
+                opened = manager.open_session(session_id, ttl=open_ttl)
+            except Exception as exc:
+                logger.exception("code_executor: failed to open sandbox session")
+                return {"status": "error", "error": f"sandbox unavailable: {type(exc).__name__}: {exc}"}
+            # Tells the model whether earlier files/installs/variables can still be there.
+            session_state = "new" if opened.created else "reused"
+            if opened.created:
+                self._make_scratch_dir(manager, session_id)
 
-        detached_run = False
-        try:
-            materialized = self._materialize_inputs(manager, session_id, inputs)
-            if materialized.get("error"):
-                return {"status": "error", "error": materialized["error"], "session": session_state}
+            detached_run = False
+            try:
+                materialized = self._materialize_inputs(manager, session_id, inputs)
+                if materialized.get("error"):
+                    return {"status": "error", "error": materialized["error"], "session": session_state}
 
-            pre_signatures: Dict[str, Tuple[int, Optional[str]]] = {}
-            if should_capture:
-                pre_signatures = self._snapshot_signatures(manager, session_id)
+                pre_signatures: Dict[str, Tuple[int, Optional[str]]] = {}
+                if should_capture:
+                    pre_signatures = self._snapshot_signatures(manager, session_id)
 
-            run = PreparedRun(
-                session_id=session_id,
-                code=code,
-                timeout=timeout,
-                clamped=clamped,
-                asked_timeout=self._timeout_number(kwargs.get("timeout")) if clamped else None,
-                should_capture=bool(should_capture),
-                outputs=outputs,
-                pre_signatures=pre_signatures,
-                inputs_loaded=list(materialized.get("loaded", [])),
-                session_created=bool(opened.created),
-                keep_alive=keep_alive,
-            )
-            run.background_capable = call is not None
-            run.background = bool(call is not None and call.explicit)
-            if call is not None and self._can_detach(manager, call):
-                outcome = self._run_detached(manager, run, call)
-                if outcome is detached_marker():
-                    # A background job's poller finishes this run, and closes the session if asked.
-                    detached_run = True
-                    return outcome
-                if isinstance(outcome, dict):
-                    return outcome
-                result = outcome
-            else:
-                try:
-                    result = manager.exec(session_id, code, timeout=timeout)
-                except Exception as exc:
-                    logger.exception("code_executor: exec raised")
+                run = PreparedRun(
+                    session_id=session_id,
+                    code=code,
+                    timeout=timeout,
+                    clamped=clamped,
+                    asked_timeout=self._timeout_number(kwargs.get("timeout")) if clamped else None,
+                    should_capture=bool(should_capture),
+                    outputs=outputs,
+                    pre_signatures=pre_signatures,
+                    inputs_loaded=list(materialized.get("loaded", [])),
+                    session_created=bool(opened.created),
+                    keep_alive=keep_alive,
+                )
+                run.background_capable = call is not None
+                run.background = bool(call is not None and call.explicit)
+                if call is not None and self._can_detach(manager, call):
+                    outcome = self._run_detached(manager, run, call)
+                    if outcome is detached_marker():
+                        # A background job's poller finishes this run, and closes the session if asked.
+                        detached_run = True
+                        return outcome
+                    if isinstance(outcome, dict):
+                        return outcome
+                    result = outcome
+                else:
+                    try:
+                        result = manager.exec(session_id, code, timeout=timeout)
+                    except Exception as exc:
+                        logger.exception("code_executor: exec raised")
+                        return {
+                            "status": "error",
+                            "error": f"execution failed: {type(exc).__name__}: {exc}",
+                            "session": session_state,
+                        }
+                # A run the turn handed off while it ran is finished here, as a background job.
+                if call is not None and call.handoff_requested():
+                    run.background = True
+                return self.finish_run(manager, run, result)
+            except SandboxGoneError as exc:
+                # The manager already dropped the dead session, so the next open is fresh.
+                if opened.created or attempt:
+                    logger.warning("code_executor: the sandbox of session %s is gone: %s", session_id, exc)
                     return {
                         "status": "error",
-                        "error": f"execution failed: {type(exc).__name__}: {exc}",
+                        "error": f"sandbox unavailable: {type(exc).__name__}: {exc}",
                         "session": session_state,
                     }
-            # A run the turn handed off while it ran is finished here, as a background job.
-            if call is not None and call.handoff_requested():
-                run.background = True
-            return self.finish_run(manager, run, result)
-        finally:
-            if not keep_alive and not detached_run:
-                try:
-                    manager.close(session_id)
-                except Exception:
-                    logger.exception("code_executor: session close failed")
+                logger.warning(
+                    "code_executor: the reused sandbox of session %s is gone (%s); retrying on a fresh one",
+                    session_id,
+                    exc,
+                )
+            finally:
+                if not keep_alive and not detached_run:
+                    try:
+                        manager.close(session_id)
+                    except Exception:
+                        logger.exception("code_executor: session close failed")
+        raise AssertionError("unreachable: the second attempt always returns")
 
     def finish_run(self, files: Any, run: "PreparedRun", result: ExecResult) -> Dict[str, Any]:
         """Turn a finished run into the model's payload: capture its files, show its charts, add hints.
@@ -531,6 +559,7 @@ class CodeExecutorTool(Tool):
         # so partial outputs aren't lost; capture never masks the run status.
         artifacts: List[Dict[str, Any]] = []
         self._too_large = []
+        self._script_error = script_exception(result)
         if run.should_capture and not result.runtime_invalidated:
             try:
                 artifacts = self._capture_artifacts(files, run.session_id, run.pre_signatures, run.outputs)
@@ -583,6 +612,10 @@ class CodeExecutorTool(Tool):
             return payload
         return {key: value for key, value in payload.items() if key not in ("environment", "session")}
 
+    def job_script_error(self) -> Optional[str]:
+        """The exception the last run's own code raised, kept on its background job; None otherwise."""
+        return self._script_error
+
     # ------------------------------------------------------------------
     # Detached runs (background jobs)
     # ------------------------------------------------------------------
@@ -621,9 +654,14 @@ class CodeExecutorTool(Tool):
         Returns:
             The ``ExecResult`` of a run that ended here, the detached marker when a
             background job took it over, or an error payload when it could not start.
+
+        Raises:
+            SandboxGoneError: The session's sandbox no longer exists, so the run never started.
         """
         try:
             handle = manager.start_detached(run.session_id, run.code, run.timeout, call.key)
+        except SandboxGoneError:
+            raise  # the code never started; the caller starts over on a fresh session
         except Exception as exc:
             logger.exception("code_executor: detached start failed")
             return {
@@ -765,7 +803,7 @@ class CodeExecutorTool(Tool):
             if max_bytes and isinstance(declared_size, (int, float)) and declared_size > max_bytes:
                 return {"error": f"input artifact {artifact_id} exceeds the {max_bytes}-byte sandbox input limit."}
 
-            filename = safe_filename(version.get("filename") or artifact_id)
+            filename = display_filename(version.get("filename") or artifact_id)
             try:
                 file_obj = storage.get_file(version["storage_path"])
                 try:
@@ -782,6 +820,8 @@ class CodeExecutorTool(Tool):
             rel_path = unique_input_path(f"inputs/{filename}", used_paths)
             try:
                 manager.put_file(session_id, rel_path, data)
+            except SandboxGoneError:
+                raise  # the caller starts over on a fresh session
             except Exception:
                 logger.exception("code_executor: put_file failed for input artifact")
                 return {"error": f"failed to stage input artifact {artifact_id} into the workspace."}
@@ -868,7 +908,12 @@ class CodeExecutorTool(Tool):
             self._last_artifacts = [
                 # ``ref`` is the model-facing handle (``A1``); the UI needs it to
                 # resolve a ref the model typed into its answer.
-                {"id": a["artifact_id"], "filename": a.get("filename"), "ref": a.get("ref")}
+                {
+                    "id": a["artifact_id"],
+                    "filename": a.get("filename"),
+                    "ref": a.get("ref"),
+                    "version": a.get("version"),
+                }
                 for a in captured
                 if a.get("artifact_id")
             ]
@@ -913,7 +958,14 @@ class CodeExecutorTool(Tool):
                     logger.exception("code_executor: saving a displayed chart failed")
             if ref is not None:
                 saved.append(ref)
-                self._last_artifacts.append({"id": ref["artifact_id"], "filename": filename, "ref": ref.get("ref")})
+                self._last_artifacts.append(
+                    {
+                        "id": ref["artifact_id"],
+                        "filename": filename,
+                        "ref": ref.get("ref"),
+                        "version": ref.get("version"),
+                    }
+                )
                 self._last_artifact_id = self._last_artifact_id or ref["artifact_id"]
             label = f"{ref['ref']} {filename}" if ref and ref.get("ref") else filename
             try:
@@ -1113,7 +1165,7 @@ class CodeExecutorTool(Tool):
     # ------------------------------------------------------------------
     def _resolve_session_id(self) -> Optional[str]:
         """Derive a sandbox session id from the bound conversation/run; sanitize to the gateway charset."""
-        raw = self.conversation_id or self.workflow_run_id
+        raw = self.conversation_id or self.workflow_run_id or self.run_scope_id
         if not raw:
             return None
         sanitized = _SESSION_ID_RE.sub("-", str(raw))

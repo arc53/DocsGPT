@@ -7,7 +7,7 @@ import { Modal } from '../components/ui/modal';
 import { selectToken } from '../preferences/preferenceSlice';
 import { LoadingState } from '@/components/ui/loading-state';
 import { SectionHeader } from '@/components/ui/section-header';
-import { LoadError, fmtDate } from './AdminUI';
+import { LoadError, fmtDate, userName } from './AdminUI';
 import QuotaEditor, { UsageBar } from './QuotaEditor';
 import {
   sourceLabel,
@@ -19,9 +19,12 @@ import {
 /** A user's effective limits and usage, with the editor for their override. */
 export default function UserQuotaModal({
   userId,
+  email,
   onClose,
 }: {
   userId: string | null;
+  /** The user's email, when on file; names them in the title. */
+  email?: string | null;
   onClose: () => void;
 }) {
   const token = useSelector(selectToken);
@@ -78,7 +81,7 @@ export default function UserQuotaModal({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title={userId ? `Quota · ${userId}` : 'Quota'}
+      title={userId ? `Quota · ${userName(userId, email)}` : 'Quota'}
     >
       {data === null ? (
         <LoadingState fill="block" />

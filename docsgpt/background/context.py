@@ -33,6 +33,9 @@ class BackgroundContext:
         agent_id: The agent the turn runs.
         api_route: The OpenAI-compatible ``/v1`` route, whose clients can't be
             resumed: jobs there are poll-only.
+        outside_caller: The turn is API-key, widget or public-link traffic on
+            a published agent, which the agent's publisher pays for: its jobs
+            are poll-only too.
         continuation: A woken (headless) turn: it may hand calls off though
             nobody is in it to approve anything.
     """
@@ -42,6 +45,7 @@ class BackgroundContext:
     origin_message_id: Optional[str] = None
     agent_id: Optional[str] = None
     api_route: bool = False
+    outside_caller: bool = False
     continuation: bool = False
     _auto_resume: Optional[bool] = field(default=None, repr=False)
 
@@ -58,7 +62,11 @@ class BackgroundContext:
 
                 with db_readonly() as conn:
                     self._auto_resume = auto_resume_allowed(
-                        conn, self.conversation_id, self.user_id, api_route=self.api_route
+                        conn,
+                        self.conversation_id,
+                        self.user_id,
+                        api_route=self.api_route,
+                        outside_caller=self.outside_caller,
                     )
             except Exception:
                 logger.exception("auto-resume policy lookup failed; the job is poll-only")
@@ -79,7 +87,10 @@ def bind_turn(
 
     Only a persisted, interactive turn qualifies: it has a conversation and a
     reserved message to report back to, and its executor is not headless or a
-    workflow node's.
+    workflow node's. A poll-only turn (``api_route``) needs no message: its
+    jobs never resume the conversation, so a ``/v1`` round resumed from a
+    pause that has no row of its own still hands calls off, and offers the
+    same tools as the round that paused.
 
     Args:
         executor: The turn's ``ToolExecutor``.
@@ -95,16 +106,20 @@ def bind_turn(
     if executor is None or not settings.BACKGROUND_JOBS_ENABLED:
         return None
     user_id = (decoded_token or {}).get("sub")
-    if not conversation_id or not message_id or not user_id:
+    if not conversation_id or not user_id or not (message_id or api_route):
         return None
     if getattr(executor, "headless", False) or getattr(executor, "workflow_run_id", None):
         return None
     context = BackgroundContext(
         user_id=str(user_id),
         conversation_id=str(conversation_id),
-        origin_message_id=str(message_id),
+        origin_message_id=str(message_id) if message_id else None,
         agent_id=str(agent_id) if agent_id else None,
         api_route=bool(api_route),
+        # Read off the turn, not the conversation: an in-app chat on a published
+        # agent stores the agent's key as key traffic does.
+        outside_caller=bool(getattr(executor, "external_caller", False) is True)
+        or bool(getattr(executor, "public_link_caller", False) is True),
     )
     try:
         executor.background = context
@@ -115,30 +130,52 @@ def bind_turn(
 
 
 def auto_resume_allowed(
-    conn: Connection, conversation_id: str, user_id: str, *, api_route: bool = False
+    conn: Connection,
+    conversation_id: str,
+    user_id: str,
+    *,
+    api_route: bool = False,
+    outside_caller: bool = False,
 ) -> bool:
     """Whether a finished job may start a continuation turn in this conversation.
 
-    Continuation turns are billed to the conversation's owner and run with the
-    owner's tools, so they are limited to conversations the owner holds
-    outright: not API-key or widget traffic (``api_key``), not a shared
-    agent's public link (``is_shared_usage``), not ``/v1``, and not an agent
-    somebody else owns. Those get poll-only jobs.
+    A continuation carries on the chat's run and bills its payer, the person
+    chatting, so it is limited to a person's in-app chats. API-key, widget and
+    public-link traffic (``outside_caller``) and ``/v1`` get poll-only jobs:
+    their publisher pays for them. The turn says which it is; the
+    conversation row can't, since an in-app chat on a published agent stores
+    the agent's key and every non-owner's chat is saved as shared usage.
+
+    The row decides the rest, re-read on every wake. A chat owned by a team
+    principal is that team agent's key traffic. A person's chat on their own
+    agent resumes; on an agent somebody else owns, while the chatter can
+    still use that agent (a grant that still holds), running as the agent's
+    owner as the chat does. A public-link chat by someone with no grant
+    fails that check too. In a team workspace, a member's own chat on that
+    team's agent resumes while they are still in the team (the member pays,
+    the agent runs as the team), and so does their chat there on another
+    team's agent shared into this team, while that share is live; other team
+    chats are poll-only.
 
     Args:
         conn: A database connection.
         conversation_id: The conversation.
         user_id: Who the job belongs to.
         api_route: The turn came through ``/v1``.
+        outside_caller: The turn is API-key, widget or public-link traffic.
 
     Returns:
         True when the conversation may be resumed.
     """
-    if not settings.AUTO_RESUME_ENABLED or api_route:
+    if not settings.AUTO_RESUME_ENABLED or api_route or outside_caller:
+        return False
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if is_principal_id(user_id):
         return False
     row = conn.execute(
         text(
-            "SELECT c.user_id, c.api_key, c.is_shared_usage, c.agent_id, a.user_id AS agent_owner "
+            "SELECT c.user_id, c.api_key, c.is_shared_usage, c.agent_id, c.team_id, a.user_id AS agent_owner "
             "FROM conversations c LEFT JOIN agents a ON a.id = c.agent_id "
             "WHERE c.id = CAST(:id AS uuid)"
         ),
@@ -147,8 +184,33 @@ def auto_resume_allowed(
     if row is None:
         return False
     mapping = row._mapping
-    if mapping["user_id"] != user_id or mapping["api_key"] or mapping["is_shared_usage"]:
+    if mapping["user_id"] != user_id:
         return False
-    if mapping["agent_id"] is not None and mapping["agent_owner"] != user_id:
-        return False
+    team_id = mapping.get("team_id")
+    if team_id is not None:
+        from docsgpt.workspaces.principal import principal_id
+        from docsgpt.workspaces.roles import team_role_for
+
+        # A team chat on the team's own agent, for someone still in the team. An
+        # agentless team chat stays poll-only: a continuation would run it with
+        # the member's personal tools, not the team's.
+        if mapping["agent_id"] is None:
+            return False
+        if mapping["agent_owner"] == principal_id(team_id):
+            return team_role_for(conn, user_id, team_id) is not None
+        from docsgpt.api.user.resource_access import team_item_reach
+
+        # Another team's agent shared into this chat's team: while that share
+        # still reaches them through this team (live, and they are still in it).
+        reach = team_item_reach(conn, user_id, "agent", str(mapping["agent_id"]), prefer_team=str(team_id))
+        return reach is not None and reach == str(team_id).lower()
+    if mapping["agent_id"] is None:
+        # A key or link chat whose agent is gone has nobody left to run it as.
+        return not (mapping["api_key"] or mapping["is_shared_usage"])
+    if mapping["agent_owner"] != user_id:
+        from docsgpt.api.user.resource_access import resolve
+
+        # Resolved live, so a revoked grant or a left team stops it on the next wake.
+        access = resolve(conn, "agent", str(mapping["agent_id"]), user_id)
+        return access is not None and access.can("use")
     return True

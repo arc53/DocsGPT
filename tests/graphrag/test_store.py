@@ -3,8 +3,8 @@
 Two layers:
 
 * A live-pg integration test that exercises the real DDL + SQL against the
-  pgvector store DB (same connection-string source as ``PGVectorStore``). It
-  uses a unique temp ``source_id`` and tears down every row it creates.
+  pgvector store DB (same connection-string source as ``PGVectorStore``), on
+  a fresh ephemeral database per test, so a test leaves nothing behind.
 * A mock-cursor test that asserts the parameterized SQL shapes — ``source_id``
   and embeddings are bound params, never interpolated.
 
@@ -98,65 +98,59 @@ class TestGraphStoreLive:
         store._ensure_tables()
 
     def test_upsert_node_merges_by_normalized_name(self, store, source_id):
-        try:
-            first = store.upsert_node(
-                source_id=source_id,
-                name="Ada Lovelace",
-                normalized_name="ada lovelace",
-                type="person",
-                description="A mathematician.",
-                name_embedding=_embedding(1.0),
-            )
-            second = store.upsert_node(
-                source_id=source_id,
-                name="Ada Lovelace",
-                normalized_name="ada lovelace",
-                type="person",
-                description="Wrote the first algorithm.",
-            )
-            assert first == second
+        first = store.upsert_node(
+            source_id=source_id,
+            name="Ada Lovelace",
+            normalized_name="ada lovelace",
+            type="person",
+            description="A mathematician.",
+            name_embedding=_embedding(1.0),
+        )
+        second = store.upsert_node(
+            source_id=source_id,
+            name="Ada Lovelace",
+            normalized_name="ada lovelace",
+            type="person",
+            description="Wrote the first algorithm.",
+        )
+        assert first == second
 
-            node = store.get_node_by_normalized(source_id, "ada lovelace")
-            assert node is not None
-            assert node["id"] == first
-            assert node["doc_freq"] == 2
-            assert "mathematician" in node["description"]
-            assert "first algorithm" in node["description"]
+        node = store.get_node_by_normalized(source_id, "ada lovelace")
+        assert node is not None
+        assert node["id"] == first
+        assert node["doc_freq"] == 2
+        assert "mathematician" in node["description"]
+        assert "first algorithm" in node["description"]
 
-            duplicate = store.upsert_node(
-                source_id=source_id,
-                name="Ada Lovelace",
-                normalized_name="ada lovelace",
-                description="Wrote the first algorithm.",
-            )
-            assert duplicate == first
-            node = store.get_node_by_normalized(source_id, "ada lovelace")
-            assert node["description"].count("first algorithm") == 1
+        duplicate = store.upsert_node(
+            source_id=source_id,
+            name="Ada Lovelace",
+            normalized_name="ada lovelace",
+            description="Wrote the first algorithm.",
+        )
+        assert duplicate == first
+        node = store.get_node_by_normalized(source_id, "ada lovelace")
+        assert node["description"].count("first algorithm") == 1
 
-            assert store.count_nodes(source_id) == 1
-        finally:
-            store.delete_by_source(source_id)
+        assert store.count_nodes(source_id) == 1
 
     def test_add_edge_and_link_chunk(self, store, source_id):
-        try:
-            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
-            b = store.upsert_node(source_id, "B", "b", "thing", "desc b")
-            store.add_edge(
-                source_id, a, b, "related", "a relates to b", 2.0, ["chunk-1"]
-            )
-            store.link_node_chunk(source_id, a, "chunk-1")
-            store.link_node_chunk(source_id, a, "chunk-1")
-            store.link_node_chunk(source_id, b, "chunk-1")
+        a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+        b = store.upsert_node(source_id, "B", "b", "thing", "desc b")
+        store.add_edge(
+            source_id, a, b, "related", "a relates to b", 2.0, ["chunk-1"]
+        )
+        store.link_node_chunk(source_id, a, "chunk-1")
+        store.link_node_chunk(source_id, a, "chunk-1")
+        store.link_node_chunk(source_id, b, "chunk-1")
 
-            mapping = store.get_chunk_ids_for_nodes(source_id, [a, b])
-            assert mapping[a] == ["chunk-1"]
-            assert mapping[b] == ["chunk-1"]
+        mapping = store.get_chunk_ids_for_nodes(source_id, [a, b])
+        assert mapping[a] == ["chunk-1"]
+        assert mapping[b] == ["chunk-1"]
 
-            store.set_node_degrees(source_id)
-            node_a = store.get_node_by_normalized(source_id, "a")
-            assert node_a["degree"] == 1
-        finally:
-            store.delete_by_source(source_id)
+        store.set_node_degrees(source_id)
+        node_a = store.get_node_by_normalized(source_id, "a")
+        assert node_a["degree"] == 1
 
     def test_seed_nodes_from_facts_returns_both_endpoints_of_the_match(
         self, store, source_id
@@ -164,42 +158,36 @@ class TestGraphStoreLive:
         """Fact seeding's whole point: the question matches the *relationship*,
         and both of its endpoints become seeds — including the one the question
         never names."""
-        try:
-            alder = store.upsert_node(source_id, "Alder", "alder", "service", "d")
-            quill = store.upsert_node(source_id, "Quill", "quill", "store", "d")
-            birch = store.upsert_node(source_id, "Birch", "birch", "service", "d")
-            ridge = store.upsert_node(source_id, "Ridge", "ridge", "store", "d")
-            store.add_edge(
-                source_id, alder, quill, "streams_to", "Alder streams to Quill",
-                1.0, ["c1"], fact_embedding=_embedding(1.0),
-            )
-            store.add_edge(
-                source_id, birch, ridge, "streams_to", "Birch streams to Ridge",
-                1.0, ["c2"], fact_embedding=_embedding(-1.0),
-            )
+        alder = store.upsert_node(source_id, "Alder", "alder", "service", "d")
+        quill = store.upsert_node(source_id, "Quill", "quill", "store", "d")
+        birch = store.upsert_node(source_id, "Birch", "birch", "service", "d")
+        ridge = store.upsert_node(source_id, "Ridge", "ridge", "store", "d")
+        store.add_edge(
+            source_id, alder, quill, "streams_to", "Alder streams to Quill",
+            1.0, ["c1"], fact_embedding=_embedding(1.0),
+        )
+        store.add_edge(
+            source_id, birch, ridge, "streams_to", "Birch streams to Ridge",
+            1.0, ["c2"], fact_embedding=_embedding(-1.0),
+        )
 
-            rows = store.seed_nodes_from_facts(
-                source_id, _embedding(1.0), fact_limit=1, limit=10
-            )
+        rows = store.seed_nodes_from_facts(
+            source_id, _embedding(1.0), fact_limit=1, limit=10
+        )
 
-            assert {row["name"] for row in rows} == {"Alder", "Quill"}
-            assert all(row["distance"] <= 1.0 for row in rows)
-        finally:
-            store.delete_by_source(source_id)
+        assert {row["name"] for row in rows} == {"Alder", "Quill"}
+        assert all(row["distance"] <= 1.0 for row in rows)
 
     def test_seed_nodes_from_facts_is_empty_without_fact_embeddings(
         self, store, source_id
     ):
         """A source ingested before fact embeddings existed returns nothing,
         which is the signal the retriever falls back to name matching on."""
-        try:
-            a = store.upsert_node(source_id, "A", "a")
-            b = store.upsert_node(source_id, "B", "b")
-            store.add_edge(source_id, a, b, "rel")
+        a = store.upsert_node(source_id, "A", "a")
+        b = store.upsert_node(source_id, "B", "b")
+        store.add_edge(source_id, a, b, "rel")
 
-            assert store.seed_nodes_from_facts(source_id, _embedding(1.0)) == []
-        finally:
-            store.delete_by_source(source_id)
+        assert store.seed_nodes_from_facts(source_id, _embedding(1.0)) == []
 
     def test_add_edge_skips_self_loops(self, store, source_id):
         """A relationship whose endpoints resolve to one node is noise.
@@ -207,15 +195,12 @@ class TestGraphStoreLive:
         A self-loop feeds a node's PageRank mass straight back to itself, and a
         real extraction produced 121 of them on a 98-page corpus.
         """
-        try:
-            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
-            assert (
-                store.add_edge(source_id, a, a, "related", "a relates to a", 1.0, ["c1"])
-                is None
-            )
-            assert store.get_subgraph(source_id, [a], hops=1)["edges"] == []
-        finally:
-            store.delete_by_source(source_id)
+        a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+        assert (
+            store.add_edge(source_id, a, a, "related", "a relates to a", 1.0, ["c1"])
+            is None
+        )
+        assert store.get_subgraph(source_id, [a], hops=1)["edges"] == []
 
     def test_add_edge_merges_a_repeated_pair(self, store, source_id):
         """The same relationship seen in many chunks is one edge, not many rows.
@@ -225,31 +210,28 @@ class TestGraphStoreLive:
         edges — inflating traversal weight and wasting the subgraph fetch
         budget. The surviving row keeps the strongest weight and both chunk ids.
         """
+        a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
+        b = store.upsert_node(source_id, "B", "b", "thing", "desc b")
+        first = store.add_edge(source_id, a, b, "related", "d", 2.0, ["chunk-1"])
+        second = store.add_edge(source_id, a, b, "related", "d", 5.0, ["chunk-2"])
+
+        assert second == first
+        edges = store.get_subgraph(source_id, [a, b], hops=1)["edges"]
+        assert len(edges) == 1
+        assert float(edges[0]["weight"]) == 5.0
+
+        # Both chunks are still recorded as evidence for the merged edge.
+        conn = store._get_connection()
+        cursor = conn.cursor()
         try:
-            a = store.upsert_node(source_id, "A", "a", "thing", "desc a")
-            b = store.upsert_node(source_id, "B", "b", "thing", "desc b")
-            first = store.add_edge(source_id, a, b, "related", "d", 2.0, ["chunk-1"])
-            second = store.add_edge(source_id, a, b, "related", "d", 5.0, ["chunk-2"])
-
-            assert second == first
-            edges = store.get_subgraph(source_id, [a, b], hops=1)["edges"]
-            assert len(edges) == 1
-            assert float(edges[0]["weight"]) == 5.0
-
-            # Both chunks are still recorded as evidence for the merged edge.
-            conn = store._get_connection()
-            cursor = conn.cursor()
-            try:
-                cursor.execute(
-                    "SELECT source_chunk_ids FROM graph_edges WHERE id = %s;", (first,)
-                )
-                chunk_ids = cursor.fetchone()[0]
-            finally:
-                cursor.close()
-                conn.rollback()
-            assert sorted(chunk_ids) == ["chunk-1", "chunk-2"]
+            cursor.execute(
+                "SELECT source_chunk_ids FROM graph_edges WHERE id = %s;", (first,)
+            )
+            chunk_ids = cursor.fetchone()[0]
         finally:
-            store.delete_by_source(source_id)
+            cursor.close()
+            conn.rollback()
+        assert sorted(chunk_ids) == ["chunk-1", "chunk-2"]
 
     def test_get_subgraph_keeps_the_heaviest_edges_when_capped(
         self, store, source_id, monkeypatch
@@ -260,64 +242,58 @@ class TestGraphStoreLive:
         to return any rows at all, so a dense graph silently retrieves a random
         neighbourhood.
         """
-        try:
-            a = store.upsert_node(source_id, "A", "a", "thing", "d")
-            b = store.upsert_node(source_id, "B", "b", "thing", "d")
-            c = store.upsert_node(source_id, "C", "c", "thing", "d")
-            store.add_edge(source_id, a, b, "light", "d", 1.0, ["c1"])
-            store.add_edge(source_id, a, c, "heavy", "d", 9.0, ["c1"])
+        a = store.upsert_node(source_id, "A", "a", "thing", "d")
+        b = store.upsert_node(source_id, "B", "b", "thing", "d")
+        c = store.upsert_node(source_id, "C", "c", "thing", "d")
+        store.add_edge(source_id, a, b, "light", "d", 1.0, ["c1"])
+        store.add_edge(source_id, a, c, "heavy", "d", 9.0, ["c1"])
 
-            monkeypatch.setattr(store_module, "MAX_SUBGRAPH_EDGES", 1)
-            edges = store.get_subgraph(source_id, [a], hops=1)["edges"]
+        monkeypatch.setattr(store_module, "MAX_SUBGRAPH_EDGES", 1)
+        edges = store.get_subgraph(source_id, [a], hops=1)["edges"]
 
-            assert [e["type"] for e in edges] == ["heavy"]
-        finally:
-            store.delete_by_source(source_id)
+        assert [e["type"] for e in edges] == ["heavy"]
 
     def test_apply_chunk_writes_nodes_links_and_edges(self, store, source_id):
         """One transactional write: entities linked to the chunk, edges added,
         and a bare relationship endpoint upserted but not chunk-linked."""
-        try:
-            entities = [
-                {"name": "Ada", "normalized_name": "ada", "type": "person",
-                 "description": "mathematician"},
-                {"name": "Engine", "normalized_name": "engine", "type": "machine",
-                 "description": None},
-            ]
-            relationships = [
-                {"source": "Ada", "target": "Engine", "type": "designed",
-                 "description": "Ada designed the Engine", "weight": 2.0},
-                # 'Babbage' is only an endpoint — upserted edge-only.
-                {"source": "Babbage", "target": "Engine", "type": "built",
-                 "description": None, "weight": 1.0},
-            ]
-            name_embeddings = {
-                "ada": [0.1] * store._embedding_dim(),
-                "engine": [0.2] * store._embedding_dim(),
-                "babbage": [0.3] * store._embedding_dim(),
-            }
+        entities = [
+            {"name": "Ada", "normalized_name": "ada", "type": "person",
+             "description": "mathematician"},
+            {"name": "Engine", "normalized_name": "engine", "type": "machine",
+             "description": None},
+        ]
+        relationships = [
+            {"source": "Ada", "target": "Engine", "type": "designed",
+             "description": "Ada designed the Engine", "weight": 2.0},
+            # 'Babbage' is only an endpoint — upserted edge-only.
+            {"source": "Babbage", "target": "Engine", "type": "built",
+             "description": None, "weight": 1.0},
+        ]
+        name_embeddings = {
+            "ada": [0.1] * store._embedding_dim(),
+            "engine": [0.2] * store._embedding_dim(),
+            "babbage": [0.3] * store._embedding_dim(),
+        }
 
-            nodes, edges = store.apply_chunk(
-                source_id, "c1", entities, relationships, name_embeddings
-            )
-            assert nodes == 2  # only entities are counted
-            assert edges == 2
+        nodes, edges = store.apply_chunk(
+            source_id, "c1", entities, relationships, name_embeddings
+        )
+        assert nodes == 2  # only entities are counted
+        assert edges == 2
 
-            ada = store.get_node_by_normalized(source_id, "ada")
-            engine = store.get_node_by_normalized(source_id, "engine")
-            babbage = store.get_node_by_normalized(source_id, "babbage")
-            assert ada is not None and engine is not None
-            assert babbage is not None  # endpoint upserted
+        ada = store.get_node_by_normalized(source_id, "ada")
+        engine = store.get_node_by_normalized(source_id, "engine")
+        babbage = store.get_node_by_normalized(source_id, "babbage")
+        assert ada is not None and engine is not None
+        assert babbage is not None  # endpoint upserted
 
-            mapping = store.get_chunk_ids_for_nodes(
-                source_id, [ada["id"], engine["id"], babbage["id"]]
-            )
-            assert mapping[ada["id"]] == ["c1"]
-            assert mapping[engine["id"]] == ["c1"]
-            # Bare endpoint is not linked to the chunk.
-            assert babbage["id"] not in mapping
-        finally:
-            store.delete_by_source(source_id)
+        mapping = store.get_chunk_ids_for_nodes(
+            source_id, [ada["id"], engine["id"], babbage["id"]]
+        )
+        assert mapping[ada["id"]] == ["c1"]
+        assert mapping[engine["id"]] == ["c1"]
+        # Bare endpoint is not linked to the chunk.
+        assert babbage["id"] not in mapping
 
     def test_self_loop_degree_agrees_across_paths(self, store, source_id):
         """``add_edge``'s incremental bump and ``set_node_degrees`` recompute must
@@ -327,122 +303,104 @@ class TestGraphStoreLive:
         write time, so neither path has an edge to count. The property under
         test is that the two paths agree, not the number they agree on.
         """
-        try:
-            node = store.upsert_node(source_id, "Solo", "solo")
-            assert store.add_edge(source_id, node, node, "self") is None
+        node = store.upsert_node(source_id, "Solo", "solo")
+        assert store.add_edge(source_id, node, node, "self") is None
 
-            incremental = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert incremental == 0
+        incremental = store.get_node_by_normalized(source_id, "solo")["degree"]
+        assert incremental == 0
 
-            store.set_node_degrees(source_id)
-            recomputed = store.get_node_by_normalized(source_id, "solo")["degree"]
-            assert recomputed == incremental
-        finally:
-            store.delete_by_source(source_id)
+        store.set_node_degrees(source_id)
+        recomputed = store.get_node_by_normalized(source_id, "solo")["degree"]
+        assert recomputed == incremental
 
     def test_search_nodes_by_embedding(self, store, source_id):
-        try:
-            near = store.upsert_node(
-                source_id, "Near", "near", "thing", "d", _embedding(1.0)
-            )
-            store.upsert_node(
-                source_id, "Far", "far", "thing", "d", _embedding(-1.0)
-            )
-            results = store.search_nodes_by_embedding(source_id, _embedding(1.0), k=2)
-            assert len(results) == 2
-            assert results[0]["id"] == near
-            assert results[0]["distance"] <= results[1]["distance"]
-        finally:
-            store.delete_by_source(source_id)
+        near = store.upsert_node(
+            source_id, "Near", "near", "thing", "d", _embedding(1.0)
+        )
+        store.upsert_node(
+            source_id, "Far", "far", "thing", "d", _embedding(-1.0)
+        )
+        results = store.search_nodes_by_embedding(source_id, _embedding(1.0), k=2)
+        assert len(results) == 2
+        assert results[0]["id"] == near
+        assert results[0]["distance"] <= results[1]["distance"]
 
     def test_get_subgraph_bounded(self, store, source_id):
-        try:
-            a = store.upsert_node(source_id, "A", "a")
-            b = store.upsert_node(source_id, "B", "b")
-            c = store.upsert_node(source_id, "C", "c")
-            store.add_edge(source_id, a, b, "rel")
-            store.add_edge(source_id, b, c, "rel")
+        a = store.upsert_node(source_id, "A", "a")
+        b = store.upsert_node(source_id, "B", "b")
+        c = store.upsert_node(source_id, "C", "c")
+        store.add_edge(source_id, a, b, "rel")
+        store.add_edge(source_id, b, c, "rel")
 
-            one_hop = store.get_subgraph(source_id, [a], hops=1)
-            node_ids = {n["id"] for n in one_hop["nodes"]}
-            assert a in node_ids and b in node_ids
-            assert c not in node_ids
+        one_hop = store.get_subgraph(source_id, [a], hops=1)
+        node_ids = {n["id"] for n in one_hop["nodes"]}
+        assert a in node_ids and b in node_ids
+        assert c not in node_ids
 
-            two_hop = store.get_subgraph(source_id, [a], hops=2)
-            node_ids = {n["id"] for n in two_hop["nodes"]}
-            assert {a, b, c} <= node_ids
-            assert len(two_hop["edges"]) >= 2
-        finally:
-            store.delete_by_source(source_id)
+        two_hop = store.get_subgraph(source_id, [a], hops=2)
+        node_ids = {n["id"] for n in two_hop["nodes"]}
+        assert {a, b, c} <= node_ids
+        assert len(two_hop["edges"]) >= 2
 
     def test_get_subgraph_frontier_truncation_is_deterministic(
         self, store, source_id, monkeypatch
     ):
         """Bounded expansion must pick the same neighbors run-to-run so PPR (G5)
         is reproducible."""
-        try:
-            hub = store.upsert_node(source_id, "Hub", "hub")
-            leaves = []
-            for i in range(6):
-                leaf = store.upsert_node(source_id, f"L{i}", f"l{i}")
-                store.add_edge(source_id, hub, leaf, "rel")
-                leaves.append(leaf)
+        hub = store.upsert_node(source_id, "Hub", "hub")
+        leaves = []
+        for i in range(6):
+            leaf = store.upsert_node(source_id, f"L{i}", f"l{i}")
+            store.add_edge(source_id, hub, leaf, "rel")
+            leaves.append(leaf)
 
-            monkeypatch.setattr(store_module, "MAX_SUBGRAPH_NODES", 4)
+        monkeypatch.setattr(store_module, "MAX_SUBGRAPH_NODES", 4)
 
-            first = {n["id"] for n in store.get_subgraph(source_id, [hub])["nodes"]}
-            second = {n["id"] for n in store.get_subgraph(source_id, [hub])["nodes"]}
-            assert first == second
-            assert len(first) == 4
+        first = {n["id"] for n in store.get_subgraph(source_id, [hub])["nodes"]}
+        second = {n["id"] for n in store.get_subgraph(source_id, [hub])["nodes"]}
+        assert first == second
+        assert len(first) == 4
 
-            kept_leaves = sorted(leaves)[:3]
-            assert first == {hub, *kept_leaves}
-        finally:
-            store.delete_by_source(source_id)
+        kept_leaves = sorted(leaves)[:3]
+        assert first == {hub, *kept_leaves}
 
     def test_get_graph_overview_bounded_by_degree(self, store, source_id):
-        try:
-            hub = store.upsert_node(source_id, "Hub", "hub")
-            leaves = [
-                store.upsert_node(source_id, f"L{i}", f"l{i}") for i in range(4)
-            ]
-            for leaf in leaves:
-                store.add_edge(source_id, hub, leaf, "rel")
-            store.set_node_degrees(source_id)
+        hub = store.upsert_node(source_id, "Hub", "hub")
+        leaves = [
+            store.upsert_node(source_id, f"L{i}", f"l{i}") for i in range(4)
+        ]
+        for leaf in leaves:
+            store.add_edge(source_id, hub, leaf, "rel")
+        store.set_node_degrees(source_id)
 
-            overview = store.get_graph_overview(source_id, limit=3)
-            node_ids = [n["id"] for n in overview["nodes"]]
-            assert len(node_ids) == 3
-            # The hub has the highest degree, so it must lead the bounded set.
-            assert node_ids[0] == hub
-            # Edges only connect nodes that survived the limit.
-            for edge in overview["edges"]:
-                assert edge["source"] in node_ids
-                assert edge["target"] in node_ids
-        finally:
-            store.delete_by_source(source_id)
+        overview = store.get_graph_overview(source_id, limit=3)
+        node_ids = [n["id"] for n in overview["nodes"]]
+        assert len(node_ids) == 3
+        # The hub has the highest degree, so it must lead the bounded set.
+        assert node_ids[0] == hub
+        # Edges only connect nodes that survived the limit.
+        for edge in overview["edges"]:
+            assert edge["source"] in node_ids
+            assert edge["target"] in node_ids
 
     def test_get_graph_overview_empty_source(self, store, source_id):
         overview = store.get_graph_overview(source_id)
         assert overview == {"nodes": [], "edges": []}
 
     def test_get_node_detail_with_linked_chunks(self, store, source_id):
-        try:
-            node = store.upsert_node(
-                source_id, "Ada", "ada", "person", "A mathematician."
-            )
-            store.link_node_chunk(source_id, node, "chunk-1")
+        node = store.upsert_node(
+            source_id, "Ada", "ada", "person", "A mathematician."
+        )
+        store.link_node_chunk(source_id, node, "chunk-1")
 
-            detail = store.get_node_detail(source_id, node)
-            assert detail is not None
-            assert detail["name"] == "Ada"
-            assert detail["description"] == "A mathematician."
-            chunk_ids = [c["chunk_id"] for c in detail["chunks"]]
-            assert "chunk-1" in chunk_ids
+        detail = store.get_node_detail(source_id, node)
+        assert detail is not None
+        assert detail["name"] == "Ada"
+        assert detail["description"] == "A mathematician."
+        chunk_ids = [c["chunk_id"] for c in detail["chunks"]]
+        assert "chunk-1" in chunk_ids
 
-            assert store.get_node_detail(source_id, str(uuid.uuid4())) is None
-        finally:
-            store.delete_by_source(source_id)
+        assert store.get_node_detail(source_id, str(uuid.uuid4())) is None
 
     def _seed_typed_graph(self, store, source_id):
         """Six nodes whose types spell ``person`` three ways, plus edges for degree."""
@@ -463,213 +421,292 @@ class TestGraphStoreLive:
         return ids
 
     def test_list_nodes_filters_pages_and_counts(self, store, source_id):
-        try:
-            ids = self._seed_typed_graph(store, source_id)
+        ids = self._seed_typed_graph(store, source_id)
 
-            everything = store.list_nodes(source_id)
-            assert everything["total"] == 6
-            ordered = [n["id"] for n in everything["nodes"]]
-            assert ordered[0] == ids["ada"]
-            # Degree DESC, then id: alan and acme tie on 2.
-            assert set(ordered[1:3]) == {ids["alan"], ids["acme"]}
-            assert ordered[1:3] == sorted(ordered[1:3])
-            first = everything["nodes"][0]
-            assert set(first) == {"id", "name", "type", "degree", "doc_freq"}
-            assert first["degree"] == 3 and first["doc_freq"] == 1
+        everything = store.list_nodes(source_id)
+        assert everything["total"] == 6
+        ordered = [n["id"] for n in everything["nodes"]]
+        assert ordered[0] == ids["ada"]
+        # Degree DESC, then id: alan and acme tie on 2.
+        assert set(ordered[1:3]) == {ids["alan"], ids["acme"]}
+        assert ordered[1:3] == sorted(ordered[1:3])
+        first = everything["nodes"][0]
+        assert set(first) == {"id", "name", "type", "degree", "doc_freq"}
+        assert first["degree"] == 3 and first["doc_freq"] == 1
 
-            by_name = store.list_nodes(source_id, query="ADA")
-            assert [n["id"] for n in by_name["nodes"]] == [ids["ada"]]
-            assert by_name["total"] == 1
+        by_name = store.list_nodes(source_id, query="ADA")
+        assert [n["id"] for n in by_name["nodes"]] == [ids["ada"]]
+        assert by_name["total"] == 1
 
-            # ``%`` and ``_`` are literals, not wildcards.
-            assert [n["id"] for n in store.list_nodes(source_id, query="%")["nodes"]] == [
-                ids["sure"]
-            ]
-            underscored = store.list_nodes(source_id, query="_")
-            assert {n["id"] for n in underscored["nodes"]} == {ids["acme"], ids["sure"]}
+        # ``%`` and ``_`` are literals, not wildcards.
+        assert [n["id"] for n in store.list_nodes(source_id, query="%")["nodes"]] == [
+            ids["sure"]
+        ]
+        underscored = store.list_nodes(source_id, query="_")
+        assert {n["id"] for n in underscored["nodes"]} == {ids["acme"], ids["sure"]}
 
-            people = store.list_nodes(source_id, type_key="person")
-            assert people["total"] == 4
-            assert {n["id"] for n in people["nodes"]} == {
-                ids["ada"], ids["alan"], ids["grace"], ids["babbage"]
-            }
+        people = store.list_nodes(source_id, type_key="person")
+        assert people["total"] == 4
+        assert {n["id"] for n in people["nodes"]} == {
+            ids["ada"], ids["alan"], ids["grace"], ids["babbage"]
+        }
 
-            untyped = store.list_nodes(source_id, type_key="")
-            assert [n["id"] for n in untyped["nodes"]] == [ids["sure"]]
+        untyped = store.list_nodes(source_id, type_key="")
+        assert [n["id"] for n in untyped["nodes"]] == [ids["sure"]]
 
-            both = store.list_nodes(source_id, query="a", type_key="person")
-            assert both["total"] == 4
+        both = store.list_nodes(source_id, query="a", type_key="person")
+        assert both["total"] == 4
 
-            page = store.list_nodes(source_id, type_key="person", offset=1, limit=2)
-            assert page["total"] == 4
-            assert [n["id"] for n in page["nodes"]] == [
-                n["id"] for n in people["nodes"][1:3]
-            ]
-            beyond = store.list_nodes(source_id, offset=50, limit=10)
-            assert beyond == {"nodes": [], "total": 6}
-        finally:
-            store.delete_by_source(source_id)
+        page = store.list_nodes(source_id, type_key="person", offset=1, limit=2)
+        assert page["total"] == 4
+        assert [n["id"] for n in page["nodes"]] == [
+            n["id"] for n in people["nodes"][1:3]
+        ]
+        beyond = store.list_nodes(source_id, offset=50, limit=10)
+        assert beyond == {"nodes": [], "total": 6}
 
     def test_node_type_facets_fold_spellings_into_one_key(self, store, source_id):
-        try:
-            self._seed_typed_graph(store, source_id)
+        self._seed_typed_graph(store, source_id)
 
-            facets = store.node_type_facets(source_id)
+        facets = store.node_type_facets(source_id)
 
-            assert facets == [
-                {"key": "person", "label": "Person", "count": 4},
-                {"key": "org", "label": "org", "count": 1},
-                {"key": "", "label": None, "count": 1},
-            ]
-            assert store.node_type_facets(str(uuid.uuid4())) == []
-        finally:
-            store.delete_by_source(source_id)
+        assert facets == [
+            {"key": "person", "label": "Person", "count": 4},
+            {"key": "org", "label": "org", "count": 1},
+            {"key": "", "label": None, "count": 1},
+        ]
+        assert store.node_type_facets(str(uuid.uuid4())) == []
 
     def test_count_edges(self, store, source_id):
-        try:
-            assert store.count_edges(source_id) == 0
-            self._seed_typed_graph(store, source_id)
-            assert store.count_edges(source_id) == 4
-            assert store.count_edges(str(uuid.uuid4())) == 0
-        finally:
-            store.delete_by_source(source_id)
+        assert store.count_edges(source_id) == 0
+        self._seed_typed_graph(store, source_id)
+        assert store.count_edges(source_id) == 4
+        assert store.count_edges(str(uuid.uuid4())) == 0
 
     def test_node_detail_lists_relationships_in_both_directions(self, store, source_id):
-        try:
-            ids = self._seed_typed_graph(store, source_id)
-            # ``add_edge`` drops self-loops, so plant one directly: the reader
-            # must skip it too.
-            conn = store._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO graph_edges (id, source_id, src_node_id, dst_node_id, type) "
-                    "VALUES (%s, %s, %s, %s, 'self');",
-                    (str(uuid.uuid4()), source_id, ids["ada"], ids["ada"]),
-                )
-            conn.commit()
+        ids = self._seed_typed_graph(store, source_id)
+        # ``add_edge`` drops self-loops, so plant one directly: the reader
+        # must skip it too.
+        conn = store._get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO graph_edges (id, source_id, src_node_id, dst_node_id, type) "
+                "VALUES (%s, %s, %s, %s, 'self');",
+                (str(uuid.uuid4()), source_id, ids["ada"], ids["ada"]),
+            )
+        conn.commit()
 
-            detail = store.get_node_detail(source_id, ids["ada"])
+        detail = store.get_node_detail(source_id, ids["ada"])
 
-            assert detail["name"] == "Ada Lovelace"
-            assert "chunks" in detail
-            rels = detail["relationships"]
-            assert len(rels) == 3
-            # Neighbour degree DESC, then neighbour id: alan and acme tie on 2.
-            assert [r["id"] for r in rels[:2]] == sorted([ids["alan"], ids["acme"]])
-            by_id = {r["id"]: r for r in rels}
-            assert by_id[ids["alan"]] == {
-                "id": ids["alan"], "name": "Alan Turing", "type": "Person",
-                "degree": 2, "edge_type": "knows", "direction": "out",
-            }
-            assert by_id[ids["acme"]]["edge_type"] == "works_at"
-            assert by_id[ids["acme"]]["direction"] == "out"
-            assert rels[2] == {
-                "id": ids["grace"], "name": "Grace Hopper", "type": "PERSON",
-                "degree": 1, "edge_type": "cites", "direction": "in",
-            }
+        assert detail["name"] == "Ada Lovelace"
+        assert "chunks" in detail
+        rels = detail["relationships"]
+        assert len(rels) == 3
+        # Neighbour degree DESC, then neighbour id: alan and acme tie on 2.
+        assert [r["id"] for r in rels[:2]] == sorted([ids["alan"], ids["acme"]])
+        by_id = {r["id"]: r for r in rels}
+        assert by_id[ids["alan"]] == {
+            "id": ids["alan"], "name": "Alan Turing", "type": "Person",
+            "degree": 2, "edge_type": "knows", "direction": "out",
+        }
+        assert by_id[ids["acme"]]["edge_type"] == "works_at"
+        assert by_id[ids["acme"]]["direction"] == "out"
+        assert rels[2] == {
+            "id": ids["grace"], "name": "Grace Hopper", "type": "PERSON",
+            "degree": 1, "edge_type": "cites", "direction": "in",
+        }
 
-            assert detail["relationships_total"] == 3
+        assert detail["relationships_total"] == 3
 
-            lonely = store.get_node_detail(source_id, ids["babbage"])
-            assert lonely["relationships"] == []
-            assert lonely["relationships_total"] == 0
-        finally:
-            store.delete_by_source(source_id)
+        lonely = store.get_node_detail(source_id, ids["babbage"])
+        assert lonely["relationships"] == []
+        assert lonely["relationships_total"] == 0
 
     def test_node_detail_counts_every_relationship_past_the_cap(
         self, store, source_id, monkeypatch
     ):
-        try:
-            ids = self._seed_typed_graph(store, source_id)
-            conn = store._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO graph_edges (id, source_id, src_node_id, dst_node_id, type) "
-                    "VALUES (%s, %s, %s, %s, 'self');",
-                    (str(uuid.uuid4()), source_id, ids["ada"], ids["ada"]),
-                )
-            conn.commit()
-            monkeypatch.setattr(store_module, "MAX_NODE_RELATIONSHIPS", 2)
+        ids = self._seed_typed_graph(store, source_id)
+        conn = store._get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO graph_edges (id, source_id, src_node_id, dst_node_id, type) "
+                "VALUES (%s, %s, %s, %s, 'self');",
+                (str(uuid.uuid4()), source_id, ids["ada"], ids["ada"]),
+            )
+        conn.commit()
+        monkeypatch.setattr(store_module, "MAX_NODE_RELATIONSHIPS", 2)
 
-            detail = store.get_node_detail(source_id, ids["ada"])
+        detail = store.get_node_detail(source_id, ids["ada"])
 
-            # The list stops at the cap; the total counts both directions and
-            # still skips the self-loop.
-            assert len(detail["relationships"]) == 2
-            assert detail["relationships_total"] == 3
-        finally:
-            store.delete_by_source(source_id)
+        # The list stops at the cap; the total counts both directions and
+        # still skips the self-loop.
+        assert len(detail["relationships"]) == 2
+        assert detail["relationships_total"] == 3
 
     def test_remap_chunk_moves_every_link_to_the_new_id(self, store, source_id):
-        try:
-            ada = store.upsert_node(source_id, "Ada", "ada")
-            alan = store.upsert_node(source_id, "Alan", "alan")
-            store.link_node_chunk(source_id, ada, "old")
-            store.link_node_chunk(source_id, alan, "keep")
-            store.add_edge(
-                source_id, ada, alan, "knows", source_chunk_ids=["keep", "old"]
+        ada = store.upsert_node(source_id, "Ada", "ada")
+        alan = store.upsert_node(source_id, "Alan", "alan")
+        store.link_node_chunk(source_id, ada, "old")
+        store.link_node_chunk(source_id, alan, "keep")
+        store.add_edge(
+            source_id, ada, alan, "knows", source_chunk_ids=["keep", "old"]
+        )
+        store.mark_chunk(source_id, "old", "done")
+        other = str(uuid.uuid4())
+        other_node = store.upsert_node(other, "Ada", "ada")
+        store.link_node_chunk(other, other_node, "old")
+
+        store.remap_chunk(source_id, "old", "new")
+
+        links = store.get_chunk_ids_for_nodes(source_id, [ada, alan])
+        assert links == {ada: ["new"], alan: ["keep"]}
+        conn = store._get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT source_chunk_ids FROM graph_edges WHERE source_id = %s;",
+                (source_id,),
             )
-            store.mark_chunk(source_id, "old", "done")
-            other = str(uuid.uuid4())
-            other_node = store.upsert_node(other, "Ada", "ada")
-            store.link_node_chunk(other, other_node, "old")
+            assert cursor.fetchone()[0] == ["keep", "new"]
+        conn.rollback()
+        assert store.pending_chunks(source_id, ["old", "new"]) == ["old"]
+        # Another source's link to the same chunk id is left alone.
+        assert store.get_chunk_ids_for_nodes(other, [other_node]) == {
+            other_node: ["old"]
+        }
 
-            store.remap_chunk(source_id, "old", "new")
+    def _apply(self, store, source_id, chunk_id, entities, relationships):
+        """Write one chunk the way a build does: entities linked, edges recorded, degrees counted."""
+        store.apply_chunk(
+            source_id,
+            chunk_id,
+            [{"name": n.title(), "normalized_name": n, "type": "t", "description": n} for n in entities],
+            [{"source": a.title(), "target": b.title(), "type": "rel", "description": "x"} for a, b in relationships],
+            {},
+        )
+        store.set_node_degrees(source_id)
 
-            links = store.get_chunk_ids_for_nodes(source_id, [ada, alan])
-            assert links == {ada: ["new"], alan: ["keep"]}
-            conn = store._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT source_chunk_ids FROM graph_edges WHERE source_id = %s;",
-                    (source_id,),
-                )
-                assert cursor.fetchone()[0] == ["keep", "new"]
-            conn.rollback()
-            assert store.pending_chunks(source_id, ["old", "new"]) == ["old"]
-            # Another source's link to the same chunk id is left alone.
-            assert store.get_chunk_ids_for_nodes(other, [other_node]) == {
-                other_node: ["old"]
-            }
-        finally:
-            store.delete_by_source(source_id)
-            store.delete_by_source(other)
+    def _edges(self, store, source_id):
+        conn = store._get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT s.normalized_name, d.normalized_name, e.source_chunk_ids FROM graph_edges e "
+                "JOIN graph_nodes s ON s.id = e.src_node_id JOIN graph_nodes d ON d.id = e.dst_node_id "
+                "WHERE e.source_id = %s ORDER BY 1, 2;",
+                (source_id,),
+            )
+            rows = [(a, b, ids) for a, b, ids in cursor.fetchall()]
+        conn.rollback()
+        return rows
+
+    def test_delete_chunks_drops_only_what_the_chunks_alone_held(self, store, source_id):
+        # c1 and c2 both mention Ada; only c2 mentions Bob, and only c2
+        # relates Ada to Bob and Ada to Engine (an edge-only endpoint).
+        self._apply(store, source_id, "c1", ["ada", "carol"], [("ada", "carol")])
+        self._apply(store, source_id, "c2", ["ada", "bob"], [("ada", "bob"), ("ada", "engine"), ("ada", "carol")])
+        other = str(uuid.uuid4())
+        self._apply(store, other, "c2", ["bob"], [])
+
+        result = store.delete_chunks(source_id, ["c2", "never-extracted"])
+
+        assert result == {"nodes": 2, "edges": 2}
+        assert store.get_node_by_normalized(source_id, "bob") is None
+        assert store.get_node_by_normalized(source_id, "engine") is None
+        ada = store.get_node_by_normalized(source_id, "ada")
+        carol = store.get_node_by_normalized(source_id, "carol")
+        assert ada["doc_freq"] == 1
+        assert ada["degree"] == 1 and carol["degree"] == 1
+        # The shared edge keeps the chunk it still comes from.
+        assert self._edges(store, source_id) == [("ada", "carol", ["c1"])]
+        assert store.get_chunk_ids_for_nodes(source_id, [ada["id"]]) == {ada["id"]: ["c1"]}
+        # Each deleted chunk's checkpoint becomes a tombstone, so a build that
+        # listed it before the delete skips it rather than writing it back.
+        assert store.get_progress(source_id) == {
+            "c1": "done", "c2": "deleted", "never-extracted": "deleted",
+        }
+        assert store.pending_chunks(source_id, ["c1", "c2", "never-extracted"]) == []
+        # Another source's chunk of the same id is untouched.
+        assert store.get_node_by_normalized(other, "bob") is not None
+        assert store.get_progress(other) == {"c2": "done"}
+
+    def test_delete_chunks_keeps_an_endpoint_another_chunk_relates(self, store, source_id):
+        # Engine has no chunk link of its own: c1 and c2 each relate a
+        # different entity to it.
+        self._apply(store, source_id, "c1", ["ada"], [("ada", "engine")])
+        self._apply(store, source_id, "c2", ["bob"], [("bob", "engine")])
+
+        store.delete_chunks(source_id, ["c1"])
+
+        engine = store.get_node_by_normalized(source_id, "engine")
+        assert engine is not None and engine["degree"] == 1
+        assert store.get_node_by_normalized(source_id, "ada") is None
+        assert self._edges(store, source_id) == [("bob", "engine", ["c2"])]
+
+    def test_delete_chunks_twice_is_a_no_op(self, store, source_id):
+        self._apply(store, source_id, "c1", ["ada"], [])
+        self._apply(store, source_id, "c2", ["ada"], [])
+        store.delete_chunks(source_id, ["c2"])
+
+        assert store.delete_chunks(source_id, ["c2"]) == {"nodes": 0, "edges": 0}
+        assert store.get_node_by_normalized(source_id, "ada")["doc_freq"] == 1
+        assert store.delete_chunks(source_id, []) == {"nodes": 0, "edges": 0}
+
+    def test_a_deleted_chunk_is_never_written_back(self, store, source_id):
+        # A build that snapshotted the chunk before a page removal deleted it.
+        self._apply(store, source_id, "c1", ["ada"], [])
+        store.delete_chunks(source_id, ["c2"])
+
+        store.apply_chunk(
+            source_id, "c2", [{"name": "Bob", "normalized_name": "bob", "type": "t", "description": "b"}], [], {},
+        )
+        store.mark_chunk(source_id, "c2", "done")
+
+        assert store.get_node_by_normalized(source_id, "bob") is None
+        assert store.get_progress(source_id)["c2"] == "deleted"
+        assert store.pending_chunks(source_id, ["c1", "c2", "c3"]) == ["c3"]
+
+    def test_a_reset_keeps_the_tombstones(self, store, source_id):
+        # A page-change extraction listed c2 before a page change deleted it and
+        # a sync reset the graph: it must still not write c2 back.
+        self._apply(store, source_id, "c1", ["ada"], [])
+        store.delete_chunks(source_id, ["c2"])
+
+        store.delete_by_source(source_id)
+        store.apply_chunk(
+            source_id, "c2", [{"name": "Bob", "normalized_name": "bob", "type": "t", "description": "b"}], [], {},
+        )
+
+        assert store.count_nodes(source_id) == 0
+        assert store.get_progress(source_id) == {"c2": "deleted"}
+        assert store.pending_chunks(source_id, ["c1", "c3"]) == ["c1", "c3"]
 
     def test_checkpoint_pending_and_mark(self, store, source_id):
-        try:
-            all_chunks = ["c1", "c2", "c3"]
-            assert store.pending_chunks(source_id, all_chunks) == all_chunks
+        all_chunks = ["c1", "c2", "c3"]
+        assert store.pending_chunks(source_id, all_chunks) == all_chunks
 
-            store.mark_chunk(source_id, "c1", "done")
-            store.mark_chunk(source_id, "c2", "pending")
-            assert store.pending_chunks(source_id, all_chunks) == ["c2", "c3"]
+        store.mark_chunk(source_id, "c1", "done")
+        store.mark_chunk(source_id, "c2", "pending")
+        assert store.pending_chunks(source_id, all_chunks) == ["c2", "c3"]
 
-            store.mark_chunk(source_id, "c2", "done")
-            assert store.pending_chunks(source_id, all_chunks) == ["c3"]
+        store.mark_chunk(source_id, "c2", "done")
+        assert store.pending_chunks(source_id, all_chunks) == ["c3"]
 
-            progress = store.get_progress(source_id)
-            assert progress["c1"] == "done"
-            assert progress["c2"] == "done"
-        finally:
-            store.delete_by_source(source_id)
+        progress = store.get_progress(source_id)
+        assert progress["c1"] == "done"
+        assert progress["c2"] == "done"
 
     def test_count_nodes_many_batches_and_zero_fills(self, store):
         """One query for N sources; a source with no graph still gets an entry."""
         a, b, c = (str(uuid.uuid4()) for _ in range(3))
-        try:
-            store.upsert_node(a, "A1", "a1")
-            store.upsert_node(a, "A2", "a2")
-            store.upsert_node(b, "B1", "b1")
+        store.upsert_node(a, "A1", "a1")
+        store.upsert_node(a, "A2", "a2")
+        store.upsert_node(b, "B1", "b1")
 
-            counts = store.count_nodes_many([a, b, c])
+        counts = store.count_nodes_many([a, b, c])
 
-            assert counts == {a: 2, b: 1, c: 0}
-            # Agrees with the per-source query it replaces.
-            assert [store.count_nodes(s) for s in (a, b, c)] == [2, 1, 0]
-            assert store.count_nodes_many([]) == {}
-        finally:
-            store.delete_by_source(a)
-            store.delete_by_source(b)
+        assert counts == {a: 2, b: 1, c: 0}
+        # Agrees with the per-source query it replaces.
+        assert [store.count_nodes(s) for s in (a, b, c)] == [2, 1, 0]
+        assert store.count_nodes_many([]) == {}
 
     def test_pooled_connection_is_returned_to_the_shared_pool(self, store):
         """The live store borrows from the shared pool and gives the socket back."""
@@ -711,25 +748,21 @@ class TestGraphStoreLive:
     def test_delete_by_source_isolation(self, store):
         keep = str(uuid.uuid4())
         drop = str(uuid.uuid4())
-        try:
-            k = store.upsert_node(keep, "K", "k")
-            d = store.upsert_node(drop, "D", "d")
-            store.add_edge(keep, k, k, "self")
-            store.add_edge(drop, d, d, "self")
-            store.link_node_chunk(keep, k, "kc")
-            store.link_node_chunk(drop, d, "dc")
-            store.mark_chunk(keep, "kc", "done")
-            store.mark_chunk(drop, "dc", "done")
+        k = store.upsert_node(keep, "K", "k")
+        d = store.upsert_node(drop, "D", "d")
+        store.add_edge(keep, k, k, "self")
+        store.add_edge(drop, d, d, "self")
+        store.link_node_chunk(keep, k, "kc")
+        store.link_node_chunk(drop, d, "dc")
+        store.mark_chunk(keep, "kc", "done")
+        store.mark_chunk(drop, "dc", "done")
 
-            store.delete_by_source(drop)
+        store.delete_by_source(drop)
 
-            assert store.count_nodes(drop) == 0
-            assert store.get_progress(drop) == {}
-            assert store.count_nodes(keep) == 1
-            assert store.get_progress(keep) == {"kc": "done"}
-        finally:
-            store.delete_by_source(keep)
-            store.delete_by_source(drop)
+        assert store.count_nodes(drop) == 0
+        assert store.get_progress(drop) == {}
+        assert store.count_nodes(keep) == 1
+        assert store.get_progress(keep) == {"kc": "done"}
 
 
 @pytest.mark.unit
@@ -806,6 +839,14 @@ class TestGraphStoreParameterization:
             assert params == (sid,)
             tables.append(sql.split('"')[1])
         assert tables == ["graph_node_chunks", "graph_edges", "graph_nodes", "graph_ingest_progress"]
+
+    def test_delete_by_source_keeps_the_tombstones(self):
+        store, cursor = self._store_with_mock_conn()
+        store.delete_by_source(str(uuid.uuid4()))
+
+        progress = cursor.execute.call_args_list[-1].args[0].as_string()
+        assert "graph_ingest_progress" in progress
+        assert "status IS DISTINCT FROM 'deleted'" in progress
 
     def test_search_binds_embedding_and_source(self):
         store, cursor = self._store_with_mock_conn()
@@ -1040,10 +1081,69 @@ class TestGraphStoreParameterization:
         assert "pg_advisory_xact_lock" in calls[0].args[0]
         tables = ["graph_node_chunks", "graph_edges", "graph_ingest_progress"]
         for table in tables:
-            sql, params = next(c.args for c in calls if table in c.args[0])
-            assert sid not in sql and "old-id" not in sql and "new-id" not in sql
-            assert {sid, "old-id", "new-id"} <= set(params)
+            bound = set()
+            for sql, params in (c.args for c in calls if table in c.args[0]):
+                assert sid not in sql and "old-id" not in sql and "new-id" not in sql
+                bound |= {v for p in params for v in (p if isinstance(p, list) else [p])}
+            assert {sid, "old-id", "new-id"} <= bound
         store._connection.commit.assert_called_once()
+
+    def test_delete_chunks_binds_ids_under_the_source_lock(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+        sid = str(uuid.uuid4())
+
+        assert store.delete_chunks(sid, ["c-1", "c-2", "c-1"]) == {"nodes": 0, "edges": 0}
+
+        calls = cursor.execute.call_args_list
+        assert "pg_advisory_xact_lock" in calls[0].args[0]
+        for sql, params in (c.args for c in calls[1:]):
+            assert sid not in sql and "c-1" not in sql
+        chunk_params = [p for c in calls[1:] for p in c.args[1] if isinstance(p, list) and "c-1" in p]
+        assert chunk_params and all(p == ["c-1", "c-2"] for p in chunk_params)
+        store._connection.commit.assert_called_once()
+
+    def test_delete_chunks_without_ids_touches_nothing(self):
+        store, cursor = self._store_with_mock_conn()
+
+        assert store.delete_chunks("sid", []) == {"nodes": 0, "edges": 0}
+        cursor.execute.assert_not_called()
+
+    def test_delete_chunks_leaves_a_tombstone_per_chunk(self):
+        # A build that listed the chunks before they were deleted must not write them back.
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+
+        store.delete_chunks("sid", ["c-1", "c-2"])
+
+        progress = [c.args for c in cursor.execute.call_args_list if "graph_ingest_progress" in c.args[0]]
+        [(sql, params)] = progress
+        assert "DELETE FROM" not in sql.upper() and "'deleted'" in sql
+        assert params == ("sid", ["c-1", "c-2"])
+
+    @pytest.mark.parametrize("status", ["done", "deleted"])
+    def test_apply_chunk_skips_a_done_or_deleted_chunk(self, status):
+        store, cursor = self._store_with_mock_conn()
+        cursor.fetchone.return_value = [status]
+        upserts = []
+        store._upsert_node = lambda *a, **k: upserts.append(a) or "n1"
+
+        result = store.apply_chunk(
+            "sid", "c1", [{"name": "Bob", "normalized_name": "bob", "type": "t", "description": "b"}], [], {},
+        )
+
+        assert result == (0, 0) and upserts == []
+        store._connection.commit.assert_not_called()
+
+    def test_mark_chunk_never_overwrites_a_tombstone(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+
+        store.mark_chunk("sid", "c1", "failed")
+
+        sql, params = cursor.execute.call_args.args
+        assert "WHERE graph_ingest_progress.status IS DISTINCT FROM 'deleted'" in sql
+        assert params == ("sid", "c1", "failed", None, None)
 
     def test_node_detail_survives_a_relationships_failure(self):
         # A failed relationships read degrades to an empty list; the node and
@@ -1133,18 +1233,15 @@ class TestEntityPagesLive:
         chunk_id = str(cursor.fetchone()[0])
         conn.commit()
         cursor.close()
-        try:
-            subject = store.upsert_node(source_id, "Quill", "quill")
-            mention = store.upsert_node(source_id, "Legacy Quill", "legacy quill")
-            store.link_node_chunk(source_id, subject, chunk_id)
-            store.link_node_chunk(source_id, mention, chunk_id)
+        subject = store.upsert_node(source_id, "Quill", "quill")
+        mention = store.upsert_node(source_id, "Legacy Quill", "legacy quill")
+        store.link_node_chunk(source_id, subject, chunk_id)
+        store.link_node_chunk(source_id, mention, chunk_id)
 
-            pages = store.entity_pages(source_id, "Quill", limit=4)
+        pages = store.entity_pages(source_id, "Quill", limit=4)
 
-            assert [page["text"] for page in pages] == ["Quill is a write-ahead store."]
-            assert pages[0]["metadata"] == {"title": "quill.md"}
-        finally:
-            store.delete_by_source(source_id)
+        assert [page["text"] for page in pages] == ["Quill is a write-ahead store."]
+        assert pages[0]["metadata"] == {"title": "quill.md"}
 
 
     def test_two_chunks_with_identical_text_collapse_into_one_page(self, store):
@@ -1163,16 +1260,13 @@ class TestEntityPagesLive:
             chunk_ids.append(str(cursor.fetchone()[0]))
         conn.commit()
         cursor.close()
-        try:
-            node = store.upsert_node(source_id, "Quill", "quill")
-            for chunk_id in chunk_ids:
-                store.link_node_chunk(source_id, node, chunk_id)
+        node = store.upsert_node(source_id, "Quill", "quill")
+        for chunk_id in chunk_ids:
+            store.link_node_chunk(source_id, node, chunk_id)
 
-            pages = store.entity_pages(source_id, "Quill", limit=4)
+        pages = store.entity_pages(source_id, "Quill", limit=4)
 
-            assert [page["text"] for page in pages] == ["Quill is a write-ahead store."]
-        finally:
-            store.delete_by_source(source_id)
+        assert [page["text"] for page in pages] == ["Quill is a write-ahead store."]
 
 
 @pytest.mark.unit
@@ -1232,7 +1326,9 @@ class TestGraphReadQueries:
 
         sql, params = cursor.execute.call_args.args
         assert name not in sql
-        assert params == (sid, f"%{name}%", f"%{name}%", 500)
+        # Bound, and escaped: the "_" in "graph_nodes" matches literally.
+        pattern = name.replace("_", "\\_")
+        assert params == (sid, f"%{pattern}%", f"%{pattern}%", 500)
         assert rows == [
             {"source": "Alder", "type": "streams_to", "target": "Quill", "description": "audit events"}
         ]
@@ -1251,6 +1347,24 @@ class TestGraphReadQueries:
         # text-opens-with ordering, then the clamped limit.
         assert params == ("quill", "quill %", sid, sid, "quill", "quill %", "%Quill%", "Quill%", 1)
         assert pages == [{"metadata": {"title": "quill.md"}, "text": "Quill is a store."}, {"metadata": {}, "text": ""}]
+
+    def test_names_match_literally(self):
+        # The name comes from an LLM; "_" and "%" in it are not wildcards.
+        store, cursor, _ = self._store()
+        sid = str(uuid.uuid4())
+
+        store.entity_relationships(sid, "ACME_Corp 100%")
+        sql, params = cursor.execute.call_args.args
+        assert sql.count("ESCAPE") == 2
+        assert params[1] == params[2] == "%ACME\\_Corp 100\\%%"
+
+        store.entity_pages(sid, "ACME_Corp")
+        query, params = cursor.execute.call_args.args
+        assert query.as_string().count("ESCAPE") == 4
+        assert params == (
+            "acme_corp", "acme\\_corp %", sid, sid,
+            "acme_corp", "acme\\_corp %", "%ACME\\_Corp%", "ACME\\_Corp%", 4,
+        )
 
     def test_chunk_similarities_are_restricted_to_the_reached_chunks(self):
         store, cursor, _ = self._store(rows=[("11", 0.75)])
@@ -1887,25 +2001,22 @@ class TestApplyChunkIsReplaySafe:
             }
         ]
         embeddings = {"ada": _embedding(0.1), "engine": _embedding(0.2)}
-        try:
-            first = store.apply_chunk(
-                source_id, "c1", entities, relationships, embeddings
-            )
-            replay = store.apply_chunk(
-                source_id, "c1", entities, relationships, embeddings
-            )
+        first = store.apply_chunk(
+            source_id, "c1", entities, relationships, embeddings
+        )
+        replay = store.apply_chunk(
+            source_id, "c1", entities, relationships, embeddings
+        )
 
-            assert first == (1, 1)
-            assert replay == (0, 0)
-            node = store.get_node_by_normalized(source_id, "ada")
-            assert node["doc_freq"] == 1
-            overview = store.get_graph_overview(source_id)
-            assert len(overview["edges"]) == 1
-            # The write records its own progress, so the caller's checkpoint
-            # and the rows it describes commit together.
-            assert store.get_progress(source_id)["c1"] == "done"
-        finally:
-            store.delete_by_source(source_id)
+        assert first == (1, 1)
+        assert replay == (0, 0)
+        node = store.get_node_by_normalized(source_id, "ada")
+        assert node["doc_freq"] == 1
+        overview = store.get_graph_overview(source_id)
+        assert len(overview["edges"]) == 1
+        # The write records its own progress, so the caller's checkpoint
+        # and the rows it describes commit together.
+        assert store.get_progress(source_id)["c1"] == "done"
 
     def test_overlapping_applies_of_one_chunk_write_it_once(self, store, postgresql, monkeypatch):
         """Two builds of one source can overlap: a rebuild dispatched while the
@@ -1948,17 +2059,13 @@ class TestApplyChunkIsReplaySafe:
         finally:
             for writer in writers:
                 writer.close()
-            store.delete_by_source(source_id)
 
     def test_a_zero_weight_relationship_stays_zero(self, store):
         source_id = str(uuid.uuid4())
         relationships = [{"source": "Ada", "target": "Engine", "type": "mentions", "weight": 0.0}]
-        try:
-            store.apply_chunk(source_id, "c1", [], relationships, {})
-            edges = store.get_graph_overview(source_id)["edges"]
-            assert [edge["weight"] for edge in edges] == [0.0]
-        finally:
-            store.delete_by_source(source_id)
+        store.apply_chunk(source_id, "c1", [], relationships, {})
+        edges = store.get_graph_overview(source_id)["edges"]
+        assert [edge["weight"] for edge in edges] == [0.0]
 
     def test_a_different_chunk_still_applies(self, store):
         """The guard is per chunk, not a blanket 'already saw this source'."""
@@ -1972,15 +2079,12 @@ class TestApplyChunkIsReplaySafe:
             }
         ]
         embeddings = {"ada": _embedding(0.1)}
-        try:
-            store.apply_chunk(source_id, "c1", entities, [], embeddings)
-            second = store.apply_chunk(source_id, "c2", entities, [], embeddings)
+        store.apply_chunk(source_id, "c1", entities, [], embeddings)
+        second = store.apply_chunk(source_id, "c2", entities, [], embeddings)
 
-            assert second == (1, 0)
-            node = store.get_node_by_normalized(source_id, "ada")
-            assert node["doc_freq"] == 2
-        finally:
-            store.delete_by_source(source_id)
+        assert second == (1, 0)
+        node = store.get_node_by_normalized(source_id, "ada")
+        assert node["doc_freq"] == 2
 
 
 @pytest.mark.unit

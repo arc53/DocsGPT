@@ -37,6 +37,26 @@ class TestNormalizePostgresUri:
                 "postgresql://u:p@h:5432/d",
                 "postgresql+psycopg://u:p@h:5432/d",
             ),
+            # URI schemes are case-insensitive, so normalize them too.
+            (
+                "POSTGRESQL://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            (
+                "PostgreSQL+Psycopg2://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            # An already-normalized scheme in upper case is lowercased too;
+            # SQLAlchemy looks dialects up case-sensitively.
+            (
+                "POSTGRESQL+PSYCOPG://u:p@h:5432/d",
+                "postgresql+psycopg://u:p@h:5432/d",
+            ),
+            # Only the scheme is lowercased; credentials, host and path keep their case.
+            (
+                "Postgres://User:PassWord@Host/DB",
+                "postgresql+psycopg://User:PassWord@Host/DB",
+            ),
             # Legacy psycopg2 dialect is silently upgraded — psycopg2 is
             # no longer in requirements.txt, so there's no way it can work
             # as-is, and rewriting is friendlier than failing.
@@ -78,6 +98,12 @@ class TestNormalizePostgresUri:
         weird = "postgresql+asyncpg://u:p@h/d"
         assert normalize_postgres_uri(weird) == weird
 
+    def test_key_value_dsn_with_scheme_like_password_passes_through(self):
+        """A libpq key=value DSN is not a URI, so a ``://`` inside a value
+        must not be mistaken for a scheme and lowercased."""
+        dsn = "host=H user=U password=Ab://Cd dbname=D"
+        assert normalize_postgres_uri(dsn) == dsn
+
     def test_non_string_input_passes_through(self):
         """Non-string inputs (e.g. if pydantic ever passes an int) shouldn't
         crash the normalizer — let pydantic's own type validation handle it."""
@@ -107,6 +133,20 @@ class TestNormalizePgvectorConnectionString:
             (
                 "postgresql+psycopg://u:p@h:5432/d",
                 "postgresql://u:p@h:5432/d",
+            ),
+            (
+                "POSTGRESQL+PSYCOPG://u:p@h:5432/d",
+                "postgresql://u:p@h:5432/d",
+            ),
+            # libpq accepts only lower-case schemes, so plain upper-case
+            # forms are lowercased rather than passed through.
+            (
+                "POSTGRES://u:p@h/d",
+                "postgres://u:p@h/d",
+            ),
+            (
+                "PostgreSQL://U:P@H/D",
+                "postgresql://U:P@H/D",
             ),
             (
                 "postgresql+psycopg2://u:p@h:5432/d",
@@ -139,6 +179,10 @@ class TestNormalizePgvectorConnectionString:
         its own error message when the connection is attempted."""
         weird = "mysql://u:p@h/d"
         assert normalize_pgvector_connection_string(weird) == weird
+
+    def test_key_value_dsn_with_scheme_like_password_passes_through(self):
+        dsn = "host=H user=U password=Ab://Cd dbname=D"
+        assert normalize_pgvector_connection_string(dsn) == dsn
 
     def test_non_string_input_passes_through(self):
         assert normalize_pgvector_connection_string(42) == 42  # type: ignore[arg-type]

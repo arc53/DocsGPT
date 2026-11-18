@@ -1,24 +1,48 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useParams } from 'react-router-dom';
 
 import userService from '../api/services/userService';
+import ArtifactPanel from '../components/ArtifactPanel';
 import MessageInput from '../components/MessageInput';
+import { getSendReadiness } from '../components/message-input/armedSend';
 import { Avatar } from '../components/ui/avatar';
+import { SidePanel } from '../components/ui/side-panel';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
+import ArtifactsPanel from '../conversation/ArtifactsPanel';
+import { ChatCompanionContext } from '../conversation/chatCompanion';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
 import {
   addQuery,
   fetchAnswer,
   resendQuery,
+  resumeQuestion,
   selectQueries,
   selectStatus,
 } from '../conversation/conversationSlice';
-import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
+import {
+  pendingQuestionCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
+import { followItemWorkspace } from '../conversation/followWorkspace';
+import { composerSubmitTarget } from '../conversation/turnSubmission';
+import { useArtifactDetail } from '../conversation/useArtifactDetail';
+import {
+  selectConversationId,
+  selectToken,
+  setSelectedAgent,
+} from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import {
+  selectAttachments,
+  toSendableAttachments,
+} from '../upload/uploadSlice';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
+import { selectWorkspaceId } from '../workspace/workspaceSlice';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
 
@@ -26,10 +50,39 @@ export default function SharedAgent() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
+  const currentWorkspace = useSelector(selectWorkspaceId);
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
   const status = useSelector(selectStatus);
+  const conversationId = useSelector(selectConversationId);
+  const attachments = useSelector(selectAttachments);
+  // A starter that must wait for pending attachments is parked here;
+  // MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
+  // The runner owns this chat and its runs, so its artifacts open here.
+  const {
+    detail,
+    setDetail,
+    reset,
+    openArtifact,
+    openArtifactList,
+    syncArtifactList,
+    shown,
+    listKey,
+  } = useArtifactDetail();
+  // Keeps the last content on screen while the panel slides out.
+  const [shownDetail, setShownDetail] = useState(detail);
+  if (detail && detail !== shownDetail) setShownDetail(detail);
+  const artifactCompanion = useMemo(
+    () => ({
+      openArtifact: shown,
+      openArtifactList,
+      openArtifactListKey: listKey,
+      syncArtifactList,
+    }),
+    [shown, openArtifactList, listKey, syncArtifactList],
+  );
 
   const [sharedAgent, setSharedAgent] = useState<Agent>();
   const [isLoading, setIsLoading] = useState(true);
@@ -83,6 +136,11 @@ export default function SharedAgent() {
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // A starter bypasses MessageInput's submit gate: with files still
+        // uploading/parsing, sending now would leave them behind. Route the
+        // question into the composer, where the armed-send banner takes over.
+        setQueuedQuestion(trimmedQuestion);
       } else {
         if (!isRetry) {
           const newQuery: Query = { prompt: trimmedQuestion };
@@ -91,8 +149,19 @@ export default function SharedAgent() {
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, attachments],
   );
+
+  // The visitor's own token resumes the turn their message paused (a shared
+  // agent runs as its caller), as in the chat.
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
 
   const handleQuestionSubmission = (
     question?: string,
@@ -107,7 +176,17 @@ export default function SharedAgent() {
       });
     } else if (question && status !== 'loading') {
       const currentInput = question.trim();
-      if (lastQueryReturnedErr && queries.length > 0) {
+      const target = composerSubmitTarget({
+        question,
+        queries,
+        lastQueryReturnedErr,
+        composerFileCount: toSendableAttachments(attachments).length,
+      });
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: currentInput });
+      } else if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
           question: currentInput,
@@ -129,9 +208,37 @@ export default function SharedAgent() {
     if (agentId) getSharedAgent();
   }, [agentId, token]);
 
+  // The chat runs in the agent's workspace, and the server refuses it from
+  // any other: a member of the agent's team chats in that team, anyone else
+  // (the agent says no workspace to them) in Personal. When the app can't
+  // go there (the workspace list failed), the chat shows where it is.
+  const agentWorkspace: ItemWorkspace | null = sharedAgent
+    ? (sharedAgent.workspace ?? { kind: 'personal' })
+    : null;
+  const target = !agentWorkspace
+    ? null
+    : agentWorkspace.kind === 'personal'
+      ? PERSONAL_WORKSPACE
+      : (agentWorkspace.team_id ?? PERSONAL_WORKSPACE);
+  const [unreachable, setUnreachable] = useState<string | null>(null);
   useEffect(() => {
-    if (sharedAgent) dispatch(setSelectedAgent(sharedAgent));
-  }, [sharedAgent, dispatch]);
+    if (!agentWorkspace || !target || target === currentWorkspace) return;
+    let cancelled = false;
+    void dispatch(followItemWorkspace(agentWorkspace)).then((switched) => {
+      if (!cancelled && !switched) setUnreachable(target);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [target, currentWorkspace, dispatch]);
+  const inAgentWorkspace =
+    target !== null && (target === currentWorkspace || target === unreachable);
+
+  // A switch clears the selected agent, so it is set once the page is there.
+  useEffect(() => {
+    if (sharedAgent && inAgentWorkspace)
+      dispatch(setSelectedAgent(sharedAgent));
+  }, [sharedAgent, inAgentWorkspace, dispatch]);
 
   if (isLoading) return <LoadingState fill="parent" />;
   if (loadFailed)
@@ -148,6 +255,7 @@ export default function SharedAgent() {
     return (
       <EmptyState className="h-full" title={t('agents.shared.notFound')} />
     );
+  if (!inAgentWorkspace) return <LoadingState fill="parent" />;
   return (
     <div className="relative h-full w-full">
       <div className="absolute top-5 left-4 hidden items-center gap-3 sm:flex">
@@ -164,24 +272,34 @@ export default function SharedAgent() {
       </div>
       <div className="flex h-full w-full flex-col items-center justify-between sm:pt-12">
         <div className="flex w-full flex-col items-center overflow-y-auto">
-          <ConversationMessages
-            handleQuestion={handleQuestion}
-            handleQuestionSubmission={handleQuestionSubmission}
-            queries={queries}
-            status={status}
-            showHeroOnEmpty={false}
-            headerContent={
-              <div className="flex w-full items-center justify-center py-4">
-                <SharedAgentCard agent={sharedAgent} />
-              </div>
-            }
-          />
+          <ChatCompanionContext.Provider value={artifactCompanion}>
+            <ConversationMessages
+              handleQuestion={handleQuestion}
+              handleQuestionSubmission={handleQuestionSubmission}
+              queries={queries}
+              status={status}
+              showHeroOnEmpty={false}
+              starters={sharedAgent.starters}
+              onQuestionAction={handleQuestionAction}
+              onOpenArtifact={openArtifact}
+              headerContent={
+                <div className="flex w-full items-center justify-center py-4">
+                  <SharedAgentCard agent={sharedAgent} />
+                </div>
+              }
+            />
+          </ChatCompanionContext.Provider>
         </div>
         <div className="flex w-[95%] max-w-290 flex-col items-center pb-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12">
           <div className="w-full px-2">
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}
+              queuedQuestion={queuedQuestion}
+              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
+              placeholder={
+                waitingQuestion ? t('questions.typeAnswer') : undefined
+              }
               showSourceButton={sharedAgent ? false : true}
               showToolButton={sharedAgent ? false : true}
               autoFocus={false}
@@ -192,6 +310,35 @@ export default function SharedAgent() {
           </p>
         </div>
       </div>
+      <SidePanel
+        open={detail !== null}
+        onOpenChange={(open) => {
+          if (!open) reset();
+        }}
+      >
+        {shownDetail?.kind === 'artifact' ? (
+          <ArtifactPanel
+            key={`${shownDetail.open.id}:${shownDetail.open.version ?? ''}`}
+            artifactId={shownDetail.open.id}
+            toolName={shownDetail.open.toolName}
+            version={shownDetail.open.version}
+            conversationId={conversationId}
+          />
+        ) : shownDetail?.kind === 'artifacts' ? (
+          <ArtifactsPanel
+            items={shownDetail.items}
+            open={shownDetail.open}
+            onOpenChange={(next) =>
+              setDetail((current) =>
+                current?.kind === 'artifacts'
+                  ? { ...current, open: next }
+                  : current,
+              )
+            }
+            conversationId={conversationId}
+          />
+        ) : null}
+      </SidePanel>
     </div>
   );
 }

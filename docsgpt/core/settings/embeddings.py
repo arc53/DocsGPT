@@ -35,6 +35,24 @@ class EmbeddingsSettings(SettingsGroup):
     EMBEDDINGS_MAX_INPUT_TOKENS: Optional[int] = Field(
         default=None, description="Truncate each remote embed input to N tokens (overflow is lost)."
     )
+    EMBEDDINGS_MAX_QUERY_TOKENS: int = Field(
+        default=512,
+        ge=0,
+        description=(
+            "Clip a search query to N tokens before embedding it (0 disables). Embedder memory grows with the "
+            "square of input length, and a query needs a few hundred tokens: one 9k-token query (a webhook "
+            "payload, pasted logs) OOM-killed a 12 GB embeddings server. Documents are not affected."
+        ),
+    )
+    EMBEDDINGS_LOCAL_MAX_TOKENS: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Hard ceiling, in tokens, on every input a local FastEmbed model embeds, documents included (the "
+            "overflow is dropped). Unset keeps the model's own maximum, which is 32,768 for granite; its memory "
+            "grows with the square of input length, so 4096 caps one input at about 3 GB."
+        ),
+    )
     EMBEDDINGS_BATCH_SIZE: int = Field(
         default=32, ge=1, description="Chunks per store transaction and per remote embed request."
     )

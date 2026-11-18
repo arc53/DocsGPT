@@ -1,7 +1,7 @@
 ---
 title: GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-27
 ---
 
 import { Callout } from 'nextra/components'
@@ -19,7 +19,7 @@ GraphRAG is **flag-gated** and currently **pgvector-only**. It is available only
 
 - A PostgreSQL database with the `pgvector` extension (`VECTOR_STORE=pgvector`). See [PostgreSQL for User Data](/Deploying/Postgres-Migration).
 - `GRAPHRAG_ENABLED=true` in your environment.
-- An LLM configured for extraction. Without an override, extraction uses `LLM_NAME`, so set `GRAPHRAG_EXTRACTION_MODEL` explicitly (see [Configuration](#configuration)).
+- A model for extraction. Without an override, extraction uses the source owner's [task model](/Using/web-app#task-model) (see [Configuration](#configuration)).
 
 ```env
 GRAPHRAG_ENABLED=true
@@ -75,6 +75,34 @@ Notes:
 - Re-running the action rebuilds the graph from scratch rather than no-opping against an existing one.
 - You cannot switch a source to `graphrag` through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api) — use the upload-time selector or this dedicated endpoint.
 
+## When pages change
+
+On a GraphRAG [website source](/Sources/adding-knowledge#manage-the-pages-of-a-website-source), most page changes update the graph without rebuilding it:
+
+- **Add pages** and **Refresh page** first take the replaced page's old chunks out of the graph, then extract only the new chunks. Chunks already in the graph aren't sent to the LLM again, so the cost is about one LLM call per new chunk. The graph view's header shows **Building graph…** while the extraction runs.
+- **Remove from source** takes the removed pages' chunks out of the graph, with no LLM call. A relationship that came only from those chunks is deleted, and so is an entity left with no chunk and no relationship.
+
+**Add pages** instead rebuilds the source like a sync when it adds:
+
+- a whole site;
+- the first page on a second host, such as a `docs.example.com` page in a source that so far holds only `example.com` pages. A source on several hosts files its pages under a folder per host, so every page moves.
+
+Like any sync (below), that keeps the graph of every page whose text is unchanged. When the source has a graph, **Add pages** notes the cost before you add.
+
+An entity that several pages mention merges their descriptions into one text, and that text can't be split by page. After you remove a page, such an entity keeps its description from that page until the next full build.
+
+## When a source syncs
+
+A sync re-reads the whole source and stores every chunk again, but the graph follows by content: each chunk's text is hashed when it is extracted, and after the sync a chunk with the same text keeps its entities and relationships, with no LLM call. Chunks whose text is gone are taken out of the graph, and only new or changed text is extracted, at about one LLM call per chunk. A daily sync where one file changed extracts only that file's chunks; a sync where nothing changed makes no LLM call.
+
+A sync rebuilds the whole graph instead, once, when:
+
+- the graph was built before DocsGPT recorded content hashes;
+- the source's `graph.extraction_model` or `graph.gleanings` changed since the graph was built. A change to `GRAPHRAG_EXTRACTION_MODEL` or to the task model does not rebuild existing graphs; use **Enable GraphRAG** for that;
+- the embeddings model (`EMBEDDINGS_NAME`) changed, since the graph's node and fact embeddings come from it.
+
+A re-ingest or **Enable GraphRAG** always rebuilds the whole graph and extracts every chunk again.
+
 ## Configuration
 
 Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
@@ -82,15 +110,18 @@ Instance-wide settings (see [App Configuration](/Deploying/DocsGPT-Settings)):
 | Setting | Default | Description |
 | --- | --- | --- |
 | `GRAPHRAG_ENABLED` | `false` | Master switch for the feature. |
-| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` falls back to `LLM_NAME`. |
+| `GRAPHRAG_EXTRACTION_MODEL` | `null` | Model used for extraction. `null` uses the source owner's task model. |
 | `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on how many chunks are extracted per source (cost control). `0` extracts nothing. |
 | `GRAPHRAG_EXTRACTION_WORKERS` | `8` | Concurrent extraction calls during ingest (1–32). Model calls run in parallel while graph writes stay serial; `1` is fully serial. |
 
 The extraction model is resolved in this order: the source's `graph.extraction_model`, then
-`GRAPHRAG_EXTRACTION_MODEL`, then `LLM_NAME`. The call goes to the provider that serves that model in the model
-registry, or to `LLM_PROVIDER` when the registry doesn't know it. This is not necessarily the model chat uses:
-chat can default to another model or provider, and with `LLM_NAME` unset extraction runs on `LLM_PROVIDER` with no
-model id. Set `GRAPHRAG_EXTRACTION_MODEL` explicitly so you know which model builds, and pays for, the graph.
+`GRAPHRAG_EXTRACTION_MODEL`, then the source owner's [task model](/Using/web-app#task-model): their pick in
+**Settings → General**, else the one an admin set under **Admin → Defaults**, else `TASK_MODEL_ID`, else the
+instance's default model unless it is disabled. A source model or `GRAPHRAG_EXTRACTION_MODEL` that is disabled in the
+model registry is skipped. The call goes to the provider that serves that model in the model registry, or to
+`LLM_PROVIDER` when the registry doesn't know it. When none of these models can run, the build fails with *No model is
+available: no extraction model can run* rather than falling back to another model. This is not necessarily the model chat uses, so check the task
+model, or set `GRAPHRAG_EXTRACTION_MODEL`, to know which model builds, and pays for, the graph.
 
 Per-source extraction knobs live under the source config's `graph` object and override the instance defaults:
 
@@ -101,7 +132,7 @@ Per-source extraction knobs live under the source config's `graph` object and ov
 | `gleanings` | `0` | Extra extraction passes per chunk to catch entities missed on the first pass. Off by default (each pass costs additional LLM calls). |
 
 <Callout type="warning" emoji="⚠️">
-Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it.
+Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it. A source runs one extraction at a time, so page changes made close together, or a page change during a full build, wait for each other and share the cap.
 </Callout>
 
 ## Graph retrieval settings

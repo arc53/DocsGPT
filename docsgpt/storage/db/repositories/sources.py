@@ -6,9 +6,9 @@ import json
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import case, Connection, func, or_, select, text
+from sqlalchemy import and_, case, Connection, func, or_, select, text
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import ingest_chunk_progress_table, sources_table
 from docsgpt.storage.db.source_config import SourceConfig
 
@@ -43,32 +43,42 @@ def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
     return out
 
 
-def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
-    """WHERE predicate matching the owner's rows plus any ``extra_ids``.
+# Prefix of a team principal's id (``docsgpt.workspaces.principal.PRINCIPAL_PREFIX``); matched with ``left``,
+# since ``_`` is a LIKE wildcard.
+_PRINCIPAL_PREFIX = "__team__"
+
+
+def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list], received_ids: Optional[list] = None):
+    """WHERE predicate matching the owner's rows plus any ``extra_ids`` and ``received_ids``.
 
     Lets the paginated/count queries include team-shared sources (passed by id)
     alongside owned ones in a single query, so count/sort/search/pagination
-    stay correct across the union.
+    stay correct across the union. An extra id never brings in a row a team
+    workspace owns: those are listed in their team, never by a grant (a stale
+    grant row must not open one to a Personal list). ``received_ids`` are
+    another team's sources that team shares with the team workspace being
+    listed, already checked live by the caller; only teams' rows match them.
     """
     scope = sources_table.c.user_id == user_id
+    is_team_row = func.left(sources_table.c.user_id, len(_PRINCIPAL_PREFIX)) == _PRINCIPAL_PREFIX
     ids = _coerce_uuid_ids(extra_ids)
     if ids:
-        scope = or_(scope, sources_table.c.id.in_(ids))
+        scope = or_(scope, and_(sources_table.c.id.in_(ids), ~is_team_row))
+    received = _coerce_uuid_ids(received_ids)
+    if received:
+        scope = or_(scope, and_(sources_table.c.id.in_(received), is_team_row))
     return scope
 
 
-def _escape_like(pattern: str) -> str:
-    """Escape wildcards so a user-supplied substring is matched literally.
 
-    We use ``LIKE ESCAPE '\\'`` on the query side so backslash, percent, and
-    underscore in the input don't accidentally turn into regex-like wildcards.
+def _name_search(search_term: Optional[str]):
+    """The case-insensitive substring predicate on ``name``, or None for no search.
+
+    ``%`` and ``_`` in the term are escaped so they match literally.
     """
-    return (
-        pattern
-        .replace("\\", "\\\\")
-        .replace("%", "\\%")
-        .replace("_", "\\_")
-    )
+    if not search_term:
+        return None
+    return sources_table.c.name.ilike(f"%{like_escape(search_term)}%", escape="\\")
 
 
 def _coerce_jsonb(value: Any) -> Any:
@@ -123,6 +133,10 @@ def _ingest_status_case():
     ).label("ingest_status")
 
 
+class AllowlistFull(ValueError):
+    """A source's prompt-injection allowlist already holds as many chunks as it may."""
+
+
 class SourcesRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -147,7 +161,17 @@ class SourcesRepository:
         model: Optional[str] = None,
         date: Any = None,
         legacy_mongo_id: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> dict:
+        """Insert a source.
+
+        ``created_by`` names the person who added it. Without it the
+        ``fill_created_by`` trigger records the owner, except for a team
+        principal owner, so a create in a team passes the uploader. A
+        principal is never recorded as a creator.
+        """
+        if created_by is not None and str(created_by).startswith(_PRINCIPAL_PREFIX):
+            created_by = None
         result = self._conn.execute(
             text(
                 """
@@ -155,7 +179,7 @@ class SourcesRepository:
                     id, user_id, name, type, metadata, config,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
-                    language, model, date, legacy_mongo_id
+                    language, model, date, legacy_mongo_id, created_by
                 )
                 VALUES (
                     COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
@@ -167,7 +191,7 @@ class SourcesRepository:
                     CAST(:file_name_map AS jsonb),
                     :language, :model,
                     COALESCE(:date, now()),
-                    :legacy_mongo_id
+                    :legacy_mongo_id, :created_by
                 )
                 RETURNING *
                 """
@@ -199,6 +223,7 @@ class SourcesRepository:
                 "model": model,
                 "date": date,
                 "legacy_mongo_id": legacy_mongo_id,
+                "created_by": created_by,
             },
         )
         return row_to_dict(result.fetchone())
@@ -209,6 +234,32 @@ class SourcesRepository:
             {"id": source_id, "user_id": user_id},
         )
         row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_for_update(self, source_id: str, user_id: Optional[str] = None) -> Optional[dict]:
+        """Read a source and lock its row until the transaction ends.
+
+        A read-modify-write of ``remote_data`` or ``directory_structure``
+        (a Website page change, a sync's final write) re-reads the row with
+        this inside its write transaction, so a concurrent change waits
+        rather than being overwritten.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner to scope to; ``None`` only after the caller has
+                checked access itself (a team member edits the owner's row).
+
+        Returns:
+            The row, or ``None`` when it doesn't exist (or isn't the owner's).
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        sql = "SELECT * FROM sources WHERE id = CAST(:id AS uuid)"
+        params = {"id": str(source_id)}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
+        row = self._conn.execute(text(sql + " FOR UPDATE"), params).fetchone()
         return row_to_dict(row) if row is not None else None
 
     def get_any(self, source_id: str, user_id: str) -> Optional[dict]:
@@ -250,6 +301,84 @@ class SourcesRepository:
         )
         return [row_to_dict(r) for r in result.fetchall()]
 
+    def injection_allowed(self, source_ids) -> dict[str, set[str]]:
+        """The text hashes each source's owner marked safe from prompt-injection screening.
+
+        Read from ``metadata.injection_review.allowed`` (sha256 hex digests of
+        chunk texts) with no ownership scoping: the caller already resolved
+        these sources for the request. Kept per source: an allowance covers
+        that source's chunk, never the same text from another source.
+
+        Args:
+            source_ids: Source UUIDs; anything else is ignored.
+
+        Returns:
+            Source id to its allowed hashes; sources that allowed none are absent.
+        """
+        ids = sorted({str(s) for s in source_ids if looks_like_uuid(str(s))})
+        if not ids:
+            return {}
+        result = self._conn.execute(
+            text(
+                "SELECT id, metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
+                "WHERE id = ANY(CAST(:ids AS uuid[]))"
+            ),
+            {"ids": ids},
+        )
+        allowed: dict[str, set[str]] = {}
+        for row in result.fetchall():
+            hashes = {h for h in row.allowed if isinstance(h, str)} if isinstance(row.allowed, list) else set()
+            if hashes:
+                allowed[str(row.id)] = hashes
+        return allowed
+
+    def review_injection(self, source_id: str, content_hash: str, allow: bool, cap: int) -> Optional[list[str]]:
+        """Add a text hash to the source's owner allowlist, or take it out.
+
+        The list is ``metadata.injection_review.allowed``, read under a row
+        lock so two reviews at once both land. Not scoped by owner: the route
+        checked the caller may edit the source.
+
+        Args:
+            source_id: The source's UUID.
+            content_hash: The sha256 hex digest of the chunk text.
+            allow: True to mark it safe, False to clear that.
+            cap: The most hashes the list may hold.
+
+        Returns:
+            The list as stored, or ``None`` when the source does not exist.
+
+        Raises:
+            AllowlistFull: ``allow`` on a full list.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        row = self._conn.execute(
+            text(
+                "SELECT metadata -> 'injection_review' -> 'allowed' AS allowed FROM sources "
+                "WHERE id = CAST(:id AS uuid) FOR UPDATE"
+            ),
+            {"id": str(source_id)},
+        ).fetchone()
+        if row is None:
+            return None
+        allowed = [h for h in row.allowed if isinstance(h, str)] if isinstance(row.allowed, list) else []
+        if allow and content_hash not in allowed:
+            if len(allowed) >= cap:
+                raise AllowlistFull(f"At most {cap} chunks of a source can be marked safe")
+            allowed.append(content_hash)
+        elif not allow:
+            allowed = [h for h in allowed if h != content_hash]
+        self._conn.execute(
+            text(
+                "UPDATE sources SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{injection_review}', "
+                "jsonb_build_object('allowed', CAST(:allowed AS jsonb))) "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": str(source_id), "allowed": json.dumps(allowed)},
+        )
+        return allowed
+
     def find_by_name(self, user_id: str, name: str) -> Optional[dict]:
         """Return a user's source whose name matches ``name`` (case-insensitive).
 
@@ -279,6 +408,8 @@ class SourcesRepository:
         sort_field: str = "created_at",
         sort_order: str = "desc",
         extra_ids: Optional[list] = None,
+        only_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -301,6 +432,11 @@ class SourcesRepository:
                 reaches the emitted SQL as a string.
             sort_order: ``"asc"`` or ``"desc"``; anything else is treated
                 as ``"desc"``.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+            only_ids: When given, keep only these ids (an empty list keeps
+                none); the paginated listing narrows by kind and usage this way.
+            received_ids: Ids of other teams' sources shared with the team
+                workspace ``user_id`` (its principal), to list too.
 
         Returns:
             A list of source rows as plain dicts (via ``row_to_dict``),
@@ -320,15 +456,13 @@ class SourcesRepository:
                     == sources_table.c.id,
                 )
             )
-            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
         )
-        if search_term:
-            stmt = stmt.where(
-                sources_table.c.name.ilike(
-                    f"%{_escape_like(search_term)}%",
-                    escape="\\",
-                )
-            )
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
+        if only_ids is not None:
+            stmt = stmt.where(sources_table.c.id.in_(_coerce_uuid_ids(only_ids)))
 
         # ``id`` is appended as a stable tiebreaker so paginated windows
         # are deterministic across equal sort keys.
@@ -343,6 +477,75 @@ class SourcesRepository:
 
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """Every source ``list_for_user`` lists, as ``{id, user_id}`` only, in its default order (newest first).
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any source's
+        JSONB columns.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        stmt = (
+            select(sources_table.c.id, sources_table.c.user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in self._conn.execute(stmt)]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The scalar fields of the sources ``ids`` names, with their ingest status, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Source ids.
+
+        Returns:
+            ``{"id", "user_id", "name", "type", "tokens", "ingest_status"}`` dicts with string ids.
+        """
+        uuids = _coerce_uuid_ids(ids)
+        if not uuids:
+            return []
+        stmt = (
+            select(
+                sources_table.c.id, sources_table.c.user_id, sources_table.c.name, sources_table.c.type,
+                sources_table.c.tokens, _ingest_status_case(),
+            )
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table, ingest_chunk_progress_table.c.source_id == sources_table.c.id
+                )
+            )
+            .where(sources_table.c.id.in_(uuids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [
+            {"id": str(row.id), "user_id": row.user_id, "name": row.name, "type": row.type,
+             "tokens": row.tokens, "ingest_status": row.ingest_status}
+            for row in self._conn.execute(stmt)
+        ]
+
+    def get_directory_structure(self, source_id: str) -> Optional[dict]:
+        """One source's ``directory_structure``, with no access check: the caller has already made one.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            The stored tree, or None when it has none or there is no such source.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT directory_structure FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)}
+        ).scalar()
 
     def count_for_user(
         self,
@@ -369,16 +572,45 @@ class SourcesRepository:
             .select_from(sources_table)
             .where(_owned_or_shared_scope(user_id, extra_ids))
         )
-        if search_term:
-            stmt = stmt.where(
-                sources_table.c.name.ilike(
-                    f"%{_escape_like(search_term)}%",
-                    escape="\\",
-                )
-            )
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
         result = self._conn.execute(stmt)
         row = result.fetchone()
         return int(row[0]) if row is not None else 0
+
+    def list_facets_for_user(
+        self,
+        user_id: str,
+        *,
+        search_term: Optional[str] = None,
+        extra_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
+    ) -> list[dict]:
+        """Every row ``list_for_user`` would match, with only the columns that decide its kind.
+
+        The paginated listing counts sources per kind and per usage over the
+        whole match, not one page, so it reads these light rows (no directory
+        tree or metadata) for all of them.
+
+        Args:
+            user_id: Scope rows to this owner.
+            search_term: Same substring filter as ``list_for_user``.
+            extra_ids: Same union of team-shared ids as ``list_for_user``.
+            received_ids: Same union of other teams' shared ids as ``list_for_user``.
+
+        Returns:
+            Dicts with ``id``, ``user_id``, ``type``, ``remote_data``,
+            ``config``, ``sync_frequency`` and ``connection_id``.
+        """
+        t = sources_table
+        stmt = select(
+            t.c.id, t.c.user_id, t.c.type, t.c.remote_data, t.c.config, t.c.sync_frequency, t.c.connection_id,
+        ).where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
+        return [row_to_dict(r) for r in self._conn.execute(stmt).fetchall()]
 
     def update(self, source_id: str, user_id: str, fields: dict) -> None:
         filtered = {k: v for k, v in fields.items() if k in _ALLOWED_COLUMNS}
@@ -398,6 +630,51 @@ class SourcesRepository:
             .values(**values)
         )
         self._conn.execute(stmt)
+
+    def set_metadata_key(self, source_id: str, user_id: str, key: str, value: Any) -> bool:
+        """Set one top-level key of ``metadata``, keeping the others.
+
+        ``update`` replaces the whole column, which would drop keys other
+        writers own (``sync_state``, ``injection_review``).
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner's id; the row is scoped to it.
+            key: The metadata key.
+            value: Any JSON-serialisable value.
+
+        Returns:
+            bool: Whether a row was updated.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE sources SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), "
+                "CAST(:path AS text[]), CAST(:value AS jsonb)), updated_at = now() "
+                "WHERE id = CAST(:sid AS uuid) AND user_id = :uid"
+            ),
+            {"path": "{" + key + "}", "value": json.dumps(value), "sid": str(source_id), "uid": user_id},
+        )
+        return result.rowcount > 0
+
+    def remove_metadata_key(self, source_id: str, user_id: str, key: str) -> bool:
+        """Drop one top-level key of ``metadata``, keeping the others.
+
+        Args:
+            source_id: The source's UUID.
+            user_id: The owner's id; the row is scoped to it.
+            key: The metadata key.
+
+        Returns:
+            bool: Whether a row was updated.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE sources SET metadata = COALESCE(metadata, '{}'::jsonb) - CAST(:key AS text), "
+                "updated_at = now() WHERE id = CAST(:sid AS uuid) AND user_id = :uid"
+            ),
+            {"key": key, "sid": str(source_id), "uid": user_id},
+        )
+        return result.rowcount > 0
 
     def set_wiki_outside_edits(self, source_id: str, user_id: str, allowed: bool) -> bool:
         """Record whether API-key and widget runs may edit this wiki.

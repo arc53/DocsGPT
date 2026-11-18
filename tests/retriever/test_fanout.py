@@ -301,3 +301,242 @@ class TestBothCallersShareTheFanOut:
 
         assert classic_rag.fetch_per_source is fetch_per_source
         assert search_service.fetch_per_source is fetch_per_source
+
+
+def _http_error(status):
+    import requests
+
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"{status} Client Error", response=response)
+
+
+def _failing_store(error):
+    embedder = Mock()
+    embedder.embed_query = Mock(side_effect=error)
+    return SimpleNamespace(_embedding=embedder)
+
+
+def _degraded_records(caplog):
+    return [r for r in caplog.records if getattr(r, "event", None) == "retrieval_degraded"]
+
+
+@pytest.mark.unit
+class TestRetrievalDegraded:
+    """A failed query embed that leaves every source empty must be loud.
+
+    Before, the turn answered from no context while the only trace was a
+    WARNING and one ERROR per source; nothing tied them to the turn.
+    """
+
+    def test_all_sources_failing_after_a_failed_embed_logs_one_event(self, caplog):
+        from docsgpt.core import log_context
+
+        token = log_context.bind(activity_id="act-1", user_id="user-1")
+        try:
+            with caplog.at_level("ERROR"):
+                results = fetch_per_source(
+                    ["a", "b", "c"],
+                    lambda item: _failing_store(_http_error(401)),
+                    lambda item, docsearch, vector: None,
+                    lambda item: "q",
+                )
+        finally:
+            log_context.reset(token)
+
+        assert results == [None, None, None]
+        (record,) = _degraded_records(caplog)
+        assert record.levelname == "ERROR"
+        assert record.status_code == 401
+        assert record.source_count == 3
+        message = record.getMessage()
+        assert "act-1" in message and "user-1" in message
+
+    def test_status_code_is_found_through_a_wrapping_error(self, caplog):
+        try:
+            raise RuntimeError("embed dispatch failed") from _http_error(403)
+        except RuntimeError as wrapped:
+            error = wrapped
+
+        with caplog.at_level("ERROR"):
+            fetch_per_source(
+                ["a"], lambda item: _failing_store(error), lambda *job: None, lambda item: "q"
+            )
+
+        (record,) = _degraded_records(caplog)
+        assert record.status_code == 403
+
+    def test_error_without_a_status_still_reports(self, caplog):
+        with caplog.at_level("ERROR"):
+            fetch_per_source(
+                ["a"],
+                lambda item: _failing_store(RuntimeError("worker gone")),
+                lambda *job: None,
+                lambda item: "q",
+            )
+
+        (record,) = _degraded_records(caplog)
+        assert record.status_code is None
+
+    def test_one_surviving_source_is_not_degraded(self, caplog):
+        with caplog.at_level("ERROR"):
+            fetch_per_source(
+                ["a", "b"],
+                lambda item: _failing_store(_http_error(401)),
+                lambda item, docsearch, vector: ["hit"] if item == "b" else None,
+                lambda item: "q",
+            )
+
+        assert not _degraded_records(caplog)
+
+    def test_failed_searches_after_a_good_embed_are_not_degraded(self, caplog):
+        with caplog.at_level("ERROR"):
+            fetch_per_source(
+                ["a"], lambda item: _fanout_store(), lambda *job: None, lambda item: "q"
+            )
+
+        assert not _degraded_records(caplog)
+
+    def test_marks_the_open_retrieval_span(self, monkeypatch):
+        from docsgpt import tracing
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "TRACES_ENABLED", True)
+        trace = tracing.start_trace(source="stream", capture_otel_context=False)
+        with tracing.activate(trace):
+            with tracing.span(tracing.KIND_RETRIEVAL, "retrieval") as outer:
+                fetch_per_source(
+                    ["a"],
+                    lambda item: _failing_store(_http_error(401)),
+                    lambda *job: None,
+                    lambda item: "q",
+                )
+
+        assert outer.attributes["docsgpt.retrieval_degraded"] is True
+        assert outer.attributes["docsgpt.retrieval_degraded.status_code"] == 401
+
+
+@pytest.mark.unit
+class TestEmbedderFailureIsNotResentPerStore:
+    """Every store embeds with the same embedder, so its own failure repeats.
+
+    Re-sending the query once per store turned one oversized query into 1 + N
+    identical giant embeds in parallel, each of which OOM-killed a worker.
+    """
+
+    def _run(self, error, items=("a", "b", "c")):
+        store = _failing_store(error)
+        search = Mock(return_value=["hit"])
+        results = fetch_per_source(list(items), lambda item: store, search, lambda item: "q")
+        return results, search, store._embedding.embed_query
+
+    def test_server_error_on_shared_embed_skips_store_searches(self):
+        results, search, embed_query = self._run(_http_error(502))
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+        assert embed_query.call_count == 1
+
+    def test_timeout_skips_store_searches(self):
+        import requests
+
+        results, search, _ = self._run(requests.Timeout("read timed out"))
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_connection_error_skips_store_searches(self):
+        import requests
+
+        results, search, _ = self._run(requests.ConnectionError("refused"))
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_a_wrapped_server_error_skips_store_searches(self):
+        try:
+            raise RuntimeError("embed dispatch failed") from _http_error(503)
+        except RuntimeError as wrapped:
+            error = wrapped
+
+        results, search, _ = self._run(error)
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_an_openai_timeout_skips_store_searches(self):
+        import httpx
+        import openai
+
+        error = openai.APITimeoutError(request=httpx.Request("POST", "https://api.openai.test"))
+        results, search, _ = self._run(error)
+
+        assert results == [None, None, None]
+        search.assert_not_called()
+
+    def test_client_error_still_lets_each_store_try(self):
+        results, search, _ = self._run(_http_error(400))
+
+        assert results == [["hit"], ["hit"], ["hit"]]
+        assert search.call_count == 3
+
+    def test_other_errors_still_let_each_store_try(self):
+        results, search, _ = self._run(ValueError("unexpected response"))
+
+        assert results == [["hit"], ["hit"], ["hit"]]
+
+    def test_the_skip_is_reported_as_a_degraded_retrieval(self, caplog):
+        with caplog.at_level("WARNING"):
+            self._run(_http_error(502))
+
+        (record,) = _degraded_records(caplog)
+        assert record.status_code == 502
+        assert any("not re-sending" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.unit
+class TestPoolThreadsKeepTheCallersContext:
+    """Per-source logs must join their request: ids, OTel trace and all.
+
+    Pool threads start with an empty context, so ``Error searching
+    vectorstore`` lines carried trace id 0 and no activity id.
+    """
+
+    def test_log_context_reaches_every_job(self):
+        from docsgpt.core import log_context
+
+        token = log_context.bind(activity_id="act-9")
+        try:
+            seen = run_source_jobs(
+                lambda job: log_context.snapshot().get("activity_id"), [1, 2, 3], workers=3
+            )
+        finally:
+            log_context.reset(token)
+
+        assert seen == ["act-9", "act-9", "act-9"]
+
+    def test_otel_context_reaches_every_job(self):
+        from opentelemetry import context as otel_context
+
+        token = otel_context.attach(otel_context.set_value("probe", "request-ctx"))
+        try:
+            seen = run_source_jobs(
+                lambda job: otel_context.get_value("probe"), [1, 2, 3], workers=3
+            )
+        finally:
+            otel_context.detach(token)
+
+        assert seen == ["request-ctx"] * 3
+
+    def test_a_job_cannot_leak_context_into_another(self):
+        import contextvars
+
+        var = contextvars.ContextVar("fanout_probe", default="unset")
+        barrier = threading.Barrier(2, timeout=5)
+
+        def job(value):
+            var.set(value)
+            barrier.wait()
+            return var.get()
+
+        assert run_source_jobs(job, ["x", "y"], workers=2) == ["x", "y"]

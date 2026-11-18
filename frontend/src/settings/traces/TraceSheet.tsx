@@ -99,9 +99,11 @@ export default function TraceSheet({
           />
         )}
         {!loading && !failed && traces.length === 0 && (
-          <p className="text-muted-foreground text-sm">
-            {t('settings.logs.trace.empty')}
-          </p>
+          <EmptyState
+            size="sm"
+            illustration="none"
+            title={t('settings.logs.trace.empty')}
+          />
         )}
         {traces.map((trace, index) => (
           <section key={trace.id} className="flex flex-col gap-3">

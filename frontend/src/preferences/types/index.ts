@@ -13,4 +13,6 @@ export type ConversationSummary = {
 export type GetConversationsResult = {
   data: ConversationSummary[] | null;
   loading: boolean;
+  /** When the request went out (`Date.now()`): its unread flags are that old. */
+  requestedAt?: number;
 };

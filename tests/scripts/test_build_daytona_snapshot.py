@@ -95,7 +95,7 @@ def test_image_honours_the_python_series(snap):
 
 def test_defaults_double_the_daytona_sandbox_resources(snap):
     args = snap.parse_args([])
-    assert args.name == "docsgpt-sandbox-py312-v2"
+    assert args.name == "docsgpt-sandbox-py312-v3"
     assert (args.cpu, args.memory, args.disk) == (2, 2, 6)
     assert args.timeout == 0
     assert args.smoke is False
@@ -192,12 +192,12 @@ def test_main_creates_the_snapshot_with_the_doubled_resources(snap, fake_client,
     client = fake_client()
     assert snap.main([]) == 0
     params, timeout = client.snapshot.created[0]
-    assert params.name == "docsgpt-sandbox-py312-v2"
+    assert params.name == "docsgpt-sandbox-py312-v3"
     assert (params.resources.cpu, params.resources.memory, params.resources.disk) == (2, 2, 6)
     assert timeout == 0
     assert params.image.dockerfile() == snap.build_image("3.12").dockerfile()
     assert not client.sandboxes, "no smoke run unless asked"
-    assert "DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v2" in capsys.readouterr().out
+    assert "DAYTONA_SNAPSHOT=docsgpt-sandbox-py312-v3" in capsys.readouterr().out
 
 
 def test_main_skips_an_existing_snapshot(snap, fake_client):
@@ -210,7 +210,7 @@ def test_smoke_runs_the_baked_test_in_a_sandbox_and_deletes_it(snap, fake_client
     client = fake_client()
     assert snap.main(["--smoke"]) == 0
     sandbox = client.sandboxes[0]
-    assert sandbox.params.snapshot == "docsgpt-sandbox-py312-v2"
+    assert sandbox.params.snapshot == "docsgpt-sandbox-py312-v3"
     assert sandbox.commands[0][0] == "python /opt/docsgpt/smoke_test.py"
     assert client.deleted == [sandbox]
     assert "OK: 0 failed" in capsys.readouterr().out

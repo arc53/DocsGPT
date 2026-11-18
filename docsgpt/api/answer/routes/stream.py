@@ -7,15 +7,22 @@ from flask_restx import fields, Resource
 from docsgpt.agents.context_overflow import ContextOverflowError
 from docsgpt.api import api
 
-from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource
+from docsgpt.api.answer.routes.base import answer_ns, BaseAnswerResource, UsageRefused
 
 from docsgpt.api.answer.services.continuation_service import (
+    NOT_PENDING_CODE,
+    NOT_PENDING_MESSAGE,
     RESUME_IN_PROGRESS_MESSAGE,
+    ContinuationNotPendingError,
+    InvalidToolActionsError,
     ResumeInProgressError,
 )
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
+from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.api.answer.services.stream_processor import (
+    ChatWorkspaceError,
     StreamProcessor,
+    UnfinishedWorkflowError,
     flush_trace_after_request,
 )
 from docsgpt.error import bounded_error_text
@@ -57,6 +64,14 @@ class StreamResource(Resource, BaseAnswerResource):
             "active_docs": fields.String(
                 required=False, description="Active documents"
             ),
+            "active_folders": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "Agentless chats only: the caller's own source folders to search as a whole, every source "
+                    "filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers"
+                ),
+            ),
             "isNoneDoc": fields.Boolean(
                 required=False, description="Flag indicating if no document is used"
             ),
@@ -88,6 +103,17 @@ class StreamResource(Resource, BaseAnswerResource):
             "passthrough": fields.Raw(
                 required=False,
                 description="Dynamic parameters to inject into prompt template",
+            ),
+            "capabilities": fields.List(
+                fields.String,
+                required=False,
+                description=(
+                    "What this client can render. 'forms': the assistant may ask clarifying questions "
+                    "(ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and "
+                    "`questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. "
+                    "Optional and not enforced: unknown values are ignored, and without 'forms' the assistant "
+                    "never asks and answers as usual."
+                ),
             ),
         },
     )
@@ -137,6 +163,7 @@ class StreamResource(Resource, BaseAnswerResource):
                             model_id=processor.model_id,
                             model_user_id=processor.model_user_id,
                             trace=processor.handoff_trace(),
+                            passthrough=processor.passthrough,
                             _continuation={
                                 "messages": messages,
                                 "tools_dict": tools_dict,
@@ -145,6 +172,8 @@ class StreamResource(Resource, BaseAnswerResource):
                                 "reserved_message_id": processor.reserved_message_id,
                                 "request_id": processor.request_id,
                                 "reasoning_content": reasoning_content,
+                                "prior_tool_calls": processor.prior_tool_calls,
+                                "prior_turn": processor.prior_turn,
                             },
                         ),
                     ),
@@ -152,6 +181,9 @@ class StreamResource(Resource, BaseAnswerResource):
                 )
 
             # ---- Normal mode ----
+            # Limits are checked as soon as the caller and agent are known,
+            # before setup reaches a model.
+            processor.setup_gate = self.setup_gate
             agent = processor.build_agent(data["question"])
             if not processor.decoded_token:
                 return Response(
@@ -160,10 +192,12 @@ class StreamResource(Resource, BaseAnswerResource):
                     mimetype="text/event-stream",
                 )
 
-            if error := self.check_usage(
-                processor.agent_config,
-                processor.decoded_token,
-                agent_id=processor.agent_id,
+            if processor.setup_gate_passed is not True and (
+                error := self.check_usage(
+                    processor.agent_config,
+                    processor.decoded_token,
+                    agent_id=processor.agent_id,
+                )
             ):
                 return error
             should_persist, visibility = resolve_persistence(
@@ -190,16 +224,70 @@ class StreamResource(Resource, BaseAnswerResource):
                         model_user_id=processor.model_user_id,
                         request_id=processor.request_id,
                         trace=processor.handoff_trace(),
+                        passthrough=processor.passthrough,
+                        workspace_team_id=processor.workspace_team_id,
                     ),
                 ),
                 mimetype="text/event-stream",
             )
+        except UsageRefused as refused:
+            # A limit used up, found before setup reached a model.
+            return refused.response
         except ContextOverflowError as e:
             # Caught ahead of ``ValueError`` (its base class): a turn too big
             # for the window is not a malformed body.
             logger.info("/stream - turn does not fit the context window: %s", bounded_error_text(e))
             return Response(
                 self.curated_error_stream_generate(e),
+                status=400,
+                mimetype="text/event-stream",
+            )
+        except UnfinishedWorkflowError as e:
+            # A draft workflow agent whose stored graph isn't finished. Nothing ran.
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
+                status=400,
+                mimetype="text/event-stream",
+            )
+        except AgentPausedError as e:
+            # The agent's owner is deactivated: its link and key are paused. Nothing ran.
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
+                status=403,
+                mimetype="text/event-stream",
+            )
+        except ChatWorkspaceError as e:
+            # A team the caller is not in, or an agent from another workspace. Nothing ran.
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
+                status=e.status,
+                mimetype="text/event-stream",
+            )
+        except ContinuationNotPendingError:
+            # A decision for a pause that is over: decided already, moved past
+            # by a new turn, or expired (a stale tab). Nothing ran; the code
+            # lets the chat reload the turn instead of showing a failure.
+            logger.info(
+                "/stream - tool actions for a pause no longer pending in conversation %s",
+                data.get("conversation_id"),
+            )
+            return Response(
+                self.error_stream_generate(NOT_PENDING_MESSAGE, code=NOT_PENDING_CODE),
+                status=409,
+                mimetype="text/event-stream",
+            )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on (a decision
+            # for a question, say). Nothing ran and the pause still waits.
+            # Caught ahead of ``ValueError`` (its base class), so the client
+            # reads what is wrong instead of "Malformed request body".
+            logger.info(
+                "/stream - tool actions refused for conversation %s: %s",
+                data.get("conversation_id"),
+                e.message,
+            )
+            return Response(
+                self.error_stream_generate(e.message, code=e.code),
                 status=400,
                 mimetype="text/event-stream",
             )

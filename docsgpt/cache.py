@@ -19,6 +19,17 @@ logger = logging.getLogger(__name__)
 # connection's pending read (e.g. the health-check PONG) does.
 PUBSUB_SOCKET_TIMEOUT_SECONDS = 10
 
+# A token lock's renew and release, each checking the token and acting in one
+# step on the server: a separate GET then EXPIRE/DEL could act on a lock
+# another holder took in between. KEYS[1] is the lock, ARGV[1] the holder's
+# token; renew takes the new expiry in seconds as ARGV[2].
+#: Pushes the lock's expiry forward only while it holds the caller's token.
+LOCK_RENEW_LUA = (
+    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('expire', KEYS[1], ARGV[2]) else return 0 end"
+)
+#: Deletes the lock only while it holds the caller's token.
+LOCK_RELEASE_LUA = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end"
+
 
 def _cache_default(value):
     # Image attachments arrive inline as bytes (see GoogleLLM.prepare_messages_with_attachments);

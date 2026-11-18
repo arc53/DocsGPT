@@ -93,3 +93,14 @@ def test_a_failing_approved_tool_is_handed_to_the_model_as_an_error():
         }
     ]
     assert llm.gen_stream.called or llm.gen.called, "the model should answer after the failed tool"
+
+
+@pytest.mark.unit
+def test_approved_tool_time_limit_escapes_without_another_llm_call():
+    from celery.exceptions import SoftTimeLimitExceeded
+
+    agent, llm, handler = _agent(SoftTimeLimitExceeded())
+    with pytest.raises(SoftTimeLimitExceeded):
+        _resume(agent)
+    llm.gen_stream.assert_not_called()
+    handler.create_tool_message.assert_not_called()

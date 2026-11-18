@@ -14,56 +14,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-
-
-@pytest.fixture
-def _mock_connector_pipeline(monkeypatch):
-    """Stub the connector + pipeline so only PG writes are real."""
-    from docsgpt import worker
-
-    fake_connector = MagicMock(name="connector")
-    fake_connector.connection_id = None
-    fake_connector.download_to_directory.return_value = {
-        "files_downloaded": 1,
-        "empty_result": False,
-    }
-    monkeypatch.setattr(
-        worker.ConnectorCreator, "is_supported", staticmethod(lambda s: True)
-    )
-    monkeypatch.setattr(
-        worker.ConnectorCreator,
-        "create_connector",
-        staticmethod(lambda source_type, session_token=None, connection_id=None: fake_connector),
-    )
-
-    fake_reader = MagicMock(name="reader")
-    fake_reader.load_data.return_value = [
-        Document(
-            text="connector body",
-            extra_info={"source": "connector/file.md", "file_path": "file.md"},
-        )
-    ]
-    fake_reader.directory_structure = {
-        "file.md": {
-            "type": "text/markdown",
-            "size_bytes": 12,
-            "token_count": 3,
-        }
-    }
-    monkeypatch.setattr(
-        worker, "SimpleDirectoryReader", lambda *a, **kw: fake_reader
-    )
-
-    monkeypatch.setattr(
-        worker,
-        "embed_and_store_documents",
-        lambda docs, full_path, source_id, task, **kw: None,
-    )
-    monkeypatch.setattr(
-        worker, "upload_index", lambda full_path, file_data: None
-    )
 
 
 @pytest.mark.unit
@@ -177,3 +130,678 @@ class TestIngestConnectorDeterministicSourceId:
 
         assert len(captured) == 2
         assert captured[0]["id"] != captured[1]["id"]
+
+
+def _gdrive_source(pg_conn, remote_data):
+    import datetime as dt
+
+    return SourcesRepository(pg_conn).create(
+        "gdrive-folder",
+        user_id="dave",
+        type="connector:file",
+        retriever="classic",
+        sync_frequency="daily",
+        remote_data={"provider": "google_drive", "folder_ids": ["root"], **remote_data},
+        date=dt.datetime(2019, 6, 1, tzinfo=dt.timezone.utc),
+    )
+
+
+def _sync(worker, task_self, source_id, config=None, **kwargs):
+    return worker.ingest_connector(
+        task_self,
+        "gdrive-folder",
+        "dave",
+        "google_drive",
+        session_token="tok",
+        folder_ids=["root"],
+        operation_mode="sync",
+        doc_id=source_id,
+        sync_frequency="daily",
+        config=config,
+        **kwargs,
+    )
+
+
+@pytest.mark.unit
+class TestIngestConnectorSkipsUnchangedSync:
+    """A sync whose selection fingerprint matches the stored one keeps the index."""
+
+    def test_unchanged_selection_skips_download_and_embed(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+        uploads: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "unchanged"
+        connector.download_to_directory.assert_not_called()
+        assert uploads == []
+        refreshed = SourcesRepository(pg_conn).get(str(src["id"]), "dave")
+        assert refreshed["date"] > "2019-06-01", "an unchanged sync still records that it ran"
+
+    def test_changed_selection_reingests_and_stores_new_fingerprint(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        import json
+
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-2"
+        connector.download_to_directory.return_value = {
+            "files_downloaded": 1, "empty_result": False, "sync_fingerprint": "fp-2",
+        }
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+        uploads: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        _sync(worker, task_self, str(src["id"]))
+
+        connector.download_to_directory.assert_called_once()
+        remote_data = json.loads(uploads[0]["remote_data"])
+        assert remote_data["sync_fingerprint"] == worker._connector_sync_fingerprint("fp-2", None)
+        assert remote_data["folder_ids"] == ["root"]
+
+    def test_settings_change_forces_reingest(
+        self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+        # The source's settings changed after its last ingest.
+        SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"chunking": {"max_tokens": 500}}})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        connector.download_to_directory.assert_called_once()
+
+    @pytest.mark.parametrize("stored, current", [(None, "fp-1"), ("fp-1", None)])
+    def test_missing_fingerprint_reingests(
+        self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline, stored, current,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = current
+        remote_data = {"sync_fingerprint": worker._connector_sync_fingerprint(stored, None)} if stored else {}
+        src = _gdrive_source(pg_conn, remote_data)
+
+        _sync(worker, task_self, str(src["id"]))
+
+        connector.download_to_directory.assert_called_once()
+
+    def test_fingerprint_error_reingests(
+        self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.side_effect = RuntimeError("drive down")
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        connector.download_to_directory.assert_called_once()
+
+    def test_upload_without_fingerprint_stores_none(self, task_self, monkeypatch, _mock_connector_pipeline):
+        import json
+
+        from docsgpt import worker
+
+        uploads: list[dict] = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload",
+        )
+
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+        _mock_connector_pipeline.sync_fingerprint.assert_not_called()
+
+
+@pytest.mark.unit
+class TestConnectorSyncFingerprint:
+    def test_none_without_selection_fingerprint(self):
+        from docsgpt import worker
+
+        assert worker._connector_sync_fingerprint(None, {"a": 1}) is None
+
+    def test_config_changes_it_and_json_matches_dict(self):
+        from docsgpt import worker
+
+        base = worker._connector_sync_fingerprint("fp", None)
+        assert base == worker._connector_sync_fingerprint("fp", {})
+        tuned = worker._connector_sync_fingerprint("fp", {"chunking": {"max_tokens": 500}})
+        assert tuned != base
+        assert tuned == worker._connector_sync_fingerprint("fp", '{"chunking": {"max_tokens": 500}}')
+
+    def test_link_switch_does_not_force_a_reingest(self):
+        from docsgpt import worker
+
+        on = worker._connector_sync_fingerprint("fp", {"retrieval": {"chunks": 4, "show_links": True}})
+        off = worker._connector_sync_fingerprint("fp", '{"retrieval": {"chunks": 4, "show_links": false}}')
+        assert on == off
+        assert on != worker._connector_sync_fingerprint("fp", {"retrieval": {"chunks": 5, "show_links": True}})
+
+    def test_fingerprints_stored_before_web_links_force_one_reingest(self):
+        import hashlib
+        import json
+
+        from docsgpt import worker
+
+        before = hashlib.sha256(
+            json.dumps({"selection": "fp", "config": {}}, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        assert worker._connector_sync_fingerprint("fp", None) != before
+
+
+@pytest.mark.unit
+class TestConnectorSyncTakesTheIndexLock:
+    """A connector sync takes turns with the source's other index jobs, and keeps the row's settings."""
+
+    def test_a_sync_uploads_holding_the_lock(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, held_lock, _mock_connector_pipeline,
+    ):
+        src = _gdrive_source(pg_conn, {})
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: held_lock.append("upload"))
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert held_lock == [str(src["id"]), "upload", "released"]
+
+    def test_a_wiki_conversion_finished_while_waiting_is_respected(
+        self, pg_conn, patch_worker_db, task_self, held_lock, published, _mock_connector_pipeline,
+    ):
+        src = _gdrive_source(pg_conn, {})
+        held_lock.while_waiting.append(
+            lambda: SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"kind": "wiki"}})
+        )
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result == {"status": "skipped", "reason": "wiki"}
+        _mock_connector_pipeline.download_to_directory.assert_not_called()
+        assert [(kind, payload["reason"]) for kind, payload in published] == [("source.ingest.failed", "wiki")]
+
+    def test_a_deleted_source_is_skipped(self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline):
+        result = _sync(worker, task_self, str(uuid.uuid4()))
+
+        assert result == {"status": "skipped", "reason": "gone"}
+        _mock_connector_pipeline.download_to_directory.assert_not_called()
+
+    def test_a_busy_source_is_skipped(self, pg_conn, patch_worker_db, task_self, busy_lock, _mock_connector_pipeline):
+        src = _gdrive_source(pg_conn, {})
+        busy_lock()
+
+        assert _sync(worker, task_self, str(src["id"])) == {"status": "skipped", "reason": "busy"}
+        _mock_connector_pipeline.download_to_directory.assert_not_called()
+
+    def test_a_sync_sends_content_and_its_fingerprint_only(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        connector = _mock_connector_pipeline
+        connector.download_to_directory.return_value = {
+            "files_downloaded": 1, "empty_result": False, "sync_fingerprint": "fp-2",
+        }
+        src = _gdrive_source(pg_conn, {})
+        SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": {"chunking": {"max_tokens": 300}}})
+        uploads = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        _sync(worker, task_self, str(src["id"]), config={"chunking": {"max_tokens": 900}})
+
+        [sent] = uploads
+        assert sent["operation"] == "sync"
+        assert "config" not in sent
+        # Chunked, and fingerprinted, with the row's settings as they are under the lock.
+        stored = {"chunking": {"max_tokens": 300}}
+        assert sent["sync_fingerprint"] == worker._connector_sync_fingerprint("fp-2", stored)
+
+    def test_a_sync_reads_the_rows_selection(
+        self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline,
+    ):
+        src = _gdrive_source(pg_conn, {"folder_ids": ["picked-meanwhile"], "file_ids": ["f9"]})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        selection = _mock_connector_pipeline.download_to_directory.call_args.args[1]
+        assert selection["folder_ids"] == ["picked-meanwhile"] and selection["file_ids"] == ["f9"]
+
+    def test_the_first_ingest_still_sends_everything(self, task_self, monkeypatch, _mock_connector_pipeline):
+        uploads = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload", config={"chunking": {"max_tokens": 9}},
+        )
+
+        assert "operation" not in uploads[0]
+        assert uploads[0]["config"]
+
+    @pytest.mark.parametrize("given, stored", [("weekly", "weekly"), (None, "never")])
+    def test_the_schedule_asked_for_is_stored_on_the_new_source(
+        self, task_self, monkeypatch, _mock_connector_pipeline, given, stored,
+    ):
+        # /api/remote validates sync_frequency and passes it on; a new connector source keeps it.
+        uploads = []
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload", sync_frequency=given,
+        )
+
+        assert uploads[0]["sync_frequency"] == stored
+
+
+EDITOR = "editor-1"
+
+
+def _no_download(connector):
+    connector.download_to_directory.return_value = {"files_downloaded": 0, "empty_result": True}
+
+
+def _unchanged(connector):
+    connector.sync_fingerprint.return_value = "fp-1"
+
+
+def _drive_down(connector):
+    connector.download_to_directory.side_effect = RuntimeError("drive down")
+
+
+@pytest.mark.unit
+class TestConnectorSyncEvents:
+    """A Sync now's events carry its task id (the UI waits on it) and reach the team editor who asked."""
+
+    @pytest.mark.parametrize("setup, last_kind", [
+        (None, "source.ingest.completed"),
+        (_unchanged, "source.ingest.completed"),
+        (_no_download, "source.ingest.completed"),
+        (_drive_down, "source.ingest.failed"),
+    ], ids=["ran", "unchanged", "empty-download", "failed"])
+    def test_every_way_out(
+        self, pg_conn, patch_worker_db, task_self, published, _mock_connector_pipeline, setup, last_kind,
+    ):
+        task_self.request.id = "task-manual"
+        fingerprint = {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)}
+        src = _gdrive_source(pg_conn, fingerprint if setup is _unchanged else {})
+        if setup:
+            setup(_mock_connector_pipeline)
+
+        if setup is _drive_down:
+            with pytest.raises(RuntimeError):
+                _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+        else:
+            _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+
+        assert published[-1][0] == last_kind
+        assert all(payload.get("task_id") == "task-manual" for _, payload in published)
+        assert published.recipients(last_kind) == sorted(["dave", EDITOR])
+        if setup is _unchanged:
+            assert published[-1][1]["no_changes"] is True
+
+    def test_the_embedding_knows_the_editor(
+        self, pg_conn, patch_worker_db, task_self, published, monkeypatch, _mock_connector_pipeline,
+    ):
+        embedded = []
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: embedded.append(k))
+        src = _gdrive_source(pg_conn, {})
+
+        _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)
+
+        assert published.recipients("source.ingest.queued") == sorted(["dave", EDITOR])
+        assert embedded[0]["actor_id"] == EDITOR
+
+    def test_a_skipped_sync_reaches_the_editor(
+        self, pg_conn, patch_worker_db, task_self, published, busy_lock, _mock_connector_pipeline,
+    ):
+        src = _gdrive_source(pg_conn, {})
+        busy_lock()
+
+        assert _sync(worker, task_self, str(src["id"]), actor_id=EDITOR)["reason"] == "busy"
+        assert published.recipients("source.ingest.failed") == sorted(["dave", EDITOR])
+
+
+@pytest.mark.unit
+class TestARefusedConnectorSyncUpload:
+    """The API answers 200 ``skipped`` when the source was deleted, or became a wiki, while the sync ran."""
+
+    @pytest.fixture
+    def refused(self, monkeypatch, published, _mock_connector_pipeline):
+        from docsgpt.core.settings import settings
+        from docsgpt.vectorstore import vector_creator
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector")
+        store = MagicMock(name="vector_store")
+        monkeypatch.setattr(vector_creator.VectorCreator, "create_vectorstore", lambda *a, **k: store)
+        after = {"events": published, "graph": [], "store": store, "answer": {"status": "skipped", "reason": "gone"}}
+        monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: after["answer"])
+        monkeypatch.setattr(worker, "_maybe_enqueue_graph_extraction", lambda *a, **k: after["graph"].append(a))
+        return after
+
+    def test_a_deleted_source_fails_with_gone_and_drops_its_vectors(
+        self, pg_conn, patch_worker_db, task_self, refused,
+    ):
+        task_self.request.id = "task-refused"
+        src = _gdrive_source(pg_conn, {})
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "skipped" and result["reason"] == "gone"
+        kind, payload = refused["events"][-1]
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "gone" and payload["task_id"] == "task-refused" and payload["error"]
+        assert "source.ingest.completed" not in refused["events"].kinds()
+        refused["store"].delete_index.assert_called_once()
+        assert refused["graph"] == []
+
+    def test_a_wiki_keeps_its_vectors(self, pg_conn, patch_worker_db, task_self, refused):
+        refused["answer"] = {"status": "skipped", "reason": "wiki"}
+        src = _gdrive_source(pg_conn, {})
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "skipped" and result["reason"] == "wiki"
+        assert refused["events"][-1][1]["reason"] == "wiki"
+        refused["store"].delete_index.assert_not_called()
+
+
+@pytest.mark.unit
+class TestIngestConnectorWebLinks:
+    """Each chunk of a downloaded file carries the file's link in the service."""
+
+    def test_chunks_carry_their_files_link(self, task_self, monkeypatch, _mock_connector_pipeline):
+        from docsgpt import worker
+
+        _mock_connector_pipeline.download_to_directory.return_value = {
+            "files_downloaded": 2,
+            "empty_result": False,
+            "file_urls": {"Reports/q1.pdf": "https://drive.google.com/file/d/f1/view"},
+        }
+        reader = MagicMock(name="reader")
+        reader.load_data.return_value = [
+            Document(text="q1 body", extra_info={"source": "Reports/q1.pdf"}),
+            Document(text="other body", extra_info={"source": "other.pdf"}),
+        ]
+        reader.directory_structure = {}
+        monkeypatch.setattr(worker, "SimpleDirectoryReader", lambda *a, **kw: reader)
+        stored: list = []
+        monkeypatch.setattr(
+            worker, "embed_and_store_documents",
+            lambda docs, full_path, source_id, task, **kw: stored.extend(docs),
+        )
+
+        worker.ingest_connector(
+            task_self, "gdrive-folder", "dave", "google_drive",
+            session_token="tok", file_ids=["f1"], operation_mode="upload",
+        )
+
+        by_source = {doc.metadata["source"]: doc.metadata for doc in stored}
+        assert by_source["Reports/q1.pdf"]["url"] == "https://drive.google.com/file/d/f1/view"
+        assert "url" not in by_source["other.pdf"]
+
+
+def _uploads(monkeypatch) -> list:
+    uploads: list = []
+    monkeypatch.setattr(worker, "upload_index", lambda full_path, file_data: uploads.append(file_data))
+    return uploads
+
+
+def _upload_ingest(task_self):
+    return worker.ingest_connector(
+        task_self, "sp-folder", "dave", "share_point",
+        session_token="tok", folder_ids=["d1"], operation_mode="upload",
+    )
+
+
+@pytest.mark.unit
+class TestConnectorDownloadFailures:
+    """A download that lost files, or whose account was rejected, is not reported as a clean ingest."""
+
+    def test_a_partial_download_finishes_partial_with_one_error_line(
+        self, task_self, published, monkeypatch, caplog, _mock_connector_pipeline,
+    ):
+        import json
+
+        _mock_connector_pipeline.download_to_directory.return_value = {
+            "files_downloaded": 3, "files_failed": 2, "folders_failed": 1, "files_skipped": 4,
+            "empty_result": False, "sync_fingerprint": "fp-2",
+        }
+        uploads = _uploads(monkeypatch)
+
+        with caplog.at_level("ERROR"):
+            result = _upload_ingest(task_self)
+
+        assert result["status"] == "complete"
+        assert (result["partial"], result["files_failed"], result["folders_failed"]) == (True, 2, 1)
+        kind, payload = published[-1]
+        assert kind == "source.ingest.completed"
+        assert (payload["partial"], payload["files_failed"], payload["folders_failed"]) == (True, 2, 1)
+        assert "no_changes" not in payload
+        errors = [
+            record.getMessage() for record in caplog.records
+            if record.levelname == "ERROR" and "failed=" in record.getMessage()
+        ]
+        assert len(errors) == 1
+        assert "downloaded=3" in errors[0] and " failed=2" in errors[0] and "folders_failed=1" in errors[0]
+        # The next sync downloads the whole selection again.
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+
+    def test_a_clean_download_is_not_partial(self, task_self, published, monkeypatch, _mock_connector_pipeline):
+        _mock_connector_pipeline.download_to_directory.return_value = {
+            "files_downloaded": 2, "files_failed": 0, "folders_failed": 0, "files_skipped": 1, "empty_result": False,
+        }
+        _uploads(monkeypatch)
+
+        result = _upload_ingest(task_self)
+
+        assert "partial" not in result
+        assert published[-1][0] == "source.ingest.completed"
+        assert "partial" not in published[-1][1]
+
+    def test_an_auth_error_fails_the_sync_and_keeps_the_source(
+        self, pg_conn, patch_worker_db, task_self, published, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        rejected = ConnectorAuthError("Graph rejected the refreshed access token (code=InvalidAuthenticationToken)")
+        _mock_connector_pipeline.download_to_directory.side_effect = rejected
+        embedded: list = []
+        monkeypatch.setattr(worker, "embed_and_store_documents", lambda *a, **k: embedded.append(a))
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {})
+
+        with pytest.raises(ConnectorAuthError, match="Reconnect") as excinfo:
+            _sync(worker, task_self, str(src["id"]))
+
+        assert excinfo.value.__cause__ is rejected
+        assert "source.ingest.completed" not in published.kinds()
+        kind, payload = published[-1]
+        assert kind == "source.ingest.failed"
+        assert payload["reason"] == "reconnect"
+        assert "Reconnect" in payload["error"]
+        assert embedded == [] and uploads == []
+        row = SourcesRepository(pg_conn).get(str(src["id"]), "dave")
+        assert row["date"] == src["date"]
+        assert row["remote_data"] == src["remote_data"]
+
+    def test_an_auth_error_fails_a_first_ingest(self, task_self, published, monkeypatch, _mock_connector_pipeline):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        _mock_connector_pipeline.download_to_directory.side_effect = ConnectorAuthError("401 after refresh")
+        uploads = _uploads(monkeypatch)
+
+        with pytest.raises(ConnectorAuthError):
+            _upload_ingest(task_self)
+
+        assert published.kinds() == ["source.ingest.queued", "source.ingest.failed"]
+        assert published[-1][1]["reason"] == "reconnect"
+        assert uploads == []
+
+    @pytest.mark.parametrize("download", [
+        {"files_downloaded": 0, "files_failed": 3, "folders_failed": 0, "empty_result": True},
+        {"files_downloaded": 0, "files_failed": 0, "folders_failed": 1, "empty_result": True},
+        {"files_downloaded": 0, "empty_result": True, "error": "Drive listing failed"},
+    ], ids=["files-failed", "folder-failed", "download-error"])
+    def test_a_sync_that_got_nothing_because_of_failures_fails(
+        self, pg_conn, patch_worker_db, task_self, published, monkeypatch, _mock_connector_pipeline, download,
+    ):
+        _mock_connector_pipeline.download_to_directory.return_value = download
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {})
+
+        with pytest.raises(worker.ConnectorDownloadError):
+            _sync(worker, task_self, str(src["id"]))
+
+        assert "source.ingest.completed" not in published.kinds()
+        assert published[-1][0] == "source.ingest.failed"
+        assert uploads == []
+
+    def test_nothing_to_download_and_nothing_lost_is_still_no_changes(
+        self, pg_conn, patch_worker_db, task_self, published, monkeypatch, _mock_connector_pipeline,
+    ):
+        _mock_connector_pipeline.download_to_directory.return_value = {
+            "files_downloaded": 0, "files_failed": 0, "folders_failed": 0, "files_skipped": 2, "empty_result": True,
+        }
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        kind, payload = published[-1]
+        assert kind == "source.ingest.completed"
+        assert payload["no_changes"] is True and "partial" not in payload
+        assert uploads == []
+
+
+@pytest.mark.unit
+class TestConnectorUnparsedFiles:
+    """A downloaded file that cannot be parsed is skipped and reported, not fatal to the source (ledger #90)."""
+
+    @pytest.fixture
+    def drive(self, monkeypatch, _mock_connector_pipeline):
+        """Download two notes and a legacy workbook, and parse them with the real reader."""
+        import functools
+        import shutil
+        from pathlib import Path
+
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+        from docsgpt.parser.file.markdown_parser import MarkdownParser
+        from docsgpt.parser.file.tabular_parser import ExcelParser
+
+        workbook = Path(__file__).parents[1] / "parser" / "file" / "fixtures" / "legacy.xls"
+
+        def _download(temp_dir, config):
+            Path(temp_dir, "Finance").mkdir()
+            shutil.copy(workbook, Path(temp_dir, "Finance", "budget.xls"))
+            Path(temp_dir, "notes.md").write_text("first file")
+            Path(temp_dir, "guide.md").write_text("second file")
+            return {
+                "files_downloaded": 3, "files_failed": 0, "folders_failed": 0, "empty_result": False,
+                "sync_fingerprint": "fp-2",
+            }
+
+        _mock_connector_pipeline.download_to_directory.side_effect = _download
+        _mock_connector_pipeline.sync_fingerprint.return_value = "fp-2"
+        monkeypatch.setattr(worker, "SUPPORTED_SOURCE_EXTENSIONS", {".md", ".xls"})
+        extractor = {".md": MarkdownParser(), ".xls": ExcelParser()}
+        monkeypatch.setattr(
+            worker, "SimpleDirectoryReader", functools.partial(SimpleDirectoryReader, file_extractor=extractor),
+        )
+        stored: list = []
+        monkeypatch.setattr(
+            worker, "embed_and_store_documents",
+            lambda docs, full_path, source_id, task, **kw: stored.extend(docs),
+        )
+        return stored
+
+    @pytest.fixture
+    def no_reader(self, monkeypatch):
+        """The workbook's reader is not installed, so the workbook cannot be parsed."""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "python_calamine", None)
+
+    def test_the_good_files_are_ingested_and_the_skipped_one_named(
+        self, task_self, published, monkeypatch, caplog, drive, no_reader,
+    ):
+        _uploads(monkeypatch)
+
+        with caplog.at_level("WARNING"):
+            result = _upload_ingest(task_self)
+
+        assert result["status"] == "complete"
+        assert sorted(doc.page_content for doc in drive) == ["first file", "second file"]
+        assert (result["files_unparsed"], result["unparsed_files"]) == (1, ["Finance/budget.xls"])
+        kind, payload = published[-1]
+        assert kind == "source.ingest.completed"
+        assert (payload["files_unparsed"], payload["unparsed_files"]) == (1, ["Finance/budget.xls"])
+        assert any("budget.xls" in record.getMessage() for record in caplog.records)
+
+    def test_an_ingest_that_skipped_a_file_keeps_no_fingerprint(self, task_self, monkeypatch, drive, no_reader):
+        """Otherwise the next sync matches it and skips, and the file stays out once it can be read."""
+        import json
+
+        uploads = _uploads(monkeypatch)
+
+        _upload_ingest(task_self)
+
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+
+    def test_a_sync_that_skipped_a_file_clears_the_stored_fingerprint(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, drive, no_reader,
+    ):
+        import json
+
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+
+        _sync(worker, task_self, str(src["id"]))
+
+        assert uploads[0]["sync_fingerprint"] == ""
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+
+    def test_the_next_sync_reads_the_file_once_it_can(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, drive, no_reader, _mock_connector_pipeline,
+    ):
+        """Once the reader is installed, the next sync walks the selection again and indexes the workbook."""
+        import json
+        import sys
+
+        uploads = _uploads(monkeypatch)
+        src = _gdrive_source(pg_conn, {})
+        _sync(worker, task_self, str(src["id"]))
+        # Store what the sync sent, as the internal API does.
+        SourcesRepository(pg_conn).update(
+            str(src["id"]), "dave", {"remote_data": json.loads(uploads[0]["remote_data"])},
+        )
+        monkeypatch.delitem(sys.modules, "python_calamine")
+        drive.clear()
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert _mock_connector_pipeline.download_to_directory.call_count == 2
+        assert "files_unparsed" not in result
+        assert any("alpha" in doc.page_content for doc in drive)
+
+    def test_a_clean_ingest_keeps_its_fingerprint(self, task_self, monkeypatch, drive):
+        import json
+
+        uploads = _uploads(monkeypatch)
+
+        result = _upload_ingest(task_self)
+
+        assert "files_unparsed" not in result
+        assert json.loads(uploads[0]["remote_data"])["sync_fingerprint"] == worker._connector_sync_fingerprint(
+            "fp-2", None
+        )

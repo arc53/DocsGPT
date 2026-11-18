@@ -126,6 +126,57 @@ def test_embed_and_store_documents_progress_band(
     assert currents == sorted(currents)
 
 
+def test_embed_progress_reaches_the_owner_and_the_editor_who_asked(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """A team editor's sync shows its embedding progress on the editor's screen too."""
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_vector_creator.create_vectorstore.return_value = MagicMock()
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(2)]
+
+    with patch("docsgpt.parser.embedding_pipeline.publish_user_event") as publish:
+        embed_and_store_documents(
+            docs, str(tmp_path / "store"), "sid", MagicMock(),
+            user_id="owner", actor_id="editor",
+        )
+        recipients = {c.args[0] for c in publish.call_args_list if c.args[1] == "source.ingest.progress"}
+        assert recipients == {"owner", "editor"}
+
+        publish.reset_mock()
+        embed_and_store_documents(
+            docs, str(tmp_path / "store2"), "sid", MagicMock(),
+            user_id="owner", actor_id="owner",
+        )
+        recipients = [c.args[0] for c in publish.call_args_list if c.args[1] == "source.ingest.progress"]
+        assert set(recipients) == {"owner"}
+        assert len(recipients) == len(set(c.args[2]["current"] for c in publish.call_args_list))
+
+
+def test_a_team_sources_embed_progress_goes_through_the_teams_routing(
+    tmp_path, mock_settings, mock_vector_creator
+):
+    """A team source's progress is published once to its principal, naming who started it.
+
+    The publisher then sends it to that person only while they are still in the team; publishing straight to
+    them would keep reaching someone removed mid-ingest.
+    """
+    mock_settings.VECTOR_STORE = "chromadb"
+    mock_vector_creator.create_vectorstore.return_value = MagicMock()
+    docs = [MagicMock(page_content=f"d{i}", metadata={}) for i in range(2)]
+    principal = "__team__0b5a6f1e-0000-4000-8000-000000000001"
+
+    with patch("docsgpt.parser.embedding_pipeline.publish_user_event") as publish:
+        embed_and_store_documents(
+            docs, str(tmp_path / "store"), "sid", MagicMock(),
+            user_id=principal, actor_id="editor",
+        )
+
+    calls = [c for c in publish.call_args_list if c.args[1] == "source.ingest.progress"]
+    assert calls
+    assert {c.args[0] for c in calls} == {principal}
+    assert {c.kwargs.get("actor_id") for c in calls} == {"editor"}
+
+
 @patch("docsgpt.parser.embedding_pipeline.add_texts_to_store_with_retry")
 def test_embed_and_store_documents_partial_failure_raises(
     mock_add_retry, tmp_path, mock_settings, mock_vector_creator, caplog
@@ -324,6 +375,18 @@ def test_add_texts_to_store_with_retry_sanitizes_and_skips_empty():
     store.reset_mock()
     add_texts_to_store_with_retry(store, [], "sid")
     store.add_texts.assert_not_called()
+
+
+def test_add_texts_to_store_with_retry_strips_nul_from_metadata():
+    # pgvector stores metadata as JSONB, which refuses a NUL (a page title, say).
+    store = MagicMock()
+    docs = [MagicMock(page_content="body", metadata={"title": "Ti\x00tle", "tags": ["a\x00"], "n": 1})]
+
+    add_texts_to_store_with_retry(store, docs, "sid")
+
+    assert store.add_texts.call_args.kwargs["metadatas"] == [
+        {"title": "Title", "tags": ["a"], "n": 1, "source_id": "sid"},
+    ]
 
 
 def test_resolve_batch_size_falls_back_on_bad_setting(monkeypatch):

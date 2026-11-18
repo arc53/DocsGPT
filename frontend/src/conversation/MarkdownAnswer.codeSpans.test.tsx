@@ -159,7 +159,9 @@ describe('citation linking spares code', () => {
   it('still links a real citation in prose', () => {
     render('See source [1] for details.');
     expect(citations()).toEqual(['1']);
-    expect(container.textContent).toBe('See source 1 for details.');
+    expect(container.querySelector('p')?.textContent).toBe(
+      'See source 1 for details.',
+    );
   });
 
   it('links prose citations on either side of a fence without touching it', () => {

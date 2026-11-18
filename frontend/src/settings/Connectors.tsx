@@ -1,20 +1,19 @@
-import { ChevronDown } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useSearchParams } from 'react-router-dom';
 
+import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
-import { ActionMenu } from '../components/ui/dropdown-menu';
 import { EmptyState } from '../components/ui/empty-state';
+import { SectionHeader } from '../components/ui/section-header';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorCard from '../connectors/ConnectorCard';
-import ConnectorIcon from '../connectors/ConnectorIcon';
+import AddCustomConnectorModal from '../connectors/AddCustomConnectorModal';
 import {
   byState,
   catalogCards,
@@ -23,23 +22,39 @@ import {
 import {
   connectionNeedsSignIn,
   loadConnectors,
-  selectConnections,
-  selectConnectorCatalog,
-  selectConnectorsFailed,
-  selectConnectorsLoaded,
+  loadTeamConnectors,
+  selectWorkspaceConnections,
+  selectWorkspaceConnectorCatalog,
+  selectWorkspaceConnectorsFailed,
+  selectWorkspaceConnectorsLoaded,
 } from '../connectors/connectorsSlice';
 import { connectorDescription, connectorName } from '../connectors/i18n';
+import { isConnectionPaused } from '../connectors/teamConnections';
 import type { Connection, ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher, {
   type LaunchOptions,
 } from '../connectors/useConnectorLauncher';
+import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
+import { readerIdFromToken } from '../utils/personLabel';
+import {
+  roleAtLeast,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
+import { selectInTeam } from './workspaceAccess';
 
-// What people come here for is managing what they have, so the list filters
-// by state; search finds a service by name.
-const FILTERS = ['all', 'connected', 'disconnected'] as const;
-type Filter = (typeof FILTERS)[number];
+// The kind track is what a service does (the Knowledge / Tools split the
+// Add knowledge and Tools pages link to with ?capability=); the status
+// Select and the sections are what the reader has. Search finds a service
+// by name.
+const CAPABILITIES = ['all', 'sync', 'tools'] as const;
+type CapabilityFilter = (typeof CAPABILITIES)[number];
+const STATUSES = ['all', 'reconnect', 'connected', 'available'] as const;
+type StatusFilter = (typeof STATUSES)[number];
+type Status = Exclude<StatusFilter, 'all'>;
+/** The page's sections, in order: what needs the reader first. */
+const SECTIONS: Status[] = ['reconnect', 'connected', 'available'];
 
 /** A card's own accounts: the service's and its parts'. */
 const accountsOf = (connections: Connection[], keys: string[]): Connection[] =>
@@ -50,33 +65,52 @@ const hasWorking = (connector: ConnectorDefinition, accounts: Connection[]) =>
   accounts.some((c) => c.status === 'connected') ||
   connector.connected_count > 0;
 
-/** An account needs signing in again, or was disconnected. */
+/**
+ * An account needs signing in again, was disconnected, or (a team's) is
+ * paused until an Admin reconnects it.
+ */
 const hasBroken = (connector: ConnectorDefinition, accounts: Connection[]) =>
   accounts.some(
-    (c) => connectionNeedsSignIn(c) || c.status === 'disconnected',
-  ) || connector.state === 'reconnect';
+    (c) =>
+      connectionNeedsSignIn(c) ||
+      c.status === 'disconnected' ||
+      isConnectionPaused(c),
+  ) ||
+  connector.state === 'reconnect' ||
+  connector.state === 'paused';
 
+/**
+ * Settings › Connectors: the caller's own accounts in Personal; in a team,
+ * the team's. Every member sees the team's accounts and who connected each;
+ * only Admins see the catalog to connect one for the team, and manage them.
+ */
 export default function Connectors() {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
-  const catalog = useSelector(selectConnectorCatalog);
-  const loaded = useSelector(selectConnectorsLoaded);
-  const failed = useSelector(selectConnectorsFailed);
+  const inTeam = useSelector(selectInTeam);
+  const teamId = useSelector(
+    (state: { workspace?: { current: string } }) =>
+      state.workspace?.current ?? '',
+  );
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  // Connecting for the team and managing its accounts is an Admin's.
+  const canConnect = !inTeam || roleAtLeast(role, 'admin');
+  const me = readerIdFromToken(token);
+  const catalog = useSelector(selectWorkspaceConnectorCatalog);
+  const loaded = useSelector(selectWorkspaceConnectorsLoaded);
+  const failed = useSelector(selectWorkspaceConnectorsFailed);
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState('');
-  const connections = useSelector(selectConnections);
-  const filterParam = searchParams.get('filter') as Filter | null;
-  // The address holds the filter, so Back and a reload keep it.
-  const filter: Filter =
-    filterParam && FILTERS.includes(filterParam) ? filterParam : 'all';
-  const setFilter = (value: Filter) => {
-    if (value === 'all') searchParams.delete('filter');
-    else searchParams.set('filter', value);
-    setSearchParams(searchParams, { replace: true });
-  };
+  const connections = useSelector(selectWorkspaceConnections);
+  // The address holds both filters, so Back and a reload keep them.
+  const [capability, setCapability] = useUrlFilter(CAPABILITIES, {
+    name: 'capability',
+  });
+  const [status, setStatus] = useUrlFilter(STATUSES, { name: 'status' });
   const connectorParam = searchParams.get('connector');
   const [openKey, setOpenKey] = useState<string | null>(connectorParam);
+  const [choosingCustom, setChoosingCustom] = useState(false);
   // A `?connector=` link followed while this page is already open (the
   // global Reconnect toast) changes only the search: open what it names.
   const [seenConnectorParam, setSeenConnectorParam] = useState(connectorParam);
@@ -88,11 +122,24 @@ export default function Connectors() {
   const connectionParam = searchParams.get('connection') ?? undefined;
   const { launch, modals } = useConnectorLauncher();
 
+  const load = () =>
+    dispatch(
+      inTeam
+        ? loadTeamConnectors({ token, teamId })
+        : loadConnectors({ token }),
+    );
   useEffect(() => {
-    dispatch(loadConnectors({ token }));
-  }, [dispatch, token]);
+    load();
+    // `load` reads only what is listed.
+  }, [dispatch, token, inTeam, teamId]);
 
-  const custom = catalog.filter((c) => c.publisher === 'custom');
+  // A custom server or API adds a tool where it is added: in a team only an
+  // Admin adds one here (the MCP form signs in for the team, or for each
+  // person); Editors add team tools on the Tools page.
+  const custom =
+    inTeam && !canConnect
+      ? []
+      : catalog.filter((c) => c.publisher === 'custom');
   // A `?connector=` link to a part (a Reconnect that can't happen in place)
   // opens its parent's page.
   const openTarget = catalog.find((c) => c.key === openKey);
@@ -104,63 +151,92 @@ export default function Connectors() {
 
   const partsOf = (key: string) => partsOfCatalog(catalog, key);
 
-  // `?capability=` narrows the list to connectors that can sync content, or
-  // give tools.
-  const capability = searchParams.get('capability');
-  const clearCapability = () => {
-    searchParams.delete('capability');
-    setSearchParams(searchParams, { replace: true });
-  };
   // Listed for syncing (Add knowledge's Browse all connectors): a connect
-  // starts with Sync into Knowledge on.
-  const withPurpose = (options: LaunchOptions = {}): LaunchOptions =>
-    capability === 'sync' ? { ...options, purpose: 'knowledge' } : options;
+  // starts with Sync into Knowledge on (sync-only connectors always do).
+  // In a team, every connect and reconnect from here is for the team.
+  const withPurpose = (options: LaunchOptions = {}): LaunchOptions => ({
+    ...options,
+    ...(capability === 'sync' && { purpose: 'knowledge' as const }),
+    ...(inTeam && { owner: 'team' as const }),
+  });
 
-  const cards = catalogCards(catalog);
-  const withCapability = cards.filter((connector) =>
-    capability === 'sync'
-      ? connector.capabilities.includes('sync')
-      : capability === 'tools'
-        ? connector.capabilities.some((c) => c !== 'sync')
-        : true,
+  // Someone who can't connect for the team sees only what it has connected
+  // (a service with an account of its own or of a part), never the catalog.
+  // A custom entry makes a tool of the caller's own, so a team lists none.
+  const cards = catalogCards(catalog).filter(
+    (connector) =>
+      !(inTeam && connector.publisher === 'custom') &&
+      (canConnect ||
+        accountsOf(connections, [
+          connector.key,
+          ...partsOf(connector.key).map((part) => part.key),
+        ]).length > 0),
   );
+  const matchesCapability = (
+    connector: ConnectorDefinition,
+    key: CapabilityFilter,
+  ) =>
+    key === 'sync'
+      ? connector.capabilities.includes('sync')
+      : key === 'tools'
+        ? connector.capabilities.some((c) => c !== 'sync')
+        : true;
   const keysOf = (connector: ConnectorDefinition) => [
     connector.key,
     ...partsOf(connector.key).map((part) => part.key),
   ];
-  const matches = (connector: ConnectorDefinition, key: Filter) => {
-    if (key === 'all') return true;
+  /** Needs sign-in when an account broke, else Connected, else Available. */
+  const statusOf = (connector: ConnectorDefinition): Status => {
     const accounts = accountsOf(connections, keysOf(connector));
-    return key === 'connected'
-      ? hasWorking(connector, accounts)
-      : hasBroken(connector, accounts);
+    if (hasBroken(connector, accounts)) return 'reconnect';
+    return hasWorking(connector, accounts) ? 'connected' : 'available';
   };
-  const counts = Object.fromEntries(
-    FILTERS.map((key) => [
-      key,
-      withCapability.filter((connector) => matches(connector, key)).length,
-    ]),
-  ) as Record<Filter, number>;
-  // No pill leads to an empty list; with only All left there is no row.
-  const filters = FILTERS.filter(
-    (key) => key === 'all' || key === filter || counts[key] > 0,
-  );
-
-  const visible = useMemo(() => {
+  const matchesStatus = (connector: ConnectorDefinition, key: StatusFilter) =>
+    key === 'all' || statusOf(connector) === key;
+  const searched = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return withCapability
-      .filter((connector) => matches(connector, filter))
-      .filter(
-        (connector) =>
-          !query ||
-          [connector, ...partsOf(connector.key)].some(
-            (c) =>
-              connectorName(t, c).toLowerCase().includes(query) ||
-              connectorDescription(t, c).toLowerCase().includes(query),
-          ),
-      )
-      .sort(byState);
-  }, [withCapability, filter, search, t, connections]);
+    if (!query) return cards;
+    return cards.filter((connector) =>
+      [connector, ...partsOf(connector.key)].some(
+        (c) =>
+          connectorName(t, c).toLowerCase().includes(query) ||
+          connectorDescription(t, c).toLowerCase().includes(query),
+      ),
+    );
+  }, [cards, search, t]);
+  // Each filter counts with the other one and the search applied, so a pill
+  // never leads to an empty list.
+  const capabilityCounts = Object.fromEntries(
+    CAPABILITIES.map((key) => [
+      key,
+      searched.filter(
+        (c) => matchesStatus(c, status) && matchesCapability(c, key),
+      ).length,
+    ]),
+  ) as Record<CapabilityFilter, number>;
+  const statusCounts = Object.fromEntries(
+    STATUSES.map((key) => [
+      key,
+      searched.filter(
+        (c) => matchesCapability(c, capability) && matchesStatus(c, key),
+      ).length,
+    ]),
+  ) as Record<StatusFilter, number>;
+  // No pill leads to an empty list; with only All left there is no track.
+  const capabilities = shownFilters(CAPABILITIES, capability, capabilityCounts);
+
+  const visible = useMemo(
+    () =>
+      searched
+        .filter((connector) => matchesCapability(connector, capability))
+        .filter((connector) => matchesStatus(connector, status))
+        .sort(byState),
+    [searched, capability, status, connections],
+  );
+  const sections = SECTIONS.map((key) => ({
+    key,
+    connectors: visible.filter((connector) => statusOf(connector) === key),
+  })).filter((section) => section.connectors.length > 0);
 
   const open = (connector: ConnectorDefinition) => {
     const hasParts = partsOf(connector.key).length > 0;
@@ -186,7 +262,11 @@ export default function Connectors() {
   return (
     <div className="flex flex-col">
       <PageToolbar
-        intro={t('settings.connectors.subtitle')}
+        intro={
+          inTeam
+            ? t('settings.connectors.team.notice')
+            : t('settings.connectors.subtitle')
+        }
         search={
           <SearchInput
             maxLength={256}
@@ -197,49 +277,51 @@ export default function Connectors() {
           />
         }
         action={
-          <ActionMenu
-            trigger={
-              <Button type="button" size="field" shape="pill">
-                {t('settings.connectors.addCustom')}
-                <ChevronDown />
-              </Button>
-            }
-            menuWidth="sm"
-            options={custom.map((connector) => ({
-              label: connectorName(t, connector),
-              icon: <ConnectorIcon icon={connector.icon} className="size-4" />,
-              onClick: () => launch(connector),
-            }))}
-          />
+          custom.length > 0 ? (
+            <Button
+              type="button"
+              size="field"
+              shape="pill"
+              onClick={() => setChoosingCustom(true)}
+            >
+              {t('settings.connectors.addCustom')}
+            </Button>
+          ) : undefined
         }
         divider
       >
-        {filters.length > 1 ||
-        capability === 'sync' ||
-        capability === 'tools' ? (
-          <div className="mb-6 flex flex-wrap items-center gap-3">
-            {filters.length > 1 ? (
+        {loaded && cards.length > 0 ? (
+          <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
+            {capabilities.length > 0 ? (
               <ToggleGroup
                 type="single"
-                value={filter}
-                onValueChange={(value) => value && setFilter(value as Filter)}
-                aria-label={t('settings.connectors.filterLabel')}
+                value={capability}
+                onValueChange={(value) =>
+                  value && setCapability(value as CapabilityFilter)
+                }
+                aria-label={t('settings.connectors.capabilityFilterLabel')}
               >
-                {filters.map((key) => (
-                  <ToggleGroupItem key={key} value={key} count={counts[key]}>
-                    {t(`settings.connectors.filters.${key}`)}
+                {capabilities.map((key) => (
+                  <ToggleGroupItem
+                    key={key}
+                    value={key}
+                    count={capabilityCounts[key]}
+                  >
+                    {t(`settings.connectors.capabilityFilters.${key}`)}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
             ) : null}
-            {capability === 'sync' || capability === 'tools' ? (
-              <Badge
-                onRemove={clearCapability}
-                removeLabel={t('settings.connectors.capabilityFilter.clear')}
-              >
-                {t(`settings.connectors.capabilityChip.${capability}`)}
-              </Badge>
-            ) : null}
+            <FilterSelect
+              value={status}
+              onValueChange={setStatus}
+              values={STATUSES}
+              counts={statusCounts}
+              labelOf={(value) =>
+                t(`settings.connectors.statusFilters.${value}`)
+              }
+              ariaLabel={t('settings.connectors.statusFilterLabel')}
+            />
           </div>
         ) : null}
       </PageToolbar>
@@ -253,10 +335,18 @@ export default function Connectors() {
           tone="destructive"
           illustration="none"
           title={t('settings.connectors.loadFailed')}
-          onRetry={() => dispatch(loadConnectors({ token }))}
+          onRetry={load}
         />
       ) : visible.length === 0 ? (
-        filter === 'connected' && !search ? (
+        inTeam && connections.length === 0 && !search ? (
+          <EmptyState
+            title={t(
+              canConnect
+                ? 'settings.connectors.team.emptyAdmin'
+                : 'settings.connectors.team.emptyMember',
+            )}
+          />
+        ) : status === 'connected' && !search ? (
           <EmptyState title={t('settings.connectors.empty')} />
         ) : (
           <EmptyState
@@ -266,19 +356,36 @@ export default function Connectors() {
           />
         )
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {visible.map((connector) => (
-            <ConnectorCard
-              key={connector.key}
-              connector={connector}
-              onOpen={open}
-            />
+        <div className="flex flex-col gap-8">
+          {sections.map((section) => (
+            <section key={section.key} className="flex flex-col gap-3">
+              <SectionHeader
+                size="sm"
+                title={t(`settings.connectors.sections.${section.key}`)}
+                count={section.connectors.length}
+              />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {section.connectors.map((connector) => (
+                  <ConnectorCard
+                    key={connector.key}
+                    connector={connector}
+                    accounts={accountsOf(connections, keysOf(connector))}
+                    me={me}
+                    onOpen={open}
+                    // The section says Connected; a pill on every tile
+                    // would only repeat it.
+                    connectedBadge={false}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
 
       <ConnectionDrawer
         connector={openConnector}
+        owner={inTeam ? 'team' : undefined}
         parts={openConnector ? partsOf(openConnector.key) : []}
         initialConnectionId={connectionParam}
         onClose={closeDrawer}
@@ -288,6 +395,12 @@ export default function Connectors() {
         }}
       />
       {modals}
+      <AddCustomConnectorModal
+        open={choosingCustom}
+        onOpenChange={setChoosingCustom}
+        connectors={custom}
+        onPick={(connector) => launch(connector)}
+      />
     </div>
   );
 }

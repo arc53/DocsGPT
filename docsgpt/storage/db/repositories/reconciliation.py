@@ -27,7 +27,10 @@ class ReconciliationRepository:
         across ticks. Liveness exemption covers both ``pending`` (paused
         waiting for resume) and ``resuming`` (actively executing)
         ``pending_tool_state`` rows so a paused message survives until
-        the PT row's own TTL retires it.
+        the PT row's own TTL retires it. The PT row must name this message
+        as its ``agent_config.reserved_message_id``: the row is keyed per
+        conversation, so a later turn sent while an earlier one waits on
+        approval would otherwise borrow that pause.
 
         A second exemption covers **server-executed** tools.
         ``pending_tool_state`` is only written on the pause path (client-side
@@ -73,6 +76,7 @@ class ReconciliationRepository:
                       FROM pending_tool_state pts
                       WHERE pts.conversation_id = cm.conversation_id
                         AND pts.user_id = cm.user_id
+                        AND pts.agent_config->>'reserved_message_id' = cm.id::text
                         AND (
                             (pts.status = 'pending'
                              AND pts.expires_at > now())
@@ -160,18 +164,62 @@ class ReconciliationRepository:
     def find_and_lock_executed_tool_calls(
         self, *, age_minutes: int = 15, limit: int = 100,
     ) -> list[dict]:
-        """Lock tool_call_attempts stuck in ``executed`` past confirm window."""
+        """Lock tool_call_attempts stuck in ``executed`` past confirm window.
+
+        A call whose turn is paused on ``pending_tool_state`` is left alone:
+        the row is confirmed when the turn finalizes, and a paused turn only
+        finalizes after the user answers the approval (or the pause expires and
+        ``cleanup_pending_tool_state`` fails the message, which confirms it
+        too). The pause outlives this window — its TTL is 30 minutes — so
+        without the exemption a call that ran before the pause, or was approved
+        on one resume before the turn paused again, was failed while the side
+        effect it reports had committed. The predicate matches
+        :meth:`find_and_lock_stuck_messages`.
+
+        Args:
+            age_minutes: How long a row may sit in ``executed``.
+            limit: Maximum rows to lock per tick.
+
+        Returns:
+            The locked rows as dicts.
+        """
         result = self._conn.execute(
             text(
                 """
-                SELECT call_id, message_id, tool_id, tool_name, action_name,
-                       arguments, result, attempted_at, updated_at
-                FROM tool_call_attempts
-                WHERE status = 'executed'
-                  AND updated_at < now() - make_interval(mins => :age)
-                ORDER BY updated_at ASC
+                SELECT tca.call_id, tca.message_id, tca.tool_id, tca.tool_name,
+                       tca.action_name, tca.arguments, tca.result,
+                       tca.attempted_at, tca.updated_at
+                FROM tool_call_attempts tca
+                WHERE tca.status = 'executed'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_messages cm
+                      WHERE cm.id = tca.message_id
+                        AND cm.status IN ('pending', 'streaming')
+                        AND (cm.message_metadata->>'last_heartbeat_at')::timestamptz
+                            > now() - interval '2 minutes'
+                  )
+                  AND tca.updated_at < now() - make_interval(mins => :age)
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM conversation_messages cm
+                      JOIN pending_tool_state pts
+                        ON pts.conversation_id = cm.conversation_id
+                       AND pts.user_id = cm.user_id
+                       AND pts.agent_config->>'reserved_message_id' = cm.id::text
+                      WHERE cm.id = tca.message_id
+                        AND cm.status IN ('pending', 'streaming')
+                        AND (
+                            (pts.status = 'pending'
+                             AND pts.expires_at > now())
+                            OR
+                            (pts.status = 'resuming'
+                             AND pts.resumed_at
+                                 > now() - interval '10 minutes')
+                        )
+                  )
+                ORDER BY tca.updated_at ASC
                 LIMIT :limit
-                FOR UPDATE SKIP LOCKED
+                FOR UPDATE OF tca SKIP LOCKED
                 """
             ),
             {"age": age_minutes, "limit": limit},
@@ -190,7 +238,8 @@ class ReconciliationRepository:
             text(
                 """
                 SELECT icp.source_id, icp.total_chunks, icp.embedded_chunks,
-                       icp.last_index, icp.last_updated,
+                       icp.last_index, icp.last_updated, icp.attempt_id,
+                       icp.dispatch, icp.resume_attempts,
                        s.user_id, s.name AS source_name
                 FROM ingest_chunk_progress icp
                 LEFT JOIN sources s ON s.id = icp.source_id
@@ -210,11 +259,37 @@ class ReconciliationRepository:
         """Escalate a stalled checkpoint to terminal ``status='stalled'``.
 
         Drops the row out of the sweep so the reconciler alerts once;
-        ``init_progress`` flips it back to ``'active'`` on reingest.
+        ``init_progress`` flips it back to ``'active'`` on reingest. The
+        stored ``dispatch`` goes too: the ingest is not queued again.
         """
         result = self._conn.execute(
             text(
-                "UPDATE ingest_chunk_progress SET status = 'stalled' "
+                "UPDATE ingest_chunk_progress SET status = 'stalled', dispatch = NULL "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": str(source_id)},
+        )
+        return result.rowcount > 0
+
+    def mark_ingest_resumed(self, source_id: str, *, restart: bool = False) -> bool:
+        """Count a resume of a stalled ingest and restart its stale window.
+
+        Bumping ``last_updated`` keeps the sweep off the row until the queued
+        task has had the full window to start embedding.
+
+        Args:
+            source_id: The ingest's source.
+            restart: Also reset the checkpoint, for a store whose partial
+                index died with the task (FAISS).
+
+        Returns:
+            ``True`` when the row was updated.
+        """
+        reset = ", last_index = -1, embedded_chunks = 0" if restart else ""
+        result = self._conn.execute(
+            text(
+                "UPDATE ingest_chunk_progress "
+                f"SET resume_attempts = resume_attempts + 1, last_updated = now(){reset} "
                 "WHERE source_id = CAST(:sid AS uuid)"
             ),
             {"sid": str(source_id)},

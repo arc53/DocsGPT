@@ -3,7 +3,8 @@ from unittest.mock import patch, MagicMock
 from urllib.parse import urlparse
 
 from docsgpt.core.url_validation import SSRFError
-from docsgpt.parser.remote.web_loader import WebLoader, headers
+from docsgpt.parser.remote.page_content import PAGE_HEADERS as headers
+from docsgpt.parser.remote.web_loader import WebLoader
 from docsgpt.parser.schema.base import Document
 from docsgpt.vectorstore.document_class import Document as LCDocument
 
@@ -19,6 +20,8 @@ def _fake_response(html: str) -> MagicMock:
     """Build a MagicMock that quacks like a requests.Response for our purposes."""
     response = MagicMock()
     response.text = html
+    response.content = html.encode()
+    response.headers = {"Content-Type": "text/html; charset=utf-8"}
     response.raise_for_status.return_value = None
     return response
 
@@ -61,11 +64,11 @@ class TestWebLoaderLoadData:
     """Test WebLoader load_data method."""
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_same_host_urls_get_path_only_file_paths(self, mock_pinned_request, mock_validate, web_loader):
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_same_host_urls_get_path_only_file_paths(self, mock_fetch, mock_validate, web_loader):
         # The tree and the chunk path filter both key off file_path, so each
         # page needs a stable, distinct one (not its title).
-        mock_pinned_request.side_effect = [
+        mock_fetch.side_effect = [
             _fake_response("<html><head><title>Home</title></head><body>a</body></html>"),
             _fake_response("<html><head><title>Setup</title></head><body>b</body></html>"),
         ]
@@ -75,9 +78,9 @@ class TestWebLoaderLoadData:
         assert [d.extra_info["file_path"] for d in result] == ["index.md", "guides/setup.md"]
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_single_url_string(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.return_value = _fake_response(
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_single_url_string(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.return_value = _fake_response(
             "<html lang='en'><head><title>Test Page</title></head>"
             "<body><p>Test web page content</p></body></html>"
         )
@@ -86,21 +89,23 @@ class TestWebLoaderLoadData:
 
         assert len(result) == 1
         assert isinstance(result[0], Document)
-        assert result[0].text == "Test Page\nTest web page content"
+        # The <title> goes to metadata only, not the body's first line.
+        assert result[0].text == "Test web page content"
         assert result[0].extra_info == {
             "source": "https://example.com",
             "title": "Test Page",
             "language": "en",
             "file_path": "index.md",
+            "requested_urls": [],
         }
-        mock_pinned_request.assert_called_once_with(
-            "GET", "https://example.com", headers=headers, timeout=30
+        mock_fetch.assert_called_once_with(
+            "https://example.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_multiple_urls_list(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.side_effect = [
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_multiple_urls_list(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.side_effect = [
             _fake_response("<html><body>Content from site 1</body></html>"),
             _fake_response("<html><body>Content from site 2</body></html>"),
         ]
@@ -113,60 +118,60 @@ class TestWebLoaderLoadData:
         assert result[0].text == "Content from site 1"
         assert result[1].text == "Content from site 2"
         # Two hosts would both map to index.md, so the host prefixes the path.
-        assert result[0].extra_info == {"source": "https://site1.com", "file_path": "site1.com/index.md"}
-        assert result[1].extra_info == {"source": "https://site2.com", "file_path": "site2.com/index.md"}
+        assert result[0].extra_info == {"source": "https://site1.com", "file_path": "site1.com/index.md", "requested_urls": []}
+        assert result[1].extra_info == {"source": "https://site2.com", "file_path": "site2.com/index.md", "requested_urls": []}
 
-        assert mock_pinned_request.call_count == 2
-        mock_pinned_request.assert_any_call(
-            "GET", "https://site1.com", headers=headers, timeout=30
+        assert mock_fetch.call_count == 2
+        mock_fetch.assert_any_call(
+            "https://site1.com", timeout=30, budget=None
         )
-        mock_pinned_request.assert_any_call(
-            "GET", "https://site2.com", headers=headers, timeout=30
+        mock_fetch.assert_any_call(
+            "https://site2.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_url_without_scheme(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.return_value = _fake_response(
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_url_without_scheme(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.return_value = _fake_response(
             "<html><body>Schemeless</body></html>"
         )
 
         result = web_loader.load_data("example.com")
 
         assert len(result) == 1
-        mock_pinned_request.assert_called_once_with(
-            "GET", "http://example.com", headers=headers, timeout=30
+        mock_fetch.assert_called_once_with(
+            "http://example.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_url_with_scheme(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.return_value = _fake_response(
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_url_with_scheme(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.return_value = _fake_response(
             "<html><body>Schemed</body></html>"
         )
 
         result = web_loader.load_data("https://example.com")
 
         assert len(result) == 1
-        mock_pinned_request.assert_called_once_with(
-            "GET", "https://example.com", headers=headers, timeout=30
+        mock_fetch.assert_called_once_with(
+            "https://example.com", timeout=30, budget=None
         )
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_skips_pages_without_title(self, mock_pinned_request, mock_validate, web_loader):
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_skips_pages_without_title(self, mock_fetch, mock_validate, web_loader):
         """A page without <title> or <html lang=...> still loads, just with bare metadata."""
-        mock_pinned_request.return_value = _fake_response("<p>Bare body</p>")
+        mock_fetch.return_value = _fake_response("<p>Bare body</p>")
 
         result = web_loader.load_data("https://example.com")
 
         assert len(result) == 1
         assert result[0].text == "Bare body"
-        assert result[0].extra_info == {"source": "https://example.com", "file_path": "index.md"}
+        assert result[0].extra_info == {"source": "https://example.com", "file_path": "index.md", "requested_urls": []}
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_extracts_title_with_nested_markup(self, mock_pinned_request, mock_validate, web_loader):
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_extracts_title_with_nested_markup(self, mock_fetch, mock_validate, web_loader):
         """<title> with nested-looking content must still produce a non-empty title.
 
         BS4's `html.parser` differs across Python/bs4 versions: some treat
@@ -176,7 +181,7 @@ class TestWebLoaderLoadData:
         returns ``None`` in *either* case, dropping the title entirely — using
         ``get_text`` keeps it. Assert only that the title survives.
         """
-        mock_pinned_request.return_value = _fake_response(
+        mock_fetch.return_value = _fake_response(
             "<html><head><title>Hello <span>World</span></title></head>"
             "<body><p>x</p></body></html>"
         )
@@ -192,10 +197,10 @@ class TestWebLoaderErrorHandling:
     """Test WebLoader error handling."""
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
     @patch("docsgpt.parser.remote.web_loader.logging")
-    def test_load_data_single_url_error(self, mock_logging, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.side_effect = Exception("Network error")
+    def test_load_data_single_url_error(self, mock_logging, mock_fetch, mock_validate, web_loader):
+        mock_fetch.side_effect = Exception("Network error")
 
         result = web_loader.load_data("https://invalid-url.com")
 
@@ -206,10 +211,10 @@ class TestWebLoaderErrorHandling:
         assert error_call[1]["exc_info"] is True
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
     @patch("docsgpt.parser.remote.web_loader.logging")
-    def test_load_data_partial_failure(self, mock_logging, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.side_effect = [
+    def test_load_data_partial_failure(self, mock_logging, mock_fetch, mock_validate, web_loader):
+        mock_fetch.side_effect = [
             _fake_response("<html><body>Success content</body></html>"),
             Exception("Network error"),
         ]
@@ -219,7 +224,7 @@ class TestWebLoaderErrorHandling:
 
         assert len(result) == 1
         assert result[0].text == "Success content"
-        assert result[0].extra_info == {"source": "https://good-url.com", "file_path": "good-url.com/index.md"}
+        assert result[0].extra_info == {"source": "https://good-url.com", "file_path": "good-url.com/index.md", "requested_urls": []}
 
         mock_logging.error.assert_called_once()
         error_call = mock_logging.error.call_args
@@ -230,8 +235,8 @@ class TestWebLoaderSSRF:
     """Test WebLoader SSRF protection."""
 
     @patch("docsgpt.parser.remote.web_loader.validate_url")
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_skips_url_failing_ssrf_validation(self, mock_pinned_request, mock_validate, web_loader):
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_skips_url_failing_ssrf_validation(self, mock_fetch, mock_validate, web_loader):
         """A URL that fails SSRF validation must be skipped, never reaching the fetcher."""
         mock_validate.side_effect = SSRFError("Access to private/internal IP addresses is not allowed.")
 
@@ -239,7 +244,7 @@ class TestWebLoaderSSRF:
 
         assert result == []
         mock_validate.assert_called_once_with("http://169.254.169.254/latest/meta-data/")
-        mock_pinned_request.assert_not_called()
+        mock_fetch.assert_not_called()
 
     @patch("docsgpt.parser.remote.web_loader.validate_url")
     @patch("docsgpt.parser.remote.web_loader.logging")
@@ -254,15 +259,15 @@ class TestWebLoaderSSRF:
         assert "127.0.0.1" in warning_msg
 
     @patch("docsgpt.parser.remote.web_loader.validate_url")
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_mixed_safe_and_unsafe_urls(self, mock_pinned_request, mock_validate, web_loader):
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_mixed_safe_and_unsafe_urls(self, mock_fetch, mock_validate, web_loader):
         def validate(url):
             if "169.254.169.254" in url:
                 raise SSRFError("metadata blocked")
             return url
 
         mock_validate.side_effect = validate
-        mock_pinned_request.return_value = _fake_response(
+        mock_fetch.return_value = _fake_response(
             "<html><body>Public page</body></html>"
         )
 
@@ -271,8 +276,8 @@ class TestWebLoaderSSRF:
 
         assert len(result) == 1
         assert result[0].text == "Public page"
-        mock_pinned_request.assert_called_once_with(
-            "GET", "https://example.com", headers=headers, timeout=30
+        mock_fetch.assert_called_once_with(
+            "https://example.com", timeout=30, budget=None
         )
 
 
@@ -284,15 +289,14 @@ class TestWebLoaderEdgeCases:
         assert result == []
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_data_empty_response_body(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.return_value = _fake_response("")
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_data_empty_response_body(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.return_value = _fake_response("")
 
         result = web_loader.load_data("https://empty-page.com")
 
-        assert len(result) == 1
-        assert result[0].text == ""
-        assert result[0].extra_info == {"source": "https://empty-page.com", "file_path": "index.md"}
+        # An empty page has nothing to chunk; it no longer becomes an empty document.
+        assert result == []
 
     def test_url_scheme_detection(self):
         """Test URL scheme detection logic."""
@@ -316,9 +320,9 @@ class TestWebLoaderIntegration:
         assert callable(web_loader.load_data)
 
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_load_vector_documents_method(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.return_value = _fake_response(
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_load_vector_documents_method(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.return_value = _fake_response(
             "<html><head><title>Test Page</title></head>"
             "<body><p>Test web page content</p></body></html>"
         )
@@ -335,9 +339,9 @@ class TestWebLoaderIntegration:
 @pytest.mark.unit
 class TestWebLoaderDistinctPaths:
     @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_colliding_pages_get_distinct_file_paths(self, mock_pinned_request, mock_validate, web_loader):
-        mock_pinned_request.side_effect = lambda *a, **k: _fake_response("<html><body>x</body></html>")
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_colliding_pages_get_distinct_file_paths(self, mock_fetch, mock_validate, web_loader):
+        mock_fetch.side_effect = lambda *a, **k: _fake_response("<html><body>x</body></html>")
 
         result = web_loader.load_data(
             [
@@ -356,11 +360,47 @@ class TestWebLoaderDistinctPaths:
 @pytest.mark.unit
 class TestWebLoaderMalformedUrl:
     @patch("docsgpt.core.url_validation.resolve_hostname", return_value="93.184.216.34")
-    @patch("docsgpt.parser.remote.web_loader.pinned_request")
-    def test_malformed_url_is_skipped_and_the_rest_ingest(self, mock_pinned_request, _mock_resolve, web_loader):
-        mock_pinned_request.side_effect = lambda *a, **k: _fake_response("<html><body>good</body></html>")
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_malformed_url_is_skipped_and_the_rest_ingest(self, mock_fetch, _mock_resolve, web_loader):
+        mock_fetch.side_effect = lambda *a, **k: _fake_response("<html><body>good</body></html>")
 
         result = web_loader.load_data(["http://[bad", "https://x.io/good"])
 
         assert [d.extra_info["source"] for d in result] == ["https://x.io/good"]
         assert result[0].extra_info["file_path"] == "good.md"
+
+
+@pytest.mark.unit
+class TestWebLoaderRequestedUrl:
+    @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_a_redirected_page_keeps_the_address_it_was_asked_under(self, mock_fetch, mock_validate, web_loader):
+        def fetch(url, *args, **kwargs):
+            response = _fake_response("<html><body><p>Page</p></body></html>")
+            response.url = "https://x.io/new" if url == "https://x.io/old" else url
+            return response
+
+        mock_fetch.side_effect = fetch
+
+        result = web_loader.load_data(["https://x.io/old", "https://x.io/same"])
+
+        assert [d.extra_info["source"] for d in result] == ["https://x.io/new", "https://x.io/same"]
+        assert result[0].extra_info["requested_urls"] == ["https://x.io/old"]
+        # Only the list: the singular ``requested_url`` is never written.
+        assert "requested_url" not in result[0].extra_info
+        assert result[1].extra_info["requested_urls"] == []
+
+    @patch("docsgpt.parser.remote.web_loader.validate_url", side_effect=_mock_validate_url)
+    @patch("docsgpt.parser.remote.web_loader.fetch_page")
+    def test_addresses_that_redirect_to_one_page_are_one_document(self, mock_fetch, mock_validate, web_loader):
+        def fetch(url, *args, **kwargs):
+            response = _fake_response("<html><body><p>Page</p></body></html>")
+            response.url = "https://x.io/new" if url.startswith("https://x.io/old") else url
+            return response
+
+        mock_fetch.side_effect = fetch
+
+        result = web_loader.load_data(["https://x.io/old-b", "https://x.io/new", "https://x.io/old-a"])
+
+        assert [d.extra_info["source"] for d in result] == ["https://x.io/new"]
+        assert result[0].extra_info["requested_urls"] == ["https://x.io/old-b", "https://x.io/old-a"]

@@ -58,9 +58,9 @@ def generate_default_token() -> tuple[Optional[str], Optional[str]]:
         return None, "JWT secret key is empty."
 
     try:
-        from jose import jwt  # type: ignore
+        import jwt  # type: ignore
     except ImportError:
-        return None, "python-jose is not installed (pip install 'python-jose' to auto-generate tokens)."
+        return None, "PyJWT is not installed (pip install PyJWT to auto-generate tokens)."
 
     try:
         payload = {"sub": "test_integration_user"}

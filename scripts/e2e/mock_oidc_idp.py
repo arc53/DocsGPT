@@ -19,7 +19,7 @@ request with ``?sub=``/``?email=`` for multi-user tests). Group membership
 comes from ``MOCK_OIDC_GROUPS`` (comma-separated).
 
 Run standalone (does NOT import anything from ``application/``). Dependencies
-(flask, python-jose, cryptography, requests) are all in
+(flask, PyJWT, cryptography, requests) are all in
 ``docsgpt/requirements.txt``.
 
 Usage::
@@ -40,12 +40,12 @@ import sys
 import time
 from urllib.parse import urlencode
 
+import jwt
 import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask, Response, jsonify, redirect, request
-from jose import jwk
-from jose import jwt as jose_jwt
+from jwt.algorithms import RSAAlgorithm
 
 HOST = os.environ.get("MOCK_OIDC_HOST", "127.0.0.1")
 PORT = int(os.environ.get("MOCK_OIDC_PORT", "7999"))
@@ -76,7 +76,8 @@ PRIVATE_PEM = _private_key.private_bytes(
     encryption_algorithm=serialization.NoEncryption(),
 ).decode("ascii")
 PUBLIC_JWK = {
-    **jwk.construct(PRIVATE_PEM, algorithm="RS256").public_key().to_dict(),
+    **RSAAlgorithm.to_jwk(_private_key.public_key(), as_dict=True),
+    "alg": "RS256",
     "kid": KID,
     "use": "sig",
 }
@@ -126,7 +127,7 @@ def _issue_tokens(record: dict, nonce: str | None) -> dict:
     }
     if nonce:
         claims["nonce"] = nonce
-    id_token = jose_jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": KID})
+    id_token = jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": KID})
     access_token = secrets.token_urlsafe(24)
     refresh_token = secrets.token_urlsafe(24)
     _access_tokens[access_token] = _user_record(record)
@@ -274,7 +275,7 @@ def trigger_backchannel_logout() -> Response:
         claims["sub"] = sub
     if sid:
         claims["sid"] = sid
-    logout_token = jose_jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": KID})
+    logout_token = jwt.encode(claims, PRIVATE_PEM, algorithm="RS256", headers={"kid": KID})
     try:
         downstream = requests.post(url, data={"logout_token": logout_token}, timeout=10)
     except requests.RequestException as exc:

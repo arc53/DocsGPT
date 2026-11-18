@@ -99,7 +99,7 @@ describe('ConversationTile', () => {
     );
   });
 
-  it('pins the watching mark and unread dot after a truncating name, outside the menu slot', () => {
+  it('pins one status mark after a truncating name, outside the menu slot', () => {
     const long =
       'A very long conversation name that will not fit the sidebar row';
     const link = render(null, vi.fn(), () => undefined, {
@@ -114,10 +114,17 @@ describe('ConversationTile', () => {
     ) as HTMLElement;
     expect(marks.className).toContain('shrink-0');
     expect(name.nextElementSibling).toBe(marks);
-    // Watching first, then unread, both inside the one pinned group.
-    expect(
-      Array.from(marks.children).map((c) => c.getAttribute('data-testid')),
-    ).toEqual(['watching-mark', 'unread-dot']);
+    // One mark: unread outranks watching; the label names both.
+    const mark = marks.querySelector(
+      '[data-testid="conversation-mark"]',
+    ) as HTMLElement;
+    expect(marks.children).toHaveLength(1);
+    expect(mark.dataset.state).toBe('unread');
+    expect(mark.getAttribute('aria-label')).toBe(
+      'activity.marks.unread · activity.marks.watching',
+    );
+    // A fixed 16px slot, so marks of different sizes share one centre line.
+    expect(mark.className).toContain('size-4');
     // The link keeps pr-10 so the absolutely placed menu never covers them.
     expect(link.className).toContain('pr-10');
   });

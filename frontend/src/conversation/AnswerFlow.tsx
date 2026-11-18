@@ -14,8 +14,11 @@ import {
 import { layoutAnswer } from './answerLayout';
 import { AnswerSegment, getAnswerSegments } from './answerSegments';
 import MarkdownAnswer from './MarkdownAnswer';
+import McpAppView from './McpAppView';
+import QuestionBlock from './QuestionBlock';
+import { isQuestionCall } from './questionCall';
 import { type SandboxArtifact } from './sandboxLinks';
-import StepGroup, { StepIcon, ToolCallDetail } from './StepGroup';
+import StepGroup, { NotRunBadge, StepIcon, ToolCallDetail } from './StepGroup';
 import StreamingStatusLine from './StreamingStatusLine';
 import { ToolCallsType } from './types';
 import { isWikiWriteCall } from './wikiToolCall';
@@ -33,6 +36,8 @@ type AnswerFlowProps = {
   /** Opens a cited source's reader; see `MarkdownAnswer`. */
   onOpenSource?: (index: number) => void;
   agentId?: string;
+  /** The saved message this answer is, so an MCP App view can read its result back. */
+  messageId?: string;
   /** Set when the bubble already carries its own progress UI (a research run). */
   suppressStatusLine?: boolean;
   /** Every artifact in the conversation, so ``sandbox:`` links can reach them. */
@@ -41,6 +46,8 @@ type AnswerFlowProps = {
   turnArtifacts?: SandboxArtifact[];
   onOpenArtifact?: (artifact: { id: string; toolName: string }) => void;
   renderApproval: (toolCall: ToolCallsType) => React.ReactNode;
+  /** An `ask_user` call's questions: waiting cards, or their folded record. */
+  renderQuestion?: (toolCall: ToolCallsType) => React.ReactNode;
   renderWikiWrite: (
     toolCall: ToolCallsType,
     isLive: boolean,
@@ -63,11 +70,13 @@ export default function AnswerFlow({
   sourceCount,
   onOpenSource,
   agentId,
+  messageId,
   suppressStatusLine,
   artifacts,
   turnArtifacts,
   onOpenArtifact,
   renderApproval,
+  renderQuestion,
   renderWikiWrite,
 }: AnswerFlowProps) {
   const steps = getAnswerSegments({
@@ -145,6 +154,17 @@ export default function AnswerFlow({
           );
 
         const call = item.call;
+        if (isQuestionCall(call))
+          return (
+            <Fragment key={`question-${call.call_id}`}>
+              {renderQuestion ? (
+                renderQuestion(call)
+              ) : (
+                <QuestionBlock call={call} />
+              )}
+            </Fragment>
+          );
+
         if (call.status === 'awaiting_approval')
           return (
             <Fragment key={`approval-${call.call_id}`}>
@@ -174,6 +194,18 @@ export default function AnswerFlow({
                 agentId={agentId}
               />
             </div>
+          );
+
+        if (call.ui)
+          return (
+            <McpAppView
+              key={`app-${call.call_id}`}
+              toolCall={call}
+              messageId={messageId}
+              fallback={
+                <InlineToolCallChip toolCall={call} isLive={isLiveCall(call)} />
+              }
+            />
           );
 
         const monitorLink =
@@ -320,6 +352,7 @@ function InlineToolCallChip({
             {t('conversation.inlineSteps.failed')}
           </span>
         )}
+        <NotRunBadge toolCall={toolCall} />
         <ChevronDown
           aria-hidden
           className={cn(

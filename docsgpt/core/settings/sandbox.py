@@ -104,7 +104,7 @@ class SandboxSettings(SettingsGroup):
         default=None,
         description=(
             "Snapshot for new sandboxes; build one with the sandbox's libraries, tools and fonts via "
-            "scripts/build_daytona_snapshot.py (default name docsgpt-sandbox-py312-v2)."
+            "scripts/build_daytona_snapshot.py (default name docsgpt-sandbox-py312-v3)."
         ),
     )
     DAYTONA_LANGUAGE: str = Field(default="python", description="Default runtime language for created sandboxes.")

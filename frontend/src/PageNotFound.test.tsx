@@ -38,4 +38,18 @@ describe('PageNotFound', () => {
     expect(link.dataset.shape).toBe('pill');
     expect(link.className).toContain('focus-visible:ring-3');
   });
+
+  it('is the shared EmptyState, titled by an h1', () => {
+    act(() => {
+      root.render(
+        <MemoryRouter>
+          <PageNotFound />
+        </MemoryRouter>,
+      );
+    });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty).not.toBeNull();
+    expect(empty.querySelector('h1')!.textContent).toBe('pageNotFound.title');
+    expect(empty.querySelector('.lucide-map-pin-off')).not.toBeNull();
+  });
 });

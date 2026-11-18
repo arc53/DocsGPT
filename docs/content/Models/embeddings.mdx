@@ -1,7 +1,7 @@
 ---
 title: Understanding and Configuring Embedding Models in DocsGPT
 description: Learn about embedding models, their importance in DocsGPT, and how to configure them for optimal performance.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-11-01
 ---
 
 # Understanding and Configuring Embedding Models in DocsGPT
@@ -114,6 +114,8 @@ EMBEDDINGS_KEY=YOUR_API_KEY                 # optional; sent as a Bearer token
 - `EMBEDDINGS_NAME` — forwarded as the `model` field in each request.
 - `EMBEDDINGS_KEY` — optional bearer token. In this mode it is the only key sent: `OPENAI_API_KEY` and `API_KEY` are not used, so set it even if it is the same OpenAI key.
 
+If the server answers `401` or `403`, DocsGPT logs an `embeddings_auth_failed` error naming a fingerprint of the key (the first 16 hex characters of its SHA-256), never the key itself. When the query embedding fails because the embedder itself failed (a `5xx`, a timeout or a connection error), the sources are not searched, since each search would send the same query to the same failing embedder again. After any other embedding failure each source embeds the query itself. When the answer then goes ahead without retrieved context, that is logged once as a `retrieval_degraded` error with the status code, the number of sources, and the activity and user ids, and the trace's `retrieval` step is marked `docsgpt.retrieval_degraded`.
+
 ### Guarding against oversized inputs
 
 Some remote servers (notably llama.cpp) reject any single input larger than their physical batch size with a `500` error. Set `EMBEDDINGS_MAX_INPUT_TOKENS` to clip each input to a fixed number of tokens before it is sent:
@@ -128,6 +130,12 @@ You usually do not need to set it. When `EMBEDDINGS_NAME` names a model DocsGPT 
 
 Leaving `EMBEDDINGS_NAME` unset imposes no limit: the name is only forwarded as the `model` field in each request, so a default nobody chose is not taken as a description of your server. When no model tokenizer is available, counting falls back to tiktoken — pick a limit with headroom below the server's true limit to absorb the skew between the two tokenizers.
 
+## Search query length
+
+Each search query is clipped to `EMBEDDINGS_MAX_QUERY_TOKENS` tokens (default `512`) before it is embedded, whichever embedder you use. A query needs a few hundred tokens, while the memory an embedder uses grows with the square of its input length: on a long-context model such as granite, one query of about 9,000 tokens needs more than 12 GB. Long queries come from pasted code, logs or JSON in a first chat message, or from a webhook payload. When a query is clipped, DocsGPT logs `Clipping a … search query`.
+
+Documents are not affected. To bound them too, use `EMBEDDINGS_MAX_INPUT_TOKENS` for a remote server or `EMBEDDINGS_LOCAL_MAX_TOKENS` for a local model. Each drops whatever is past its limit. A local model otherwise accepts up to its own maximum, which is 32,768 tokens for granite; `EMBEDDINGS_LOCAL_MAX_TOKENS=4096` keeps one input at about 3 GB. Set `EMBEDDINGS_MAX_QUERY_TOKENS=0` to turn query clipping off.
+
 ## Where the model runs
 
 A local embedding model costs a few hundred megabytes of resident memory per process, and the API embeds every query it serves — so by default it would hold its own copy alongside the worker's.
@@ -136,7 +144,7 @@ A local embedding model costs a few hundred megabytes of resident memory per pro
 
 `EMBEDDINGS_THREADS` sets the intra-op threads of the local ONNX runner; unset, it uses every core. It scales sub-linearly, so several single-threaded workers do more than one many-threaded process on the same cores.
 
-Retrieval then depends on a worker consuming `EMBEDDINGS_QUEUE` (`embeddings` by default). A bare `celery worker` with no `-Q` consumes it along with everything else. **A worker started with an explicit `-Q` must list it** — the bundled Compose and Kubernetes manifests run `-Q docsgpt,parsing,embeddings` for exactly this reason. Omit it and every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT` and then returns an answer with no retrieved context, without raising.
+Retrieval then depends on a worker consuming `EMBEDDINGS_QUEUE` (`embeddings` by default). A bare `celery worker` with no `-Q` consumes it along with everything else. **A worker started with an explicit `-Q` must list it** — the bundled Compose and Kubernetes manifests list it in `-Q docsgpt,parsing,embeddings,ingest,analytics` for exactly this reason. Omit it and every search blocks for `EMBEDDINGS_DELEGATE_TIMEOUT`, and the answer then says the attached sources could not be searched right now, and the API log names each source that could not be searched.
 
 Sharing one worker also shares its concurrency with ingest, so a query can queue behind a long parse. Run a dedicated worker to isolate query latency:
 

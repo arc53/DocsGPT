@@ -14,15 +14,61 @@ vi.mock('react-i18next', () => ({
       if (key === 'settings.sources.graphrag.view.relationshipCount' && opts) {
         return `${opts.formatted} ${opts.count === 1 ? 'relationship' : 'relationships'}`;
       }
+      if (opts && 'pct' in opts) return `${key}:${opts.pct}`;
       return opts && 'count' in opts ? `${key}:${opts.count}` : key;
     },
   }),
 }));
 
-vi.mock('react-redux', () => ({
-  useSelector: () => null,
-  useDispatch: () => vi.fn(),
+// The graph builds the SSE stream records (graphBuildSlice); the token reads
+// null. `bus` is the notifications ring a page change's wait reads.
+const { redux, bus, dispatch } = vi.hoisted(() => ({
+  redux: { builds: {} as Record<string, unknown> },
+  bus: { events: [] as unknown[], listeners: new Set<() => void>() },
+  dispatch: vi.fn(),
 }));
+vi.mock('react-redux', () => {
+  const store = {
+    getState: () => ({ notifications: { recentEvents: bus.events } }),
+    subscribe: (listener: () => void) => {
+      bus.listeners.add(listener);
+      return () => bus.listeners.delete(listener);
+    },
+  };
+  return {
+    useSelector: (selector: (state: unknown) => unknown) => {
+      try {
+        return (
+          selector({ preference: {}, graphBuild: { builds: redux.builds } }) ??
+          null
+        );
+      } catch {
+        return null;
+      }
+    },
+    useDispatch: () => dispatch,
+    useStore: () => store,
+  };
+});
+
+/** A terminal ingest event for the source, as the SSE stream adds it. */
+const emitTerminal = (
+  type: 'completed' | 'failed',
+  taskId: string,
+  extra: Record<string, unknown> = {},
+) => {
+  bus.events = [
+    {
+      id: `${Date.now()}-${bus.events.length}`,
+      type: `source.ingest.${type}`,
+      ts: new Date().toISOString(),
+      scope: { kind: 'source', id: 'doc' },
+      payload: { task_id: taskId, ...extra },
+    },
+    ...bus.events,
+  ];
+  for (const listener of Array.from(bus.listeners)) listener();
+};
 
 vi.mock('../../hooks', () => ({
   useDebouncedValue: (value: unknown) => value,
@@ -45,6 +91,7 @@ vi.mock('../FileTree', async () => {
       linkedChunk?: { id?: string };
       actionsTarget?: HTMLElement | null;
       onCrumbsChange?: (crumbs: { label: string }[]) => void;
+      onPagesChanged?: () => void;
     }) => {
       const { onCrumbsChange } = props;
       useEffect(() => {
@@ -112,9 +159,84 @@ vi.mock('../Chunks', async () => {
     },
   };
 });
+vi.mock('../WebsiteTree', async () => {
+  const { createPortal } = await import('react-dom');
+  const { useEffect } = await import('react');
+  return {
+    default: (props: {
+      embedded?: boolean;
+      canEdit?: boolean;
+      graph?: boolean;
+      docId: string;
+      sourceName: string;
+      hosts: string[];
+      syncFrequency?: string;
+      syncedAt?: string;
+      initialPath?: string;
+      linkedChunk?: { id?: string };
+      actionsTarget?: HTMLElement | null;
+      onCrumbsChange?: (crumbs: { label: string }[]) => void;
+      changes?: {
+        status: string | null;
+        awaitChange: (
+          label: string,
+          startedAt: number,
+          failure: string,
+          options?: { taskId?: string | null },
+        ) => Promise<unknown>;
+      };
+    }) => {
+      const { onCrumbsChange } = props;
+      useEffect(() => {
+        onCrumbsChange?.([{ label: 'Key Accounts' }, { label: 'Deploying' }]);
+      }, [onCrumbsChange]);
+      return (
+        <>
+          {/* Stands in for a removal the list queued (task-r). */}
+          <button
+            type="button"
+            onClick={() =>
+              void props.changes?.awaitChange(
+                'REMOVING',
+                Date.now(),
+                'removeFailed',
+                { taskId: 'task-r' },
+              )
+            }
+          >
+            START REMOVE
+          </button>
+          <div
+            data-testid="website-tree"
+            data-can-edit={String(props.canEdit)}
+            data-graph={String(props.graph)}
+            data-doc={props.docId}
+            data-hosts={props.hosts.join(',')}
+            data-sync={`${props.syncFrequency ?? ''}|${props.syncedAt ?? ''}`}
+            data-initial-path={props.initialPath ?? ''}
+            data-linked={props.linkedChunk?.id ?? ''}
+            data-status={props.changes?.status ?? ''}
+          >
+            {props.embedded ? 'embedded' : 'page'}
+            {props.actionsTarget
+              ? createPortal(
+                  <button type="button">ADD PAGES</button>,
+                  props.actionsTarget,
+                )
+              : null}
+          </div>
+        </>
+      );
+    },
+  };
+});
 vi.mock('../ConnectorTree', () => ({
-  default: (props: { canEdit?: boolean }) => (
-    <div data-testid="connector-tree" data-can-edit={String(props.canEdit)} />
+  default: (props: { canEdit?: boolean; canSync?: boolean }) => (
+    <div
+      data-testid="connector-tree"
+      data-can-edit={String(props.canEdit)}
+      data-can-sync={String(props.canSync)}
+    />
   ),
 }));
 
@@ -170,6 +292,9 @@ describe('GraphSourceView', () => {
   let root: Root;
 
   beforeEach(() => {
+    bus.events = [];
+    bus.listeners.clear();
+    dispatch.mockReset();
     service.getSourceGraph.mockReset();
     service.getSourceGraphNodes.mockReset();
     service.getSourceGraphNode.mockReset();
@@ -232,6 +357,7 @@ describe('GraphSourceView', () => {
           linkedChunk={linkedChunk}
           onBackToDocuments={onBack}
           headerAction={<button type="button">Test retrieval</button>}
+          headerMenu={<button type="button">source menu</button>}
         />,
       );
     });
@@ -275,6 +401,13 @@ describe('GraphSourceView', () => {
     );
     await render();
     expect(container.textContent).toContain('1 entity · 1 relationship');
+  });
+
+  it("puts the source's menu last in the title row", async () => {
+    await render();
+    const menu = buttonByText('source menu')!;
+    expect(menu.previousElementSibling?.textContent).toBe('Test retrieval');
+    expect(menu.nextElementSibling).toBeNull();
   });
 
   it('heads the view with the whole graph totals and the kind badge', async () => {
@@ -526,6 +659,218 @@ describe('GraphSourceView', () => {
     expect(
       container.querySelector('[data-testid="connector-tree"]'),
     ).not.toBeNull();
+  });
+
+  // A synced source typed by its loader (S3) gets the connector tree too,
+  // told whether it can sync: a removed connection's source has no Sync now.
+  it('uses the connector tree for a loader-typed synced source, passing canSync', async () => {
+    await act(async () => {
+      root.render(
+        <GraphSourceView
+          docId="doc"
+          sourceName="Key Accounts"
+          sourceType="s3"
+          synced
+          canSync={false}
+          onBackToDocuments={vi.fn()}
+        />,
+      );
+    });
+    await flush();
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    expect(
+      container
+        .querySelector('[data-testid="connector-tree"]')
+        ?.getAttribute('data-can-sync'),
+    ).toBe('false');
+  });
+
+  const renderWebsite = async (
+    props: Partial<React.ComponentProps<typeof GraphSourceView>> = {},
+  ) => {
+    await act(async () => {
+      root.render(
+        <GraphSourceView
+          docId="doc"
+          sourceName="Key Accounts"
+          sourceType="website"
+          // A scheduled website source is synced too: its pages still list.
+          synced
+          isNested
+          website={{ hosts: ['docs.x.io'], pages: 2 }}
+          syncFrequency="weekly"
+          syncedAt="2026-10-20"
+          onBackToDocuments={vi.fn()}
+          headerAction={<button type="button">Test retrieval</button>}
+          {...props}
+        />,
+      );
+    });
+    await flush();
+  };
+
+  it("lists a website source's pages on the Files tab", async () => {
+    await renderWebsite({ canEdit: false });
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    const tree = container.querySelector('[data-testid="website-tree"]');
+    expect(tree?.textContent).toBe('embedded');
+    expect(tree?.getAttribute('data-doc')).toBe('doc');
+    expect(tree?.getAttribute('data-hosts')).toBe('docs.x.io');
+    expect(tree?.getAttribute('data-sync')).toBe('weekly|2026-10-20');
+    expect(tree?.getAttribute('data-can-edit')).toBe('false');
+    // Its Add pages says new pages go through the graph's LLM extraction.
+    expect(tree?.getAttribute('data-graph')).toBe('true');
+    expect(
+      container.querySelector('[data-testid="connector-tree"]'),
+    ).toBeNull();
+    expect(container.querySelector('[data-testid="file-tree"]')).toBeNull();
+    expect(crumbs()).toEqual([
+      'settings.sources.label',
+      'Key Accounts',
+      'Deploying',
+    ]);
+  });
+
+  it("puts a website source's Add pages in the header", async () => {
+    await renderWebsite();
+    await openTab('settings.sources.graphrag.view.tabs.files');
+    const add = buttonByText('ADD PAGES')!;
+    expect(add).toBeDefined();
+    expect(add.previousElementSibling).toBeNull();
+    expect(add.parentElement?.previousElementSibling?.textContent).toBe(
+      'Test retrieval',
+    );
+    expect(
+      container.querySelector('[data-testid="website-tree"]')?.contains(add),
+    ).toBe(false);
+  });
+
+  const files = 'settings.sources.graphrag.view.tabs.files';
+  // The title row and byline, above the tabs.
+  const header = () =>
+    container.querySelector('[role="tablist"]')!.parentElement!
+      .previousElementSibling as HTMLElement;
+  const graph = 'settings.sources.graphrag.view.tabs.graph';
+
+  it('reads the graph again once a page change finishes, and tells the host', async () => {
+    const onPagesChanged = vi.fn();
+    await renderWebsite({ onPagesChanged });
+    await openTab(files);
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(1);
+    await act(async () => buttonByText('START REMOVE')!.click());
+    // The page list shows the change the view holds.
+    expect(
+      container
+        .querySelector('[data-testid="website-tree"]')
+        ?.getAttribute('data-status'),
+    ).toBe('REMOVING');
+    // A removal changes the graph without a build.
+    await act(async () => emitTerminal('completed', 'task-r'));
+    await flush();
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for a sync the host started on the Graph tab, and says so there', async () => {
+    const sync = { startedAt: Date.now(), taskId: 'task-s' };
+    const onSyncSettled = vi.fn();
+    const onPagesChanged = vi.fn();
+    const onBusyChange = vi.fn();
+    await renderWebsite({ sync, onSyncSettled, onPagesChanged, onBusyChange });
+    // The Files tab's page list isn't mounted: the view waits itself.
+    expect(container.querySelector('[data-testid="website-tree"]')).toBeNull();
+    expect(header().textContent).toContain('settings.sources.website.syncing');
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+
+    await act(async () => emitTerminal('completed', 'task-s'));
+    await flush();
+    expect(onSyncSettled).toHaveBeenCalledWith(sync);
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(header().textContent).not.toContain(
+      'settings.sources.website.syncing',
+    );
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("keeps a page change's wait when the Files tab is left", async () => {
+    const onPagesChanged = vi.fn();
+    await renderWebsite({ onPagesChanged });
+    await openTab(files);
+    await act(async () => buttonByText('START REMOVE')!.click());
+    await openTab(graph);
+    expect(container.querySelector('[data-testid="website-tree"]')).toBeNull();
+    expect(header().textContent).toContain('REMOVING');
+
+    await act(async () => emitTerminal('completed', 'task-r'));
+    await flush();
+    expect(onPagesChanged).toHaveBeenCalledTimes(1);
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(header().textContent).not.toContain('REMOVING');
+  });
+
+  it('shows the running change once, in the page list, on the Files tab', async () => {
+    await renderWebsite({ sync: { startedAt: Date.now(), taskId: 'task-s' } });
+    await openTab(files);
+    expect(
+      container
+        .querySelector('[data-testid="website-tree"]')
+        ?.getAttribute('data-status'),
+    ).toBe('settings.sources.website.syncing');
+    expect(header().textContent).not.toContain(
+      'settings.sources.website.syncing',
+    );
+  });
+
+  it("opens a cited chunk in a website source's page list", async () => {
+    await renderWebsite({
+      linkedChunk: { id: 'c7', search: 'Docker', path: 'Deploying/Docker.md' },
+    });
+    const tree = container.querySelector('[data-testid="website-tree"]');
+    expect(tree?.getAttribute('data-initial-path')).toBe('Deploying/Docker.md');
+    expect(tree?.getAttribute('data-linked')).toBe('c7');
+  });
+
+  const badge = () =>
+    container.querySelector('[data-slot="badge"]')?.textContent ?? '';
+
+  it('the header badge follows a graph build, and the totals reload when it ends', async () => {
+    redux.builds = {};
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.view.title');
+
+    redux.builds = {
+      doc: { status: 'building', current: 2, total: 5, nodes: 0, edges: 0 },
+      other: { status: 'building', current: 1, total: 2, nodes: 0, edges: 0 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.buildingPct:40');
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(1);
+
+    redux.builds = {
+      doc: { status: 'building', current: 0, total: 0, nodes: 0, edges: 0 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.building');
+
+    service.getSourceGraph.mockResolvedValue(
+      ok({ ...OVERVIEW, stats: { nodes: 380, edges: 1200 } }),
+    );
+    redux.builds = {
+      doc: { status: 'completed', current: 5, total: 5, nodes: 9, edges: 3 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.view.title');
+    expect(service.getSourceGraph).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain('380 entities');
+
+    // Another source's build leaves this view alone.
+    redux.builds = {
+      other: { status: 'building', current: 1, total: 2, nodes: 0, edges: 0 },
+    };
+    await render();
+    expect(badge()).toBe('settings.sources.graphrag.view.title');
+    redux.builds = {};
   });
 
   it("opens a chunk's file on the Files tab from the chunk drawer", async () => {

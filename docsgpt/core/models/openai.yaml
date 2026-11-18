@@ -29,10 +29,13 @@ models:
     output_cost_per_million: 1.25
     cached_input_cost_per_million: 0.02
   - id: gpt-5.6-sol
+    first_token_timeout: 900
     display_name: GPT-5.6 Sol
     description: Latest GPT-5.6 generation flagship for long-horizon reasoning and agentic work
     context_window: 1050000
     api_flavor: responses
+    # GPT-5.6+ caches only at breakpoints; gpt-5.5 rejects the field.
+    prompt_cache_breakpoints: true
     reasoning_effort: medium
     input_cost_per_million: 5.0
     output_cost_per_million: 30.0

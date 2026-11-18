@@ -16,8 +16,10 @@ vi.mock('../connectors/SignInAgainNotice', () => ({
 }));
 
 import connectorsReducer from '../connectors/connectorsSlice';
+import chatToolsReducer from '../conversation/chatToolsSlice';
 import notificationsReducer, {
   sseEventReceived,
+  sseHealthChanged,
 } from '../notifications/notificationsSlice';
 import { prefSlice } from '../preferences/preferenceSlice';
 import type { RootState } from '../store';
@@ -41,6 +43,7 @@ const makeStore = () =>
       upload: uploadReducer,
       notifications: notificationsReducer,
       connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
     },
   });
 
@@ -119,6 +122,8 @@ describe('MessageInput send with a failed attachment', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     store = makeStore();
+    // The event stream is up unless a test takes it down.
+    store.dispatch(sseHealthChanged('healthy'));
     onSubmit = vi.fn<(text: string) => void>();
   });
 
@@ -130,7 +135,7 @@ describe('MessageInput send with a failed attachment', () => {
     vi.restoreAllMocks();
   });
 
-  const render = async (loading = false) => {
+  const render = async (loading = false, sendBlocked = false) => {
     await act(async () => {
       root.render(
         <MemoryRouter>
@@ -138,6 +143,7 @@ describe('MessageInput send with a failed attachment', () => {
             <MessageInput
               onSubmit={onSubmit}
               loading={loading}
+              sendBlocked={sendBlocked}
               showSourceButton={false}
               showToolButton={false}
               autoFocus={false}
@@ -228,6 +234,20 @@ describe('MessageInput send with a failed attachment', () => {
       'ok-1',
     ]);
     expect(textarea().value).toBe('');
+  });
+
+  // The chat it would go to is still loading: the question waits, kept.
+  it('holds a send while blocked, with no stop control', async () => {
+    await render(false, true);
+    await type('Is this the right chat?');
+    await pressEnter();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(textarea().value).toBe('Is this the right chat?');
+    // The send button, disabled; not the stop control ``loading`` shows.
+    const send = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="conversation.send"]',
+    );
+    expect(send?.disabled).toBe(true);
   });
 
   it('sends when the only attachment failed on the network', async () => {
@@ -612,6 +632,103 @@ describe('MessageInput send with a failed attachment', () => {
     const [row] = store.getState().upload.attachments;
     expect(row.status).toBe('failed');
     expect(row.errorMessage).toBe('Could not parse the file');
+  });
+
+  it('completes a stored file the status reports when its event was missed', async () => {
+    vi.useFakeTimers();
+    taskStatus('SUCCESS', { token_count: 12, mime_type: 'application/pdf' });
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+    });
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('completed');
+    expect(row.token_count).toBe(12);
+  });
+
+  it('asks the status every few seconds while the event stream is down', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    const getTaskStatus = taskStatus('SUCCESS', {
+      token_count: 40,
+      mime_type: 'image/jpeg',
+      metadata: { extraction: { status: 'ok' } },
+    });
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getTaskStatus).toHaveBeenCalledWith('celery-slow', null);
+    const [row] = store.getState().upload.attachments;
+    expect(row.status).toBe('completed');
+    expect(row.token_count).toBe(40);
+    expect(row.mimeType).toBe('image/jpeg');
+
+    // Done: no more questions.
+    const calls = getTaskStatus.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getTaskStatus.mock.calls.length).toBe(calls);
+  });
+
+  it('keeps a file a worker is still on alive while the stream is down', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+    });
+    expect(statusOf()).toBe('processing');
+  });
+
+  it('does not fail a file on silence while neither channel can answer', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    // One answer that a worker has the file, then the status is unreachable
+    // too (the browser is offline).
+    const getTaskStatus = taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    getTaskStatus.mockRejectedValue(new TypeError('Failed to fetch'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20 * 60_000);
+    });
+    expect(statusOf()).toBe('processing');
+
+    // Back online with nothing to hear: the idle window starts again.
+    await act(async () => {
+      store.dispatch(sseHealthChanged('healthy'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5 * 60_000 - 1_000);
+    });
+    expect(statusOf()).toBe('processing');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(statusOf()).toBe('failed');
+  });
+
+  it('stops asking once the event stream is back', async () => {
+    vi.useFakeTimers();
+    store.dispatch(sseHealthChanged('unhealthy'));
+    const getTaskStatus = taskStatus('STARTED');
+    await storeSlow();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getTaskStatus).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      store.dispatch(sseHealthChanged('healthy'));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(getTaskStatus).toHaveBeenCalledTimes(1);
   });
 
   it('gives up on a file no worker took within an hour', async () => {

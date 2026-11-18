@@ -5,6 +5,7 @@ Main user API routes - registers all namespace modules.
 from flask import Blueprint
 
 from docsgpt.api import api
+from .activity import activity_ns
 from .agents import (
     agents_folders_ns,
     agents_guardrails_ns,
@@ -18,6 +19,9 @@ from .artifacts import artifacts_ns
 from .attachments import attachments_ns
 from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
+from .folders import folders_ns
+from .drafter import drafter_ns
+from .mcp_apps import mcp_apps_ns
 from .me import me_ns
 from .models import models_ns
 from .monitors import approvals_ns, monitors_ns, triggers_ns
@@ -33,10 +37,15 @@ from .sources import (
 )
 from .teams import teams_ns
 from .tools import tools_mcp_ns, tools_ns
+from .workflow_runs import workflow_runs_ns
 from .workflows import workflows_ns
+from .workspaces import workspaces_ns
 
 
 user = Blueprint("user", __name__)
+
+# Activity (the Now page, stopping a running answer)
+api.add_namespace(activity_ns)
 
 # Analytics
 api.add_namespace(analytics_ns)
@@ -53,8 +62,16 @@ api.add_namespace(background_jobs_ns)
 # Conversations
 api.add_namespace(conversations_ns)
 
+# Folders (agents and knowledge; /api/agents/folders/* are agent-only aliases)
+api.add_namespace(folders_ns)
+# Draft with DocsGPT (fills a form from a description; session-only)
+api.add_namespace(drafter_ns)
+
 # Current user (identity + roles)
 api.add_namespace(me_ns)
+
+# MCP Apps (interactive tool views in chat)
+api.add_namespace(mcp_apps_ns)
 
 # Models
 api.add_namespace(models_ns)
@@ -97,5 +114,9 @@ api.add_namespace(teams_ns)
 api.add_namespace(tools_ns)
 api.add_namespace(tools_mcp_ns)
 
-# Workflows
+# Workflows, and the runs they leave behind
 api.add_namespace(workflows_ns)
+api.add_namespace(workflow_runs_ns)
+
+# Workspaces (the switcher's list, moving items into and out of a team)
+api.add_namespace(workspaces_ns)

@@ -72,4 +72,32 @@ describe('Usage toolbar', () => {
     expect(empty?.dataset.size).toBe('sm');
     expect(empty?.querySelector('svg')).toBeNull();
   });
+
+  it('names a top user by email over the user id', async () => {
+    getUsage.mockResolvedValue({
+      json: async () => ({
+        success: true,
+        series: [],
+        top_users: [
+          { user_id: 'sub-1', email: 'big@example.com', tokens: 9, cost: 1 },
+          { user_id: 'sub-2', email: null, tokens: 1, cost: 0 },
+        ],
+      }),
+    });
+    const store = configureStore({
+      reducer: { preference: prefSlice.reducer },
+    });
+    await act(async () =>
+      root.render(
+        <Provider store={store}>
+          <Usage />
+        </Provider>,
+      ),
+    );
+    for (let i = 0; i < 5; i += 1) await act(async () => Promise.resolve());
+    const cells = Array.from(
+      container.querySelectorAll('tbody tr td:first-child'),
+    ).map((td) => td.textContent);
+    expect(cells).toEqual(['big@example.comsub-1', 'sub-2']);
+  });
 });

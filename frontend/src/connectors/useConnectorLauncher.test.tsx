@@ -13,18 +13,24 @@ vi.mock('./ConnectWizard', () => ({
     mode,
     connectionId,
     purpose,
+    owner,
     onSynced,
     onClose,
   }: {
     mode: string;
     connectionId?: string;
     purpose?: string;
+    owner?: string;
     onSynced?: (ids: string[]) => void;
-    onClose: (connected?: boolean) => void;
+    onClose: (connected?: boolean, toolIds?: string[]) => void;
   }) => {
     wizardProps.onSynced = onSynced;
     return (
-      <div data-testid="wizard" data-purpose={purpose ?? ''}>
+      <div
+        data-testid="wizard"
+        data-purpose={purpose ?? ''}
+        data-owner={owner ?? ''}
+      >
         <span data-testid="wizard-state">{`${mode}:${connectionId ?? ''}`}</span>
         <button
           type="button"
@@ -36,13 +42,36 @@ vi.mock('./ConnectWizard', () => ({
           data-close="cancel"
           onClick={() => onClose(false)}
         />
+        <button
+          type="button"
+          data-close="tools"
+          onClick={() => onClose(true, ['tool-a', 'tool-b'])}
+        />
         {/* A wizard from before the `connected` argument. */}
         <button type="button" data-close="bare" onClick={() => onClose()} />
       </div>
     );
   },
 }));
-vi.mock('../modals/MCPServerModal', () => ({ default: () => null }));
+// The MCP server form, as a stub that saves on demand.
+type McpSavedStub = (
+  toolId?: string,
+  saved?: { connectionId: string | null },
+) => void;
+const mcpForm = vi.hoisted(() => ({
+  onServerSaved: null as null | McpSavedStub,
+  server: undefined as Record<string, unknown> | undefined,
+}));
+vi.mock('../modals/MCPServerModal', () => ({
+  default: (props: {
+    onServerSaved: McpSavedStub;
+    server?: Record<string, unknown>;
+  }) => {
+    mcpForm.onServerSaved = props.onServerSaved;
+    mcpForm.server = props.server;
+    return <div data-testid="mcp-form" />;
+  },
+}));
 
 import connectorsService from '../api/services/connectorsService';
 import connectorsReducer from './connectorsSlice';
@@ -61,6 +90,22 @@ const LINEAR = {
   sync_ingestor: 'linear',
 } as unknown as ConnectorDefinition;
 
+const DRAWIO = {
+  key: 'mcp:drawio',
+  name: 'draw.io',
+  auth_kind: 'mcp',
+  mcp_url: 'https://mcp.draw.io/mcp',
+  publisher: 'preset',
+  sync_ingestor: null,
+} as unknown as ConnectorDefinition;
+
+const EXCALIDRAW = {
+  ...DRAWIO,
+  key: 'mcp:excalidraw',
+  name: 'Excalidraw',
+  mcp_url: 'https://mcp.excalidraw.com/mcp',
+} as unknown as ConnectorDefinition;
+
 const DRIVE = {
   key: 'google_drive',
   name: 'Google Drive',
@@ -75,12 +120,14 @@ let launchRef: ((c: ConnectorDefinition, o?: LaunchOptions) => void) | null =
 const onConnected = vi.fn();
 const onCancel = vi.fn();
 const onSynced = vi.fn();
+const onNavigate = vi.fn();
 
 function Harness() {
   const { launch, modals } = useConnectorLauncher({
     onConnected,
     onCancel,
     onSynced,
+    onNavigate,
   });
   launchRef = launch;
   return <>{modals}</>;
@@ -146,10 +193,37 @@ describe('useConnectorLauncher', () => {
     expect(wizard()).toBe('reconnect:c1');
   });
 
+  it.each([DRAWIO, EXCALIDRAW])(
+    'opens the no-auth $name preset in the wizard',
+    async (connector) => {
+      await act(async () => launchRef!(connector));
+      expect(wizard()).toBe('connect:');
+    },
+  );
+
   const purpose = () =>
     container
       .querySelector('[data-testid="wizard"]')
       ?.getAttribute('data-purpose');
+
+  it("tells the wizard to connect for the team only when asked, so a team's chat still connects the person's own", async () => {
+    const owner = () =>
+      container
+        .querySelector('[data-testid="wizard"]')
+        ?.getAttribute('data-owner');
+    await act(async () => launchRef!(DRIVE));
+    expect(owner()).toBe('');
+    await act(async () => launchRef!(DRIVE, { owner: 'team' }));
+    expect(owner()).toBe('team');
+    await act(async () =>
+      launchRef!(LINEAR, {
+        mode: 'reconnect',
+        connectionId: 'c1',
+        owner: 'team',
+      }),
+    );
+    expect(owner()).toBe('team');
+  });
 
   it('tells the wizard it was opened for Knowledge', async () => {
     await act(async () => launchRef!(LINEAR, { purpose: 'knowledge' }));
@@ -170,7 +244,7 @@ describe('useConnectorLauncher', () => {
     expect(purpose()).toBe('');
   });
 
-  const closeWith = async (how: 'connected' | 'cancel' | 'bare') =>
+  const closeWith = async (how: 'connected' | 'cancel' | 'bare' | 'tools') =>
     act(async () =>
       container
         .querySelector<HTMLButtonElement>(`[data-close="${how}"]`)!
@@ -201,5 +275,142 @@ describe('useConnectorLauncher', () => {
     await closeWith('bare');
     expect(onConnected).not.toHaveBeenCalled();
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('hands its opener the tools the run set up', async () => {
+    await act(async () => launchRef!(DRIVE));
+    await closeWith('tools');
+    expect(onConnected).toHaveBeenCalledWith(['tool-a', 'tool-b']);
+  });
+
+  it("hands its opener a saved MCP server's tool", async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () => launchRef!(CUSTOM_MCP));
+    expect(container.querySelector('[data-testid="mcp-form"]')).not.toBeNull();
+    // No connection to show a summary for: the run ends on the save.
+    await act(async () => mcpForm.onServerSaved!('mcp-1'));
+    expect(onConnected).toHaveBeenCalledWith(['mcp-1']);
+  });
+
+  it('opens the API tool editor through its opener', async () => {
+    const OPENAPI = {
+      key: 'custom_openapi',
+      name: 'OpenAPI',
+      auth_kind: 'none',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () => launchRef!(OPENAPI));
+    expect(onNavigate).toHaveBeenCalledWith('/settings/tools', {
+      state: { newApiTool: true },
+    });
+  });
+
+  it('hands its opener no tool after an MCP server signs in again', async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        mcpServer: { id: 'mcp-old' },
+      }),
+    );
+    await act(async () => mcpForm.onServerSaved!('mcp-old'));
+    expect(onConnected).toHaveBeenCalledWith([]);
+  });
+  it("reconnects a team's custom sign-in server by its connection, not by the tool", async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp_oauth',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    const mcpServer = {
+      id: 'tool-1',
+      displayName: 'Ops MCP',
+      server_url: 'https://mcp.example.com/mcp',
+      auth_type: 'oauth',
+    };
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        connectionId: 'conn-team',
+        mcpServer,
+        owner: 'team',
+      }),
+    );
+    // The server signs the team in again only when named this way; a tool
+    // id would be the caller's own save, refused to an Admin.
+    expect(mcpForm.server).toEqual({
+      displayName: 'Ops MCP',
+      server_url: 'https://mcp.example.com/mcp',
+      auth_type: 'oauth',
+      owner: 'team',
+      connection_id: 'conn-team',
+    });
+    await act(async () =>
+      mcpForm.onServerSaved!('tool-1', { connectionId: 'conn-team' }),
+    );
+    expect(wizard()).toBe('done:conn-team');
+
+    // The person's own server reconnects by its tool, as before.
+    await act(async () =>
+      launchRef!(CUSTOM_MCP, {
+        mode: 'reconnect',
+        connectionId: 'conn-mine',
+        mcpServer,
+      }),
+    );
+    expect(mcpForm.server).toEqual(mcpServer);
+  });
+
+  it("ends a team's MCP save on the connection it names, never on the caller's own", async () => {
+    const CUSTOM_MCP = {
+      key: 'custom_mcp',
+      name: 'MCP server',
+      auth_kind: 'mcp',
+      mcp_url: null,
+      publisher: 'custom',
+      sync_ingestor: null,
+    } as unknown as ConnectorDefinition;
+    // The caller's own newest sign-in to a custom server.
+    vi.mocked(connectorsService.listConnections).mockResolvedValue({
+      success: true,
+      connections: [
+        { id: 'mine', connector_key: 'custom_mcp', updated_at: '2026-11-17' },
+      ],
+    });
+    await act(async () => launchRef!(CUSTOM_MCP));
+    vi.mocked(connectorsService.listConnections).mockClear();
+    await act(async () =>
+      mcpForm.onServerSaved!('mcp-team', { connectionId: 'conn-team' }),
+    );
+    expect(wizard()).toBe('done:conn-team');
+    // The summary names the new account: the lists are read again for it.
+    expect(connectorsService.listConnections).toHaveBeenCalled();
+
+    // A tool on each person's own sign-in has no connection: the run ends.
+    await act(async () => launchRef!(CUSTOM_MCP));
+    await act(async () =>
+      mcpForm.onServerSaved!('mcp-each', { connectionId: null }),
+    );
+    expect(wizard()).toBeUndefined();
+    expect(onConnected).toHaveBeenCalledWith(['mcp-each']);
   });
 });

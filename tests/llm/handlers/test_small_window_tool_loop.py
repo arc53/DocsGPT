@@ -137,6 +137,49 @@ class TestCompressionThatCannotReduce:
         assert agent.executed == []
 
 
+class TestBudgetBelowTheModelWindow:
+    """An agent's context limit lowers the compression threshold, not what the model can take."""
+
+    def test_tools_still_run_when_only_the_limit_is_crossed(self):
+        llm = _ReadingLLM()
+        agent = _agent(llm, limit_after=0)
+        agent._over_model_threshold = lambda messages: False
+        handler = _ScriptHandler()
+        with patch("docsgpt.core.settings.settings.ENABLE_CONVERSATION_COMPRESSION", True), patch.object(
+            handler, "_perform_mid_execution_compression", return_value=(False, None)
+        ) as compress:
+            events = _drain(handler.handle_tool_calls(agent, _reads(2).tool_calls, {}, [{"role": "system", "content": "s"}]))[0]
+        compress.assert_called()
+        assert agent.executed == ["attachments_read", "attachments_read"]
+        assert agent.context_limit_reached is False
+        assert not [e for e in events if isinstance(e, dict) and e.get("data", {}).get("status") == "skipped"]
+
+    def test_an_exhausted_turn_runs_its_tools_without_compressing(self):
+        llm = _ReadingLLM()
+        agent = _agent(llm, limit_after=0)
+        agent._compression_exhausted = True
+        agent._over_model_threshold = lambda messages: False
+        handler = _ScriptHandler()
+        with patch("docsgpt.core.settings.settings.ENABLE_CONVERSATION_COMPRESSION", True), patch.object(
+            handler, "_perform_mid_execution_compression"
+        ) as compress:
+            _drain(handler.handle_tool_calls(agent, _reads(2).tool_calls, {}, [{"role": "system", "content": "s"}]))
+        compress.assert_not_called()
+        assert agent.executed == ["attachments_read", "attachments_read"]
+        assert agent.context_limit_reached is False
+
+    def test_tools_are_skipped_once_the_model_window_is_crossed(self):
+        llm = _ReadingLLM()
+        agent = _agent(llm, limit_after=0)
+        agent._compression_exhausted = True
+        agent._over_model_threshold = lambda messages: True
+        handler = _ScriptHandler()
+        with patch("docsgpt.core.settings.settings.ENABLE_CONVERSATION_COMPRESSION", True):
+            _drain(handler.handle_tool_calls(agent, _reads(2).tool_calls, {}, [{"role": "system", "content": "s"}]))
+        assert agent.executed == []
+        assert agent.context_limit_reached is True
+
+
 class TestRoomForEachRead:
     def test_the_executor_is_told_the_room_before_each_call(self):
         llm = _ReadingLLM()

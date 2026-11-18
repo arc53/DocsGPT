@@ -4,6 +4,7 @@ from flask import make_response, request
 from flask_restx import fields, Resource
 
 from docsgpt.api.answer.routes.base import answer_ns
+from docsgpt.api.owner_pause import AgentPausedError
 from docsgpt.services.search_service import (
     InvalidAPIKey,
     SearchFailed,
@@ -48,6 +49,8 @@ class SearchResource(Resource):
 
         try:
             return make_response(search(api_key, question, chunks), 200)
+        except AgentPausedError as e:
+            return make_response({"error": e.message, "code": e.code}, 403)
         except InvalidAPIKey:
             return make_response({"error": "Invalid API key"}, 401)
         except SearchFailed:

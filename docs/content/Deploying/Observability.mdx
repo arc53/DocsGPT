@@ -1,7 +1,7 @@
 ---
 title: Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
-lastUpdated: 2026-10-02
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -84,7 +84,7 @@ services:
       - OTEL_SERVICE_NAME=docsgpt-backend
   worker:
     # The bundled worker command behind opentelemetry-instrument.
-    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings
+    command: opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     environment:
       - OTEL_SERVICE_NAME=docsgpt-celery-worker
 ```
@@ -111,8 +111,14 @@ reach `opentelemetry-instrument` before it boots the SDK:
 
 ```bash
 dotenv run -- opentelemetry-instrument uvicorn docsgpt.asgi:asgi_app --port 7091
-dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B --pool=solo
+dotenv run -- opentelemetry-instrument celery -A docsgpt.app.celery worker -l INFO -B --pool=solo -X analytics
 ```
+
+`-X analytics` keeps the conversation-analytics sweep off the solo worker, where it would hold the
+only slot and searches would time out waiting for their query embedding. With
+`DECISION_ANALYTICS_ENABLED` on, run
+`dotenv run -- opentelemetry-instrument docsgpt worker --analytics` next to it (see
+[the analytics queue](/Deploying/Background-Jobs#the-analytics-queue)).
 
 Trace the ASGI app rather than `flask run`, which serves only the Flask app: the
 [ASGI-only routes](/Deploying/Development-Environment#asgi-only-features) return 404 there and
@@ -141,8 +147,9 @@ the MCP `search_docs` tool, and graph builds.
 | `retrieval` | A retriever or the multi-source dispatcher searches |
 | `embeddings` | The query is embedded |
 | `search` | One source is searched |
-| `rerank` | Prescreening filters retrieved chunks |
+| `rerank` | LLM screening filters retrieved chunks, or the decision model scores them (`rerank relevance`) |
 | `guardrail` | A guardrail calls a remote check or fires |
+| `decision` | A feature asks the [decision model](/Models/decision-model) (numbers only, never the text) |
 | `step` | A workflow node or research phase runs |
 
 Traces are stored in the `request_traces` table and shown in the app: open
@@ -152,7 +159,8 @@ cost and details. See [Analytics and Logs](/Using/analytics-and-logs) for a
 user's guide to those pages.
 
 Stored traces keep short previews — tool arguments and results, retrieved
-chunk titles and snippets, rephrased queries, answer excerpts — truncated
+chunk titles and snippets (with each chunk's relevance where the decision
+model scored it), rephrased queries, answer excerpts — truncated
 and with secret-named fields redacted. Full prompts are never stored. When a
 guardrail fires during a request, every preview is dropped from its trace.
 
@@ -184,6 +192,74 @@ OTel trace id so you can move between the two.
 Two metrics are recorded for every model call:
 `gen_ai.client.token.usage` and `gen_ai.client.operation.duration`.
 
+A call to the [decision model](/Models/decision-model) is exported as a
+`decision {feature}` span: a client span in API mode, an internal one when
+the model runs in the process. It records the same two metrics with
+operation `decide` and provider `arc-decide`, plus a
+`docsgpt.decision.calls` counter by feature and status.
+
+### Relevance in retrieval
+
+When the decision model scores retrieved chunks (a source's
+[relevance](/Sources/Per-source-configuration#relevance)), each scoring call
+is a `rerank relevance` step under the `retrieval` step, with the `decision`
+step inside it. It carries `gen_ai.operation.name=rerank`,
+`docsgpt.rerank.backend=decision`, `docsgpt.rerank.feature` (`rag_rerank` in
+answers and agents' searches, `retrieval_test` in a retrieval test),
+`docsgpt.rerank.arm`, `docsgpt.candidate_count`, `docsgpt.kept_count`,
+`docsgpt.relevance_threshold`, `docsgpt.top_relevance`,
+`docsgpt.query_source` (`rephrased` when it judged the standalone rephrase,
+else `raw`), `docsgpt.relevance.passage_select` (`best` where the model runs on
+a CPU and scores each chunk's best window, else `full`),
+`docsgpt.relevance.passage_tokens`, and `docsgpt.decision.fallback`, the reason
+when it kept the retrieval's own selection (`timeout`, `loading`,
+`circuit_open`, ...). The `retrieval` step carries `docsgpt.rerank.arm` for the
+request's rollout arm.
+
+The same call adds an entry to the answer's
+[decision record](/Models/decision-model#what-is-recorded), numbers and labels
+only:
+
+```json
+{"feature": "rag_rerank", "round": 0, "status": "ok", "applied": true, "ms": 412.0,
+ "outcome": {"candidates": 20, "kept": 6, "replaced": 3, "top": 0.81, "threshold": 0.0,
+             "query_source": "rephrased", "arm": "on", "passage_select": "full", "passage_tokens": null}}
+```
+
+`replaced` counts the kept chunks that retrieval would not have returned
+without the model, `top` is the highest relevance scored, `threshold` is the
+strictest `min_relevance` of the sources scored together (0 reorders only),
+and `applied` is `false` after a failure. A request in the rollout's control arm
+(`DECISION_RELEVANCE_ROLLOUT_PERCENT` below 100) with a source whose relevance
+is on asks the model nothing and records this entry, so the two arms can be
+counted:
+
+```json
+{"feature": "rag_rerank", "status": "skipped", "outcome": {"arm": "control"}}
+```
+
+Per-day call counts are in `decision_usage` under the same feature labels.
+
+### Conversation analytics
+
+The [analytics sweep](/Models/decision-model#conversation-analytics) runs outside any request, so it leaves no execution trace. Its calls are counted in `decision_usage` under two feature labels: `analytics_turn` (answers, the replies to them and each user message) and `analytics_conversation` (goal met and the agent's topics that can overlap). Each sweep logs one `analytics_sweep` line from the worker with its counts (`messages`, `conversations`, `calls`, `states`, `rows`, `errors`, `timeouts`, `truncated`), `ms`, and `stopped`: `budget` when its time ran out, `unavailable` (or `failed`) when the model could not be reached or answered nothing, `timeout` when chat kept the model busy, `lock_lost` when its lock ran out and another sweep took over, or `null` when it finished. Sweeps that keep stopping on `timeout` mean labels lag behind the traffic.
+
+### Prompt-injection scanning
+
+The [`injection_model` guardrail](/Agents/guardrails#injection_model--prompt-injection-model) asks the decision model under the stage's `guardrail` step, whose `decision` steps carry the feature label of the stage. At `retrieval` and `attachment`, where it scores each document or file on its own, the `guardrail` step also carries `docsgpt.guardrail.items` (documents or files checked), `docsgpt.guardrail.withheld`, `docsgpt.guardrail.cache_hits` (scores read from the cache or stored with a file), `docsgpt.guardrail.live` (scored during the turn) and `docsgpt.guardrail.lazy` (queued for background scoring), next to `docsgpt.guardrail.stage` and `docsgpt.guardrail.checks`.
+
+| Feature label | What is scored |
+| --- | --- |
+| `injection_input` | The user's message |
+| `injection_retrieval` | Retrieved documents and search hits, during the turn |
+| `injection_tool_result` | A tool result |
+| `injection_attachment` | Attached files, during the turn |
+| `injection_attachment_parse` | A chat attachment, in the background once uploaded |
+| `injection_lazy` | What a turn could not score in time, in the background |
+| `injection_tool_description` | MCP tool descriptions, when a server is saved or refreshed |
+
+Background scoring runs outside any request and leaves no trace; it is counted in `decision_usage` like every call. Texts answered from the score cache are counted there too, under status `cached`, so the texts checked per feature are the model-scored states plus the `cached` ones. Each chat-time evaluation also adds an entry to the answer's [decision record](/Models/decision-model#what-is-recorded). A flagged or withheld document or file writes a [guardrail event](/Agents/guardrails#the-audit-journal) whose `item_ref` names it: `chunk:<source_id>:<chunk_key>` or `attachment:<id>`.
+
 Backends that understand the GenAI conventions — Langfuse
 (`/api/public/otel`), Arize Phoenix, Datadog LLM Observability, Grafana —
 render these as LLM traces with token and cost views.
@@ -207,6 +283,63 @@ This adds the same redacted previews the app stores (for example
 
 The GenAI conventions are still in development upstream, so attribute names
 may change in later releases.
+
+## Queue and connection gauge
+
+Once a minute, the `sse-connections-gauge` beat task logs a line whose message is `sse_gauge`. Its attributes
+describe the live-update connections and every Celery queue the worker declares (`docsgpt`, `parsing`,
+`embeddings`, `ingest`, `analytics`, or the names you set for them):
+
+| Attribute | Meaning |
+| --- | --- |
+| `connected_users` | Users with at least one open live-update (SSE) connection. |
+| `connections` | Open live-update connections in total. |
+| `queue_<name>_depth` | Messages waiting in the queue, across all priorities. |
+| `queue_<name>_wait_s` | How long the task at the head of the queue has been waiting at the head, in seconds. It is a lower bound: the timer starts when a task reaches the head, so the time it spent queued behind other tasks isn't counted, and it is measured between gauge runs, so it also lags by up to a minute. |
+| `queue_<name>_in_flight` | Tasks from the queue that a worker is running now. |
+
+`<name>` is the queue name in lower case, with any character other than a letter or digit replaced by `_`,
+such as `queue_ingest_wait_s`.
+
+Both connection counts come from the leases that streams hold for the per-user cap, so they're only accurate while
+`SSE_MAX_CONCURRENT_PER_USER` is above 0. With the cap at 0, streams take no leases and both counts read 0 even while
+streams are open.
+
+Workers report their running tasks themselves, every 30 seconds, so `in_flight` keeps counting an ingest that
+runs for hours, past the broker's visibility timeout (`CELERY_VISIBILITY_TIMEOUT`). A task whose worker was killed
+stops counting about 90 seconds later. The queue numbers need a Redis broker: with another broker, the line carries
+only the two connection counts.
+
+The connection counts are read from the cache Redis (`CACHE_REDIS_URL`) and the queue numbers from the broker
+(`CELERY_BROKER_URL`), each on its own. If the cache can't be read, the line is logged without `connected_users` and
+`connections`; if the broker can't be read, it's logged without the queue fields. The line is skipped only when
+neither can be read, as when the cache and the broker share one Redis that is down.
+
+The attributes reach your backend when [OTLP log export](#enabling) is on (`OTEL_LOGS_EXPORTER=otlp`). On stdout,
+the worker's `Task ...sse_connections_gauge_task[...] succeeded` line prints the same numbers.
+
+### Example alert: a stuck lane
+
+A lane that has stopped draining shows a growing `wait_s` while `in_flight` stays at the number of worker slots.
+To be told when the ingest lane's head task has waited at the head for more than 30 minutes, alert on the largest
+`queue_ingest_wait_s` over the last 10 minutes of `sse_gauge` lines:
+
+```kusto
+['docsgpt']
+| where body == "sse_gauge"
+| summarize wait_s = max(toint(['attributes.queue_ingest_wait_s'])) by bin(_time, 10m)
+| where wait_s > 1800
+```
+
+The query is in Axiom's APL, for logs exported over OTLP into a dataset named `docsgpt`; any backend that can filter
+on a log attribute and compare its maximum to a threshold works the same way. Set the threshold above your longest
+normal wait: with one `-Q ingest` slot, a new source waits for the one ahead of it to finish. Because `wait_s` counts
+only the time at the head, a task queued behind others has usually waited longer than the alert says by the time
+it fires; a rising `depth` with a flat `in_flight` shows the same backlog sooner. The other queues carry
+short tasks, so a lower threshold, such as 5 minutes on `queue_docsgpt_wait_s`, `queue_parsing_wait_s` and
+`queue_embeddings_wait_s`, catches a backed-up control lane. Also alert when no `sse_gauge` line arrives for 10
+minutes, which means beat or the worker that runs it has stopped, or that neither the cache Redis nor the broker
+can be read.
 
 ## Backend examples
 

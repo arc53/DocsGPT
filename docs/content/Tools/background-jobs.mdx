@@ -1,7 +1,7 @@
 ---
 title: Background Jobs and Auto-Resume
 description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
-lastUpdated: 2026-10-06
+lastUpdated: 2026-10-20
 ---
 
 import { Callout } from 'nextra/components';
@@ -34,10 +34,12 @@ The model is told not to run the call again, not to wait on it and not to guess 
 its turn by telling the user in plain words that the work is running (without the job id or how it is resumed). The call's entry in the conversation shows as running until the job ends.
 
 The model can also start a call as a job at once with `background=true`. The argument is offered on
-`code_executor`, MCP tools, API tools and `read_webpage`, in chat turns only. A `code_executor` run started
-that way without a `timeout` may run for the whole job lifetime (`BACKGROUND_JOB_MAX_SECONDS`, within
-`SANDBOX_EXEC_MAX_TIMEOUT`) instead of the 60-second default. A background run that hits its timeout is
-reported to the user, never re-run unless they ask.
+`code_executor`, MCP tools, API tools, `read_webpage` and a [remote device](/Tools/remote-device)'s
+`run_command`, in chat turns only. A `code_executor` run started that way without a `timeout` may run for the
+whole job lifetime (`BACKGROUND_JOB_MAX_SECONDS`, within `SANDBOX_EXEC_MAX_TIMEOUT`) instead of the 60-second
+default; a device command may run up to `DEVICE_JOB_MAX_SECONDS`. A background run that hits its timeout is
+reported to the user, never re-run unless they ask. Over the job caps, a `background=true` call runs in the
+foreground with the foreground limits.
 
 Some calls are never handed off: client-side tools (the `/v1` client tool calls), calls inside workflow nodes,
 and scheduled and webhook runs. A tool that needs approval starts its clock only after it is approved.
@@ -47,6 +49,7 @@ and scheduled and webhook runs. A tool that needs approval starts its clock only
 | Runner | When | Survives an API restart |
 | --- | --- | --- |
 | Sandbox | Every `code_executor` run on Daytona; a `background=true` run on the Jupyter runner | Yes |
+| Device | A `remote_device` command: it runs on the paired machine | Yes |
 | Worker | `background=true` on other tools: the whole call runs in a Celery worker | Until the worker dies |
 | In-process | Any other call that outlived the window (and Jupyter runs, which keep their kernel variables) | No |
 
@@ -56,6 +59,11 @@ On Daytona every chat run starts this way (about 60 ms more than before for a tr
 costs nothing. On the Jupyter runner a normal run stays in the kernel, so variables persist; a `background=true`
 run is a separate Python process that **does not share the kernel's variables**, only the workspace files.
 
+A **device** job is a command on a paired machine. A Celery poller reads its output from the device broker,
+applies its `watch`, and finishes the job with the exit code and output once the device reports. While the
+device is offline the job shows "waiting for the device" and picks up again when it reconnects; one whose
+report never arrives is marked lost (see [Remote Device](/Tools/remote-device#long-commands-as-background-jobs)).
+
 A job that a process was running when the process died is marked **lost** within about two minutes. The agent
 is resumed with a note that the work may or may not have taken effect and should be verified before retrying.
 
@@ -64,7 +72,9 @@ is resumed with a note that the work may or may not have taken effect and should
 When a job finishes in a conversation auto-resume applies to (see below for the poll-only ones), the
 conversation is resumed with a **continuation turn**: a headless turn of the same agent
 and model, given the result as an event that is marked as not coming from the user. It answers in the same
-conversation, and a `conversation.continued` event tells open tabs about the new message.
+conversation, and its message is written as it runs, as a chat answer is: an open chat streams it, the sidebar
+marks the chat working, a reload picks it up where it is, and Stop ends it. A `conversation.continued` event
+tells open tabs once it is done.
 
 - **One delivery.** A result reaches the model once. If the model already read it with `check_job`, or the user
   wrote before it was delivered, the continuation does not repeat it.
@@ -74,7 +84,12 @@ conversation, and a `conversation.continued` event tells open tabs about the new
   the model (their message itself is stored unchanged).
 - **Batched.** Results that land together, up to eight, are answered in one turn.
 - **Silence is allowed.** If nothing is worth telling the user, the model answers `NO_REPLY` and nothing is
-  added to the conversation.
+  added to the conversation. The answer is not shown while it could still be `NO_REPLY`; the message that
+  showed the turn working is removed.
+- **Stop means stop.** Pressing Stop on a turn (a chat answer or a continuation) cancels the background jobs
+  that turn started, so none of them resumes the conversation; a job that had already finished has its
+  pending result withdrawn. A call still in its foreground window is handed off at once and cancelled. Closing
+  the tab is not a Stop: jobs keep running and resume the conversation as usual.
 - **A turn like any other.** A continuation's tool calls and files belong to its own message, a slow call in it
   becomes a background job too, and it has `check_job` (to cancel a failing job a watch pattern reported, for
   example). Chains stay bounded by `AUTO_RESUME_MAX_CONSECUTIVE` and the job caps.
@@ -91,10 +106,11 @@ conversation, and a `conversation.continued` event tells open tabs about the new
 `source` `monitor`, `trigger` or `approval`, or `monitor_paused` and `monitor_expired` when a monitor reports on
 itself.
 
-Continuations are billed to the conversation's owner like any turn, and only run in conversations the owner
-holds outright. Conversations through the OpenAI-compatible `/v1` API, an agent API key or the widget, a
-shared agent's public link, or an agent someone else owns get **poll-only** jobs: the running result says so,
-and the result waits for `check_job` or the next message.
+Continuations are billed to the person chatting, like any turn of their chat, and only run in their own chats:
+on their own agents, on an agent shared with them while they can still use it, and in a team workspace on the
+team's agent while they are still in the team. Conversations through the OpenAI-compatible `/v1` API, an agent
+API key or the widget, a shared agent's public link, and team chats without an agent get **poll-only** jobs:
+the running result says so, and the result waits for `check_job` or the next message.
 
 ## check_job
 
@@ -110,15 +126,17 @@ check_job(job_id?, action="get" | "cancel", wait_seconds=0)
   except for a job the same turn started: that one answers at once, since its result resumes the conversation
   anyway.
 - Without a `job_id`, it lists this conversation's jobs. It never sees other conversations' jobs.
-- `cancel` asks the job to stop. A sandbox run is stopped; an in-process call can't be interrupted and ends
-  `cancelled` when it returns. A step already under way may still complete.
+- `cancel` asks the job to stop. A sandbox run is stopped; a device command is taken off the device's queue,
+  or the device is told to kill it; an in-process call can't be interrupted and ends `cancelled` when it
+  returns. A step already under way may still complete.
 
 Statuses follow MCP Tasks: `working`, `completed`, `failed`, `cancelled`. A lost job reads as `failed` with the
 lost note.
 
 ## watch
 
-A `code_executor` call can carry a `watch` spec for what its output may do while it runs:
+A `code_executor` call or a remote device's `run_command` can carry a `watch` spec for what its output may do
+while it runs:
 
 ```json
 "watch": {"patterns": ["Traceback|Error|Killed"], "progress_regex": "PROGRESS (\\d+)%", "heartbeat_s": 0}
@@ -135,16 +153,18 @@ output of a child process captured with `subprocess.run(..., capture_output=True
 
 In a conversation that auto-resume applies to, completion and failure always resume the agent; in a poll-only
 one (see above) the result waits for `check_job` or the next message, and watch patterns and heartbeats wake
-nothing. Output during a run is available for sandbox jobs only; for other jobs `progress_regex` is applied to
-the final result.
+nothing. Output during a run is available for sandbox and device jobs; for other jobs `progress_regex` is
+applied to the final result.
 
 ## Events
 
 The app's event stream (`/api/events`) carries:
 
-- `job.updated`: `{job_id, conversation_id, status, progress, tool_name, action_name}`
+- `job.updated`: `{job_id, conversation_id, status, progress, tool_name, action_name, status_message}`; a
+  device job waiting for its device has `progress.waiting_for = "device"`
 - `conversation.continued`: `{conversation_id, message_id, source}`
-- `notification.created`: `{kind, title, body, url, conversation_id}`
+- `notification.created`: `{kind, title, body, url, conversation_id}`, plus `schedule_id` for a notice about a
+  schedule
 
 A continuation's message carries `metadata.wake = {source, ref_id, dedupe_key}`. Jobs can be read and cancelled
 through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_jobs/<id>` and
@@ -169,16 +189,20 @@ through `GET /api/background_jobs?conversation_id=…`, `GET /api/background_job
 When a continuation answers (never for `NO_REPLY`), or a one-time scheduled task (a reminder) answers in its
 conversation, the user is notified according to where they are:
 
-1. **Watching the conversation** (a visible tab shows it): nothing; the chat updates.
-2. **A DocsGPT tab open elsewhere**: a toast with an **Open** button that goes to the conversation. A hidden tab
-   also shows a system notification, if the browser allows it.
+1. **Watching the conversation** (a tab shows it, is visible, and its window has focus): nothing; the chat
+   updates.
+2. **A DocsGPT tab open elsewhere**, or the conversation open in a window that is behind another app or not
+   focused: a toast with an **Open** button that goes to the conversation. A tab nobody is looking at (hidden, or
+   its window not focused) also shows a system notification, if the browser allows it.
 3. **No tab open**: a Web Push notification to the browsers the user turned it on in, if the operator set it
    up (below).
 
-Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it.
+Unless the user is watching, the conversation is also marked **unread** in the sidebar until they open it, or
+until they come back to the window that already shows it. The tab title counts the chats that need the user, unread, failed or waiting for an approval: `(2) DocsGPT`. While a job runs, the chat shows a spinner in the sidebar and the job is listed, with **Cancel**, under **Running** in [Activity → Now](/Using/activity#now); a job that failed or was lost turns the chat's mark red until it is opened (see [status marks](/Using/activity#status-marks-on-sidebar-chats)).
 
 Tabs report what they show to `POST /api/presence` (`{tab_id, conversation_id, visible, closing?}`) when their
-route or visibility changes and every 20 seconds while visible; a report counts for 45 seconds, and a closing
+route, visibility or window focus changes and every 20 seconds while visible; `visible` is true only while the
+tab is visible and its window has focus; a report counts for 45 seconds, and a closing
 tab says so. When Redis is unavailable, the user counts as away, so the notification still goes out.
 
 The toast and the push lead with the kind of event:
@@ -193,6 +217,12 @@ The toast and the push lead with the kind of event:
 | `trigger` | Webhook received |
 | `approval` | Approval received |
 | `schedule` | Scheduled task finished |
+| `schedule_paused` | Scheduled task paused |
+| `schedule_failed` | Scheduled task failed |
+
+A recurring schedule that [pauses itself](/Agents/schedules#auto-pause) notifies with `schedule_paused` (and
+`schedule_failed`, when the operator turns that on); its **Open** goes to the schedule, and its body is the
+last run's error.
 
 Then comes what the event is about (the conversation's name for a job, a monitor's description, a schedule's
 name) and the start of the answer as plain text, Markdown removed. Any other kind shows its own title. Toasts are
@@ -254,8 +284,8 @@ failing is dropped.
 ## Running it
 
 <Callout type="info">
-  Background jobs need a Celery worker and the beat scheduler. The worker runs continuations, sandbox pollers
-  and `background=true` calls; beat runs the sweep that reports lost jobs and redelivers results. See
+  Background jobs need a Celery worker and the beat scheduler. The worker runs continuations, sandbox and
+  device pollers and `background=true` calls; beat runs the sweep that reports lost jobs and redelivers results. See
   [Development Environment](/Deploying/Development-Environment).
 </Callout>
 
@@ -264,6 +294,7 @@ failing is dropped.
 | `BACKGROUND_JOBS_ENABLED` | `true` | Hand slow calls off at all |
 | `BACKGROUND_YIELD_SECONDS` | `30` | How long a turn waits before handing a call off |
 | `BACKGROUND_JOB_MAX_SECONDS` | `1000` | Hard lifetime of a job |
+| `DEVICE_JOB_MAX_SECONDS` | `3600` | Hard lifetime of a job running a command on a paired device |
 | `BACKGROUND_MAX_JOBS_PER_CONVERSATION` | `2` | Running jobs per conversation; over it a call stays in the foreground |
 | `BACKGROUND_MAX_JOBS_PER_USER` | `5` | Running jobs per user |
 | `BACKGROUND_RESULT_RETENTION_DAYS` | `7` | How long finished jobs are kept |

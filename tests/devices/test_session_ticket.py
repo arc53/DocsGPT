@@ -173,7 +173,7 @@ class _Repo:
     def find_by_token_hash(self, _token_hash):
         return _device_row()
 
-    def touch_last_seen(self, _device_id):
+    def touch_last_seen(self, _device_id, capabilities=None):
         pass
 
 

@@ -16,6 +16,9 @@ from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakes
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.fixture(autouse=True)
 def quiet(monkeypatch):
     monkeypatch.setattr(jobs, "_deliver", lambda row: None)
@@ -279,3 +282,99 @@ class TestRouteFailures:
         with app.test_request_context("/x"):
             request.decoded_token = {"sub": "u1"}
             assert routes.CancelBackgroundJob().post("00000000-0000-0000-0000-000000000000").status_code == 404
+
+
+class TestRoutesAfterLeavingTheTeam:
+    """A job in a team's chat or workflow run reads as gone to someone who left that team, as the chat does."""
+
+    @pytest.fixture
+    def app(self):
+        return Flask(__name__)
+
+    def _call(self, app, resource, method, path, user="eddie", **kwargs):
+        with app.test_request_context(path, method=method.upper()):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            return getattr(resource(), method)(**kwargs)
+
+    def _team(self, engine):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+        with engine.begin() as conn:
+            team_id = str(TeamsRepository(conn).create("Ops", "ops-jobs", "alice")["id"])
+            TeamMembersRepository(conn).add_member(team_id, "eddie", "team_editor")
+        return team_id
+
+    def _remove(self, engine, team_id):
+        from sqlalchemy import text
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("DELETE FROM team_members WHERE team_id = CAST(:t AS uuid) AND user_id = 'eddie'"), {"t": team_id}
+            )
+
+    def _team_chat_job(self, engine, team_id):
+        with engine.begin() as conn:
+            repo = ConversationsRepository(conn)
+            conv = repo.create("eddie", "team chat", team_id=team_id)
+            message = repo.append_message(str(conv["id"]), {"prompt": "p", "response": "r"})
+        conversation_id = str(conv["id"])
+        return conversation_id, _job(conversation_id, str(message["id"]), user_id="eddie")
+
+    def test_a_team_chats_job_is_not_found_after_leaving(self, app, bg_db):
+        from docsgpt.api.user.background_jobs.routes import BackgroundJob, BackgroundJobs, CancelBackgroundJob
+
+        team_id = self._team(bg_db)
+        conversation_id, job = self._team_chat_job(bg_db, team_id)
+        listing = f"/api/background_jobs?conversation_id={conversation_id}"
+        assert self._call(app, BackgroundJob, "get", "/x", job_id=job["id"]).status_code == 200
+        assert len(self._call(app, BackgroundJobs, "get", listing).get_json()["jobs"]) == 1
+
+        self._remove(bg_db, team_id)
+        jobs.finalize(job["id"], status="completed", result={"text": "secret", "status": "completed"})
+
+        assert self._call(app, BackgroundJob, "get", "/x", job_id=job["id"]).status_code == 404
+        assert self._call(app, BackgroundJobs, "get", listing).status_code == 404
+        assert self._call(app, CancelBackgroundJob, "post", "/x", job_id=job["id"]).status_code == 404
+
+    def test_a_running_job_cannot_be_cancelled_after_leaving(self, app, bg_db):
+        from docsgpt.api.user.background_jobs.routes import CancelBackgroundJob
+
+        team_id = self._team(bg_db)
+        _, job = self._team_chat_job(bg_db, team_id)
+        self._remove(bg_db, team_id)
+
+        assert self._call(app, CancelBackgroundJob, "post", "/x", job_id=job["id"]).status_code == 404
+        assert _get(bg_db, job["id"])["cancel_requested_at"] is None
+
+    def test_a_team_workflow_runs_job_is_not_found_after_leaving(self, app, bg_db):
+        from docsgpt.api.user.background_jobs.routes import BackgroundJob, CancelBackgroundJob
+        from docsgpt.storage.db.repositories.workflow_runs import WorkflowRunsRepository
+        from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        team_id = self._team(bg_db)
+        with bg_db.begin() as conn:
+            workflow = WorkflowsRepository(conn).create(principal_id(team_id), "Flow", created_by="eddie")
+            run = WorkflowRunsRepository(conn).create(str(workflow["id"]), "eddie", "running")
+            job, _ = BackgroundJobsRepository(conn).create(
+                user_id="eddie", tool_name="read_webpage", action_name="read", max_seconds=60,
+                workflow_run_id=str(run["id"]),
+            )
+        job_id = str(job["id"])
+        assert self._call(app, BackgroundJob, "get", "/x", job_id=job_id).status_code == 200
+
+        self._remove(bg_db, team_id)
+
+        assert self._call(app, BackgroundJob, "get", "/x", job_id=job_id).status_code == 404
+        assert self._call(app, CancelBackgroundJob, "post", "/x", job_id=job_id).status_code == 404
+
+    def test_a_personal_chats_job_still_reads(self, app, bg_db, conversation):
+        from docsgpt.api.user.background_jobs.routes import BackgroundJob, CancelBackgroundJob
+
+        conversation_id, message_id = conversation
+        job = _job(conversation_id, message_id)
+        assert self._call(app, BackgroundJob, "get", "/x", user="u1", job_id=job["id"]).status_code == 200
+        assert self._call(app, CancelBackgroundJob, "post", "/x", user="u1", job_id=job["id"]).status_code == 200

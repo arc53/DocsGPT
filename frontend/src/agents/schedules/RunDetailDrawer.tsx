@@ -1,5 +1,8 @@
+import { ArrowRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
+import { Button } from '@/components/ui/button';
 import { CodeBlock } from '@/components/ui/code-block';
 import {
   DescriptionItem,
@@ -9,6 +12,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { PanelBody, PanelHeader, SidePanel } from '@/components/ui/side-panel';
 import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
+import { isPauseSkip, runReason } from './runReason';
 import ScheduleStatusBadge from './StatusBadge';
 
 export type RunDetailDrawerProps = {
@@ -23,6 +27,9 @@ export default function RunDetailDrawer({
 }: RunDetailDrawerProps) {
   const { t } = useTranslation();
   if (!run) return null;
+  const reason = runReason(run);
+  // A run skipped while paused for its payer: a reason, not an error.
+  const pauseSkip = isPauseSkip(run);
   return (
     <SidePanel
       open
@@ -58,21 +65,39 @@ export default function RunDetailDrawer({
             })}
           </DescriptionItem>
         </DescriptionList>
+        {run.conversation_id && (
+          <Button variant="link" size="sm" className="-ml-3 self-start" asChild>
+            <Link to={`/c/${run.conversation_id}`} onClick={onClose}>
+              {t('agents.schedules.runDetails.openConversation')}
+              <ArrowRight aria-hidden className="size-3" />
+            </Link>
+          </Button>
+        )}
         {run.error && (
           <section className="flex flex-col gap-1">
             <SectionHeader
               as="h3"
               size="xs"
-              tone="destructive"
+              tone={pauseSkip ? 'default' : 'destructive'}
               title={
-                run.error_type
-                  ? t('agents.schedules.runDetails.errorWithType', {
-                      type: run.error_type,
-                    })
+                reason
+                  ? t(
+                      pauseSkip
+                        ? 'agents.schedules.runDetails.skippedWithType'
+                        : 'agents.schedules.runDetails.errorWithType',
+                      {
+                        // A label with an apostrophe; React escapes on render.
+                        interpolation: { escapeValue: false },
+                        type: t(`activity.now.errorType.${reason}`, {
+                          defaultValue: reason,
+                        }),
+                      },
+                    )
                   : t('agents.schedules.runDetails.error')
               }
             />
-            <CodeBlock maxHeight="sm">{run.error}</CodeBlock>
+            {/* A pause has no text beyond its reason. */}
+            {!pauseSkip && <CodeBlock maxHeight="sm">{run.error}</CodeBlock>}
           </section>
         )}
         {run.output && (

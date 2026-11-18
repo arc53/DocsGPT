@@ -42,6 +42,7 @@ const respond = (body: unknown, ok = true) =>
 
 const getUsers = vi.fn();
 const getAdmins = vi.fn();
+const getUser = vi.fn();
 const grantAdmin = vi.fn();
 const revokeAdmin = vi.fn();
 const setUserActive = vi.fn();
@@ -50,6 +51,7 @@ vi.mock('../api/services/adminService', () => ({
   default: {
     getUsers: (...a: unknown[]) => getUsers(...a),
     getAdmins: (...a: unknown[]) => getAdmins(...a),
+    getUser: (...a: unknown[]) => getUser(...a),
     grantAdmin: (...a: unknown[]) => grantAdmin(...a),
     revokeAdmin: (...a: unknown[]) => revokeAdmin(...a),
     setUserActive: (...a: unknown[]) => setUserActive(...a),
@@ -100,6 +102,7 @@ describe('admin Users actions', () => {
     [
       getUsers,
       getAdmins,
+      getUser,
       grantAdmin,
       revokeAdmin,
       setUserActive,
@@ -140,6 +143,75 @@ describe('admin Users actions', () => {
     await flush();
     return result;
   };
+
+  it('a row shows the email over the full user id', async () => {
+    await render({ email: 'priya@example.com' });
+    const cell = container.querySelector('tbody td')!;
+    expect(cell.textContent).toContain('priya@example.com');
+    expect(cell.textContent).toContain('priya');
+  });
+
+  it('a row without an email shows the user id alone', async () => {
+    await render({ email: null });
+    expect(container.querySelector('tbody td')!.textContent).toBe('priya');
+  });
+
+  it('the detail dialog shows the email and the user id', async () => {
+    await render({ email: 'priya@example.com' });
+    getUser.mockImplementation(() =>
+      respond({
+        success: true,
+        user: { user_id: 'priya', email: 'priya@example.com', active: true },
+        roles: ['user'],
+        counts: {},
+        recent_events: [],
+      }),
+    );
+    await clickOption('View details');
+    expect(getUser).toHaveBeenCalledWith('priya', 'tok');
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const items = Array.from(dialog.querySelectorAll('dt')).map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    expect(items).toContainEqual(['Email', 'priya@example.com']);
+    expect(items).toContainEqual(['User ID', 'priya']);
+  });
+
+  it('the detail dialog says when no email is on file', async () => {
+    await render();
+    getUser.mockImplementation(() =>
+      respond({
+        success: true,
+        user: { user_id: 'priya', email: null, active: true },
+        roles: ['user'],
+        counts: {},
+        recent_events: [],
+      }),
+    );
+    await clickOption('View details');
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    const items = Array.from(dialog.querySelectorAll('dt')).map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling?.textContent,
+    ]);
+    expect(items).toContainEqual(['Email', 'Not on file']);
+    expect(items).toContainEqual(['User ID', 'priya']);
+  });
+
+  it('a confirm names the user by email and id (emails are not unique)', async () => {
+    await render({ email: 'priya@example.com' });
+    await clickOption('Deactivate');
+    expect(confirmProps.current?.message).toBe(
+      'Deactivate "priya@example.com (priya)"?',
+    );
+  });
+
+  it('a confirm names a user without an email by id alone', async () => {
+    await render({}, ['priya']);
+    await clickOption('Revoke admin');
+    expect(confirmProps.current?.message).toBe('Revoke admin from "priya"?');
+  });
 
   it('Make admin shows no success toast and reloads the list', async () => {
     grantAdmin.mockImplementation(() => respond({ success: true }));
@@ -194,6 +266,78 @@ describe('admin Users actions', () => {
     await expect(submitConfirm()).resolves.toBeUndefined();
     expect(setUserActive).toHaveBeenCalledWith('priya', false, 'tok');
     expect(toasts()).toEqual([]);
+  });
+
+  it("a team's account is named by its team and offers no actions", async () => {
+    await render();
+    getUser.mockImplementation(() =>
+      respond({
+        success: true,
+        user: {
+          user_id: 'team:ops',
+          email: null,
+          active: true,
+          kind: 'team',
+          team_id: 'ops',
+          label: 'Team Operations',
+        },
+        roles: ['user'],
+        counts: {},
+        recent_events: [],
+      }),
+    );
+    await clickOption('View details');
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('Team Operations');
+    expect(dialog.textContent).toContain(
+      'This account belongs to a team, not a person',
+    );
+    expect(
+      Array.from(dialog.querySelectorAll('button')).some(
+        (b) => b.textContent?.trim() === 'Actions',
+      ),
+    ).toBe(false);
+  });
+
+  it('leaves out a row that is not a person', async () => {
+    getUsers.mockImplementation(() =>
+      respond({
+        success: true,
+        total: 2,
+        users: [
+          { user_id: 'priya', active: true },
+          { user_id: 'team:ops', active: true, kind: 'team' },
+        ],
+      }),
+    );
+    getAdmins.mockImplementation(() => respond({ success: true, admins: [] }));
+    await act(async () => root.render(<Users />));
+    await flush();
+    const rows = Array.from(container.querySelectorAll('tbody tr'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('priya');
+  });
+
+  it('says why an action on a team account is refused', async () => {
+    grantAdmin.mockImplementation(() =>
+      respond(
+        {
+          success: false,
+          error: 'not_a_person',
+          message: 'This account is not a person',
+        },
+        false,
+      ),
+    );
+    await render();
+    await clickOption('Make admin');
+    expect(toasts()).toEqual([
+      {
+        variant: 'destructive',
+        message:
+          "This account belongs to a team, not a person, so it can't be changed here.",
+      },
+    ]);
   });
 
   it('a failed confirmed action stays in the dialog, no toast', async () => {

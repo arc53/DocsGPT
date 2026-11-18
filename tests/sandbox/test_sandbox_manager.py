@@ -6,7 +6,7 @@ from typing import Dict, List
 
 import pytest
 
-from docsgpt.sandbox.base import CodeSandbox, ExecResult, SandboxGoneError
+from docsgpt.sandbox.base import CodeSandbox, ExecResult, OpenedSession, SandboxGoneError
 from docsgpt.sandbox.manager import SandboxCapacityError, SandboxManager
 
 
@@ -997,3 +997,264 @@ def test_a_close_during_a_long_run_waits_for_it(monkeypatch):
     runner.join(5)
     assert results[0].ok
     assert backend.torn_down == ["long"]
+
+
+# ---------------------------------------------------------------------------
+# Several processes sharing one cloud sandbox
+# ---------------------------------------------------------------------------
+
+
+class _Cloud:
+    """A fake cloud of sandboxes several processes reach, with Daytona-style activity stamps."""
+
+    def __init__(self, clock: Dict[str, float]) -> None:
+        self.clock = clock
+        self.last_activity: Dict[str, float] = {}  # live sandbox id -> last activity
+        self.by_session: Dict[str, str] = {}
+        self.deleted: List[str] = []
+
+    def create(self, session_id: str) -> str:
+        sandbox_id = f"sbx-{len(self.last_activity) + len(self.deleted) + 1}"
+        self.last_activity[sandbox_id] = self.clock["t"]
+        self.by_session[session_id] = sandbox_id
+        return sandbox_id
+
+    def touch(self, sandbox_id: str) -> None:
+        if sandbox_id not in self.last_activity:
+            raise SandboxGoneError(f"{sandbox_id} has been deleted")
+        self.last_activity[sandbox_id] = self.clock["t"]
+
+    def delete(self, sandbox_id: str) -> None:
+        if self.last_activity.pop(sandbox_id, None) is not None:
+            self.deleted.append(sandbox_id)
+
+
+class _ProcessBackend(CodeSandbox):
+    """One process's backend over a shared ``_Cloud``: reattaches by session label like Daytona."""
+
+    def __init__(self, cloud: _Cloud) -> None:
+        self.cloud = cloud
+        self.handles: Dict[str, str] = {}
+
+    def open(self, session_id: str) -> str:
+        return self.open_session(session_id).handle
+
+    def open_session(self, session_id: str) -> OpenedSession:
+        if session_id in self.handles:
+            return OpenedSession(self.handles[session_id], False)
+        existing = self.cloud.by_session.get(session_id)
+        if existing in self.cloud.last_activity:
+            self.cloud.touch(existing)
+            self.handles[session_id] = existing
+            return OpenedSession(existing, False)
+        self.handles[session_id] = self.cloud.create(session_id)
+        return OpenedSession(self.handles[session_id], True)
+
+    def attach(self, session_id: str) -> str:
+        return self.handles[session_id]
+
+    def close(self, session_id: str) -> None:
+        handle = self.handles.pop(session_id, None)
+        if handle is not None:
+            self.cloud.delete(handle)
+
+    def close_handle(self, session_id: str, handle: str) -> None:
+        if self.handles.get(session_id) == handle:
+            self.handles.pop(session_id, None)
+        self.cloud.delete(handle)
+
+    def release_handle(self, session_id: str, handle: str) -> None:
+        if self.handles.get(session_id) == handle:
+            self.handles.pop(session_id, None)
+
+    def idle_seconds(self, handle: str):
+        stamp = self.cloud.last_activity.get(handle)
+        return None if stamp is None else self.cloud.clock["t"] - stamp
+
+    def exec(self, session_id, code, timeout=None) -> ExecResult:
+        self.cloud.touch(self.handles[session_id])
+        return ExecResult(status="ok", stdout=f"ran:{code}")
+
+    def put_file(self, session_id, dest_path, data) -> None:
+        self.cloud.touch(self.handles[session_id])
+
+    def get_file(self, session_id, path) -> bytes:
+        self.cloud.touch(self.handles[session_id])
+        return b""
+
+    def list_files(self, session_id) -> List[str]:
+        self.cloud.touch(self.handles[session_id])
+        return []
+
+
+class _SharedClock:
+    """Stands in for the Redis last-use stamp every process writes (``SharedActivity``)."""
+
+    def __init__(self, clock: Dict[str, float]) -> None:
+        self.clock = clock
+        self.stamps: Dict[str, float] = {}
+
+    def touch(self, session_id: str) -> None:
+        self.stamps[session_id] = self.clock["t"]
+
+    def idle_seconds(self, session_id: str):
+        stamp = self.stamps.get(session_id)
+        return None if stamp is None else self.clock["t"] - stamp
+
+
+@pytest.fixture()
+def two_processes(monkeypatch):
+    """Two managers (an API and a worker process, say) over one cloud and one clock."""
+    clock = {"t": 0.0}
+    monkeypatch.setattr("docsgpt.sandbox.manager.time.monotonic", lambda: clock["t"])
+    cloud = _Cloud(clock)
+    shared = _SharedClock(clock)
+    first = SandboxManager(_ProcessBackend(cloud), max_ttl=1200, shared_activity=shared)
+    second = SandboxManager(_ProcessBackend(cloud), max_ttl=1200, shared_activity=shared)
+    return clock, cloud, first, second
+
+
+def test_a_reap_keeps_a_sandbox_another_process_used_within_the_ttl(two_processes):
+    # Prod 2026-10-06: one process reaped its stale entry for a sandbox another
+    # process had used seconds before, and deleted it under that process.
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    first.exec("conv", "a")
+    clock["t"] = 900.0
+    assert second.open_session("conv") == OpenedSession(sandbox_id, False)
+    clock["t"] = 1190.0
+    second.exec("conv", "b")
+
+    clock["t"] = 1250.0  # the first process's entry is idle 1250s > 1200s
+    assert first.reap_expired() == ["conv"]
+    assert not first.has_session("conv")
+    assert cloud.deleted == []
+    assert second.exec("conv", "c").stdout == "ran:c"
+
+
+def test_opening_another_session_does_not_delete_a_sandbox_in_use_elsewhere(two_processes):
+    # The prod path: the stale entry was reaped by an open for a different user.
+    clock, cloud, first, second = two_processes
+    first.open_session("conv")
+    clock["t"] = 900.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+    clock["t"] = 1250.0
+    first.open_session("other-user")
+    assert not first.has_session("conv")
+    assert cloud.deleted == []
+    assert second.exec("conv", "c").ok
+
+
+def test_reopening_an_expired_entry_reattaches_a_sandbox_in_use_elsewhere(two_processes):
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 900.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+    clock["t"] = 1250.0
+    assert first.open_session("conv") == OpenedSession(sandbox_id, False)
+    assert cloud.deleted == []
+
+
+def test_a_reap_deletes_a_sandbox_idle_past_the_ttl_everywhere(two_processes):
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 900.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+
+    clock["t"] = 900.0 + 1201
+    assert first.reap_expired() == ["conv"]
+    assert cloud.deleted == [sandbox_id]
+    # The other process only drops its handle: the sandbox is already gone.
+    assert second.reap_expired() == ["conv"]
+    assert cloud.deleted == [sandbox_id]
+    assert not second.has_session("conv")
+
+
+def test_an_explicit_close_still_deletes_at_once(two_processes):
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 10.0
+    second.open_session("conv")
+    second.exec("conv", "b")
+    first.close("conv")
+    assert cloud.deleted == [sandbox_id]
+
+
+def test_an_expired_entry_whose_activity_is_unknown_is_left_to_the_backend(two_processes, monkeypatch):
+    clock, cloud, first, _ = two_processes
+    first.open_session("conv")
+    monkeypatch.setattr(first._backend, "idle_seconds", lambda handle: None)
+    first._shared_activity.stamps.clear()  # Redis down, or the stamp expired
+    clock["t"] = 5000.0
+    assert first.reap_expired() == ["conv"]
+    assert cloud.deleted == []
+    assert first._backend.handles == {}
+
+
+def test_a_failed_activity_read_never_breaks_the_reap(two_processes, monkeypatch):
+    clock, cloud, first, _ = two_processes
+    first.open_session("conv")
+
+    def _boom(handle):
+        raise RuntimeError("cloud down")
+
+    monkeypatch.setattr(first._backend, "idle_seconds", _boom)
+    monkeypatch.setattr(first._shared_activity, "idle_seconds", _boom)
+    clock["t"] = 5000.0
+    assert first.reap_expired() == ["conv"]
+    assert cloud.deleted == []
+
+
+def test_a_lagging_backend_activity_stamp_does_not_delete_a_sandbox_used_elsewhere(two_processes, monkeypatch):
+    # A live probe saw Daytona's last_activity_at lag real use by over 100s; the
+    # shared stamp every manager writes still shows the recent use.
+    clock, cloud, first, second = two_processes
+    first.open_session("conv")
+    clock["t"] = 900.0
+    second.open_session("conv")
+    clock["t"] = 1190.0
+    second.exec("conv", "b")
+    monkeypatch.setattr(first._backend, "idle_seconds", lambda handle: 5000.0)
+    clock["t"] = 1250.0
+    first.reap_expired()
+    assert cloud.deleted == []
+
+
+def test_a_long_run_elsewhere_keeps_its_sandbox_through_the_backend_activity(two_processes, monkeypatch):
+    # The shared stamp is written when an op starts and ends; a run longer than
+    # the TTL is seen through the activity the backend refreshes while it runs.
+    clock, cloud, first, second = two_processes
+    sandbox_id = first.open_session("conv").handle
+    clock["t"] = 3000.0
+    cloud.last_activity[sandbox_id] = 2900.0  # refreshed mid-run by the other process
+    first.reap_expired()
+    assert cloud.deleted == []
+
+
+def test_the_shared_stamp_is_written_on_open_and_on_every_op(two_processes):
+    clock, _, first, _ = two_processes
+    shared = first._shared_activity
+    clock["t"] = 5.0
+    first.open_session("conv")
+    assert shared.stamps["conv"] == 5.0
+    clock["t"] = 9.0
+    first.put_file("conv", "a.txt", b"x")
+    assert shared.stamps["conv"] == 9.0
+    clock["t"] = 12.0
+    first.open_session("conv")  # a cached reuse
+    assert shared.stamps["conv"] == 12.0
+
+
+def test_start_detached_on_a_gone_sandbox_drops_the_session(backend):
+    def _gone(session_id, code, timeout, key):
+        raise SandboxGoneError("sandbox gone")
+
+    backend.start_detached = _gone
+    mgr = SandboxManager(backend, max_ttl=600)
+    mgr.open("conv-1")
+    with pytest.raises(SandboxGoneError):
+        mgr.start_detached("conv-1", "x", 5, "k")
+    assert not mgr.has_session("conv-1")

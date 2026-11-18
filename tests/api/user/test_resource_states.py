@@ -691,7 +691,7 @@ class TestWorkflowStates:
             resource_access.holder_editable_by = original
         assert data["resource_sponsors"] == []
         assert data["resource_states"] == []
-        assert data["ref_details"] == {"tools": [], "sources": []}
+        assert data["ref_details"] == {"tools": [], "sources": [], "folders": []}
 
     def test_ref_details_hide_names_nobody_here_can_use(self, app, pg_conn):
         """A: a node naming someone else's resource doesn't reveal its name."""

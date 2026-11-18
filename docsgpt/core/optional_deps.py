@@ -18,7 +18,12 @@ from typing import Dict, Tuple
 EXTRAS: Dict[str, Tuple[str, ...]] = {
     "docling": ("docling", "rapidocr"),
     "milvus": ("pymilvus",),
+    # torch and transformers for `docsgpt decide-server --device mps|cuda`; never in the API process or an image
+    "decisions-torch": ("torch", "transformers"),
 }
+
+#: Extras for native installs only, which no image installs.
+NATIVE_ONLY = frozenset({"decisions-torch"})
 
 _MODULE_TO_EXTRA: Dict[str, str] = {
     module: extra for extra, modules in EXTRAS.items() for module in modules
@@ -27,10 +32,8 @@ _MODULE_TO_EXTRA: Dict[str, str] = {
 
 def install_hint(extra: str) -> str:
     """Install command for ``extra``, for error messages and logs."""
-    return (
-        f"pip install -r docsgpt/requirements-{extra}.txt "
-        f"(or: uv sync --extra {extra}; Docker: --build-arg EXTRAS={extra})"
-    )
+    docker = "" if extra in NATIVE_ONLY else f"; Docker: --build-arg EXTRAS={extra}"
+    return f"pip install -r docsgpt/requirements-{extra}.txt (or: uv sync --extra {extra}{docker})"
 
 
 def extra_for(module: str) -> str | None:

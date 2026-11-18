@@ -1,7 +1,8 @@
+import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 import requests
 
@@ -12,6 +13,57 @@ from docsgpt.vectorstore.model_registry import (
     max_input_tokens_for,
     resolve,
 )
+
+
+def _key_fingerprint(api_key: Optional[str]) -> str:
+    """Non-reversible tag for an API key, so it can be named without being exposed.
+
+    Part of every cached client's identity: the cache used to be keyed without
+    the key, so the first caller's key served every later caller in the
+    process. Also what an auth failure logs in place of the key.
+
+    Args:
+        api_key: The key, or ``None``/empty for none.
+
+    Returns:
+        str: The first 16 hex characters of the key's SHA-256, or ``"nokey"``.
+    """
+    if not api_key:
+        return "nokey"
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+
+
+def clip_query(text: str, counter_for: Callable[[], Any]) -> str:
+    """Clip a search query to ``EMBEDDINGS_MAX_QUERY_TOKENS``.
+
+    Every embedder's ``embed_query`` runs its input through here, so each
+    query path -- chat retrieval, ``/api/search``, the search tools, GraphRAG
+    -- is bounded whatever the embedder. Documents are not: ``embed_documents``
+    never calls this.
+
+    Args:
+        text: The query.
+        counter_for: Returns the token counter of the embedding model. Called
+            only for a query that might be over the limit, so a short query
+            never loads a tokenizer.
+
+    Returns:
+        str: ``text``, or its leading part that fits the limit. A limit of 0
+        leaves it unchanged.
+    """
+    limit = settings.EMBEDDINGS_MAX_QUERY_TOKENS
+    if not limit or not isinstance(text, str):
+        return text
+    # Every token covers at least one byte, so a query no longer in bytes
+    # than the limit cannot exceed it.
+    if len(text.encode("utf-8")) <= limit:
+        return text
+    counter = counter_for()
+    if counter.count(text) <= limit:
+        return text
+    logging.info("Clipping a %d-character search query to %d tokens", len(text), limit)
+    pieces = counter.split(text, limit)
+    return pieces[0] if pieces else text
 
 
 def _embeddings_name_is_explicit() -> bool:
@@ -42,6 +94,7 @@ class RemoteEmbeddings:
     def __init__(self, api_url: str, model_name: str, api_key: str = None):
         self.api_url = api_url.rstrip("/")
         self.model_name = model_name
+        self.key_fingerprint = _key_fingerprint(api_key)
         self.headers = {"Content-Type": "application/json"}
         if api_key:
             self.headers["Authorization"] = f"Bearer {api_key}"
@@ -136,6 +189,21 @@ class RemoteEmbeddings:
 
         url = f"{self.api_url}/v1/embeddings"
         response = requests.post(url, headers=self.headers, json=payload, timeout=180)
+        if response.status_code in (401, 403):
+            # A rejected key is configuration, not a transient fault: every
+            # later request fails the same way until the key is fixed.
+            logging.error(
+                "embeddings_auth_failed status_code=%s model=%s key_fingerprint=%s: "
+                "the embeddings endpoint rejected this process's key; check EMBEDDINGS_KEY",
+                response.status_code,
+                self.model_name,
+                self.key_fingerprint,
+                extra={
+                    "event": "embeddings_auth_failed",
+                    "status_code": response.status_code,
+                    "key_fingerprint": self.key_fingerprint,
+                },
+            )
         response.raise_for_status()
         result = response.json()
 
@@ -156,8 +224,8 @@ class RemoteEmbeddings:
             )
 
     def embed_query(self, query: str):
-        """Embed a single query string."""
-        embeddings_list = self._embed(query)
+        """Embed a single query string, clipped to ``EMBEDDINGS_MAX_QUERY_TOKENS``."""
+        embeddings_list = self._embed(clip_query(query, self._token_counter))
         if (
             isinstance(embeddings_list, list)
             and len(embeddings_list) == 1
@@ -221,10 +289,14 @@ class EmbeddingsSingleton:
                 ``settings.EMBEDDINGS_KEY`` when not provided.
 
         Returns:
-            RemoteEmbeddings: Shared instance keyed by base URL and model name.
+            RemoteEmbeddings: Shared instance keyed by base URL, model name and
+            a fingerprint of the key, so a caller holding a different key never
+            gets a client that authenticates with someone else's.
         """
         api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
-        cache_key = f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}"
+        cache_key = (
+            f"remote_{settings.EMBEDDINGS_BASE_URL}_{embeddings_name}_{_key_fingerprint(api_key)}"
+        )
         return EmbeddingsSingleton._get_or_create(
             cache_key,
             lambda: RemoteEmbeddings(
@@ -250,9 +322,18 @@ class EmbeddingsSingleton:
     @staticmethod
     def get_instance(embeddings_name, *args, **kwargs):
         if settings.EMBEDDINGS_BASE_URL:
-            return EmbeddingsSingleton._remote_instance(embeddings_name)
+            # A direct caller hands its key over positionally or as
+            # ``openai_api_key``; either wins over EMBEDDINGS_KEY.
+            explicit = kwargs.get("openai_api_key", args[0] if args else None)
+            return EmbeddingsSingleton._remote_instance(
+                embeddings_name, explicit if isinstance(explicit, str) else None
+            )
+        # A keyed runner (OpenAI) is cached per key. A local model takes no key
+        # and stays under its bare name, which the boot hook evicts it by.
+        key = kwargs.get("openai_api_key")
+        cache_key = embeddings_name if key is None else f"{embeddings_name}_{_key_fingerprint(key)}"
         return EmbeddingsSingleton._get_or_create(
-            embeddings_name,
+            cache_key,
             lambda: EmbeddingsSingleton._create_instance(embeddings_name, *args, **kwargs),
         )
 
@@ -324,14 +405,20 @@ def get_embeddings(
     """
     embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
     if not settings.EMBEDDINGS_BASE_URL and _delegation_enabled():
-        cache_key = f"delegated_{embeddings_name}"
-        if cache_key not in EmbeddingsSingleton._instances:
+        # Keyed by the key too: inside a worker the client embeds locally with
+        # the key it was built with. A dispatched embed carries no key -- the
+        # worker embeds with its own EMBEDDINGS_KEY, which it shares with this
+        # process -- so no secret ever travels over the broker.
+        api_key = embeddings_key if embeddings_key is not None else settings.EMBEDDINGS_KEY
+
+        def _delegated():
             from docsgpt.vectorstore.embeddings_delegated import DelegatedEmbeddings
 
-            EmbeddingsSingleton._instances[cache_key] = DelegatedEmbeddings(
-                embeddings_name, embeddings_key
-            )
-        return EmbeddingsSingleton._instances[cache_key]
+            return DelegatedEmbeddings(embeddings_name, api_key)
+
+        return EmbeddingsSingleton._get_or_create(
+            f"delegated_{embeddings_name}_{_key_fingerprint(api_key)}", _delegated
+        )
     return build_local_embeddings(embeddings_name, embeddings_key)
 
 
@@ -381,6 +468,25 @@ def build_local_embeddings(
         # image warms them at build time.
         embedding_instance = EmbeddingsSingleton.get_instance(embeddings_name)
     return embedding_instance
+
+
+def legacy_path_key(metadata: Dict[str, Any]) -> Optional[str]:
+    """The tree path a chunk was stored under: its ``file_path``, else its ``key``, else its ``title``.
+
+    An ingest that predates ``file_path`` on every web page named the tree
+    entry by the document's ``key`` or ``title``, in that order.
+
+    Args:
+        metadata: The chunk's metadata.
+
+    Returns:
+        The path, or ``None`` when the chunk carries none of them.
+    """
+    for field in ("file_path", "key", "title"):
+        value = metadata.get(field)
+        if value:
+            return str(value)
+    return None
 
 
 class InvalidChunkMetadataError(ValueError):
@@ -444,6 +550,18 @@ class BaseVectorStore(ABC):
         """Delete the entire index/collection"""
         pass
 
+    def purge_index(self, batch_size: int = 1000) -> Optional[int]:
+        """Delete every chunk of this source; a store that can, does it ``batch_size`` rows at a time.
+
+        Args:
+            batch_size: Rows per delete, for stores that batch.
+
+        Returns:
+            The number of chunks deleted, or ``None`` when the store cannot say.
+        """
+        self.delete_index()
+        return None
+
     def save_local(self, *args, **kwargs):
         """Save vectorstore to local storage"""
         pass
@@ -500,19 +618,105 @@ class BaseVectorStore(ABC):
             )
         raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
 
-    def delete_chunks_by_source_path(self, path) -> int:
-        """Delete every chunk whose ``metadata.source`` equals ``path``.
+    @classmethod
+    def supports_chunk_edits(cls) -> bool:
+        """Whether the store overrides ``add_chunk``, ``get_chunks`` and ``delete_chunk`` (the base ones do nothing)."""
+        return all(
+            getattr(cls, name) is not getattr(BaseVectorStore, name)
+            for name in ("add_chunk", "get_chunks", "delete_chunk")
+        )
 
-        Default implementation iterates ``get_chunks()`` and deletes the
-        matches via ``delete_chunk()`` — works for any store. Override with a
-        single targeted statement where the store supports it. Returns the
-        number of chunks deleted.
+    def delete_chunks_by_source_path(self, path: str) -> int:
+        """Delete every chunk whose ``metadata.source`` equals ``path``; returns how many were deleted.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks, so a failed
+                listing is never a silent no-op.
+        """
+        ids = self.chunk_ids_by_source_paths([path])
+        return self.delete_chunks(ids) if ids else 0
+
+    def _chunk_ids_where(self, key: Callable[[dict], Any], paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``key(metadata)`` is one of ``paths``, in :meth:`_scan_chunks` order.
+
+        Args:
+            key: Reads the matched value from a chunk's metadata.
+            paths: The values to match.
+
+        Returns:
+            The ids; none for no ``paths``, without listing the store.
+
+        Raises:
+            NotImplementedError: The store cannot list its chunks.
+        """
+        wanted = set(paths)
+        if not wanted:
+            return []
+        return [str(chunk.get("doc_id")) for chunk in self._scan_chunks() if key(chunk.get("metadata") or {}) in wanted]
+
+    def chunk_ids_by_source_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.source`` is one of ``paths``."""
+        return self._chunk_ids_where(lambda metadata: metadata.get("source"), paths)
+
+    def add_chunks(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]] = None) -> List[str]:
+        """Add several chunks, all or none; stores that save per write override this to save once.
+
+        Adds them one by one with :meth:`add_chunk`. If one fails, the ones
+        already added are deleted again (best effort, logged when it falls
+        short) and the error is raised, so a caller is never left holding
+        chunks it has no ids for.
+
+        Args:
+            texts: The chunks' texts.
+            metadatas: Their metadata, one dict per text; ``None`` for none.
+
+        Returns:
+            The new chunks' ids, in order.
+
+        Raises:
+            Exception: Whatever adding a chunk raised, after the rollback.
+        """
+        metadatas = list(metadatas) if metadatas is not None else [{} for _ in texts]
+        ids: List[str] = []
+        try:
+            for text, metadata in zip(texts, metadatas):
+                ids.append(self.add_chunk(text, metadata))
+        except Exception:
+            added = [chunk_id for chunk_id in ids if chunk_id is not None]
+            if added:
+                try:
+                    deleted = self.delete_chunks(added)
+                except Exception:  # noqa: BLE001 - the original error is the one to report
+                    deleted = 0
+                    logging.error("delete_chunks failed during the rollback", exc_info=True)
+                if not isinstance(deleted, int) or deleted < len(added):
+                    logging.error(
+                        "Could not roll back the chunks added before a failure; they may stay stored: %s", added,
+                    )
+            raise
+        return ids
+
+    def chunk_ids_by_file_paths(self, paths: Iterable[str]) -> List[str]:
+        """Ids of the chunks whose ``metadata.file_path`` is one of ``paths``.
+
+        For a page whose tree entry predates entries carrying the page's
+        address: its chunks are found by the tree path they were stored under.
+        A chunk from an ingest older still carries no ``file_path``; its tree
+        entry was named by its ``key``, or without one by its ``title``, so
+        those are matched for it (``legacy_path_key``).
+        """
+        return self._chunk_ids_where(legacy_path_key, paths)
+
+    def delete_chunks(self, chunk_ids: Iterable[str]) -> int:
+        """Delete several chunks, returning how many went (a missing or failed id isn't counted).
+
+        Stores that save per write override this to save once. A caller that
+        must know every chunk is gone lists them again when the count is short.
         """
         deleted = 0
-        for chunk in self.get_chunks() or []:
-            if (chunk.get("metadata") or {}).get("source") == path:
-                if self.delete_chunk(chunk.get("doc_id")):
-                    deleted += 1
+        for chunk_id in chunk_ids:
+            if self.delete_chunk(chunk_id):
+                deleted += 1
         return deleted
 
     def _scan_chunks(self) -> List[dict]:

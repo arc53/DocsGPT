@@ -16,6 +16,9 @@ DEFAULT_PORT = 7091
 # What the app uses when API_URL is unset (docsgpt/core/settings/workers.py).
 DEFAULT_API_URL = f"http://localhost:{DEFAULT_PORT}"
 EXPOSURES = ("local", "network", "domain")
+# The decider sidecar: the Compose profile that starts it, and where the backend and worker reach it.
+DECIDER_PROFILE = "decider"
+DECIDER_URL = "http://decider:7095"
 
 PROVIDERS = {
     "docsgpt": "DocsGPT public API (free, no key)",
@@ -58,8 +61,17 @@ def stack_dir(explicit: Optional[str]) -> Path:
     return paths.default_home()
 
 
+def _profile_list(env: Mapping[str, str]) -> list[str]:
+    return [name.strip() for name in env.get("COMPOSE_PROFILES", "").split(",") if name.strip()]
+
+
 def _profiles(env: Mapping[str, str]) -> set[str]:
-    return {name.strip() for name in env.get("COMPOSE_PROFILES", "").split(",") if name.strip()}
+    return set(_profile_list(env))
+
+
+def runs_decider(env: Mapping[str, str]) -> bool:
+    """Whether the stack's ``.env`` starts the decider sidecar (``docsgpt up --decider``)."""
+    return DECIDER_PROFILE in _profiles(env)
 
 
 def exposure(env: Mapping[str, str]) -> str:
@@ -109,6 +121,7 @@ def plan(
     port: Optional[int] = None,
     provider: Optional[Mapping[str, Optional[str]]] = None,
     docling: Optional[bool] = None,
+    decider: Optional[bool] = None,
     secret: Optional[Callable[[], str]] = None,
     lan_ip: Optional[str] = None,
     written_api_url: Optional[str] = None,
@@ -120,6 +133,12 @@ def plan(
     for a database that does not exist yet: Postgres reads the password when the
     volume is created, and credentials an existing database already holds are
     sealed with the key it ran with.
+
+    ``decider`` turns the decider sidecar on (its Compose profile, and ``DECISION_BASE_URL``
+    pointing at it) or off, leaving a ``DECISION_BASE_URL`` that names another server alone;
+    ``None`` keeps what the last ``up`` chose. Without it the model runs in the API process.
+    A stack that runs the decider gets a ``DECISION_KEY`` when it has none; turning the
+    decider off keeps the key, which a server on the host may use.
 
     Given ``lan_ip``, ``API_URL`` follows the address DocsGPT is opened at (see
     :func:`public_api_url`; ``written_api_url`` is the value the last ``up``
@@ -133,20 +152,41 @@ def plan(
         expose = "domain"
     if expose is None and "DOCSGPT_BIND" not in existing and "COMPOSE_PROFILES" not in existing:
         expose = "local"
+    profiles = _profiles(existing)
     if expose == "local":
-        wanted.update(DOCSGPT_BIND="127.0.0.1", COMPOSE_PROFILES=None, DOCSGPT_DOMAIN=None)
+        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=None)
+        profiles.discard("https")
     elif expose == "network":
-        wanted.update(DOCSGPT_BIND="0.0.0.0", COMPOSE_PROFILES=None, DOCSGPT_DOMAIN=None)
+        wanted.update(DOCSGPT_BIND="0.0.0.0", DOCSGPT_DOMAIN=None)
+        profiles.discard("https")
     elif expose == "domain":
         if not domain:
             raise ValueError("exposing DocsGPT on a domain needs the domain name")
-        wanted.update(DOCSGPT_BIND="127.0.0.1", COMPOSE_PROFILES="https", DOCSGPT_DOMAIN=domain)
+        wanted.update(DOCSGPT_BIND="127.0.0.1", DOCSGPT_DOMAIN=domain)
+        profiles.add("https")
     elif expose is not None:
         raise ValueError(f"unknown exposure {expose!r}; choose one of: {', '.join(EXPOSURES)}")
+    if decider:
+        # The sidecar speaks the decide protocol, whatever server the stack called before.
+        wanted.update(DECISION_BASE_URL=DECIDER_URL, DECISION_PROTOCOL=None)
+        profiles.add(DECIDER_PROFILE)
+    elif decider is not None:
+        if existing.get("DECISION_BASE_URL") == DECIDER_URL:
+            wanted["DECISION_BASE_URL"] = None
+            if existing.get("DECISION_MODE") == "api":  # without a URL that would leave no model at all
+                wanted["DECISION_MODE"] = None
+        profiles.discard(DECIDER_PROFILE)
+    if profiles != _profiles(existing):
+        kept = [name for name in _profile_list(existing) if name in profiles]
+        wanted["COMPOSE_PROFILES"] = ",".join(kept + sorted(profiles - set(kept))) or None
     if expose in ("network", "domain") and not existing.get("AUTH_TYPE"):
         wanted["AUTH_TYPE"] = "simple_jwt"
 
-    for key in ("INTERNAL_KEY", "JWT_SECRET_KEY"):
+    keys = ["INTERNAL_KEY", "JWT_SECRET_KEY"]
+    if DECIDER_PROFILE in profiles:
+        # The decider listens on the stack network and refuses to start without its own key.
+        keys.append("DECISION_KEY")
+    for key in keys:
         if not existing.get(key):
             wanted[key] = secret()
     if fresh_database:
@@ -246,6 +286,6 @@ def health_url(env: Mapping[str, str]) -> str:
 
 def simple_jwt_token(secret_key: str) -> str:
     """The token the API accepts under ``AUTH_TYPE=simple_jwt`` (it signs the same payload at start)."""
-    from jose import jwt
+    import jwt
 
     return jwt.encode({"sub": "local"}, secret_key, algorithm="HS256")

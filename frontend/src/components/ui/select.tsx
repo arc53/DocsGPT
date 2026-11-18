@@ -26,7 +26,7 @@ function SelectValue({
 }
 
 const selectTriggerVariants = cva(
-  `${focusRing} ${invalidState} ${fieldFrame} group [&_svg:not([class*='text-'])]:text-muted-foreground flex w-fit items-center justify-between gap-2 px-3 py-2 text-sm whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4`,
+  `${focusRing} ${invalidState} ${fieldFrame} group [&_svg:not([class*='text-'])]:text-muted-foreground flex w-fit items-center justify-between gap-2 px-3 py-2 text-sm whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50 *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4`,
   {
     variants: {
       size: {
@@ -93,8 +93,19 @@ function SelectContent({
   children,
   position = 'popper',
   align = 'center',
+  capped = false,
+  fit = false,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content> & {
+  /** Caps the list at CommandList's height (max-h-75) as well as the window,
+   *  for a list that can grow long. A max-h in className would replace the
+   *  window limit instead, so the cap sits on the viewport. */
+  capped?: boolean;
+  /** Sizes the list to its longest option, so each stays on one line: never
+   *  narrower than the trigger, never wider than the window. For a filter
+   *  pill whose options are longer than its resting value. */
+  fit?: boolean;
+}) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -103,6 +114,8 @@ function SelectContent({
           'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-200 max-h-(--radix-select-content-available-height) w-(--radix-select-trigger-width) origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border shadow-md',
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+          fit &&
+            'w-auto max-w-(--radix-select-content-available-width) min-w-(--radix-select-trigger-width)',
           className,
         )}
         position={position}
@@ -115,6 +128,7 @@ function SelectContent({
             'p-1',
             position === 'popper' &&
               'h-(--radix-select-trigger-height) w-full min-w-(--radix-select-trigger-width) scroll-my-1',
+            capped && 'max-h-75',
           )}
         >
           {children}
@@ -141,8 +155,13 @@ function SelectLabel({
 function SelectItem({
   className,
   children,
+  suffix,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Item>) {
+}: React.ComponentProps<typeof SelectPrimitive.Item> & {
+  /** A muted note after the name, in the list only (the trigger copies the
+   *  name alone). It always shows: a long name truncates before it. */
+  suffix?: React.ReactNode;
+}) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -160,7 +179,23 @@ function SelectItem({
           <CheckIcon className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {/* With a suffix the name gives way ("…"), so the suffix always
+          shows. Radix drops an ItemText's className, so a span wraps it. */}
+      {suffix ? (
+        <span data-slot="select-item-text" className="min-w-0 truncate">
+          <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        </span>
+      ) : (
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      )}
+      {suffix && (
+        <span
+          data-slot="select-item-suffix"
+          className="text-muted-foreground shrink-0"
+        >
+          {suffix}
+        </span>
+      )}
     </SelectPrimitive.Item>
   );
 }

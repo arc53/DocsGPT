@@ -66,6 +66,26 @@ class TestGrant:
         assert grant_admin.main(["alice", "--force"]) == 0
         assert _audit_count(patched_db, "alice", "role_granted") == 1
 
+    @pytest.mark.parametrize("force", [False, True])
+    def test_a_team_principal_is_never_granted_even_with_force(self, patched_db, force):
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        team = TeamsRepository(patched_db).create("Ops", "ops-wp2", owner_id="alice")
+        principal = principal_id(team["id"])
+        argv = [principal, "--force"] if force else [principal]
+        assert grant_admin.main(argv) == 1
+        assert UserRolesRepository(patched_db).role_names_for(principal) == []
+        assert _audit_count(patched_db, principal, "role_granted") == 0
+
+    def test_an_unknown_principal_id_is_refused_with_force(self, patched_db):
+        assert grant_admin.main(["__team__not-a-team", "--force"]) == 1
+        assert UserRolesRepository(patched_db).role_names_for("__team__not-a-team") == []
+
+    def test_the_system_row_is_never_granted(self, patched_db):
+        assert grant_admin.main(["__system__", "--force"]) == 1
+        assert UserRolesRepository(patched_db).role_names_for("__system__") == []
+
 
 class TestRevoke:
     def test_revoke_removes_manual_only_and_audits(self, patched_db):

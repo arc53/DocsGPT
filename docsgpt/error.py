@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Iterator, Mapping, Optional, Sequence
 
 from flask import jsonify
 from werkzeug.http import HTTP_STATUS_CODES
@@ -10,12 +10,21 @@ GENERIC_ERROR_MESSAGE = "Please try again later. We apologize for any inconvenie
 
 CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
 IMAGE_UNREADABLE = "image_unreadable"
+NO_ANSWER = "no_answer"
 SERVER_ERROR = "server_error"
 
 # Longest error text kept for operators (turn logs); longer text is cut.
 MAX_ERROR_TEXT_CHARS = 2_000
 # A run this long of base64 characters is a payload, not a message.
 _BASE64_RUN = re.compile(r"(?:base64,)?[A-Za-z0-9+/=_-]{200,}")
+# Longest provider error text a model-call failure log line keeps.
+MAX_PROVIDER_FAILURE_CHARS = 300
+# Error class names the provider SDKs raise for a refused key (OpenAI, Anthropic, Groq…).
+_AUTH_ERROR_NAMES = frozenset({"AuthenticationError", "PermissionDeniedError"})
+# Lower-cased phrases of the errors an SDK raises for a key that is missing when it is built or called.
+_MISSING_KEY_PHRASES = ("api_key client option must be set", "could not resolve authentication method")
+# How deep to follow ``raise ... from`` when looking for the provider's error.
+_MAX_CAUSE_DEPTH = 5
 
 
 def response_error(code_status, message=None):
@@ -119,13 +128,49 @@ def _rejected_image_error(image_names: Sequence[str]) -> UserFacingError:
     return UserFacingError(IMAGE_UNREADABLE, message, {"files": names} if names else {})
 
 
+#: Keys of a quota refusal's body that are about the refusal itself, not values a client words it from.
+_QUOTA_BODY_KEYS = frozenset({"success", "error_code", "message", "limit_scope", "source"})
+
+
+def run_limit_error(stop: Any) -> UserFacingError:
+    """The curated error for a run a limit stopped mid-way (a ``RunLimitReached``).
+
+    Outside traffic (key, widget, public link, ``/v1``) is told only that the
+    agent is paused: never the payer's numbers, and the quota provider is not
+    asked to decorate a refusal of someone else's allowance. The agent's own
+    limit is about the agent, so it keeps its message for everyone. The person
+    chatting gets their allowance's numbers, decorated by the provider as the
+    pre-run refusal is.
+
+    Args:
+        stop: The ``RunLimitReached``.
+
+    Returns:
+        ``quota-exceeded`` with ``{dimension, unit, usage, limit, bucket,
+        resets_at}`` and whatever the provider adds, ``agent-limit-exceeded``
+        with ``{dimension, usage, limit, window_hours}``, or ``agent_paused``.
+    """
+    if stop.agent_limit:
+        body = stop.exceeded.to_payload()
+        params = {key: body[key] for key in ("dimension", "usage", "limit", "window_hours")}
+        return UserFacingError(body["error_code"], body["message"], params)
+    if stop.outside:
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+
+        return UserFacingError(PAUSED_CODE, PAUSED_MESSAGE)
+    body = stop.exceeded.to_payload()
+    params = {key: value for key, value in body.items() if key not in _QUOTA_BODY_KEYS}
+    return UserFacingError(body.get("error_code") or "quota-exceeded", body.get("message") or str(stop), params)
+
+
 def user_facing_error(
     error: BaseException, *, surface: str = "chat", image_names: Optional[Sequence[str]] = None
 ) -> UserFacingError:
     """The curated error a failed turn reports for ``error``.
 
-    Only a turn that did not fit the model's window says more than the
-    generic message: how big it was, when that is known, and what to do. The
+    A turn that did not fit the model's window says how big it was, when that
+    is known, and what to do; a turn a limit stopped says which limit
+    (:func:`run_limit_error`). Others get the generic message. The
     exception's own text is never used, since provider errors can echo the
     request (a rejected file part comes back as its base64 payload).
 
@@ -140,6 +185,22 @@ def user_facing_error(
         The code and message.
     """
     from docsgpt.agents.context_overflow import ContextOverflowError, is_context_length_error
+    from docsgpt.core.run_budget import is_budget_exhausted
+
+    from docsgpt.llm.deadlines import StreamNoAnswerError
+    from docsgpt.quotas.run_limits import RunLimitReached
+
+    # Ahead of the time limit: a stop by a limit also escapes recovery, but says why.
+    if isinstance(error, RunLimitReached):
+        return run_limit_error(error)
+    if is_budget_exhausted(error):
+        return UserFacingError("time_limit", "Stopped: time limit.")
+    if isinstance(error, StreamNoAnswerError):
+        return UserFacingError(
+            NO_ANSWER,
+            "The model kept reasoning without starting an answer, so it was stopped. "
+            "Try again, or choose a different model.",
+        )
 
     if not is_context_length_error(error) and is_image_rejection_error(error):
         return _rejected_image_error(image_names or ())
@@ -174,4 +235,92 @@ def bounded_error_text(error: BaseException) -> str:
     text = _BASE64_RUN.sub("[payload]", f"{type(error).__name__}: {error}")
     if len(text) > MAX_ERROR_TEXT_CHARS:
         text = text[: MAX_ERROR_TEXT_CHARS - 1] + "…"
+    return text
+
+
+def cause_chain(error: BaseException) -> Iterator[BaseException]:
+    """``error`` and what it was raised from (``raise ... from``), outermost first, at most five deep.
+
+    Args:
+        error: The exception.
+
+    Yields:
+        Each exception of the chain.
+    """
+    current: Optional[BaseException] = error
+    for _ in range(_MAX_CAUSE_DEPTH):
+        if current is None:
+            return
+        yield current
+        current = current.__cause__
+
+
+def http_status(error: BaseException, *, follow_causes: bool = True) -> Optional[int]:
+    """The HTTP status a provider error carries, or None.
+
+    Reads ``status_code`` (OpenAI, Anthropic), an integer ``code`` in the HTTP
+    range (google-genai), the attached response's status, or a boto
+    ``ClientError``'s metadata.
+
+    Args:
+        error: The exception.
+        follow_causes: Also read what it was raised from (:func:`cause_chain`), outermost first.
+
+    Returns:
+        The first status found; None without one.
+    """
+    for current in cause_chain(error) if follow_causes else (error,):
+        status = getattr(current, "status_code", None)
+        if status is None:
+            code = getattr(current, "code", None)
+            status = code if isinstance(code, int) and 100 <= code < 600 else None
+        if status is None:
+            response = getattr(current, "response", None)
+            if isinstance(response, Mapping):
+                status = (response.get("ResponseMetadata") or {}).get("HTTPStatusCode")
+            else:
+                status = getattr(response, "status_code", None)
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status
+    return None
+
+
+def is_auth_failure(error: BaseException) -> bool:
+    """Whether a model call failed because the provider refused, or never got, the model's key.
+
+    A 401 or 403 from the provider (the error's own status, not its cause's),
+    an SDK's authentication or permission error, or an SDK that can't find a key to send. Such a failure doesn't go
+    away on retry: the user has to change the model or its key.
+
+    Args:
+        error: What the call (or building the model) raised.
+
+    Returns:
+        True for a key problem.
+    """
+    if http_status(error, follow_causes=False) in (401, 403) or type(error).__name__ in _AUTH_ERROR_NAMES:
+        return True
+    message = str(error).lower()
+    return any(phrase in message for phrase in _MISSING_KEY_PHRASES)
+
+
+def provider_failure_text(error: BaseException) -> str:
+    """A failed model call, as an operator log line may quote it.
+
+    A refused key is named by its type and HTTP status only: the provider's
+    body can quote the key or the account. Other failures keep their message,
+    payloads cut out and cut to :data:`MAX_PROVIDER_FAILURE_CHARS`.
+
+    Args:
+        error: What the model call raised.
+
+    Returns:
+        ``Type (HTTP 401)`` for a key problem, else ``Type: message``.
+    """
+    if is_auth_failure(error):
+        status = http_status(error, follow_causes=False)
+        return type(error).__name__ + (f" (HTTP {status})" if status is not None else "")
+    text = bounded_error_text(error)
+    if len(text) > MAX_PROVIDER_FAILURE_CHARS:
+        text = text[: MAX_PROVIDER_FAILURE_CHARS - 1] + "…"
     return text

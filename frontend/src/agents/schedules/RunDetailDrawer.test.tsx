@@ -2,6 +2,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MemoryRouter } from 'react-router-dom';
+
 import '../../locale/i18n';
 import type { ScheduleRun } from '../types/schedule';
 import RunDetailDrawer from './RunDetailDrawer';
@@ -112,8 +114,8 @@ describe('RunDetailDrawer', () => {
     );
   });
 
-  // Decisions 63a / 63b: the title is the default SheetTitle; the Error
-  // heading is a destructive xs sub-heading.
+  // The title is the default SheetTitle; the Error heading is a destructive
+  // xs sub-heading.
   it('uses the default sheet title and an xs destructive error heading', async () => {
     await act(async () =>
       root.render(<RunDetailDrawer run={run} onClose={vi.fn()} />),
@@ -127,6 +129,70 @@ describe('RunDetailDrawer', () => {
     expect(error.textContent).toBe('Error');
     expect(error.className.split(' ')).toEqual(
       expect.arrayContaining(['text-destructive', 'text-sm', 'font-semibold']),
+    );
+  });
+
+  it('titles the error by its label and shows the reason', async () => {
+    await act(async () =>
+      root.render(
+        <RunDetailDrawer
+          run={{
+            ...run,
+            error_type: 'cannot_complete',
+            error: 'Step 1 (open the site): no browser tool',
+            output: 'Step 1 (open the site): no browser tool',
+          }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const [error] = Array.from(content()!.querySelectorAll('h3'));
+    expect(error.textContent).toBe("Error (the agent can't do this task)");
+    expect(content()!.querySelector('pre')!.textContent).toBe(
+      'Step 1 (open the site): no browser tool',
+    );
+  });
+
+  it('words a pause skip as a reason, not an error, with no detail block', async () => {
+    await act(async () =>
+      root.render(
+        <RunDetailDrawer
+          run={{
+            ...run,
+            status: 'skipped',
+            error_type: 'payer_out_of_allowance',
+            error: 'payer_out_of_allowance',
+            prompt_tokens: 0,
+            generated_tokens: 0,
+          }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const [heading] = Array.from(content()!.querySelectorAll('h3'));
+    expect(heading.textContent).toBe(
+      'Skipped (its payer was out of allowance)',
+    );
+    expect(content()!.querySelector('pre')).toBeNull();
+  });
+
+  it('keeps the detail of a run stopped mid-way at the allowance', async () => {
+    await act(async () =>
+      root.render(
+        <RunDetailDrawer
+          run={{
+            ...run,
+            error_type: 'payer_out_of_allowance',
+            error: 'Token quota exceeded for the payer',
+          }}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+    const [heading] = Array.from(content()!.querySelectorAll('h3'));
+    expect(heading.textContent).toBe('Error (its payer was out of allowance)');
+    expect(content()!.querySelector('pre')!.textContent).toBe(
+      'Token quota exceeded for the payer',
     );
   });
 
@@ -148,5 +214,28 @@ describe('RunDetailDrawer', () => {
       root.render(<RunDetailDrawer run={null} onClose={vi.fn()} />),
     );
     expect(content()).toBeNull();
+  });
+
+  it('links to the run conversation when the run has one', async () => {
+    await act(async () =>
+      root.render(
+        <MemoryRouter>
+          <RunDetailDrawer
+            run={{ ...run, conversation_id: 'c-42' }}
+            onClose={vi.fn()}
+          />
+        </MemoryRouter>,
+      ),
+    );
+    const link =
+      content()!.querySelector<HTMLAnchorElement>('a[href="/c/c-42"]');
+    expect(link?.textContent).toContain('Open conversation');
+  });
+
+  it('shows no conversation link without one', async () => {
+    await act(async () =>
+      root.render(<RunDetailDrawer run={run} onClose={vi.fn()} />),
+    );
+    expect(content()!.querySelector('a[href^="/c/"]')).toBeNull();
   });
 });

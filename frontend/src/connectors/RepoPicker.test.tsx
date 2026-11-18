@@ -196,4 +196,51 @@ describe('RepoPicker', () => {
     await act(async () => reconnect.click());
     expect(onReconnect).toHaveBeenCalled();
   });
+
+  it('says until when GitHub rate-limited the account, and offers a retry', async () => {
+    service.repositories.mockResolvedValueOnce({
+      success: false,
+      code: 'rate_limited',
+      retry_at: '2026-10-26T12:55:00+00:00',
+    });
+    await render(null, vi.fn(), vi.fn());
+    expect(container.textContent).toContain(
+      'settings.connectors.github.rateLimited',
+    );
+    // A rate limit is not an expired sign-in.
+    expect(container.textContent).not.toContain(
+      'settings.connectors.status.reconnect',
+    );
+    service.repositories.mockResolvedValueOnce({
+      success: true,
+      repositories: [],
+    });
+    const retry = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'retry',
+    )!;
+    await act(async () => retry.click());
+    expect(service.repositories).toHaveBeenCalledTimes(2);
+  });
+
+  // A team's account is browsed only by whoever connected it, and not while
+  // it is paused: those refusals are worded, with nothing to retry or sign in.
+  it.each([
+    ['connection_picker_owner_only', 'pickerOwnerOnly'],
+    ['connection_paused', 'paused'],
+  ])('words a team account refusal (%s), with no retry', async (code, key) => {
+    service.repositories.mockResolvedValue({
+      success: false,
+      error: code,
+      message: 'Only the Admin who connected it',
+    });
+    await render(null, vi.fn(), vi.fn());
+    expect(container.textContent).toContain(
+      `settings.connectors.team.errors.${key}`,
+    );
+    const labels = Array.from(container.querySelectorAll('button')).map(
+      (b) => b.textContent,
+    );
+    expect(labels).not.toContain('retry');
+    expect(labels).not.toContain('settings.connectors.status.reconnect');
+  });
 });

@@ -41,6 +41,7 @@ import {
   selectMonitors,
   selectMonitorsState,
 } from './monitorsSlice';
+import { MonitorSecretControls } from './SecretControls';
 import type { Monitor, MonitorStatus } from './types';
 
 const STATUS_VARIANT: Record<MonitorStatus, 'success' | 'warning' | 'neutral'> =
@@ -82,7 +83,9 @@ export function MonitorStatusBadge({ status }: { status: MonitorStatus }) {
 /**
  * Settings → Monitors: what each monitor watches, how often, when it last
  * checked, how many wakes it has left and when it expires, with pause,
- * resume and cancel. Kept current by `monitor.updated` events.
+ * resume and cancel, and a live signed webhook link's Reveal secret (Set
+ * signing secret for Stripe and Slack). Kept current by `monitor.updated`
+ * events.
  */
 export default function Monitors() {
   const { t } = useTranslation();
@@ -236,6 +239,7 @@ export default function Monitors() {
           })}
         </p>
       )}
+      <MonitorSecretControls monitor={monitor} />
     </div>
   );
 

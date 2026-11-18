@@ -4,9 +4,11 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Union
 
+from docsgpt.core.run_budget import is_budget_exhausted
 from docsgpt.agents.tool_executor import trace_unexecuted_tool_call
+from docsgpt.agents.tools import ask_user
 from docsgpt.error import bounded_error_text
 from docsgpt.logging import build_stack_data
 
@@ -134,6 +136,143 @@ def _is_restated_payload(existing: str, incoming: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+def merge_tool_call(tool_calls: Dict[Any, ToolCall], call: ToolCall) -> None:
+    """Fold one streamed tool-call chunk into the calls read so far.
+
+    Args:
+        tool_calls: The calls so far, keyed by stream index (index-less complete calls get keys of their own).
+        call: The chunk's call: a delta of an indexed call, or a complete one.
+    """
+    if call.index is None:
+        # Providers like Google emit each parallel call as
+        # a COMPLETE, index-less ToolCall per chunk. They
+        # must never be merged into one another (dict
+        # arguments would even raise on ``+=``).
+        tool_calls[("complete", len(tool_calls))] = call
+        return
+    if call.index not in tool_calls:
+        tool_calls[call.index] = call
+    else:
+        existing = tool_calls[call.index]
+        # Decide BEFORE the id/name overwrite below: a gateway
+        # that reuses one index for sequential DISTINCT calls
+        # is indistinguishable from a restatement once the
+        # identity is gone. Restatement frames carry neither
+        # id nor name, so a differing one means a new call.
+        is_new_call = bool(
+            (call.id and existing.id and call.id != existing.id)
+            or (call.name and existing.name and call.name != existing.name)
+        )
+        if is_new_call:
+            logger.warning(
+                "tool_call_index_reused_by_distinct_call",
+                extra={
+                    "index": call.index,
+                    "previous_call": f"{existing.id}/{existing.name}",
+                    "incoming_call": f"{call.id}/{call.name}",
+                    "dropped_prefix": str(existing.arguments)[:120],
+                },
+            )
+        if call.id:
+            existing.id = call.id
+        if call.name:
+            existing.name = call.name
+        if call.arguments:
+            if existing.arguments is None:
+                existing.arguments = call.arguments
+            elif isinstance(existing.arguments, str) and isinstance(
+                call.arguments, str
+            ):
+                if (
+                    _is_restated_payload(
+                        existing.arguments, call.arguments
+                    )
+                    and not is_new_call
+                ):
+                    # Some OpenAI-compatible gateways restate
+                    # the WHOLE argument payload on the finish
+                    # frame for an index instead of streaming
+                    # deltas. Appending produced '{...}{...}',
+                    # which never parses, so the tool call
+                    # failed on every one of the turn's
+                    # MAX_TOOL_ITERATIONS rounds while the turn
+                    # still reported status='complete'.
+                    existing.arguments = call.arguments
+                else:
+                    existing.arguments += call.arguments
+            else:
+                # Complete (non-delta) payloads: latest wins.
+                existing.arguments = call.arguments
+        # Preserve thought_signature for Google Gemini 3 models
+        if call.thought_signature:
+            existing.thought_signature = call.thought_signature
+
+
+def collect_stream(
+    chunks: Iterable[Any],
+    parse: Callable[[Any], LLMResponse],
+    finished: Callable[[], bool] = lambda: False,
+) -> LLMResponse:
+    """Read a whole ``gen_stream`` into one answer: its text, tool calls and reasoning.
+
+    For a caller that needs the answer a non-streaming call returns but
+    streams anyway, so the connection carries data while the model writes
+    (a proxy cuts a request that stays silent for minutes). A failure once
+    the answer is complete (a trailing usage frame or ``[DONE]``) keeps the
+    answer, as :meth:`LLMHandler.handle_streaming` does.
+
+    Args:
+        chunks: The stream: text strings, ``{"type": "thought"}`` dicts and provider chunks.
+        parse: Parses a provider chunk (the handler of the provider that answered).
+        finished: True once the provider sent its finish signal (``_stream_reached_finish``).
+
+    Returns:
+        The answer, with ``finish_reason`` ``tool_calls`` when the model called tools.
+    """
+    content: List[str] = []
+    reasoning: List[str] = []
+    tool_calls: Dict[Any, ToolCall] = {}
+    finish_reason = None
+    iterator = iter(chunks)
+    try:
+        while True:
+            try:
+                chunk = next(iterator)
+            except StopIteration:
+                break
+            except Exception as exc:
+                if is_budget_exhausted(exc) or (finish_reason is None and not finished()):
+                    raise
+                logger.warning("Provider stream failed after finish; keeping the answer", exc_info=True)
+                break
+            if isinstance(chunk, dict) and chunk.get("type") == "thought":
+                reasoning.append(chunk.get("thought") or "")
+                continue
+            if isinstance(chunk, str):
+                content.append(chunk)
+                continue
+            parsed = parse(chunk)
+            if parsed.reasoning_content:
+                reasoning.append(parsed.reasoning_content)
+            for call in parsed.tool_calls or []:
+                merge_tool_call(tool_calls, call)
+            if parsed.content:
+                content.append(parsed.content)
+            if parsed.finish_reason == "tool_calls":
+                finish_reason = "tool_calls"
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            close()
+    return LLMResponse(
+        content="".join(content),
+        tool_calls=list(tool_calls.values()),
+        finish_reason=finish_reason or ("tool_calls" if tool_calls else "stop"),
+        raw_response=None,
+        reasoning_content="".join(reasoning),
+    )
 
 
 def take_tool_images(executor: Any, message: Dict) -> Dict:
@@ -268,6 +407,9 @@ class LLMHandler(ABC):
         plan = self._attachment_plan_of(agent)
         if plan is not None:
             return self._prepare_planned_messages(agent, messages, plan)
+        if getattr(agent, "_attachments_merged", False) is True:
+            # A resumed turn: its saved messages already carry the files.
+            return messages
         if not attachments:
             return messages
         logger.info(f"Preparing messages with {len(attachments)} attachments")
@@ -297,6 +439,8 @@ class LLMHandler(ABC):
                         f"Converted PDF to {len(converted_images)} images"
                     )
                 except Exception as e:
+                    if is_budget_exhausted(e):
+                        raise
                     logger.error(
                         f"Failed to convert PDF to images, falling back to text: {e}"
                     )
@@ -414,6 +558,8 @@ class LLMHandler(ABC):
                 try:
                     pages = self._convert_pdf_to_images(attachment)
                 except Exception as e:
+                    if is_budget_exhausted(e):
+                        raise
                     logger.error(
                         "Failed to convert PDF %s to images, sending its text: %s",
                         planned.ref,
@@ -450,7 +596,19 @@ class LLMHandler(ABC):
         block = render_attachment_block(plan)
         if block:
             content = carrier.get("content")
-            if isinstance(content, list):
+            if getattr(getattr(llm, "capabilities", None), "prompt_cache_breakpoints", False) is True:
+                # The history replays the question without the files, so it
+                # goes first and alone in its text part: the prompt-cache
+                # breakpoint on it then marks a prefix later turns resend
+                # byte for byte (``OpenAILLM._with_cache_breakpoints``).
+                parts = content if isinstance(content, list) else (
+                    [{"type": "text", "text": content}] if isinstance(content, str) and content else []
+                )
+                lead = 0
+                while lead < len(parts) and isinstance(parts[lead], dict) and parts[lead].get("type") == "text":
+                    lead += 1
+                carrier["content"] = [*parts[:lead], {"type": "text", "text": block}, *parts[lead:]]
+            elif isinstance(content, list):
                 carrier["content"] = [{"type": "text", "text": block}, *content]
             else:
                 text = content if isinstance(content, str) else ""
@@ -1121,6 +1279,8 @@ class LLMHandler(ABC):
             return True, rebuilt_messages
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(
                 f"Error performing mid-execution compression: {str(e)}", exc_info=True
             )
@@ -1189,6 +1349,7 @@ class LLMHandler(ABC):
                 model_id=compression_model,
                 agent_id=getattr(agent, "agent_id", None),
                 model_user_id=compression_user_id,
+                stateless=True,
             )
             # Side-channel LLM tag — see ``orchestrator.py`` for rationale.
             compression_llm._token_usage_source = "compression"
@@ -1271,6 +1432,8 @@ class LLMHandler(ABC):
             return True, rebuilt_messages
 
         except Exception as e:
+            if is_budget_exhausted(e):
+                raise
             logger.error(
                 f"Error performing in-memory compression: {str(e)}", exc_info=True
             )
@@ -1285,7 +1448,9 @@ class LLMHandler(ABC):
             return
         try:
             executor.context_room_tokens = room_of(messages)
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug("Could not size the context room for tools", exc_info=True)
 
     @staticmethod
@@ -1296,7 +1461,9 @@ class LLMHandler(ABC):
             return
         try:
             executor.context_epoch = int(getattr(executor, "context_epoch", 0) or 0) + 1
-        except Exception:
+        except Exception as exc:
+            if is_budget_exhausted(exc):
+                raise
             logger.debug("Could not advance the context epoch", exc_info=True)
 
     def handle_tool_calls(
@@ -1364,6 +1531,11 @@ class LLMHandler(ABC):
                 updated_messages.append(batch_assistant)
             batch_assistant["tool_calls"].append(tool_call_obj)
 
+        # ``ask_user`` is honoured only as the round's one call.
+        executor = getattr(agent, "tool_executor", None)
+        if executor is not None:
+            executor.calls_this_round = len(tool_calls)
+
         for i, call in enumerate(tool_calls):
             # Check context limit before executing tool call
             if hasattr(agent, '_check_context_limit') and agent._check_context_limit(updated_messages):
@@ -1374,7 +1546,9 @@ class LLMHandler(ABC):
                 try:
                     from docsgpt.core.settings import settings
                     compression_enabled = settings.ENABLE_CONVERSATION_COMPRESSION
-                except Exception:
+                except Exception as exc:
+                    if is_budget_exhausted(exc):
+                        raise
                     compression_enabled = False
                 # A compression that could not reduce this turn will not do
                 # better a round later; each try is another LLM call.
@@ -1422,12 +1596,19 @@ class LLMHandler(ABC):
                         else:
                             logger.warning("Mid-execution compression attempted but failed. Skipping remaining tools.")
                     except Exception as e:
+                        if is_budget_exhausted(e):
+                            raise
                         logger.error(f"Error during mid-execution compression: {str(e)}", exc_info=True)
                         compression_attempted = True
                         compression_successful = False
 
-                # If compression wasn't attempted or failed, skip remaining tools
-                if not compression_successful:
+                # If compression wasn't attempted or failed, skip remaining
+                # tools, unless only the agent's context limit was crossed:
+                # that limit is a budget, and the model can still take more.
+                over_model = getattr(agent, "_over_model_threshold", None)
+                if not compression_successful and (
+                    not callable(over_model) or over_model(updated_messages)
+                ):
                     if i == 0:
                         # Special case: limit reached before executing any tools
                         # This can happen when previous tool responses pushed context over limit
@@ -1494,14 +1675,29 @@ class LLMHandler(ABC):
             pause_info = agent.tool_executor.check_pause(
                 tools_dict, call, llm_class
             )
+            if pause_info and pause_info.get("pause_type") == ask_user.QUESTIONS_BLOCKED:
+                # Question cards an output control blocked: nothing of the
+                # call is shown, traced or kept; the turn ends on the block
+                # (``_take_questions_block``).
+                continue
             if pause_info:
-                # Headless (scheduled / webhook): synthesize a denial tool message
-                # so the LLM finishes gracefully instead of stalling on a pause
-                # nobody will resolve, then journal so the reconciler sees it.
+                # A refused call (headless runs, and refusals in any turn: a
+                # secret reference the tool can't take, an admin's read-only
+                # connector, an API caller's write on the owner's account):
+                # answer it with the refusal so the LLM carries on instead of
+                # stalling on a pause nobody will resolve, journal it, and keep
+                # it on the message as a failed call.
                 if pause_info.get("pause_type") == "headless_denied":
-                    deny_reason = pause_info.get(
-                        "deny_reason", "Tool blocked in headless mode."
+                    from docsgpt.agents.tool_executor import (
+                        record_refused_call,
+                        refusal_texts,
                     )
+
+                    deny_reason = pause_info.get("deny_reason") or "This tool can't run here."
+                    model_text, journal_error = refusal_texts(agent.tool_executor, deny_reason)
+                    # A refusal worded for the model already (``ask_user``) is sent as it is.
+                    if isinstance(pause_info.get("model_text"), str):
+                        model_text = pause_info["model_text"]
                     args_str = (
                         json.dumps(call.arguments)
                         if isinstance(call.arguments, dict)
@@ -1524,33 +1720,23 @@ class LLMHandler(ABC):
                         arguments=call.arguments,
                     )
                     updated_messages.append(
-                        self.create_tool_message(
-                            denial_call,
-                            f"Tool denied (headless): {deny_reason}",
-                        )
+                        self.create_tool_message(denial_call, model_text)
                     )
-                    if hasattr(agent.tool_executor, "headless_denials"):
+                    # Only a run nobody watches reports what it was refused.
+                    if getattr(agent.tool_executor, "headless", False) and isinstance(
+                        getattr(agent.tool_executor, "headless_denials", None), list
+                    ):
                         agent.tool_executor.headless_denials.append(pause_info)
-                    from docsgpt.agents.tool_executor import journal_refused_call
-
-                    journal_refused_call(
-                        agent.tool_executor, pause_info, f"headless: {deny_reason}"
+                    refused = record_refused_call(
+                        agent.tool_executor,
+                        pause_info,
+                        reason=deny_reason,
+                        model_text=model_text,
+                        journal_error=journal_error,
                     )
-                    denied_data = {
-                        "tool_name": pause_info["tool_name"],
-                        "call_id": pause_info["call_id"],
-                        "action_name": pause_info.get(
-                            "llm_name", pause_info["name"]
-                        ),
-                        "arguments": pause_info["arguments"],
-                        "status": "denied",
-                        "error": deny_reason,
-                        "error_type": pause_info.get(
-                            "error_type", "tool_not_allowed"
-                        ),
-                    }
-                    trace_unexecuted_tool_call(call, denied_data)
-                    yield {"type": "tool_call", "data": denied_data}
+                    # The trace keeps telling a refusal from a failed run.
+                    trace_unexecuted_tool_call(call, {**refused, "status": "denied"})
+                    yield {"type": "tool_call", "data": dict(refused)}
                     continue
                 # Yield pause event so the client knows this tool is waiting
                 pause_data = {
@@ -1564,6 +1750,11 @@ class LLMHandler(ABC):
                 # can wire the sticky "don't ask again" button.
                 if pause_info.get("device_id"):
                     pause_data["device_id"] = pause_info["device_id"]
+                # Link secrets approving this call fills in (the card says so).
+                if pause_info.get("secret_refs"):
+                    pause_data["secret_refs"] = pause_info["secret_refs"]
+                if pause_info.get("secret_ref_labels"):
+                    pause_data["secret_ref_labels"] = pause_info["secret_ref_labels"]
                 # What will be sent once fixed values replace the model's.
                 if pause_info.get("sent_arguments") is not None:
                     pause_data["sent_arguments"] = pause_info["sent_arguments"]
@@ -1576,6 +1767,9 @@ class LLMHandler(ABC):
                 for key in ("connector_key", "connector_name", "access"):
                     if pause_info.get(key):
                         pause_data[key] = pause_info[key]
+                # Questions for the user (``ask_user``): the client draws them as cards.
+                if ask_user.is_awaiting_answer(pause_info):
+                    pause_data.update(ask_user.question_payload(pause_info))
                 trace_unexecuted_tool_call(call, pause_data)
                 yield {"type": "tool_call", "data": pause_data}
                 pending_actions.append(pause_info)
@@ -1634,6 +1828,8 @@ class LLMHandler(ABC):
                     take_tool_images(agent.tool_executor, self.create_tool_message(resolved_call, tool_response))
                 )
             except Exception as e:
+                if is_budget_exhausted(e):
+                    raise
                 logger.error(f"Error executing tool: {str(e)}", exc_info=True)
                 # The error tool message's tool_call_id must match the
                 # tool_call id declared on the batch assistant message. When
@@ -1696,6 +1892,23 @@ class LLMHandler(ABC):
                 }
         return updated_messages, pending_actions if pending_actions else None
 
+    @staticmethod
+    def _take_questions_block(agent: Any) -> Optional[Dict]:
+        """The event ending the turn when an output control blocked this round's question cards, taken once.
+
+        Args:
+            agent: The agent running the turn.
+
+        Returns:
+            The guardrail block event, or None when no cards were blocked.
+        """
+        executor = getattr(agent, "tool_executor", None)
+        event = getattr(executor, "questions_blocked", None)
+        if not isinstance(event, dict):
+            return None
+        executor.questions_blocked = None
+        return event
+
     def handle_non_streaming(
         self, agent, response: Any, tools_dict: Dict, messages: List[Dict]
     ) -> Generator:
@@ -1732,6 +1945,12 @@ class LLMHandler(ABC):
                     messages, pending_actions = e.value
                     break
 
+            # The round's question cards were blocked: the turn ends on the block.
+            questions_block = self._take_questions_block(agent)
+            if questions_block is not None:
+                yield questions_block
+                return ""
+
             # If tools need approval or client execution, pause the loop
             if pending_actions:
                 agent._pending_continuation = {
@@ -1742,7 +1961,7 @@ class LLMHandler(ABC):
                 }
                 yield {
                     "type": "tool_calls_pending",
-                    "data": {"pending_tool_calls": pending_actions},
+                    "data": {"pending_tool_calls": [ask_user.client_pending_call(c) for c in pending_actions]},
                 }
                 return ""
 
@@ -1763,6 +1982,9 @@ class LLMHandler(ABC):
                 messages.append(
                     {"role": "user", "content": _FINALIZE_INSTRUCTION},
                 )
+                from docsgpt.activity.flags import check_stream
+
+                check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
                 response = agent.llm.gen(
                     model=getattr(agent.llm, "model_id", None) or agent.model_id,
                     messages=messages,
@@ -1777,6 +1999,9 @@ class LLMHandler(ABC):
             # already resolved to the upstream model name. Built-ins:
             # the two are equal; BYOM: the upstream name like
             # "mistral-large-latest" instead of the UUID.
+            from docsgpt.activity.flags import check_stream
+
+            check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
             response = agent.llm.gen(
                 model=getattr(agent.llm, "model_id", None) or agent.model_id,
                 messages=messages,
@@ -1836,7 +2061,9 @@ class LLMHandler(ABC):
                 chunk = next(stream_iter)
             except StopIteration:
                 break
-            except Exception:
+            except Exception as exc:
+                if is_budget_exhausted(exc):
+                    raise
                 # A failure in the trailing frames (usage chunk, [DONE])
                 # after the round already finished must not fail — or
                 # fallback-restream — an answer the user has fully
@@ -1884,69 +2111,7 @@ class LLMHandler(ABC):
 
             if parsed.tool_calls:
                 for call in parsed.tool_calls:
-                    if call.index is None:
-                        # Providers like Google emit each parallel call as
-                        # a COMPLETE, index-less ToolCall per chunk. They
-                        # must never be merged into one another (dict
-                        # arguments would even raise on ``+=``).
-                        tool_calls[("complete", len(tool_calls))] = call
-                        continue
-                    if call.index not in tool_calls:
-                        tool_calls[call.index] = call
-                    else:
-                        existing = tool_calls[call.index]
-                        # Decide BEFORE the id/name overwrite below: a gateway
-                        # that reuses one index for sequential DISTINCT calls
-                        # is indistinguishable from a restatement once the
-                        # identity is gone. Restatement frames carry neither
-                        # id nor name, so a differing one means a new call.
-                        is_new_call = bool(
-                            (call.id and existing.id and call.id != existing.id)
-                            or (call.name and existing.name and call.name != existing.name)
-                        )
-                        if is_new_call:
-                            logger.warning(
-                                "tool_call_index_reused_by_distinct_call",
-                                extra={
-                                    "index": call.index,
-                                    "previous_call": f"{existing.id}/{existing.name}",
-                                    "incoming_call": f"{call.id}/{call.name}",
-                                    "dropped_prefix": str(existing.arguments)[:120],
-                                },
-                            )
-                        if call.id:
-                            existing.id = call.id
-                        if call.name:
-                            existing.name = call.name
-                        if call.arguments:
-                            if existing.arguments is None:
-                                existing.arguments = call.arguments
-                            elif isinstance(existing.arguments, str) and isinstance(
-                                call.arguments, str
-                            ):
-                                if (
-                                    _is_restated_payload(
-                                        existing.arguments, call.arguments
-                                    )
-                                    and not is_new_call
-                                ):
-                                    # Some OpenAI-compatible gateways restate
-                                    # the WHOLE argument payload on the finish
-                                    # frame for an index instead of streaming
-                                    # deltas. Appending produced '{...}{...}',
-                                    # which never parses, so the tool call
-                                    # failed on every one of the turn's
-                                    # MAX_TOOL_ITERATIONS rounds while the turn
-                                    # still reported status='complete'.
-                                    existing.arguments = call.arguments
-                                else:
-                                    existing.arguments += call.arguments
-                            else:
-                                # Complete (non-delta) payloads: latest wins.
-                                existing.arguments = call.arguments
-                        # Preserve thought_signature for Google Gemini 3 models
-                        if call.thought_signature:
-                            existing.thought_signature = call.thought_signature
+                    merge_tool_call(tool_calls, call)
             if parsed.finish_reason == "tool_calls":
                 finish_reason = "tool_calls"
                 continue
@@ -2007,6 +2172,9 @@ class LLMHandler(ABC):
                 llm_params = getattr(agent, "llm_params", None)
                 if llm_params:
                     recovery_kwargs.update(llm_params)
+                from docsgpt.activity.flags import check_stream
+
+                check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
                 recovery_response = agent.llm.gen_stream(**recovery_kwargs)
                 self.llm_calls.append(build_stack_data(agent.llm))
                 yield from self.handle_streaming(
@@ -2034,6 +2202,13 @@ class LLMHandler(ABC):
                 break
         pause_reasoning = reasoning_buffer
 
+        # The round's question cards were blocked: the turn ends on the block,
+        # as a blocked answer does.
+        questions_block = self._take_questions_block(agent)
+        if questions_block is not None:
+            yield questions_block
+            return
+
         # If tools need approval or client execution, pause the loop
         if pending_actions:
             agent._pending_continuation = {
@@ -2044,7 +2219,7 @@ class LLMHandler(ABC):
             }
             yield {
                 "type": "tool_calls_pending",
-                "data": {"pending_tool_calls": pending_actions},
+                "data": {"pending_tool_calls": [ask_user.client_pending_call(c) for c in pending_actions]},
             }
             return
 
@@ -2090,6 +2265,9 @@ class LLMHandler(ABC):
             messages = enforce(messages)
 
         # See note above on agent.model_id vs llm.model_id.
+        from docsgpt.activity.flags import check_stream
+
+        check_stream(getattr(getattr(agent, "tool_executor", None), "message_id", None))
         response = agent.llm.gen_stream(
             model=getattr(agent.llm, "model_id", None) or agent.model_id,
             messages=messages,

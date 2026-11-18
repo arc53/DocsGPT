@@ -1,4 +1,5 @@
 import base64
+import datetime
 import pytest
 from unittest.mock import patch, MagicMock
 import requests
@@ -14,6 +15,14 @@ def _no_instance_token(monkeypatch):
     from docsgpt.core.settings import settings
 
     monkeypatch.setattr(settings, "GITHUB_ACCESS_TOKEN", None)
+
+
+@pytest.fixture(autouse=True)
+def _per_file_fetches(monkeypatch):
+    """These tests cover the tree + per-file path, which ``load_data`` falls back
+    to when the repository archive can't be read; the archive itself is
+    covered in ``test_github_archive.py``."""
+    monkeypatch.setattr(GitHubLoader, "_read_archive", lambda self, repo, branch: None)
 
 
 def make_response(json_data=None, status_code=200, raise_error=None):
@@ -439,9 +448,87 @@ class TestGitHubLoaderTree:
         loader = GitHubLoader()
         mock_get.return_value = make_response({"tree": [], "truncated": True})
         monkeypatch.setattr(
-            loader, "fetch_repo_files", lambda repo, path="": ["README.md"]
+            loader, "fetch_repo_entries", lambda repo, path="": [("README.md", 10)]
         )
         assert loader._list_candidate_files("owner/repo", "main") == ["README.md"]
+
+
+class TestGitHubLoaderTruncatedTreeWalk:
+    """The ``/contents/`` walk used when the tree listing is truncated must
+    apply the same skip-list and size cap as the tree path."""
+
+    LISTINGS = {
+        "": [
+            {"type": "file", "path": "README.md", "size": 100},
+            {"type": "dir", "path": "docs"},
+            {"type": "dir", "path": "node_modules"},
+            {"type": "dir", "path": ".cache"},
+            {"type": "dir", "path": "data"},
+        ],
+        "docs": [{"type": "file", "path": "docs/guide.md", "size": 200}],
+        "node_modules": [{"type": "dir", "path": "node_modules/lodash"}],
+        "node_modules/lodash": [{"type": "file", "path": "node_modules/lodash/README.md", "size": 10}],
+        ".cache": [{"type": "file", "path": ".cache/notes.md", "size": 10}],
+        "data": [{"type": "file", "path": "data/dump.json", "size": 5 * 1024 * 1024}],
+    }
+
+    def _fake_get(self, requested):
+        def side_effect(url, headers=None, timeout=None):
+            path = url.split("/contents/", 1)[1]
+            requested.append(path)
+            if path not in self.LISTINGS:
+                raise AssertionError(f"Unexpected URL: {url}")
+            return make_response(self.LISTINGS[path])
+
+        return side_effect
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_walk_does_not_request_skipped_directories(self, mock_get):
+        requested = []
+        mock_get.side_effect = self._fake_get(requested)
+
+        GitHubLoader().fetch_repo_entries("owner/repo")
+
+        assert requested == ["", "docs", "data"]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_walk_returns_sizes_from_the_listing(self, mock_get):
+        mock_get.side_effect = self._fake_get([])
+
+        entries = GitHubLoader().fetch_repo_entries("owner/repo")
+
+        assert entries == [
+            ("README.md", 100), ("docs/guide.md", 200), ("data/dump.json", 5 * 1024 * 1024),
+        ]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_fetch_repo_files_still_returns_paths(self, mock_get):
+        mock_get.side_effect = self._fake_get([])
+
+        assert GitHubLoader().fetch_repo_files("owner/repo") == [
+            "README.md", "docs/guide.md", "data/dump.json",
+        ]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_fallback_applies_the_size_cap(self, mock_get, monkeypatch):
+        """Regression: the fallback passed a size of 0 for every file, so
+        ``GITHUB_INGEST_MAX_FILE_BYTES`` never applied to it."""
+        monkeypatch.setattr(
+            "docsgpt.parser.remote.github_loader.settings.GITHUB_INGEST_MAX_FILE_BYTES",
+            1024 * 1024, raising=False,
+        )
+        listing = self._fake_get([])
+
+        def side_effect(url, headers=None, timeout=None):
+            if "/git/trees/" in url:
+                return make_response({"tree": [], "truncated": True})
+            return listing(url, headers=headers, timeout=timeout)
+
+        mock_get.side_effect = side_effect
+
+        files = GitHubLoader()._list_candidate_files("owner/repo", "main")
+
+        assert files == ["README.md", "docs/guide.md"]
 
 
 class TestGitHubLoaderDefaultBranch:
@@ -626,3 +713,94 @@ class TestGitHubLoaderInstanceTokenIsPublicOnly:
 
         assert loader.load_data("owner/repo")
         assert "Authorization" not in loader.headers
+
+
+def _rate_limited(reset_in_seconds=None, retry_after=None, status=403):
+    import time as _time
+
+    headers = {}
+    if reset_in_seconds is not None:
+        headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(_time.time()) + reset_in_seconds)}
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
+    resp = MagicMock(status_code=status, headers=headers)
+    resp.json.return_value = {"message": "API rate limit exceeded for user ID 1."}
+    return resp
+
+
+@pytest.mark.unit
+class TestGitHubLoaderRateLimit:
+    """A rate limit stops the ingest with the reset time; it never skips files."""
+
+    @patch("docsgpt.parser.remote.github_loader.time.sleep")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_a_long_reset_is_not_waited_out(self, mock_get, mock_sleep):
+        from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+        mock_get.return_value = _rate_limited(reset_in_seconds=2800)
+        loader = GitHubLoader(access_token="github_pat_x")
+        with pytest.raises(GitHubRateLimited) as caught:
+            loader._make_request("https://api.github.com/repos/o/r")
+        mock_sleep.assert_not_called()
+        assert mock_get.call_count == 1
+        assert "UTC" in str(caught.value)
+        assert "GITHUB_ACCESS_TOKEN" not in str(caught.value)
+
+    @patch("docsgpt.parser.remote.github_loader.time.sleep")
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_a_short_secondary_limit_is_waited_out(self, mock_get, mock_sleep):
+        mock_get.side_effect = [_rate_limited(retry_after=5, status=429), make_response({"ok": True}, 200)]
+        loader = GitHubLoader(access_token="github_pat_x")
+        assert loader._make_request("https://api.github.com/repos/o/r").status_code == 200
+        mock_sleep.assert_called_once_with(5)
+
+    def test_a_rate_limited_file_stops_the_ingest_instead_of_skipping(self, monkeypatch):
+        from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "_max_workers", lambda: 1)
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        paths = [f"f{i}.py" for i in range(20)]
+        monkeypatch.setattr(loader, "fetch_repo_tree", lambda repo, branch: ([(p, 5) for p in paths], False))
+        fetched = []
+
+        def fetch(repo, path):
+            fetched.append(path)
+            if path == "f2.py":
+                raise GitHubRateLimited(datetime.datetime(2099, 1, 1, 12, 55, tzinfo=datetime.timezone.utc))
+            return "code"
+
+        monkeypatch.setattr(loader, "fetch_file_content", fetch)
+        with pytest.raises(GitHubRateLimited):
+            loader.load_data("owner/repo")
+        # The files after the limit are not requested only to fail too.
+        assert fetched == ["f0.py", "f1.py", "f2.py"]
+
+    @patch("docsgpt.parser.remote.github_loader.requests.get")
+    def test_a_connection_token_error_does_not_mention_the_server_token(self, mock_get):
+        resp = MagicMock(status_code=403, headers={"X-RateLimit-Remaining": "50"})
+        resp.json.return_value = {"message": "Resource not accessible by personal access token"}
+        mock_get.return_value = resp
+        loader = GitHubLoader(access_token="github_pat_x")
+        with pytest.raises(Exception, match="GitHub API error") as caught:
+            loader._make_request("https://api.github.com/repos/o/r")
+        assert "GITHUB_ACCESS_TOKEN" not in str(caught.value)
+
+
+class TestGitHubLoaderFileCap:
+    def test_a_tree_over_ingest_max_files_fails_before_any_file_is_fetched(self, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.parser.ingest_limits import IngestTooLarge
+
+        monkeypatch.setattr(settings, "INGEST_MAX_FILES", 2)
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree", lambda repo, branch: ([("a.py", 5), ("b.py", 5), ("c.py", 5)], False),
+        )
+        fetch = MagicMock(return_value="code")
+        monkeypatch.setattr(loader, "fetch_file_content", fetch)
+
+        with pytest.raises(IngestTooLarge):
+            loader.load_data("https://github.com/owner/repo")
+        fetch.assert_not_called()

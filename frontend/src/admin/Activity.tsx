@@ -29,8 +29,10 @@ import { Pagination } from '../components/ui/pagination';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import { EmptyState } from '../components/ui/empty-state';
 import { selectToken } from '../preferences/preferenceSlice';
+import { downloadBlob } from '../utils/browserUtils';
 import {
   LoadError,
+  UserIdentity,
   categoryTone,
   eventLabel,
   eventTone,
@@ -49,7 +51,12 @@ type ActivityRow = {
   event: string;
   category: string;
   actor_id: string | null;
+  actor_email?: string | null;
+  /** The email, or "Team <name>" for a team's own account. */
+  actor_label?: string | null;
   target_id: string | null;
+  target_email?: string | null;
+  target_label?: string | null;
   ip: string | null;
   user_agent: string | null;
   outcome: string | null;
@@ -104,7 +111,19 @@ function RowDetail({ row }: { row: ActivityRow }) {
       <DescriptionList layout="columns" size="xs">
         <DetailRow label="Event" value={row.event} />
         <DetailRow label="Journal" value={row.feed} />
+        {row.actor_label && row.actor_label !== row.actor_email ? (
+          <DetailRow label="Actor name" value={row.actor_label} />
+        ) : null}
+        {row.actor_email ? (
+          <DetailRow label="Actor email" value={row.actor_email} />
+        ) : null}
         {row.actor_id ? <DetailRow label="Actor" value={row.actor_id} /> : null}
+        {row.target_label && row.target_label !== row.target_email ? (
+          <DetailRow label="Affected name" value={row.target_label} />
+        ) : null}
+        {row.target_email ? (
+          <DetailRow label="Affected email" value={row.target_email} />
+        ) : null}
         {row.target_id ? (
           <DetailRow label="Affected user" value={row.target_id} />
         ) : null}
@@ -224,15 +243,7 @@ export default function Activity() {
     try {
       const res = await adminService.exportActivity(filters, format, token);
       if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `docsgpt-activity.${format}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      downloadBlob(await res.blob(), `docsgpt-activity.${format}`);
     } finally {
       setExporting(false);
     }
@@ -368,10 +379,12 @@ export default function Activity() {
                 {rows.map((row, idx) => {
                   const key = `${row.feed}:${row.id}`;
                   const isOpen = expanded === key;
-                  // De-emphasize an actor repeated from the row above (ditto),
+                  // Mute an actor repeated from the row above (still named),
                   // so distinct actors stand out in a long single-user stream.
                   const repeat =
-                    idx > 0 && rows[idx - 1].actor_id === row.actor_id;
+                    idx > 0 &&
+                    row.actor_id !== null &&
+                    rows[idx - 1].actor_id === row.actor_id;
                   return [
                     <TableRow key={key}>
                       <TableCell>
@@ -381,8 +394,8 @@ export default function Activity() {
                           aria-expanded={isOpen}
                           label={
                             isOpen
-                              ? `Hide details for ${eventLabel(row.event)}`
-                              : `Show details for ${eventLabel(row.event)}`
+                              ? `Hide details for ${eventLabel(row.event, row.detail)}`
+                              : `Show details for ${eventLabel(row.event, row.detail)}`
                           }
                           icon={isOpen ? ChevronDown : ChevronRight}
                           onClick={() => setExpanded(isOpen ? null : key)}
@@ -391,7 +404,7 @@ export default function Activity() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Badge variant={eventTone(row.event)}>
-                            {eventLabel(row.event)}
+                            {eventLabel(row.event, row.detail)}
                           </Badge>
                           {row.outcome ? (
                             <Badge variant={outcomeTone(row.outcome)}>
@@ -407,16 +420,30 @@ export default function Activity() {
                       </TableCell>
                       <TableCell
                         className={cn(
-                          'font-mono text-xs',
-                          repeat ? 'text-muted-foreground/50' : '',
+                          'text-xs',
+                          repeat ? 'text-muted-foreground' : '',
                         )}
                       >
-                        {repeat ? '〃' : (row.actor_id ?? '—')}
+                        {row.actor_id ? (
+                          <UserIdentity
+                            userId={row.actor_id}
+                            email={row.actor_email}
+                            label={row.actor_label}
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.target_id && row.target_id !== row.actor_id
-                          ? row.target_id
-                          : '—'}
+                      <TableCell className="text-xs">
+                        {row.target_id && row.target_id !== row.actor_id ? (
+                          <UserIdentity
+                            userId={row.target_id}
+                            email={row.target_email}
+                            label={row.target_label}
+                          />
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         {row.ip === null ? (

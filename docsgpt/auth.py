@@ -1,12 +1,42 @@
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError
+import jwt
+from jwt import ExpiredSignatureError
 
 from docsgpt.core.settings import settings
+from docsgpt.workspaces.principal import is_principal_id
 
 
 # Claims only the PAT verifier may set. Dropped from decoded JWTs so a session
 # token can never present itself as a (differently scoped) personal access token.
 _PAT_ONLY_CLAIMS = ("auth_method", "pat_id", "pat_name", "scopes", "resource_filter")
+
+# Clock skew tolerated between the API hosts that mint and check session tokens:
+# PyJWT rejects an iat in the future and checks exp, both against this leeway.
+CLOCK_SKEW_SECONDS = 60
+
+
+_INVALID_TOKEN = {
+    "message": "Authentication error: invalid token",
+    "error": "invalid_token",
+}
+
+
+def principal_refusal(decoded):
+    """The 401 payload for claims whose ``sub`` is a team principal, else None.
+
+    A principal owns its team's items, so an identity that resolved to one
+    would own all of them. Nobody signs in as one, whatever minted the claims
+    (a token signed with ``JWT_SECRET_KEY``, an OIDC session, a PAT row), so
+    every auth entry point calls this. It is syntax only, with no database read.
+
+    Args:
+        decoded: The decoded claims, an error payload, or None.
+
+    Returns:
+        Optional[dict]: The ``invalid_token`` payload to answer with 401, or None.
+    """
+    if isinstance(decoded, dict) and "error" not in decoded and is_principal_id(decoded.get("sub")):
+        return dict(_INVALID_TOKEN)
+    return None
 
 
 def _bearer_value(request):
@@ -24,7 +54,8 @@ def handle_auth(request, data={}):
 
     bearer = _bearer_value(request)
     if looks_like_pat(bearer):
-        return authenticate_pat(bearer, request)
+        claims = authenticate_pat(bearer, request)
+        return principal_refusal(claims) or claims
 
     if settings.AUTH_TYPE in ["simple_jwt", "session_jwt", "oidc"]:
         jwt_token = request.headers.get("Authorization")
@@ -39,26 +70,24 @@ def handle_auth(request, data={}):
                 jwt_token,
                 settings.JWT_SECRET_KEY,
                 algorithms=["HS256"],
+                leeway=CLOCK_SKEW_SECONDS,
                 # oidc sessions are minted with an exp at the login callback and
                 # must carry one: require_exp rejects any exp-less HS256 token
                 # signed with JWT_SECRET_KEY (e.g. a legacy simple_jwt/session_jwt
                 # token), which would otherwise authenticate forever and be
                 # unrevocable. simple_jwt/session_jwt never carried an exp, so the
                 # requirement is scoped to oidc.
-                options={"verify_exp": is_oidc, "require_exp": is_oidc},
+                options={"verify_exp": is_oidc, "require": ["exp"] if is_oidc else []},
             )
             for claim in _PAT_ONLY_CLAIMS:
                 decoded_token.pop(claim, None)
-            return decoded_token
+            return principal_refusal(decoded_token) or decoded_token
         except ExpiredSignatureError:
             return {
                 "message": "Authentication error: token expired",
                 "error": "token_expired",
             }
         except Exception:
-            return {
-                "message": "Authentication error: invalid token",
-                "error": "invalid_token",
-            }
+            return dict(_INVALID_TOKEN)
     else:
         return {"sub": "local"}

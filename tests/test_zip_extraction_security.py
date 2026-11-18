@@ -84,6 +84,52 @@ class TestTransactionalZipExtraction:
         assert not (destination / "first.txt").exists()
         assert not (destination / "second.txt").exists()
 
+    # Found by tests/fuzz/fuzz_zip_archive.py: these escaped as raw zlib,
+    # Unicode and NotImplemented errors instead of ZipExtractionError.
+
+    def test_corrupt_deflate_stream_is_a_zip_extraction_error(self, tmp_path):
+        zip_path = tmp_path / "corrupt.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("data.txt", bytes(range(256)) * 64)
+        with zipfile.ZipFile(zip_path) as archive:
+            info = archive.infolist()[0]
+        payload = bytearray(zip_path.read_bytes())
+        start = info.header_offset + 30 + len(info.filename.encode())
+        payload[start:start + 16] = b"\xff" * 16
+        zip_path.write_bytes(payload)
+
+        destination = tmp_path / "out"
+        with pytest.raises(ZipExtractionError, match="Unable to extract ZIP safely"):
+            extract_zip_safely(zip_path, destination, _test_limits())
+        assert not destination.exists()
+
+    def test_member_name_flagged_utf8_but_not_is_a_zip_extraction_error(self, tmp_path):
+        from docsgpt.security.zip_archive import validate_zip_archive
+
+        zip_path = tmp_path / "bad-name.zip"
+        info = zipfile.ZipInfo("caf\u00e9.txt")
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr(info, b"x")
+        # Swap the UTF-8 "é" for a Latin-1 one while the UTF-8 flag stays set.
+        zip_path.write_bytes(zip_path.read_bytes().replace("caf\u00e9".encode(), b"caf\xe9\x00"))
+
+        with pytest.raises(ZipExtractionError, match="Invalid or corrupted ZIP file"):
+            validate_zip_archive(zip_path, _test_limits())
+
+    def test_unsupported_zip_version_is_a_zip_extraction_error(self, tmp_path):
+        from docsgpt.security.zip_archive import validate_zip_archive
+
+        zip_path = tmp_path / "future.zip"
+        with zipfile.ZipFile(zip_path, "w") as archive:
+            archive.writestr("a.txt", b"x")
+        payload = bytearray(zip_path.read_bytes())
+        central = payload.index(b"PK\x01\x02")
+        payload[central + 6] = 100  # version needed to extract: 10.0
+        zip_path.write_bytes(payload)
+
+        with pytest.raises(ZipExtractionError, match="Invalid or corrupted ZIP file"):
+            validate_zip_archive(zip_path, _test_limits())
+
     def test_nested_archives_are_expanded_with_one_budget(self, tmp_path):
         inner_path = tmp_path / "inner.zip"
         with zipfile.ZipFile(inner_path, "w") as archive:

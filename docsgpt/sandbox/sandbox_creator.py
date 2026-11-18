@@ -4,6 +4,7 @@ import threading
 from typing import Callable, Dict, Optional
 
 from docsgpt.core.settings import settings
+from docsgpt.sandbox.activity import shared_activity
 from docsgpt.sandbox.base import CodeSandbox
 from docsgpt.sandbox.jupyter_gateway import JupyterKernelGatewaySandbox
 from docsgpt.sandbox.manager import SandboxManager
@@ -80,6 +81,7 @@ class SandboxCreator:
                     backend=backend,
                     max_ttl=float(settings.SANDBOX_MAX_TTL),
                     max_sessions=int(settings.SANDBOX_MAX_SESSIONS),
+                    shared_activity=shared_activity(),
                 )
             return cls._instance
 

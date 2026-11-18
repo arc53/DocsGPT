@@ -23,7 +23,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
+from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import conversations_table, conversation_messages_table
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
@@ -59,6 +59,49 @@ class HeartbeatState(str, Enum):
     MISSING = "missing"
 
 
+def team_visible_sql(alias: str = "", user_param: str = "user_id") -> str:
+    """SQL that holds when a conversation's workspace is still the user's to see.
+
+    A Personal chat (``team_id`` NULL) always passes. A team chat passes for a
+    current member or owner of that team, and for the team's own principal (an
+    API-key or widget chat runs as it). Someone who left the team stops
+    seeing their chats there, and sees them again if re-added.
+
+    Args:
+        alias: The ``conversations`` table alias in the query, or "" when unaliased.
+        user_param: The name of the bound parameter holding the user id.
+
+    Returns:
+        str: A parenthesized boolean SQL expression.
+    """
+    # Always qualify the column: a bare ``team_id`` inside the
+    # ``team_members`` subquery would bind to ``ws_m.team_id`` and turn the
+    # check into "member of any team".
+    col = f"{alias or 'conversations'}."
+    user = f":{user_param}"
+    return (
+        f"({col}team_id IS NULL"
+        f" OR {user} = '__team__' || {col}team_id::text"
+        f" OR EXISTS (SELECT 1 FROM teams ws_t WHERE ws_t.id = {col}team_id AND ws_t.owner_id = {user})"
+        f" OR EXISTS (SELECT 1 FROM team_members ws_m WHERE ws_m.team_id = {col}team_id AND ws_m.user_id = {user}))"
+    )
+
+
+def conversation_workspace(row: Optional[dict]) -> dict:
+    """The ``workspace`` field of a conversation payload: ``{kind, team_id}``.
+
+    Args:
+        row: A ``conversations`` row.
+
+    Returns:
+        dict: ``{"kind": "team", "team_id": ...}`` for a team chat, else Personal.
+    """
+    team_id = (row or {}).get("team_id")
+    if team_id:
+        return {"kind": "team", "team_id": str(team_id)}
+    return {"kind": "personal", "team_id": None}
+
+
 def _message_row_to_dict(row) -> dict:
     """Like ``row_to_dict`` but renames the DB column ``message_metadata``
     back to the public API key ``metadata`` so callers keep the Mongo-era
@@ -72,6 +115,7 @@ def _message_row_to_dict(row) -> dict:
 class ConversationsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
+        self.retired_message_ids: list[str] = []
 
     # ------------------------------------------------------------------
     # Reference translation helpers
@@ -168,6 +212,8 @@ class ConversationsRepository:
         shared_token: str | None = None,
         visibility: str = "listed",
         legacy_mongo_id: str | None = None,
+        passthrough: dict | None = None,
+        team_id: str | None = None,
     ) -> dict:
         """Create a new conversation.
 
@@ -176,6 +222,9 @@ class ConversationsRepository:
         the Mongo ``_id`` as a lookup key. Subsequent appends/updates
         can then resolve the PG row by that id via
         :meth:`get_by_legacy_id`.
+
+        ``team_id`` is the team workspace the chat lives in (None for
+        Personal). It is set here and never changes afterwards.
         """
         values: dict = {
             "user_id": user_id,
@@ -195,6 +244,10 @@ class ConversationsRepository:
             values["shared_token"] = shared_token
         if legacy_mongo_id:
             values["legacy_mongo_id"] = legacy_mongo_id
+        if passthrough:
+            values["passthrough"] = passthrough
+        if team_id:
+            values["team_id"] = str(team_id)
 
         stmt = pg_insert(conversations_table).values(**values).returning(conversations_table)
         result = self._conn.execute(stmt)
@@ -215,7 +268,8 @@ class ConversationsRepository:
             result = self._conn.execute(
                 text(
                     "SELECT * FROM conversations "
-                    "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id"
+                    "WHERE legacy_mongo_id = :legacy_id AND user_id = :user_id "
+                    f"AND {team_visible_sql()}"
                 ),
                 {"legacy_id": legacy_mongo_id, "user_id": user_id},
             )
@@ -230,12 +284,17 @@ class ConversationsRepository:
         return row_to_dict(row) if row is not None else None
 
     def get(self, conversation_id: str, user_id: str) -> Optional[dict]:
-        """Fetch a conversation the user owns or has shared access to."""
+        """Fetch a conversation the user owns or has shared access to.
+
+        A team chat also needs the user's current membership in its team
+        (:func:`team_visible_sql`): an ex-member gets None.
+        """
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
                 "WHERE id = CAST(:id AS uuid) "
-                "AND (user_id = :user_id OR :user_id = ANY(shared_with))"
+                "AND (user_id = :user_id OR :user_id = ANY(shared_with)) "
+                f"AND {team_visible_sql()}"
             ),
             {"id": conversation_id, "user_id": user_id},
         )
@@ -254,16 +313,82 @@ class ConversationsRepository:
         return self.get_by_legacy_id(conversation_id, user_id)
 
     def get_owned(self, conversation_id: str, user_id: str) -> Optional[dict]:
-        """Fetch a conversation owned by the user (no shared access)."""
+        """Fetch a conversation owned by the user (no shared access), while its workspace is still theirs."""
         result = self._conn.execute(
             text(
                 "SELECT * FROM conversations "
-                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id "
+                f"AND {team_visible_sql()}"
             ),
             {"id": conversation_id, "user_id": user_id},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def team_id_of(self, conversation_id: str) -> Optional[str]:
+        """The team workspace a conversation lives in, whoever asks.
+
+        Args:
+            conversation_id: The conversation's UUID.
+
+        Returns:
+            Optional[str]: The team id; None for a Personal chat, a missing row or a non-UUID id.
+        """
+        if not conversation_id or not looks_like_uuid(str(conversation_id)):
+            return None
+        team_id = self._conn.execute(
+            text("SELECT team_id FROM conversations WHERE id = CAST(:id AS uuid)"),
+            {"id": str(conversation_id)},
+        ).scalar()
+        return str(team_id) if team_id else None
+
+    _AGENT_CHATS_WHERE = (
+        "agent_id = ANY(CAST(:agents AS uuid[])) AND team_id IS NOT DISTINCT FROM CAST(:from_team AS uuid) "
+        "AND user_id = ANY(:users)"
+    )
+
+    def count_agent_chats(self, agent_ids: list[str], *, team_id: Optional[str], user_ids: list[str]) -> int:
+        """How many of these people's chats with these agents live in one workspace.
+
+        Args:
+            agent_ids: Agent UUIDs.
+            team_id: The workspace (None for Personal).
+            user_ids: The chats' owners to count.
+
+        Returns:
+            int: The number of conversations.
+        """
+        if not agent_ids or not user_ids:
+            return 0
+        return int(self._conn.execute(
+            text(f"SELECT count(*) FROM conversations WHERE {self._AGENT_CHATS_WHERE}"),
+            {"agents": list(agent_ids), "from_team": team_id, "users": list(user_ids)},
+        ).scalar() or 0)
+
+    def move_agent_chats(
+        self, agent_ids: list[str], *, from_team_id: Optional[str], to_team_id: Optional[str], user_ids: list[str]
+    ) -> int:
+        """Move these people's chats with these agents to another workspace (an agent moved there).
+
+        This is the one change of ``team_id`` after creation.
+
+        Args:
+            agent_ids: The moved agents.
+            from_team_id: The workspace the chats are in now (None for Personal).
+            to_team_id: The workspace they go to (None for Personal).
+            user_ids: Whose chats move: the people who can reach the agent where it went.
+
+        Returns:
+            int: The number of conversations moved.
+        """
+        if not agent_ids or not user_ids:
+            return 0
+        return self._conn.execute(
+            text(
+                f"UPDATE conversations SET team_id = CAST(:to_team AS uuid) WHERE {self._AGENT_CHATS_WHERE}"
+            ),
+            {"agents": list(agent_ids), "from_team": from_team_id, "to_team": to_team_id, "users": list(user_ids)},
+        ).rowcount
 
     def list_for_user(
         self,
@@ -272,8 +397,9 @@ class ConversationsRepository:
         *,
         before: Optional[datetime] = None,
         before_id: Optional[str] = None,
+        team_id: Optional[str] = None,
     ) -> list[dict]:
-        """List a user's sidebar conversations, most recent first.
+        """List a user's sidebar conversations in one workspace, most recent first.
 
         Only ``visibility = 'listed'`` rows surface; agent/API/OpenAI-compat
         traffic persists as ``'hidden'`` and is excluded. Rows are ordered
@@ -288,11 +414,13 @@ class ConversationsRepository:
             before_id: Keyset cursor ``id`` (a UUID string). With ``before``,
                 only rows where ``(date, id) < (before, before_id)`` are
                 returned.
+            team_id: The team workspace to list; None lists Personal chats.
+                A team's chats list only while the user is still in it.
 
         Returns:
             The matching conversation rows as dicts.
         """
-        params: dict = {"user_id": user_id, "limit": limit}
+        params: dict = {"user_id": user_id, "limit": limit, "team_id": str(team_id) if team_id else None}
         cursor_sql = ""
         if before is not None and before_id is not None and looks_like_uuid(before_id):
             cursor_sql = "AND (date, id) < (:before, CAST(:before_id AS uuid)) "
@@ -303,6 +431,8 @@ class ConversationsRepository:
                 "SELECT * FROM conversations "
                 "WHERE user_id = :user_id "
                 "AND visibility = 'listed' "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid) "
+                f"AND {team_visible_sql()} "
                 f"{cursor_sql}"
                 "ORDER BY date DESC, id DESC LIMIT :limit"
             ),
@@ -311,11 +441,12 @@ class ConversationsRepository:
         return [row_to_dict(r) for r in result.fetchall()]
 
     def search_for_user(
-        self, user_id: str, query: str, limit: int = 30,
+        self, user_id: str, query: str, limit: int = 30, *, team_id: Optional[str] = None,
     ) -> list[dict]:
-        """Search a user's conversations by name or message content.
+        """Search a user's conversations in one workspace by name or message content.
 
-        Same visibility filter as :meth:`list_for_user`. Matches against
+        Same visibility and workspace filter as :meth:`list_for_user`.
+        Matches against
         ``conversations.name`` or any of the conversation's messages'
         ``prompt`` / ``response`` columns (case-insensitive substring).
 
@@ -334,29 +465,32 @@ class ConversationsRepository:
                 "  SELECT field AS match_field, txt AS match_text "
                 "  FROM ( "
                 "    SELECT 'name'::text AS field, c.name AS txt, 0 AS prio "
-                "    WHERE c.name ILIKE :pattern "
+                "    WHERE c.name ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'prompt'::text, m.prompt, 1 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.prompt ILIKE :pattern "
+                "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
-                "      AND m.response ILIKE :pattern "
+                "      AND m.response ILIKE :pattern ESCAPE '\\' "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
                 ") mt ON TRUE "
                 "WHERE c.user_id = :user_id "
                 "AND c.visibility = 'listed' "
+                "AND c.team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid) "
+                f"AND {team_visible_sql('c')} "
                 "ORDER BY c.date DESC LIMIT :limit"
             ),
             {
                 "user_id": user_id,
-                "pattern": f"%{query}%",
+                "pattern": f"%{like_escape(query)}%",
                 "limit": limit,
+                "team_id": str(team_id) if team_id else None,
             },
         )
         return [row_to_dict(r) for r in result.fetchall()]
@@ -372,7 +506,7 @@ class ConversationsRepository:
         result = self._conn.execute(
             text(
                 "UPDATE conversations SET name = :name, updated_at = now() "
-                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                f"WHERE id = CAST(:id AS uuid) AND user_id = :user_id AND {team_visible_sql()}"
             ),
             {"id": conversation_id, "user_id": user_id, "name": name},
         )
@@ -630,25 +764,41 @@ class ConversationsRepository:
             self._reap_artifact_storage(paths)
         return deleted
 
-    def delete_all_for_user(self, user_id: str) -> int:
+    def delete_all_for_user(self, user_id: str, team_id: Optional[str] = None) -> int:
+        """Delete every conversation the user has in one workspace, with its artifacts and traces.
+
+        Args:
+            user_id: Whose conversations.
+            team_id: The team workspace; None deletes the Personal ones
+                (``team_id`` NULL). Other workspaces' chats are kept.
+
+        Returns:
+            The number of conversations deleted.
+        """
         from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 
+        team_id = str(team_id) if team_id else None
+        params = {"user_id": user_id, "team_id": team_id}
         # Reap artifacts BEFORE the conversations: delete_for_user_conversations
         # resolves them via a subquery over the still-present conversation rows.
         artifacts = ArtifactsRepository(self._conn)
-        paths = artifacts.storage_paths_for_user_conversations(user_id)
-        artifacts.delete_for_user_conversations(user_id)
+        paths = artifacts.storage_paths_for_user_conversations(user_id, team_id)
+        artifacts.delete_for_user_conversations(user_id, team_id)
         # See ``delete``: traces not linked to a message are removed explicitly.
         self._conn.execute(
             text(
                 "DELETE FROM request_traces WHERE conversation_id IN "
-                "(SELECT id FROM conversations WHERE user_id = :user_id)"
+                "(SELECT id FROM conversations WHERE user_id = :user_id "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid))"
             ),
-            {"user_id": user_id},
+            params,
         )
         result = self._conn.execute(
-            text("DELETE FROM conversations WHERE user_id = :user_id"),
-            {"user_id": user_id},
+            text(
+                "DELETE FROM conversations WHERE user_id = :user_id "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid)"
+            ),
+            params,
         )
         self._reap_artifact_storage(paths)
         return result.rowcount
@@ -952,6 +1102,29 @@ class ConversationsRepository:
             {"id": conversation_id},
         )
         return _message_row_to_dict(result.fetchone())
+
+    def delete_in_flight_message(self, message_id: str) -> bool:
+        """Delete a message that is still being written; a finished one is left alone.
+
+        A continuation reserves its row before it runs and takes it back out
+        when it ends silent or fails; its journal goes with it (cascade).
+
+        Args:
+            message_id: The message.
+
+        Returns:
+            True when a row was deleted.
+        """
+        if not looks_like_uuid(message_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid) "
+                "AND status IN ('pending', 'streaming')"
+            ),
+            {"id": message_id},
+        )
+        return (result.rowcount or 0) > 0
 
     def update_message_by_id(
         self, message_id: str, fields: dict,
@@ -1304,16 +1477,12 @@ class ConversationsRepository:
         correctly reports ``NOT_FOUND``, not ``ALREADY_FAILED``. Do not rely on
         the stamp for anything but the ``RETURNING id`` log line.
 
-        What DOES survive is the ``superseded_messages`` tombstone written
-        below. A stream superseded less than ``STREAM_HEARTBEAT_INTERVAL``
-        before it finishes is never cancelled — the ticker in
-        ``api/answer/routes/base.py`` is the only thing that sets the cancel
-        flag, and it cannot be set from here because it is a ``threading.Event``
-        in another worker process — so the stream runs to completion and
-        finalizes into a row that is gone. Without the tombstone that logged an
-        ERROR ``answer_persist_failed``, identical to a genuinely orphaned
-        answer, every time a user hit retry on an answer shorter than the
-        heartbeat interval.
+        The ``superseded_messages`` tombstone survives the delete. The deleted
+        ids are left in ``retired_message_ids`` for the caller to pass to
+        ``cancel_streams`` once the transaction commits, so the owning process
+        stops at its next round or tool boundary. The tombstone distinguishes
+        late finalization from a genuinely orphaned answer while a provider
+        call is still returning.
 
         Args:
             conversation_id: Conversation whose tail is being trimmed.
@@ -1358,7 +1527,7 @@ class ConversationsRepository:
         # Tombstone before the delete, in the same transaction: the late
         # finalize usually runs in a different worker process, so the signal
         # has to be durable. No FK, or the CASCADE below would remove it.
-        self._conn.execute(
+        retired = self._conn.execute(
             text(
                 """
                 INSERT INTO superseded_messages (message_id, conversation_id)
@@ -1367,10 +1536,14 @@ class ConversationsRepository:
                  WHERE conversation_id = CAST(:conv_id AS uuid)
                    AND position > :pos
                 ON CONFLICT (message_id) DO NOTHING
+                RETURNING message_id
                 """
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
+        # Include terminal rows: the reconciler may already have failed a
+        # still-running stream. Every deleted producer must see cancellation.
+        self.retired_message_ids = [str(row[0]) for row in retired]
         result = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages "
@@ -1426,6 +1599,19 @@ class ConversationsRepository:
             {"days": days},
         )
         return result.rowcount or 0
+
+    def set_passthrough(self, conversation_id: str, passthrough: dict | None) -> bool:
+        """Store the latest turn's ``passthrough`` values on a conversation; ``None`` clears them."""
+        if not looks_like_uuid(conversation_id):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE conversations SET passthrough = CAST(:passthrough AS jsonb) "
+                "WHERE id = CAST(:conv_id AS uuid)"
+            ),
+            {"conv_id": conversation_id, "passthrough": json.dumps(passthrough) if passthrough else None},
+        )
+        return result.rowcount > 0
 
     def set_feedback(
         self, conversation_id: str, position: int, feedback: dict | None,

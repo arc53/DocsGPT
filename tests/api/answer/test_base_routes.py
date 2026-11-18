@@ -75,6 +75,16 @@ class TestPrepareToolCallsForLogging:
             assert prepared[0]["result"] == "short text"
             assert prepared[0]["tool_name"] == "search"
 
+    def test_never_logs_an_mcp_app_views_result(self, mock_mongo_db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            ui = {"resource_uri": "ui://app/view.html", "tool_id": "t1", "result": {"structuredContent": {"k": 1}}}
+            tool_calls = [{"tool_name": "mcp_tool", "ui": ui}]
+            prepared = BaseAnswerResource()._prepare_tool_calls_for_logging(tool_calls)
+            assert prepared[0]["ui"] == {"resource_uri": "ui://app/view.html", "tool_id": "t1"}
+            assert "result" in tool_calls[0]["ui"]
+
 
 @pytest.mark.unit
 class TestCompleteStreamToolCalls:
@@ -1244,7 +1254,7 @@ class TestCompleteStreamWalAcceptance:
             assert save_state.call_args.kwargs["messages"] == [read]
 
     def test_sources_found_before_the_pause_are_saved_with_it(
-        self, pg_conn, flask_app,
+        self, pg_conn, flask_app, mock_llm_creator,
     ):
         """The resumed turn continues the paused one's ``[n]`` numbering, so
         it needs the sources in full: the stream's 100-character excerpts
@@ -1256,6 +1266,8 @@ class TestCompleteStreamWalAcceptance:
 
         doc = {"title": "a.pdf", "source": "a.pdf", "text": "x" * 1500, "chunk_key": "k"}
         expected = dict(doc)
+        # The pause creates the conversation and names it with the title model.
+        mock_llm_creator.gen.return_value = "Run my tool"
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()
@@ -1613,3 +1625,352 @@ class TestCompleteStreamSupersededLookupIsGuarded:
         assert any(
             "answer_persist_failed" in r.getMessage() for r in caplog.records
         )
+
+
+class TestToolCallsAcrossApprovalRounds:
+    """A turn that pauses for approval more than once keeps every round's calls on its message."""
+
+    def test_merge_keeps_order_and_takes_each_calls_latest_state(self):
+        from docsgpt.api.answer.segments import merge_tool_calls
+
+        earlier = [
+            {"call_id": "a", "status": "completed"},
+            {"call_id": "b", "status": "awaiting_approval"},
+            {"tool_name": "no-id"},
+        ]
+        latest = [{"call_id": "b", "status": "completed", "result": "ok"}, {"call_id": "c", "status": "completed"}]
+        assert merge_tool_calls(earlier, latest) == [
+            {"call_id": "a", "status": "completed"},
+            {"call_id": "b", "status": "completed", "result": "ok"},
+            {"tool_name": "no-id"},
+            {"call_id": "c", "status": "completed"},
+        ]
+        assert merge_tool_calls([], []) == [] and merge_tool_calls(None, ["junk"]) == []
+
+    def test_a_pause_saves_this_rounds_calls_with_the_earlier_ones(self, pg_conn, flask_app, mock_llm_creator):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        # The pause creates the conversation and names it with the title model.
+        mock_llm_creator.gen.return_value = "Tool approval"
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter(
+                [
+                    {"type": "tool_call", "data": {"call_id": "r2", "status": "awaiting_approval"}},
+                    {"type": "tool_calls_pending", "data": {"pending_tool_calls": [{"call_id": "r2"}]}},
+                    {"tool_calls": [{"call_id": "r1b", "action_name": "monitor_list", "status": "completed"}]},
+                ]
+            )
+            agent._pending_continuation = {"messages": [], "tools_dict": {}, "pending_tool_calls": [{"call_id": "r2"}]}
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            with _patch_db_session(pg_conn), patch(
+                "docsgpt.api.answer.services.continuation_service.ContinuationService.save_state",
+            ) as save_state:
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-rounds"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "prior_tool_calls": [
+                                {"call_id": "r1a", "action_name": "monitor_create", "status": "completed"}
+                            ],
+                        },
+                    )
+                )
+        prior = save_state.call_args.kwargs["agent_config"]["prior_tool_calls"]
+        assert [call["call_id"] for call in prior] == ["r1a", "r1b"]
+
+    def test_the_resumed_turn_finalizes_every_rounds_calls(self, pg_conn, flask_app):
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        user_id = "u-rounds2"
+        conv_id = _uuid.uuid4()
+        message_id = _uuid.uuid4()
+        pg_conn.execute(sql_text("INSERT INTO users (user_id) VALUES (:u)"), {"u": user_id})
+        pg_conn.execute(
+            sql_text("INSERT INTO conversations (id, user_id, name) VALUES (:id, :u, 'c')"),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position, prompt, status) "
+                "VALUES (:id, :c, :u, 0, 'q', 'streaming')"
+            ),
+            {"id": message_id, "c": conv_id, "u": user_id},
+        )
+        prior = [
+            {"call_id": "r1", "action_name": "monitor_create", "status": "completed",
+             "arguments": {"source": {"type": "webhook"}}},
+            {"call_id": "r2", "action_name": "run_command", "status": "awaiting_approval",
+             "arguments": {"command": "echo {{link_secret:ABCDEF}}"}},
+        ]
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter(
+                [
+                    {"answer": "done"},
+                    {"tool_calls": [
+                        {"call_id": "r2", "action_name": "run_command", "status": "completed",
+                         "arguments": {"command": "echo {{link_secret:ABCDEF}}"}, "result": "ok"},
+                        {"call_id": "r3", "action_name": "memory_create", "status": "completed"},
+                    ]},
+                ]
+            )
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            with _patch_db_session(pg_conn):
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=str(conv_id),
+                        user_api_key=None,
+                        decoded_token={"sub": user_id},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": str(message_id),
+                            "request_id": "req-rounds",
+                            "prior_tool_calls": prior,
+                        },
+                    )
+                )
+        stored = pg_conn.execute(
+            sql_text("SELECT tool_calls FROM conversation_messages WHERE id = :id"), {"id": message_id}
+        ).scalar()
+        assert [(call["call_id"], call["status"]) for call in stored] == [
+            ("r1", "completed"), ("r2", "completed"), ("r3", "completed"),
+        ]
+        # The reference stays as the model wrote it; nothing resolved it on the way.
+        assert stored[1]["arguments"]["command"] == "echo {{link_secret:ABCDEF}}"
+
+    def test_a_pause_saves_the_text_and_reasoning_written_before_it(self, pg_conn, flask_app, mock_llm_creator):
+        """A resumed turn shows what it wrote before the pause after a reload, not only what came after."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        mock_llm_creator.gen.return_value = "Questions"
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter(
+                [
+                    {"thought": "Need the dates."},
+                    {"answer": "A few details first."},
+                    {"type": "tool_call", "data": {"call_id": "q1", "status": "awaiting_answer"}},
+                    {"type": "tool_calls_pending", "data": {"pending_tool_calls": [{"call_id": "q1"}]}},
+                ]
+            )
+            agent._pending_continuation = {"messages": [], "tools_dict": {}, "pending_tool_calls": [{"call_id": "q1"}]}
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            with _patch_db_session(pg_conn), patch(
+                "docsgpt.api.answer.services.continuation_service.ContinuationService.save_state",
+            ) as save_state:
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-prior"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": "11111111-1111-1111-1111-111111111111",
+                            "prior_turn": {"response": "Earlier.", "thought": "",
+                                           "segments": [{"kind": "text", "length": 8}]},
+                        },
+                    )
+                )
+        prior = save_state.call_args.kwargs["agent_config"]["prior_turn"]
+        assert prior["response"] == "Earlier.A few details first."
+        assert prior["thought"] == "Need the dates."
+        assert prior["segments"] == [
+            {"kind": "text", "length": 8}, {"kind": "thought", "length": 15},
+            {"kind": "text", "length": 20}, {"kind": "tool", "call_id": "q1"},
+        ]
+
+    def test_the_resumed_turn_keeps_the_text_written_before_the_pause(self, pg_conn, flask_app):
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        user_id = "u-prior2"
+        conv_id = _uuid.uuid4()
+        message_id = _uuid.uuid4()
+        pg_conn.execute(sql_text("INSERT INTO users (user_id) VALUES (:u)"), {"u": user_id})
+        pg_conn.execute(
+            sql_text("INSERT INTO conversations (id, user_id, name) VALUES (:id, :u, 'c')"),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position, prompt, status) "
+                "VALUES (:id, :c, :u, 0, 'q', 'streaming')"
+            ),
+            {"id": message_id, "c": conv_id, "u": user_id},
+        )
+        prior_turn = {
+            "response": "A few details first.",
+            "thought": "Need the dates.",
+            "segments": [{"kind": "thought", "length": 15}, {"kind": "text", "length": 20},
+                         {"kind": "tool", "call_id": "q1"}],
+        }
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter([
+                {"type": "tool_call", "data": {"call_id": "q1", "status": "completed"}},
+                {"answer": "Here is the plan."},
+                {"tool_calls": [{"call_id": "q1", "action_name": "ask_user", "status": "completed"}]},
+            ])
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            with _patch_db_session(pg_conn):
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=str(conv_id),
+                        user_api_key=None,
+                        decoded_token={"sub": user_id},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": str(message_id),
+                            "request_id": "req-prior",
+                            "prior_tool_calls": [{"call_id": "q1", "action_name": "ask_user",
+                                                  "status": "awaiting_answer"}],
+                            "prior_turn": prior_turn,
+                        },
+                    )
+                )
+        row = pg_conn.execute(
+            sql_text("SELECT response, thought, message_metadata FROM conversation_messages WHERE id = :id"),
+            {"id": message_id},
+        ).one()
+        assert row.response == "A few details first.\n\nHere is the plan."
+        assert row.thought == "Need the dates."
+        assert row.message_metadata["segments"] == prior_turn["segments"] + [{"kind": "text", "length": 19}]
+
+    def test_a_resume_with_no_row_to_finalize_does_not_repeat_the_earlier_text(self, flask_app):
+        """The /v1 stateless round finalized the paused row already; its resume appends a new answer."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter([{"answer": "After."}])
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            frames = list(
+                resource.complete_stream(
+                    question="",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "u-prior3"},
+                    should_persist=False,
+                    model_id="gpt-4",
+                    _continuation={
+                        "messages": [], "tools_dict": {}, "pending_tool_calls": [], "tool_actions": [],
+                        "prior_turn": {"response": "Before.", "thought": "", "segments": []},
+                    },
+                )
+            )
+        answers = [json.loads(f[len("data: "):]) for f in frames if f.startswith("data: ")]
+        assert [a["answer"] for a in answers if a.get("type") == "answer"] == ["After."]
+
+    def test_a_finished_resume_drops_only_its_own_pause(self, pg_conn, flask_app):
+        """A later turn may have paused while this one resumed: its pause must survive."""
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        user_id = "u-rounds3"
+        conv_id = _uuid.uuid4()
+        message_id = _uuid.uuid4()
+        pg_conn.execute(sql_text("INSERT INTO users (user_id) VALUES (:u)"), {"u": user_id})
+        pg_conn.execute(
+            sql_text("INSERT INTO conversations (id, user_id, name) VALUES (:id, :u, 'c')"),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position, prompt, status) "
+                "VALUES (:id, :c, :u, 0, 'q', 'streaming')"
+            ),
+            {"id": message_id, "c": conv_id, "u": user_id},
+        )
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter([{"answer": "done"}, {"tool_calls": []}])
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            with _patch_db_session(pg_conn), patch(
+                "docsgpt.api.answer.services.continuation_service.ContinuationService.delete_state",
+            ) as delete_state:
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=str(conv_id),
+                        user_api_key=None,
+                        decoded_token={"sub": user_id},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": str(message_id),
+                            "request_id": "req-own",
+                            "prior_tool_calls": [],
+                        },
+                    )
+                )
+        delete_state.assert_called_once_with(str(conv_id), user_id, message_id=str(message_id))

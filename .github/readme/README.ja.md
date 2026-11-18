@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit c345cddb3ac33b44a077cfb5599f6adb2fc6604f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 96e6e4a0d2ff45c1cffe0df1eec4338c5222fab9 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -11,6 +11,7 @@
   <a href="https://github.com/arc53/DocsGPT"><img src="https://img.shields.io/github/stars/arc53/docsgpt?style=social" alt="GitHub スター"></a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE"><img src="https://img.shields.io/github/license/arc53/docsgpt" alt="MIT ライセンス"></a>
   <a href="https://www.bestpractices.dev/projects/9907"><img src="https://www.bestpractices.dev/projects/9907/badge" alt="OpenSSF ベストプラクティス"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/arc53/DocsGPT"><img src="https://api.scorecard.dev/projects/github.com/arc53/DocsGPT/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://discord.gg/vN7YFfdMpj"><img src="https://img.shields.io/discord/1070046503302877216" alt="Discord"></a>
   <a href="https://x.com/docsgptai"><img src="https://img.shields.io/twitter/follow/docsgptai" alt="X でフォロー"></a>
 </p>
@@ -44,11 +45,17 @@
 
 <p align="center">
   <a href="https://docs.docsgpt.cloud/">
-    <img src="https://pub.arc53.com/docsgpt/readme-reel.webp?v=2" alt="30 秒でわかる DocsGPT：ドキュメントのアップロード、GitHub の同期、出典付き回答、ディープリサーチ、ビジュアルワークフロー、ツール、チャットウィジェット、OpenAI 互換 API、MCP サーバー、docsgpt up によるセルフホスト" width="100%">
+    <img width="1100" height="688" src="https://pub.arc53.com/readme-reel.webp" alt="DocsGPT の概要：出典付きの回答、ナレッジ、エージェント、ビジュアルワークフロー、ツールとコネクター、オブザーバビリティ">
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026：** 10 月中、意義のあるコントリビューションには T シャツをプレゼントします。詳細は [HACKTOBERFEST.md](../../HACKTOBERFEST.md) をご覧ください。
+
+<p align="center">
+  <sub>サポート</sub><br>
+  <a href="https://get.neon.com/docsgpt"><picture><source media="(prefers-color-scheme: dark)" srcset="https://neon.com/brand/neon-logo-dark-color.svg"><img height="32" alt="Neon" src="https://neon.com/brand/neon-logo-light-color.svg" /></picture></a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://vercel.com/open-source-program"><img height="28" alt="Vercel OSS プログラム" src="https://vercel.com/oss/program-badge-2026.svg" /></a>
+</p>
 
 ## DocsGPT を選ぶ理由
 
@@ -76,6 +83,8 @@ Docker Compose、pip、Kubernetes、またはエアギャップ環境でのイ�
 - 🧠 **あらゆるモデル：** OpenAI、Anthropic、Google、Groq、OpenRouter、または Ollama、vLLM、その他の OpenAI 互換サーバーを通じたローカルモデル。
 - 🛡️ **ガードレール：** PII、シークレット、プロンプトインジェクション、根拠のない回答をフラグ、マスキング、またはブロック。
 - ⏰ **スケジュールと Webhook：** タイマー、または HTTP リクエストを送信できる任意のシステムからエージェントを実行。
+
+https://github.com/user-attachments/assets/d36bbd7d-c23c-4ab8-8777-b432632d6882
 
 <table>
   <tr>
@@ -191,15 +200,5 @@ Issue、質問、プルリクエストを歓迎します。まず [CONTRIBUTING.
 
 DocsGPT は [MIT ライセンス](../../LICENSE)です。
 
-## サポート
 
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px" alt="DigitalOcean">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="Neon" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-</p>
+

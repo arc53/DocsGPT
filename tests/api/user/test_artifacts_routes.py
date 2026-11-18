@@ -183,6 +183,32 @@ class TestListArtifacts:
         assert resp.status_code == 200
         assert len(resp.json["artifacts"]) == 2
 
+    def test_list_carries_the_current_versions_file(
+        self, _patch_db, flask_app, token_owner
+    ):
+        """A run's artifact card shows its file type, so the list names the current file."""
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
+
+        wf_id = _make_workflow(_patch_db, OWNER)
+        run = WorkflowRunsRepository(_patch_db).create(wf_id, OWNER, "completed")
+        _make_artifact(
+            _patch_db,
+            workflow_run_id=str(run["id"]),
+            title="Q3 QBR",
+            filename="qbr.pdf",
+            mime_type="application/pdf",
+        )
+
+        resp = _call(
+            flask_app, ListArtifacts, token=token_owner,
+            query={"workflow_run_id": str(run["id"])},
+        )
+        assert resp.status_code == 200
+        (item,) = resp.json["artifacts"]
+        assert item["filename"] == "qbr.pdf"
+        assert item["mime_type"] == "application/pdf"
+        assert item["current_version"] == 1
+
     def test_stranger_denied_conversation_list(
         self, _patch_db, flask_app
     ):
@@ -1131,6 +1157,51 @@ class TestApiKeyPrincipal:
         assert ok.status_code == 200
         assert ok.content == b"BYTES"
 
+    def test_api_key_stops_while_the_owner_is_deactivated(self, _patch_db, flask_app, monkeypatch):
+        # Outside access pauses with its owner: the key's downloads, reads and list pause with it.
+        from docsgpt.api.user.artifacts.routes import GetArtifact, ListArtifacts
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        agent = _make_agent(_patch_db)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        query = {"api_key": "secret-key", "conversation_id": str(conv["id"])}
+        assert _download(art["id"], token=None, query=query).status_code == 200
+
+        UsersRepository(_patch_db).upsert(OWNER)
+        _patch_db.execute(text("UPDATE users SET active = false WHERE user_id = :u"), {"u": OWNER})
+
+        assert _download(art["id"], token=None, query=query).status_code in (401, 403)
+        assert _call(flask_app, GetArtifact, art["id"], token=None, query=query).status_code in (401, 403)
+        assert _call(flask_app, ListArtifacts, token=None, query=query).status_code in (401, 403)
+
+    def test_api_key_stops_while_the_agents_team_is_locked(self, _patch_db, monkeypatch):
+        from tests.workspaces.move_support import team
+
+        team_id, principal = team(_patch_db)
+        agent = AgentsRepository(_patch_db).create(
+            principal, "team-widget", "active", key="team-key", access_payer_id="alice", created_by="alice",
+        )
+        conv = _make_agent_conversation(_patch_db, agent["id"], user_id=principal)
+        art = _make_artifact(
+            _patch_db, user_id=principal, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/team/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        query = {"api_key": "team-key", "conversation_id": str(conv["id"])}
+        assert _download(art["id"], token=None, query=query).status_code == 200
+
+        _patch_db.execute(
+            text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": team_id}
+        )
+        assert _download(art["id"], token=None, query=query).status_code in (401, 403)
+
     def test_api_key_download_outside_agent_scope_denied(self, _patch_db, monkeypatch):
         _make_agent(_patch_db)
         other_conv = _make_conversation(_patch_db, user_id=OWNER)  # no agent_id
@@ -1249,3 +1320,272 @@ class TestApiKeyPrincipal:
 # is covered by the e2e suite under tests/e2e; the unit tests above exercise
 # the malformed-id gate and the api_key principal path directly against the
 # Resource handlers without building the whole app.
+
+
+# ---------------------------------------------------------------------------
+# Agent API key sent as ``Authorization: Bearer``
+# ---------------------------------------------------------------------------
+
+AGENT_KEY = "3f0c2b1e-8d4a-4c2e-9b7a-1e2d3c4b5a69"
+
+
+def _bearer(key=AGENT_KEY):
+    return {"Authorization": f"Bearer {key}"}
+
+
+def _call_with_headers(flask_app, resource_cls, *args, headers=None, query=None, method="get"):
+    with flask_app.app_context():
+        with flask_app.test_request_context(query_string=query or {}, headers=headers or {}):
+            request.decoded_token = None
+            return getattr(resource_cls(), method)(*args)
+
+
+class TestBearerAgentKey:
+    def test_bearer_agent_key_shape(self):
+        assert authz.bearer_agent_key(_bearer()) == AGENT_KEY
+        assert authz.bearer_agent_key({"Authorization": f"bearer {AGENT_KEY}"}) == AGENT_KEY
+        # A session JWT and a personal access token keep their own decoders.
+        assert authz.bearer_agent_key({"Authorization": "Bearer aaa.bbb.ccc"}) is None
+        assert authz.bearer_agent_key({"Authorization": "Bearer dgpt_pat_abc"}) is None
+        assert authz.bearer_agent_key({"Authorization": f"Basic {AGENT_KEY}"}) is None
+        assert authz.bearer_agent_key({}) is None
+
+    def test_header_key_reads_metadata_with_matching_conversation(self, _patch_db, flask_app, monkeypatch):
+        from docsgpt.api.user.artifacts.routes import GetArtifact
+
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        ok = _call_with_headers(
+            flask_app, GetArtifact, art["id"], headers=_bearer(), query={"conversation_id": str(conv["id"])}
+        )
+        assert ok.status_code == 200
+        assert ok.json["artifact"]["id"] == str(art["id"])
+
+        missing_conv = _call_with_headers(flask_app, GetArtifact, art["id"], headers=_bearer())
+        assert missing_conv.status_code == 403
+
+    def test_header_key_with_wrong_conversation_denied(self, _patch_db, flask_app, monkeypatch):
+        from docsgpt.api.user.artifacts.routes import GetArtifact, GetArtifactVersion
+
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        other = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        query = {"conversation_id": str(other["id"])}
+        assert _call_with_headers(flask_app, GetArtifact, art["id"], headers=_bearer(), query=query).status_code == 403
+        version = _call_with_headers(flask_app, GetArtifactVersion, art["id"], 1, headers=_bearer(), query=query)
+        assert version.status_code == 403
+
+    def test_header_key_lists_only_its_conversation(self, _patch_db, flask_app, monkeypatch):
+        from docsgpt.api.user.artifacts.routes import ListArtifacts
+
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        other = _make_agent_conversation(_patch_db, agent["id"])
+        mine = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _make_artifact(_patch_db, conversation_id=str(other["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        resp = _call_with_headers(flask_app, ListArtifacts, headers=_bearer(), query={"conversation_id": str(conv["id"])})
+        assert resp.status_code == 200
+        assert [a["id"] for a in resp.json["artifacts"]] == [str(mine["id"])]
+        enumerate_all = _call_with_headers(flask_app, ListArtifacts, headers=_bearer())
+        assert enumerate_all.status_code == 403
+
+    def test_header_key_is_still_read_only(self, _patch_db, flask_app, monkeypatch):
+        from docsgpt.api.user.artifacts.routes import GetArtifact
+
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+
+        resp = _call_with_headers(
+            flask_app, GetArtifact, art["id"], headers=_bearer(), query={"conversation_id": str(conv["id"])},
+            method="delete",
+        )
+        assert resp.status_code == 403
+        assert ArtifactsRepository(_patch_db).get_artifact(art["id"]) is not None
+
+    def test_unknown_header_key_is_anonymous(self, _patch_db, flask_app, monkeypatch):
+        from docsgpt.api.user.artifacts.routes import GetArtifact, ListArtifacts
+
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        _wire_api_key(monkeypatch, _patch_db)
+        wrong = _bearer("00000000-0000-4000-8000-000000000000")
+
+        query = {"conversation_id": str(conv["id"])}
+        assert _call_with_headers(flask_app, GetArtifact, art["id"], headers=wrong, query=query).status_code == 403
+        assert _call_with_headers(flask_app, ListArtifacts, headers=wrong, query=query).status_code == 401
+
+    def test_download_with_header_key(self, _patch_db, monkeypatch):
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            filename="contract.docx", storage_path="inputs/owner/artifacts/x/v1/contract.docx",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"DOCX"))
+        invalid_jwt = {"message": "Authentication error: invalid token", "error": "invalid_token"}
+
+        # The decoder would reject the key as a JWT; the route never asks it.
+        ok = _download(art["id"], token=invalid_jwt, query={"conversation_id": str(conv["id"])}, headers=_bearer())
+        assert ok.status_code == 200
+        assert ok.content == b"DOCX"
+
+        wrong_conv = _download(
+            art["id"], token=invalid_jwt,
+            query={"conversation_id": str(_make_agent_conversation(_patch_db, agent["id"])["id"])},
+            headers=_bearer(),
+        )
+        assert wrong_conv.status_code == 403
+        no_conv = _download(art["id"], token=invalid_jwt, headers=_bearer())
+        assert no_conv.status_code == 403
+        wrong_key = _download(
+            art["id"], token=invalid_jwt, query={"conversation_id": str(conv["id"])},
+            headers=_bearer("00000000-0000-4000-8000-000000000000"),
+        )
+        assert wrong_key.status_code == 403
+
+    def test_download_query_key_still_works(self, _patch_db, monkeypatch):
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]), storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=None, query={"api_key": AGENT_KEY, "conversation_id": str(conv["id"])})
+        assert resp.status_code == 200 and resp.content == b"BYTES"
+
+    def test_download_header_key_on_s3_redirects_without_the_key(self, _patch_db, monkeypatch):
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]), storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"), strategy="s3")
+
+        resp = _download(art["id"], token=None, query={"conversation_id": str(conv["id"])}, headers=_bearer())
+        assert resp.status_code == 302
+        assert AGENT_KEY not in resp.headers["location"]
+
+    def test_download_pat_still_barred(self, _patch_db, monkeypatch):
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]), storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        pat_claims = {"sub": OWNER, "auth_method": "pat", "scopes": ["chat"]}
+
+        resp = _download(
+            art["id"], token=pat_claims, query={"conversation_id": str(conv["id"])},
+            headers={"Authorization": "Bearer dgpt_pat_example"},
+        )
+        assert resp.status_code == 403
+
+
+class TestBearerAgentKeyThroughTheApp:
+    """The real app's ``authenticate_request`` hook in front of the artifact routes."""
+
+    @pytest.fixture
+    def client(self, _patch_db, monkeypatch):
+        from docsgpt.app import app
+
+        _wire_api_key(monkeypatch, _patch_db)
+        app.config["TESTING"] = True
+        return app.test_client()
+
+    def test_hook_skips_the_jwt_decoder_for_an_agent_key(self, client, _patch_db):
+        agent = _make_agent(_patch_db, key=AGENT_KEY)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(_patch_db, conversation_id=str(conv["id"]))
+        invalid_jwt = {"message": "Authentication error: invalid token", "error": "invalid_token"}
+
+        with patch("docsgpt.app.handle_auth", return_value=invalid_jwt) as decoder:
+            resp = client.get(
+                f"/api/artifacts/{art['id']}", query_string={"conversation_id": str(conv["id"])}, headers=_bearer()
+            )
+        assert resp.status_code == 200
+        assert resp.get_json()["artifact"]["id"] == str(art["id"])
+        decoder.assert_not_called()
+
+    def test_hook_still_rejects_a_bad_jwt(self, client, _patch_db):
+        art = _make_artifact(_patch_db, conversation_id=str(_make_conversation(_patch_db)["id"]))
+        invalid_jwt = {"message": "Authentication error: invalid token", "error": "invalid_token"}
+
+        with patch("docsgpt.app.handle_auth", return_value=invalid_jwt):
+            resp = client.get(f"/api/artifacts/{art['id']}", headers={"Authorization": "Bearer aaa.bbb.ccc"})
+        assert resp.status_code == 401
+
+    def test_hook_keeps_pats_off_the_artifact_routes(self, client, _patch_db):
+        art = _make_artifact(_patch_db, conversation_id=str(_make_conversation(_patch_db)["id"]))
+        pat_claims = {"sub": OWNER, "auth_method": "pat", "scopes": ["chat", "agents:read"], "pat_id": "p1"}
+
+        with patch("docsgpt.app.handle_auth", return_value=pat_claims):
+            resp = client.get(f"/api/artifacts/{art['id']}", headers={"Authorization": "Bearer dgpt_pat_example"})
+        assert resp.status_code == 403
+
+    def test_agent_key_on_other_routes_is_not_special(self, client):
+        invalid_jwt = {"message": "Authentication error: invalid token", "error": "invalid_token"}
+        with patch("docsgpt.app.handle_auth", return_value=invalid_jwt):
+            resp = client.get("/api/get_agents", headers=_bearer())
+        assert resp.status_code == 401
+
+
+def _pat(scopes, resource_filter=None, sub=OWNER):
+    return {
+        "sub": sub,
+        "auth_method": "pat",
+        "pat_id": "t1",
+        "scopes": list(scopes),
+        "resource_filter": resource_filter or {},
+    }
+
+
+@pytest.mark.unit
+class TestPersonalAccessTokenDownload:
+    def _artifact(self, conn):
+        conv = _make_conversation(conn)
+        return _make_artifact(
+            conn, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+
+    def test_a_token_with_artifacts_read_downloads_its_owners_artifact(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"]))
+
+        assert resp.status_code == 200
+        assert resp.content == b"BYTES"
+
+    def test_a_token_without_the_scope_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["runs:read"]))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "insufficient_scope"
+
+    def test_a_restricted_token_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"], {"agents": [str(uuid.uuid4())]}))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "resource_not_allowed"

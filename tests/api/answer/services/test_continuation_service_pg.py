@@ -151,6 +151,43 @@ class TestContinuationServiceSaveLoad:
         assert loaded is not None
         assert loaded["messages"] == [{"role": "user", "content": "hi"}]
 
+    def test_save_state_with_source_retrieval_config(self, pg_conn):
+        """A pause on an agent with sources saves: its per-source list holds
+        ``RetrievalConfig`` models, in ``retriever_config`` and in the
+        internal_search entry of ``tools_dict``."""
+        from docsgpt.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+        from docsgpt.storage.db.source_config import RetrievalConfig
+
+        user = "u-cont-sources"
+        conv = ConversationsRepository(pg_conn).create(user, name="c")
+        conv_id = str(conv["id"])
+        sources = [{"id": "src-1", "retrieval": RetrievalConfig(chunks=4)}]
+
+        service = ContinuationService()
+        with _patch_db(pg_conn):
+            service.save_state(
+                conversation_id=conv_id,
+                user=user,
+                messages=[{"role": "user", "content": "hi"}],
+                pending_tool_calls=[{"call_id": "c1", "name": "act_0"}],
+                tools_dict={"internal": {"config": {"sources": sources}}},
+                tool_schemas=[],
+                agent_config={"retriever_config": {"sources": sources}},
+            )
+            loaded = service.load_state(conv_id, user)
+
+        assert loaded is not None
+        saved = loaded["agent_config"]["retriever_config"]["sources"][0]
+        assert saved["retrieval"]["chunks"] == 4
+        assert RetrievalConfig.model_validate(saved["retrieval"]) == RetrievalConfig(chunks=4)
+        tool_sources = loaded["tools_dict"]["internal"]["config"]["sources"]
+        assert tool_sources[0]["retrieval"]["chunks"] == 4
+
     def test_load_state_returns_none_when_not_found(self, pg_conn):
         from docsgpt.api.answer.services.continuation_service import (
             ContinuationService,
@@ -191,6 +228,50 @@ class TestContinuationServiceSaveLoad:
             assert claimed["status"] == "resuming"
             with pytest.raises(ResumeInProgressError):
                 service.claim_state(conv_id, user)
+
+    def test_a_claimed_pause_clears_its_approval_toast(self, pg_conn):
+        """Approving or denying in the chat resumes the turn; other tabs stop asking for it."""
+        from unittest.mock import patch as _patch
+
+        from docsgpt.api.answer.services.continuation_service import (
+            ContinuationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-decided"
+        conv = ConversationsRepository(pg_conn).create(user, name="c")
+        conv_id = str(conv["id"])
+        service = ContinuationService()
+        with _patch_db(pg_conn), _patch("docsgpt.events.publisher.publish_user_event") as publish:
+            service.save_state(
+                conversation_id=conv_id,
+                user=user,
+                messages=[],
+                pending_tool_calls=[{"call_id": "call-1"}],
+                tools_dict={},
+                tool_schemas=[],
+                agent_config={"reserved_message_id": "m-1"},
+            )
+            assert service.claim_state(conv_id, user) is not None
+            publish.assert_called_once_with(
+                user,
+                "tool.approval.cleared",
+                {"conversation_id": conv_id, "reason": "decided", "message_id": "m-1"},
+                scope={"kind": "conversation", "id": conv_id},
+            )
+            publish.reset_mock()
+            assert service.claim_state(conv_id, "someone-else") is None
+            publish.assert_not_called()
+            # A failed publish never fails the resume.
+            other = str(ConversationsRepository(pg_conn).create(user, name="d")["id"])
+            service.save_state(
+                conversation_id=other, user=user, messages=[], pending_tool_calls=[],
+                tools_dict={}, tool_schemas=[], agent_config={},
+            )
+            publish.side_effect = RuntimeError("redis down")
+            assert service.claim_state(other, user) is not None
 
     def test_expired_state_is_neither_loaded_nor_claimed(self, pg_conn):
         from docsgpt.api.answer.services.continuation_service import (

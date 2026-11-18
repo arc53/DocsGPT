@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { isQuotaError, quotaErrorMessage } from './quotaError';
+import {
+  agentLimitErrorMessage,
+  isAgentLimitError,
+  isQuotaError,
+  quotaErrorMessage,
+} from './quotaError';
 
 const t = ((key: string, values: Record<string, string>) =>
   `${key}|${values.used}|${values.limit}|${values.resetsAt}`) as any;
@@ -51,13 +56,58 @@ describe('quotaErrorMessage', () => {
     expect(message.endsWith('|')).toBe(true);
   });
 
-  it('takes app language codes that are not BCP 47 tags', () => {
-    // i18n.language is an app code: "zhTW" alone makes Intl throw.
+  it('formats with the UI language tag', () => {
     const message = quotaErrorMessage(
       { dimension: 'tokens', usage: 1234, limit: 1000 },
       t,
-      'zhTW',
+      'zh-TW',
     );
     expect(message).toBe('conversation.quotaExceeded.tokens|1,234|1,000|');
+  });
+});
+
+describe('isAgentLimitError', () => {
+  it("matches only the agent's own limit", () => {
+    expect(isAgentLimitError({ error_code: 'agent-limit-exceeded' })).toBe(
+      true,
+    );
+    expect(isAgentLimitError({ error_code: 'quota-exceeded' })).toBe(false);
+    expect(isAgentLimitError(null)).toBe(false);
+    // The user's own quota is not the agent's.
+    expect(isQuotaError({ error_code: 'agent-limit-exceeded' })).toBe(false);
+  });
+});
+
+describe('agentLimitErrorMessage', () => {
+  const tLimit = ((key: string, values: Record<string, string | number>) =>
+    `${key}|${values.used}|${values.limit}|${values.hours}`) as never;
+
+  it('names the tokens used, the limit and the window', () => {
+    const message = agentLimitErrorMessage(
+      {
+        error_code: 'agent-limit-exceeded',
+        dimension: 'tokens',
+        usage: 120500,
+        limit: 100000,
+        window_hours: 24,
+      },
+      tLimit,
+      'en-US',
+    );
+    expect(message).toBe('conversation.agentLimit.tokens|120,500|100,000|24');
+  });
+
+  it('counts requests for a request limit', () => {
+    const message = agentLimitErrorMessage(
+      {
+        error_code: 'agent-limit-exceeded',
+        dimension: 'requests',
+        usage: 50,
+        limit: 50,
+      },
+      tLimit,
+      'en-US',
+    );
+    expect(message).toBe('conversation.agentLimit.requests|50|50|24');
   });
 });

@@ -1,6 +1,14 @@
 """Remote Device tool.
 
 Run shell commands on a paired remote device via the DeviceBroker.
+
+In a chat turn the call runs on a background pool thread
+(:mod:`docsgpt.background.handoff`): the tool dispatches the command and
+follows it, and once the turn hands the call off (it outlived the yield
+window, or the model passed ``background=true``) the rest of the run moves
+to the ``device`` runner's poll chain (:mod:`docsgpt.background.device_runner`)
+instead of holding a thread. Outside a turn (a scheduled run, a monitor
+check) the call blocks until the device reports, as before.
 """
 
 from __future__ import annotations
@@ -30,6 +38,36 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_MS = 30_000
 _MAX_TIMEOUT_MS = 600_000
+
+#: Seconds past a background command's own lifetime its broker keys are kept, for a late report.
+KEY_MARGIN_SECONDS = 900
+
+
+def device_job_max_ms() -> int:
+    """Longest a background command may run on a device (``DEVICE_JOB_MAX_SECONDS``), in milliseconds."""
+    from docsgpt.core.settings import settings
+
+    return int(settings.DEVICE_JOB_MAX_SECONDS) * 1000
+
+
+def clamp_timeout_ms(value: Any, *, background: bool = False) -> int:
+    """The command's timeout: the model's value within the cap, or the default.
+
+    Args:
+        value: What the model passed (may be empty, a string, or junk).
+        background: An explicit background command: the cap is the device
+            job maximum and the default is the cap itself.
+
+    Returns:
+        Milliseconds, at least 1.
+    """
+    cap = device_job_max_ms() if background else _MAX_TIMEOUT_MS
+    default = cap if background else _DEFAULT_TIMEOUT_MS
+    try:
+        timeout_ms = int(value) if value else default
+    except (TypeError, ValueError):
+        timeout_ms = default
+    return min(max(timeout_ms, 1), cap)
 
 
 class RemoteDeviceTool(Tool):
@@ -87,7 +125,10 @@ class RemoteDeviceTool(Tool):
                         },
                         "timeout_ms": {
                             "type": "integer",
-                            "description": "Timeout in milliseconds (max 600000).",
+                            "description": (
+                                "Timeout in milliseconds (max 600000; with background=true up to the device "
+                                "job maximum, which is also the default then)."
+                            ),
                             "filled_by_llm": True,
                             "value": "",
                         },
@@ -167,12 +208,9 @@ class RemoteDeviceTool(Tool):
         if not command:
             return {"error": "command is required"}
         working_directory = kwargs.get("working_directory") or ""
-        timeout_ms = kwargs.get("timeout_ms")
-        try:
-            timeout_ms = int(timeout_ms) if timeout_ms else _DEFAULT_TIMEOUT_MS
-        except (TypeError, ValueError):
-            timeout_ms = _DEFAULT_TIMEOUT_MS
-        timeout_ms = min(max(timeout_ms, 1), _MAX_TIMEOUT_MS)
+        call = self._background_call()
+        explicit = bool(call is not None and call.explicit)
+        timeout_ms = clamp_timeout_ms(kwargs.get("timeout_ms"), background=explicit)
 
         decision_reason, effective_mode = self._decide_approval(device, command)
         denied = self._denylist_label(command)
@@ -189,7 +227,12 @@ class RemoteDeviceTool(Tool):
             "issued_at": datetime.now(timezone.utc).isoformat(),
         }
         broker = get_broker()
-        inv = broker.dispatch_invocation(self.device_id, self.user_id, envelope)
+        # A command that may become a background job keeps its broker keys for the job's lifetime.
+        ttl = (device_job_max_ms() // 1000 + KEY_MARGIN_SECONDS) if explicit else None
+        inv = broker.dispatch_invocation(self.device_id, self.user_id, envelope, ttl_seconds=ttl)
+        dispatched_at = time.time()
+
+        from docsgpt.monitors.secret_refs import redact_active
 
         try:
             with db_session() as conn:
@@ -197,8 +240,9 @@ class RemoteDeviceTool(Tool):
                     device_id=self.device_id,
                     user_id=self.user_id,
                     invocation_id=inv.invocation_id,
-                    command=command,
-                    working_dir=working_directory,
+                    # A secret filled into the command is recorded as its reference.
+                    command=redact_active(command),
+                    working_dir=redact_active(working_directory),
                     approval_mode=effective_mode,
                     decision="dispatched",
                     decision_reason=decision_reason or ("denylist:" + denied if denied else None),
@@ -207,7 +251,80 @@ class RemoteDeviceTool(Tool):
         except Exception:
             logger.exception("audit record_dispatch failed for %s", inv.invocation_id)
 
+        if call is not None:
+            return self._follow(broker, inv, device, timeout_ms, call, dispatched_at)
         return self._collect_result(broker, inv, device, timeout_ms)
+
+    # ------------------------------------------------------------------
+    # Background jobs
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _background_call() -> Any:
+        """The background call this command belongs to, when the turn may hand it off."""
+        from docsgpt.background.handoff import current_call
+
+        return current_call()
+
+    def supports_detached(self) -> bool:
+        """A command runs on the device whatever this process does, so a poller can always follow it."""
+        return True
+
+    def _follow(
+        self, broker, inv, device: dict, timeout_ms: int, call: Any, dispatched_at: float
+    ) -> Any:
+        """Wait for the command while the turn waits; hand it to the device runner once the turn hands it off.
+
+        Args:
+            broker: The device broker.
+            inv: The dispatched invocation.
+            device: The device row.
+            timeout_ms: The command's own timeout.
+            call: The background call handle.
+            dispatched_at: When the command was queued (Unix time).
+
+        Returns:
+            The command's result, or the detached marker when a background
+            job took the command over.
+        """
+        if inv.completed and inv.error:
+            return self._result_from(broker, inv, device)
+        from docsgpt.background.handoff import DETACHED
+
+        deadline = dispatched_at + timeout_ms / 1000.0 + 5.0
+        interval = 0.05
+        # One attempt: a job that refused the move (it ended meanwhile) never takes it later.
+        tried_detach = False
+        while True:
+            if not tried_detach and call.handoff_requested():
+                tried_detach = True
+                from docsgpt.monitors.secret_refs import active_refs
+
+                external = {
+                    "invocation_id": inv.invocation_id,
+                    "device_id": self.device_id,
+                    "device_name": device.get("name"),
+                    "timeout_ms": int(timeout_ms),
+                    "dispatched_at": dispatched_at,
+                }
+                refs = active_refs()
+                if refs:
+                    # The poller redacts the command's output with these (it never holds the values).
+                    external["secret_refs"] = refs
+                if call.detach(external, runner="device"):
+                    return DETACHED
+            current = broker.get_invocation(inv.invocation_id)
+            if current is None or current.completed or time.time() > deadline:
+                return self._result_from(broker, inv, device)
+            call.wait(interval)
+            interval = min(interval * 1.3, 1.0)
+
+    @staticmethod
+    def _result_from(broker, inv, device: dict) -> Dict[str, Any]:
+        """The command's result from its whole output stream, then its broker state is dropped."""
+        try:
+            return command_result(broker, inv.invocation_id, device.get("name"), dispatch_error=inv.error)
+        finally:
+            broker.cleanup_invocation(inv.invocation_id)
 
     # ------------------------------------------------------------------
     # Internals
@@ -315,3 +432,79 @@ class RemoteDeviceTool(Tool):
             "device_name": device.get("name"),
             "error": error,
         }
+
+
+def command_result(
+    broker, invocation_id: str, device_name: Optional[str], *, dispatch_error: Optional[str] = None
+) -> Dict[str, Any]:
+    """A command's result as the tool returns it, read from its whole output stream.
+
+    Args:
+        broker: The device broker.
+        invocation_id: The invocation.
+        device_name: Shown in the result.
+        dispatch_error: Why the dispatch itself failed, if it did.
+
+    Returns:
+        ``{exit_code, stdout, stderr, duration_ms, device_name, error}``.
+    """
+    if dispatch_error:
+        return {
+            "exit_code": None,
+            "stdout": "",
+            "stderr": "",
+            "duration_ms": None,
+            "device_name": device_name,
+            "error": dispatch_error,
+        }
+    stdout: list = []
+    stderr: list = []
+    exit_code = duration_ms = error = detail = None
+    truncated = False
+    saw_control = False
+    cursor = "0-0"
+    while True:
+        chunks, next_cursor = broker.read_output(invocation_id, cursor)
+        for chunk in chunks:
+            stream = chunk.get("stream")
+            if stream == "stdout":
+                stdout.append(chunk.get("chunk", ""))
+            elif stream == "stderr":
+                stderr.append(chunk.get("chunk", ""))
+            elif stream == "control" and not saw_control:
+                # The first control chunk is the outcome (a synthetic "denied" one, or the client's).
+                saw_control = True
+                exit_code = chunk.get("exit_code")
+                duration_ms = chunk.get("duration_ms")
+                error = chunk.get("error") or error
+                detail = chunk.get("detail") or None
+                truncated = chunk.get("truncated") is True
+        if next_cursor == cursor:
+            break
+        cursor = next_cursor
+    if not saw_control:
+        final = broker.get_invocation(invocation_id)
+        if final is not None and final.completed:
+            saw_control = True
+            exit_code = final.exit_code
+            duration_ms = final.duration_ms
+            error = final.error or error
+            detail = final.detail
+            truncated = final.truncated
+    if not saw_control and exit_code is None and not error:
+        error = "device did not respond (timed out)"
+    result = {
+        "exit_code": exit_code,
+        "stdout": "".join(str(part) for part in stdout),
+        "stderr": "".join(str(part) for part in stderr),
+        "duration_ms": duration_ms,
+        "device_name": device_name,
+        "error": error,
+    }
+    if detail:
+        result["detail"] = str(detail)[:500]
+    if truncated:
+        # The client dropped output it could not keep while the server was unreachable.
+        result["truncated"] = True
+        result["note"] = "output was truncated: the device dropped some of it while it could not reach the server"
+    return result

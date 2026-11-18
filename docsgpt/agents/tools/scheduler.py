@@ -14,9 +14,11 @@ from docsgpt.agents.scheduler_utils import (
     parse_run_at,
 )
 from docsgpt.core.settings import settings
+from docsgpt.quotas.payer import current_run_billing
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 from .base import Tool
 
@@ -44,14 +46,24 @@ class SchedulerTool(Tool):
         self.user_id: Optional[str] = user_id
         self.agent_id: Optional[str] = cfg.get("agent_id")
         self.conversation_id: Optional[str] = cfg.get("conversation_id")
+        # The team an agentless chat runs in (set by the executor), else None.
+        self.team_id: Optional[str] = cfg.get("team_id") or None
         # ``api`` when an API-key caller asked (set by the executor, never the
         # model): the schedule's runs then keep that caller's write limits.
         self.created_via: str = "api" if cfg.get("created_via") == "api" else "chat"
+        # The person the schedules made here belong to, and whose allowance
+        # their runs use; read per call, from the run that makes it.
+        self.schedule_user: Optional[str] = None
 
     def execute_action(self, action_name: str, **kwargs: Any) -> str:
         """Dispatch on the LLM-supplied action name."""
         if not self.user_id:
             return "Error: SchedulerTool requires a valid user_id."
+        self.schedule_user = _schedule_user(self.user_id)
+        if not self.schedule_user:
+            # The run executes as a team (a team agent reached by its key) and
+            # names no person to pay; a tool never makes a schedule the team pays for.
+            return "Error: nobody pays for this agent's runs here, so it can't schedule tasks."
         # Agent-bound: agent_id must look like a UUID. Agentless: agent_id is
         # absent; an originating conversation is then mandatory (the schedule's
         # conversation home, used for history + output append).
@@ -63,6 +75,14 @@ class SchedulerTool(Tool):
                 "conversation_id (no conversation home)."
             )
         if action_name == "schedule_task":
+            if self.team_id and not self.agent_id:
+                # A team chat uses only the team's items, but an agentless
+                # schedule runs with the person's own tools; schedules come
+                # from a team agent or from Personal instead.
+                return (
+                    "Error: tasks can't be scheduled from a team chat without an agent. "
+                    "Schedule it from a chat with one of the team's agents, or from a chat in Personal."
+                )
             return self._schedule_task(
                 instruction=kwargs.get("instruction", ""),
                 delay=kwargs.get("delay"),
@@ -82,7 +102,7 @@ class SchedulerTool(Tool):
                 "name": "schedule_task",
                 "description": (
                     "Schedule a one-time task. Provide either a `delay` "
-                    "(e.g. '30m', '2h', '1d') from now, or a `run_at` ISO-8601 "
+                    "(e.g. '30m', '2h', '1d', '1h20m') from now, or a `run_at` ISO-8601 "
                     "absolute time. Optionally pass an IANA `timezone` to resolve "
                     "naive run_at values. The instruction is the task that will "
                     "execute at fire time (including delivery, e.g. 'send to my "
@@ -98,7 +118,7 @@ class SchedulerTool(Tool):
                         },
                         "delay": {
                             "type": "string",
-                            "description": "Duration like '30m', '2h', '1d'.",
+                            "description": "Duration like '30m', '2h', '1d', or combined like '1h20m'.",
                         },
                         "run_at": {
                             "type": "string",
@@ -158,7 +178,11 @@ class SchedulerTool(Tool):
 
         try:
             if delay:
-                fire = datetime.now(timezone.utc) + parse_delay(delay)
+                try:
+                    fire = datetime.now(timezone.utc) + parse_delay(delay)
+                except OverflowError as exc:
+                    # Parses, but lands past the last date datetime holds.
+                    raise ScheduleValidationError("delay is too long.") from exc
             else:
                 fire = parse_run_at(run_at, tz)
             clamp_once_horizon(fire, settings.SCHEDULE_ONCE_MAX_HORIZON)
@@ -166,7 +190,13 @@ class SchedulerTool(Tool):
             return f"Error: {exc}"
 
         with db_readonly() as conn:
-            count = SchedulesRepository(conn).count_active_for_user(self.user_id)
+            if not _may_set_schedules(conn, self.agent_id, self.schedule_user):
+                return (
+                    "Error: you can't schedule tasks on this team agent. "
+                    "Ask someone who manages its schedules (an Editor or above in its team)."
+                )
+            count = SchedulesRepository(conn).count_active_for_user(self.schedule_user)
+            unfinished = _unfinished_workflow(conn, self.agent_id)
         if (
             settings.SCHEDULE_MAX_PER_USER > 0
             and count >= settings.SCHEDULE_MAX_PER_USER
@@ -174,17 +204,22 @@ class SchedulerTool(Tool):
             return (
                 "Error: you have reached the maximum number of active schedules."
             )
+        if unfinished:
+            return (
+                "Error: this workflow agent's graph isn't finished, so it can't be "
+                "scheduled yet."
+            )
 
         # Chat-created tasks default to the user's non-approval tools (for the
         # agent's toolset when agent-bound, or the user's defaults+user_tools
-        # when agentless).
+        # when agentless). Read as the run's identity, which owns the agent.
         allowlist = _safe_default_allowlist(self.agent_id, self.user_id)
 
         auto_name = _name_from_instruction(instruction)
         try:
             with db_session() as conn:
                 created = SchedulesRepository(conn).create(
-                    user_id=self.user_id,
+                    user_id=self.schedule_user,
                     agent_id=self.agent_id,
                     trigger_type="once",
                     instruction=instruction.strip(),
@@ -220,13 +255,13 @@ class SchedulerTool(Tool):
             if self.agent_id:
                 rows = repo.list_for_agent(
                     self.agent_id,
-                    self.user_id,
+                    self.schedule_user,
                     statuses=["active"],
                     trigger_type="once",
                 )
             else:
                 rows = repo.list_for_conversation(
-                    self.user_id,
+                    self.schedule_user,
                     self.conversation_id,
                     statuses=["active"],
                     trigger_type="once",
@@ -254,7 +289,7 @@ class SchedulerTool(Tool):
             # Agentless: scope cancel to user + originating conversation so a
             # user can only cancel tasks they created in the current chat.
             if not self.agent_id:
-                row = repo.get(task_id, self.user_id)
+                row = repo.get(task_id, self.schedule_user)
                 if row is None or row.get("agent_id") is not None or (
                     str(row.get("origin_conversation_id") or "")
                     != str(self.conversation_id or "")
@@ -262,10 +297,29 @@ class SchedulerTool(Tool):
                     return (
                         "Error: scheduled task not found or already terminal."
                     )
-            ok = repo.cancel(task_id, self.user_id)
+            ok = repo.cancel(task_id, self.schedule_user)
         if not ok:
             return "Error: scheduled task not found or already terminal."
         return json.dumps({"task_id": str(task_id), "status": "cancelled"})
+
+
+def _schedule_user(identity: Optional[str]) -> Optional[str]:
+    """Who a schedule made by a run executing as ``identity`` belongs to (``schedules.user_id``, its payer).
+
+    A person's run makes their own schedules. A run that executes as a team
+    principal stores the run's payer (the person billed for it), or nobody.
+
+    Args:
+        identity: The user id the run executes as.
+
+    Returns:
+        A person's id, or None when the run names no person to pay.
+    """
+    if not is_principal_id(identity):
+        return identity
+    billing = current_run_billing()
+    payer = billing.payer if billing is not None else None
+    return payer if payer and not is_principal_id(payer) else None
 
 
 def _name_from_instruction(instruction: str, *, max_len: int = 80) -> str:
@@ -288,6 +342,57 @@ def _iso_utc(value: Any) -> Optional[str]:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _may_set_schedules(conn, agent_id: Optional[str], person: Optional[str]) -> bool:
+    """Whether ``person`` may set a schedule on the agent the chat runs.
+
+    On a team's agent a schedule runs, and stays visible, only while the
+    person it belongs to may manage that agent's schedules, so a viewer, a
+    public-link visitor or a member of a team it is shared with is refused
+    here rather than left with a schedule that never runs. A personal agent
+    keeps its own rules (the run checks them at fire time).
+
+    Args:
+        conn: Open database connection.
+        agent_id: The agent the task is bound to, or None for an agentless one.
+        person: Who the schedule would belong to.
+
+    Returns:
+        bool: False when the task must be refused.
+    """
+    if not agent_id:
+        return True
+    # Imported here: the API package imports this tool module.
+    from docsgpt.api.user.resource_access import resolve, resource_owner
+
+    if not is_principal_id(resource_owner(conn, "agent", str(agent_id))):
+        return True
+    access = resolve(conn, "agent", str(agent_id), person) if person else None
+    return access is not None and access.can("manage_schedules")
+
+
+def _unfinished_workflow(conn, agent_id: Optional[str]) -> bool:
+    """Whether the agent is a workflow agent whose stored graph fails the full validation.
+
+    A draft's graph is saved after a shape check only, and a schedule runs it
+    headless, so a task on such an agent is refused.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The agent the task is bound to, or None for an agentless one.
+
+    Returns:
+        bool: True when the task must be refused.
+    """
+    if not agent_id:
+        return False
+    # Imported here: the API package imports this tool module.
+    from docsgpt.api.user.agents.graph_checks import unfinished_graph_errors
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    agent = AgentsRepository(conn).get_by_id(str(agent_id))
+    return bool(agent and unfinished_graph_errors(conn, agent))
 
 
 def _safe_default_allowlist(
