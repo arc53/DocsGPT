@@ -336,6 +336,8 @@ class UserModelsCollectionResource(Resource):
                 owner_id = listed_owner(conn, user_id, request.args.get("owner"))
                 rows = UserCustomModelsRepository(conn).list_for_user(owner_id)
                 checks = PayerChecks()
+                # One lookup names whoever added each team model, instead of one per row.
+                checks.emails(conn, [r.get("created_by") for r in rows if is_team_model(r)])
                 models = [_row_to_response(conn, r, user_id, checks) for r in rows]
             return make_response(jsonify({"models": models}), 200)
         except WorkspaceError as e:

@@ -27,7 +27,6 @@ from flask import Response, jsonify, make_response
 
 from docsgpt.quotas.pause import PayerChecks
 from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
-from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least
 
@@ -293,6 +292,7 @@ def model_fields(
         ``created_by`` is ``{user_id, label}`` on a team's model (their email when on file, else their id;
         named also after they left) and None on a person's own.
     """
+    checks = checks or PayerChecks()
     access = model_access(conn, row, viewer, checks=checks)
     allowed = access.allowed_actions() if access else []
     if not is_team_model(row):
@@ -300,7 +300,7 @@ def model_fields(
     person = row.get("created_by")
     created_by = None
     if person:
-        label = UsersRepository(conn).emails_for([person]).get(person)
+        label = checks.emails(conn, [person]).get(person)
         created_by = {"user_id": person, "label": label or person}
     return {
         "owner": OWNER_TEAM,

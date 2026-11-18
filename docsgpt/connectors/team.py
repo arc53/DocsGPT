@@ -25,7 +25,6 @@ from flask import Response, jsonify, make_response
 
 from docsgpt.quotas.pause import PayerChecks, connection_pause
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
-from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 from docsgpt.workspaces.roles import role_at_least
 
@@ -277,7 +276,7 @@ def connection_fields(
     person = row.get("connected_by")
     connected_by = None
     if person:
-        label = UsersRepository(conn).emails_for([person]).get(person)
+        label = checks.emails(conn, [person]).get(person)
         connected_by = {"user_id": person, "label": label or person}
     return {
         "owner": OWNER_TEAM,

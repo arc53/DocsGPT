@@ -223,6 +223,34 @@ class TestList:
         assert listed["created_by"] == {"user_id": "ana", "label": "ana@x.io"}
         assert "base_url" not in listed
 
+    def test_who_added_each_model_is_looked_up_once_for_the_list(self, app, pg_conn, team):
+        from sqlalchemy import event
+
+        from docsgpt.api.user.models.routes import UserModelsCollectionResource
+
+        for creator in ("ana", "alice", "gone"):
+            _team_model(pg_conn, team, created_by=creator, name=f"By {creator}")
+        statements: list[str] = []
+
+        def record(_conn, _cursor, statement, *_args):
+            statements.append(statement)
+
+        event.listen(pg_conn, "before_cursor_execute", record)
+        try:
+            with _db(pg_conn):
+                resp = _call(app, UserModelsCollectionResource, "get", "vi", path="/api/user/models?owner=team",
+                             team=team)
+        finally:
+            event.remove(pg_conn, "before_cursor_execute", record)
+
+        labels = {m["display_name"]: m["created_by"] for m in resp.get_json()["models"]}
+        assert labels == {
+            "By ana": {"user_id": "ana", "label": "ana@x.io"},
+            "By alice": {"user_id": "alice", "label": "alice@x.io"},
+            "By gone": {"user_id": "gone", "label": "gone"},
+        }
+        assert len([s for s in statements if "SELECT user_id, email FROM users" in s]) == 1
+
     def test_an_admin_sees_the_endpoint(self, app, pg_conn, team):
         from docsgpt.api.user.models.routes import UserModelsCollectionResource
 

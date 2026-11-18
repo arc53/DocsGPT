@@ -252,12 +252,15 @@ def list_connections(conn, user_id: str, *, viewer: Optional[str] = None) -> lis
     Returns:
         The serialized connections.
     """
+    from docsgpt.connectors.team import is_team_connection
     from docsgpt.quotas.pause import PayerChecks
 
     repo = ConnectorSessionsRepository(conn)
     rows = [r for r in repo.list_for_user(user_id) if normalize_status(r) != STATUS_PENDING]
     counts = repo.resource_counts([str(r["id"]) for r in rows])
     checks = PayerChecks()
+    # One lookup names whoever connected each team account, instead of one per row.
+    checks.emails(conn, [r.get("connected_by") for r in rows if is_team_connection(r)])
     viewer = viewer or user_id
     return [
         serialize_connection(r, counts.get(str(r["id"])), conn=conn, viewer=viewer, checks=checks) for r in rows

@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from docsgpt.quotas.payer import published_access_payer
 from docsgpt.quotas.service import QuotaExceeded, QuotaService
@@ -101,9 +101,10 @@ class PayerChecks:
     """What one request has already learned about payers, so a list checks each distinct payer once.
 
     Caches each payer's allowance check, each person's team role, each team's
-    outside policy and each account's deactivation. Make one per request (or per list) and pass it to
-    every :func:`schedule_pause` and :func:`outside_access_pause` call; never
-    keep it across requests, since roles and allowances change.
+    outside policy, each account's deactivation and each person's email. Make
+    one per request (or per list) and pass it to every :func:`schedule_pause`
+    and :func:`outside_access_pause` call; never keep it across requests,
+    since roles and allowances change.
     """
 
     def __init__(self) -> None:
@@ -111,6 +112,7 @@ class PayerChecks:
         self._roles: dict[tuple, Optional[str]] = {}
         self._policies: dict[str, str] = {}
         self._inactive: dict[str, bool] = {}
+        self._emails: dict[str, Optional[str]] = {}
 
     def quota(self, user_id: str, bucket: str, now: Optional[datetime] = None) -> Optional[QuotaExceeded]:
         """``QuotaService.check(user_id, bucket)``, once per payer, bucket and instant.
@@ -175,6 +177,26 @@ class PayerChecks:
             for user_id in unknown:
                 self._inactive[user_id] = user_id in inactive
         return any(self._inactive[user_id] for user_id in ids)
+
+    def emails(self, conn: Any, user_ids: Iterable[Optional[str]]) -> dict[str, str]:
+        """The stored email of each of ``user_ids``, looking up in one query only the ids not yet seen.
+
+        A list passes every row's person first, so each row's own lookup is then answered from the cache.
+
+        Args:
+            conn: Open connection.
+            user_ids: User ids; empty ones are ignored.
+
+        Returns:
+            ``{user_id: email}`` for the ids with an email on file; the rest are absent.
+        """
+        ids = [str(user_id) for user_id in user_ids if user_id]
+        unknown = list(dict.fromkeys(user_id for user_id in ids if user_id not in self._emails))
+        if unknown:
+            found = UsersRepository(conn).emails_for(unknown)
+            for user_id in unknown:
+                self._emails[user_id] = found.get(user_id)
+        return {user_id: self._emails[user_id] for user_id in ids if self._emails[user_id]}
 
 
 def _holds(checks: PayerChecks, conn: Any, user_id: str, team_id: str, action: str) -> bool:

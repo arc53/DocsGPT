@@ -268,6 +268,21 @@ class TestConnectionFields:
             "paused_for": None, "allowed_actions": ["view"], "can_pick": False,
         }
 
+    def test_who_connected_each_is_looked_up_once_for_the_list(self, pg_conn, team):
+        users = UsersRepository(pg_conn)
+        for person in ("adam", "ana"):
+            users.upsert(person, email=f"{person}@ops.example")
+        for person in ("adam", "ana", "alice"):
+            _team_row(pg_conn, team, person)
+
+        with _counting(pg_conn) as statements:
+            listed = service.list_connections(pg_conn, principal_id(team), viewer="vi")
+
+        assert sorted((c["connected_by"]["user_id"], c["connected_by"]["label"]) for c in listed) == [
+            ("adam", "adam@ops.example"), ("alice", "alice"), ("ana", "ana@ops.example"),
+        ]
+        assert len([s for s in statements if "SELECT user_id, email FROM users" in s]) == 1
+
     def test_who_connected_it_can_pick(self, pg_conn, team):
         fields = connection_fields(pg_conn, _team_row(pg_conn, team, "adam"), "adam")
         assert fields["can_pick"] is True
