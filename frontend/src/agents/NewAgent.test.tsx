@@ -38,7 +38,6 @@ const mockState = {
     sourceDocs: [],
     selectedAgent: null,
     prompts: [],
-    agentFolders: [],
   },
   agentPreview: { queries: [], status: 'idle' },
 };
@@ -169,7 +168,7 @@ vi.mock('../api/services/userService', () => ({
           },
         ],
       }),
-    getAgentFolders: () => jsonResponse({ folders: [] }),
+    getFolders: () => jsonResponse({ folders: [] }),
     getAgent: mocks.getAgent,
     getAgentDefaults: mocks.getAgentDefaults,
     createAgent: mocks.createAgent,
@@ -1189,6 +1188,106 @@ describe('NewAgent form', () => {
       'agents.form.errors.staleWrite',
     );
     expect(nameInput(container).value).toBe('Renamed');
+  });
+
+  it('saves the knowledge folders it was opened with', async () => {
+    await renderEdit({
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await typeName('Renamed');
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('folders')).toBe('["ops"]');
+  });
+
+  it("files a new agent in the URL's folder while the folder list is still loading", async () => {
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    // No folder list has answered yet (the store has none).
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/agents/new?folder_id=f-1']}>
+          <NewAgent mode="new" />
+        </MemoryRouter>,
+      );
+    });
+    await typeName('Support bot');
+    await pickMenuItem(container, 'agents.form.buttons.saveDraft');
+    const created = (
+      mocks.createAgent.mock.calls.at(-1) as unknown as [FormData]
+    )[0];
+    expect(created.get('folder_id')).toBe('f-1');
+  });
+
+  it("drops the URL's folder once the loaded list shows it missing", async () => {
+    mocks.createAgent.mockImplementationOnce(() =>
+      jsonResponse({ id: 'agent-9' }),
+    );
+    const withFolders = mockState as typeof mockState & { folders?: unknown };
+    withFolders.folders = {
+      tree: {
+        items: [{ id: 'f-2', name: 'Other', parent_id: null }],
+        loaded: true,
+        loading: false,
+        failed: false,
+        latestRequestId: null,
+        removedParents: {},
+      },
+    };
+    try {
+      await act(async () => {
+        root.render(
+          <MemoryRouter initialEntries={['/agents/new?folder_id=f-1']}>
+            <NewAgent mode="new" />
+          </MemoryRouter>,
+        );
+      });
+      await typeName('Support bot');
+      await pickMenuItem(container, 'agents.form.buttons.saveDraft');
+      const created = (
+        mocks.createAgent.mock.calls.at(-1) as unknown as [FormData]
+      )[0];
+      expect(created.get('folder_id')).toBeNull();
+    } finally {
+      delete withFolders.folders;
+    }
+  });
+
+  it("shows a teammate's stopped folder, counts it once and saves it off", async () => {
+    await renderEdit({
+      folders: ['ops'],
+      folder_details: [
+        {
+          id: 'ops',
+          name: 'Ops',
+          source_count: 0,
+          owner_name: 'lena@x.io',
+          stopped: true,
+          reason: 'sponsor_cannot_edit_agent',
+        },
+      ],
+    });
+    // A lone folder is the field's label; the hint says why it stopped.
+    const field = Array.from(
+      container.querySelectorAll<HTMLElement>('[role="combobox"]'),
+    ).find((el) => el.textContent === 'Ops');
+    expect(field?.hasAttribute('data-placeholder')).toBe(false);
+    expect(container.textContent).toContain('folders.picker.stopped');
+    const folderRow = container.querySelector('[data-item="folder:ops"]');
+    expect(folderRow?.getAttribute('data-description')).toContain(
+      'folders.picker.ownersFolder',
+    );
+    // Saving unchanged keeps it; taking it off saves an empty list.
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    await act(async () => buttonByText('agents.form.buttons.save').click());
+    const form = mocks.updateAgent.mock.calls.at(-1)![1];
+    expect(form.get('folders')).toBe('[]');
   });
 
   it('sends the stamp the last save answered with', async () => {

@@ -9,6 +9,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.workspaces.principal import is_principal_id
 
 
 # token_hash never leaves the repository except through find_active_by_hash.
@@ -35,6 +36,13 @@ class PersonalAccessTokensRepository:
         resource_filter: Optional[dict] = None,
         expires_at: Optional[datetime] = None,
     ) -> dict:
+        """Insert a token for a person and return its public columns.
+
+        Raises:
+            ValueError: ``user_id`` is a team principal, which never holds a token.
+        """
+        if is_principal_id(user_id):
+            raise ValueError("a team principal cannot hold a personal access token")
         row = self._conn.execute(
             text(
                 f"""
@@ -128,15 +136,17 @@ class PersonalAccessTokensRepository:
 
         Revoked and expired tokens never match, and neither do the tokens of a
         deactivated user (admin or SCIM), so deactivation needs no token sweep
-        and reactivation restores them.
+        and reactivation restores them. A token whose owner row is not a person
+        (a team principal, ``__system__``) never matches either.
         """
         row = self._conn.execute(
             text(
                 f"SELECT {_PUBLIC_COLUMNS} FROM personal_access_tokens pat "
                 "WHERE token_hash = :token_hash AND status = 'active' "
                 "AND (expires_at IS NULL OR expires_at > now()) "
+                "AND left(pat.user_id, 8) <> '__team__' "
                 "AND NOT EXISTS (SELECT 1 FROM users u "
-                "WHERE u.user_id = pat.user_id AND u.active = false) "
+                "WHERE u.user_id = pat.user_id AND (u.active = false OR u.kind <> 'user')) "
                 "LIMIT 1"
             ),
             {"token_hash": token_hash},

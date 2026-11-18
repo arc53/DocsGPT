@@ -55,7 +55,7 @@ def _team_with_member(conn, slug, user_id="u1"):
         ).scalar()
     )
     conn.execute(
-        text("INSERT INTO team_members (team_id, user_id, role) VALUES (CAST(:t AS uuid), :u, 'team_member')"),
+        text("INSERT INTO team_members (team_id, user_id, role) VALUES (CAST(:t AS uuid), :u, 'team_viewer')"),
         {"t": team_id, "u": user_id},
     )
     return team_id

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   goToLevel: vi.fn(),
   deleteAgent: vi.fn(),
+  exportAgent: vi.fn(),
   submitResult: undefined as void | Promise<unknown>,
 }));
 
@@ -20,15 +21,29 @@ vi.mock('react-redux', () => ({
 }));
 
 vi.mock('../api/services/userService', () => ({
-  default: { deleteAgent: mocks.deleteAgent },
+  default: { deleteAgent: mocks.deleteAgent, exportAgent: mocks.exportAgent },
 }));
 
 vi.mock('../navigation/SidebarLevelProvider', () => ({
   useSidebarLevel: () => ({ goToLevel: mocks.goToLevel }),
 }));
 
-vi.mock('../modals/MoveToFolderModal', () => ({ default: () => null }));
-vi.mock('../teams/ShareToTeamModal', () => ({ default: () => null }));
+vi.mock('../components/folders/MoveToFolderModal', () => ({
+  default: () => null,
+}));
+// The Share dialog's props, from its last render.
+const share = vi.hoisted(() => ({
+  props: null as null | { onMoved?: () => void },
+}));
+vi.mock('../teams/ShareToTeamModal', () => ({
+  default: (props: { onMoved?: () => void }) => {
+    share.props = props;
+    return null;
+  },
+}));
+vi.mock('../workspace/move/useMoveToWorkspace', () => ({
+  useMoveToWorkspace: () => ({ menuOption: () => null, dialog: null }),
+}));
 vi.mock('../modals/ConfirmationModal', () => ({
   default: ({
     modalState,
@@ -160,13 +175,13 @@ describe('AgentCard menu', () => {
       'agents.exportAgent',
       'agents.shareWithTeam',
       'agents.card.pin',
-      'agents.folders.moveToFolder',
+      'folders.moveToFolder',
       'agents.form.buttons.delete',
     ]);
   });
 
   it('gives an editor Logs, Edit, Export and Pin', async () => {
-    await render(agentWith('editor', EDITOR_ACTIONS), 'team');
+    await render(agentWith('editor', EDITOR_ACTIONS), 'sharedWithYou');
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.logs',
       'agents.edit',
@@ -178,7 +193,7 @@ describe('AgentCard menu', () => {
   it('brings Share and Delete back for an editor the owner allows', async () => {
     await render(
       agentWith('editor', [...EDITOR_ACTIONS, 'share', 'delete']),
-      'team',
+      'sharedWithYou',
     );
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.logs',
@@ -191,7 +206,7 @@ describe('AgentCard menu', () => {
   });
 
   it('swaps Edit for View (Eye) when the role can open but not edit', async () => {
-    await render(agentWith('viewer', ['use', 'pin', 'view']), 'team');
+    await render(agentWith('viewer', ['use', 'pin', 'view']), 'sharedWithYou');
     const items = await openMenu();
     const view = items.find((i) => i.textContent === 'agents.view');
     expect(view).toBeDefined();
@@ -202,7 +217,7 @@ describe('AgentCard menu', () => {
   });
 
   it('shows the role on a shared tile in its meta line, not as a pill', async () => {
-    await render(agentWith('editor', EDITOR_ACTIONS), 'team');
+    await render(agentWith('editor', EDITOR_ACTIONS), 'sharedWithYou');
     const role = container.querySelector<HTMLElement>(
       '[data-testid="role-meta"]',
     );
@@ -217,13 +232,56 @@ describe('AgentCard menu', () => {
     expect(container.querySelector('[data-slot="card-footer"]')).toBeNull();
   });
 
+  // A team role never has `share`; the dialog shows any member where the
+  // item's access comes from.
+  it("offers Share on a team's agent to a Viewer, to see who has access", async () => {
+    await render(
+      {
+        ...agentWith('viewer', VIEWER_ACTIONS),
+        origin: 'team',
+        workspace: { kind: 'team', team_id: 't1' },
+      } as Agent,
+      'user',
+    );
+    expect(await menuLabels()).toContain('agents.shareWithTeam');
+  });
+
+  it("reloads the list when the Share dialog's offer moves the agent", async () => {
+    const onMovedToWorkspace = vi.fn();
+    const agent = agentWith('owner', OWNER_ACTIONS);
+    // Not a plain assignment, which would narrow `props` to null below.
+    Object.assign(share, { props: null });
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AgentCard
+            agent={agent}
+            agents={[agent]}
+            section="user"
+            onMovedToWorkspace={onMovedToWorkspace}
+          />
+        </MemoryRouter>,
+      );
+    });
+    const items = await openMenu();
+    await act(async () =>
+      items.find((i) => i.textContent === 'agents.shareWithTeam')!.click(),
+    );
+    expect(share.props?.onMoved).toBeTypeOf('function');
+    act(() => share.props!.onMoved!());
+    expect(onMovedToWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('gives a viewer Pin only', async () => {
-    await render(agentWith('viewer', VIEWER_ACTIONS), 'team');
+    await render(agentWith('viewer', VIEWER_ACTIONS), 'sharedWithYou');
     expect(await menuLabels()).toEqual(['agents.card.pin']);
   });
 
   it('adds Logs for a viewer when the owner shares logs', async () => {
-    await render(agentWith('viewer', [...VIEWER_ACTIONS, 'view_logs']), 'team');
+    await render(
+      agentWith('viewer', [...VIEWER_ACTIONS, 'view_logs']),
+      'sharedWithYou',
+    );
     expect(await menuLabels()).toEqual([
       'agents.form.buttons.logs',
       'agents.card.pin',
@@ -233,7 +291,7 @@ describe('AgentCard menu', () => {
   it('shows no menu to a viewer of a draft', async () => {
     await render(
       { ...agentWith('viewer', VIEWER_ACTIONS), status: 'draft' },
-      'team',
+      'sharedWithYou',
     );
     expect(
       container.querySelector('button[aria-label="agents.card.actions"]'),
@@ -287,7 +345,7 @@ describe('AgentCard menu', () => {
   });
 
   it('opens the chat when a viewer clicks a published card', async () => {
-    await render(agentWith('viewer', VIEWER_ACTIONS), 'team');
+    await render(agentWith('viewer', VIEWER_ACTIONS), 'sharedWithYou');
     await act(async () =>
       container
         .querySelector<HTMLElement>('[data-slot="card"] > button')!
@@ -295,6 +353,61 @@ describe('AgentCard menu', () => {
     );
     expect(mocks.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'preference/setSelectedAgent' }),
+    );
+  });
+
+  // Another team's agent shared with this team: the receivers chat with it
+  // and pin it, nothing more.
+  const received = (): Agent => ({
+    ...agentWith('viewer', VIEWER_ACTIONS),
+    ownership: 'team',
+    origin: 'team_shared',
+    workspace: { kind: 'team', team_id: 'dev' },
+    shared_from: { team_id: 'ops', name: 'Operations' },
+  });
+
+  it("offers only Pin (and who has access) on another team's agent", async () => {
+    await render(received(), 'teamShared');
+    expect(await menuLabels()).toEqual([
+      'agents.shareWithTeam',
+      'agents.card.pin',
+    ]);
+  });
+
+  it('names the team a shared agent comes from, with no role', async () => {
+    await render(received(), 'teamShared');
+    expect(
+      container.querySelector('[data-testid="shared-from-meta"]')?.textContent,
+    ).toBe('workspace.page.sharedFromTeams.from');
+    expect(container.querySelector('[data-testid="role-meta"]')).toBeNull();
+    expect(container.querySelector('[data-testid="creator-meta"]')).toBeNull();
+  });
+
+  it("opens the chat with another team's published agent", async () => {
+    await render(received(), 'teamShared');
+    await act(async () =>
+      container
+        .querySelector<HTMLElement>('[data-slot="card"] > button')!
+        .click(),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'preference/setSelectedAgent' }),
+    );
+  });
+
+  it("says a locked team's agent can't be exported, in the app's words", async () => {
+    mocks.exportAgent.mockResolvedValue({
+      ok: false,
+      json: () => Promise.resolve({ error: 'team_locked' }),
+    });
+    await render(agentWith('owner', OWNER_ACTIONS), 'user');
+    const items = await openMenu();
+    await act(async () =>
+      items.find((i) => i.textContent === 'agents.exportAgent')!.click(),
+    );
+    await act(async () => undefined);
+    expect(document.body.textContent).toContain(
+      'settings.teams.errors.teamLocked',
     );
   });
 

@@ -135,6 +135,22 @@ describe('toolPickerItems', () => {
     expect(row.description).toBe('settings.tools.sharedBy:{"team":"Ops"}');
   });
 
+  it("names the team another team's tool comes from", () => {
+    const [row] = build([
+      {
+        id: 'rates',
+        displayName: 'Carrier rates',
+        description: 'Looks up rates',
+        access: 'viewer',
+        origin: 'team_shared',
+        shared_from: { team_id: 'sales', name: 'Sales' },
+      },
+    ]);
+    expect(row.description).toBe(
+      'workspace.page.sharedFromTeams.from:{"team":"Sales"}',
+    );
+  });
+
   it('stacks the Reconnect badge above the account line', () => {
     const [row] = build([
       {

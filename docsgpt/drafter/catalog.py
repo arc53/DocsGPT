@@ -3,7 +3,10 @@
 Read-only and scoped to the caller. Sources, tools and prompts are the
 caller's own plus the ones shared with their teams that they may put on their
 own agents (``use`` on a source or prompt, ``use_in_own`` on a tool), the same
-rule ``ref_attachable`` applies when an agent is saved. Default and builtin
+rule ``ref_attachable`` applies when an agent is saved. That is Personal; in a
+team workspace (the agent being edited is a team's, or the request names the
+team) they are the team's own items only, since a team agent may hold nothing
+else, and Personal never offers a team's items. Default and builtin
 tools are offered as the agent picker offers them. Nothing here writes: the
 list routes are not called because some of them have side effects (the agents
 listing upserts the user row).
@@ -72,6 +75,7 @@ class Workspace:
         tools: Overview tool rows ``{id, name, kind, description?, shared?}``.
         prompts: Overview prompt rows ``{id, name, kind, description?}``.
         models: ``{id, name}`` rows of the models the caller can pick.
+        owner_id: The team's principal whose items the workspace offers, or None for Personal.
         agent: The saved agent being edited ``{id, name, status, agent_type}``, or None.
         policy_editable: Whether the caller may change the agent's guardrails and limits (``edit_policy``, the
             rule the agent update route applies); True for a new agent, which the caller will own.
@@ -94,6 +98,7 @@ class Workspace:
     tools: list[dict] = field(default_factory=list)
     prompts: list[dict] = field(default_factory=list)
     models: list[dict] = field(default_factory=list)
+    owner_id: Optional[str] = None
     agent: Optional[dict] = None
     policy_editable: bool = True
     attachable: dict[str, list[str]] = field(default_factory=dict)
@@ -155,17 +160,24 @@ def _attachable(resource_type: str, access: Optional[str], switches: Optional[di
     return REF_USE_ACTION[resource_type] in allowed_actions(resource_type, access, switches)
 
 
-def _attachable_rows(conn, repo: Any, resource_type: str, user_id: str) -> list[dict]:
+def _attachable_rows(conn, repo: Any, resource_type: str, user_id: str, owner_id: Optional[str] = None) -> list[dict]:
     """The id rows of the caller's own ``resource_type`` and the team-shared ones they may attach, newest first.
 
     Only ids and owners are read (``repo.list_ids_for_user``), for every row: all of them count as the caller's
-    to attach, however few the overview lists.
+    to attach, however few the overview lists. With ``owner_id`` a team's principal, the rows are that team's own
+    (every member may use them); Personal leaves out any team's item, even one a stale grant names.
     """
     from docsgpt.api.user.resource_access import settings_many
     from docsgpt.api.user.team_sharing import visible_with_access
+    from docsgpt.workspaces.principal import is_principal_id
 
+    if is_principal_id(owner_id):
+        return repo.list_ids_for_user(owner_id)
     team = visible_with_access(conn, user_id, resource_type)
-    rows = repo.list_ids_for_user(user_id, extra_ids=list(team))
+    rows = [
+        row for row in repo.list_ids_for_user(user_id, extra_ids=list(team))
+        if not is_principal_id(row.get("user_id"))
+    ]
     switches = settings_many(conn, resource_type, [r["id"] for r in rows if str(r["user_id"]) != str(user_id)])
     return [
         row for row in rows
@@ -524,19 +536,24 @@ def _overview(conn, user_id: str, ws: Workspace, kind: str, ids: list[str], limi
     return ws.reader.rows(kind, shown, conn) if shown else []
 
 
-def load_sources(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) -> None:
-    """Fill ``ws.sources``: the caller's own sources and the team-shared ones they may use.
+def load_sources(
+    conn, user_id: str, ws: Workspace, pinned: Iterable[str] = (), owner_id: Optional[str] = None,
+) -> None:
+    """Fill ``ws.sources``: the caller's own sources and the team-shared ones they may use (a team's: its own).
 
     Every source's id is read to decide which the caller may attach; only the listed ones' names, types and
     statuses are read, and no source's file tree: ``get_source`` reads the one it is asked about.
     """
     from docsgpt.storage.db.repositories.sources import SourcesRepository
 
-    rows = _attachable_rows(conn, SourcesRepository(conn), "source", user_id)
-    ws.sources = _overview(conn, user_id, ws, "sources", [row["id"] for row in rows], MAX_SOURCES, pinned)
+    rows = _attachable_rows(conn, SourcesRepository(conn), "source", user_id, owner_id)
+    ws.sources = _overview(conn, owner_id or user_id, ws, "sources", [row["id"] for row in rows], MAX_SOURCES,
+                           pinned)
 
 
-def load_tools(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) -> None:
+def load_tools(
+    conn, user_id: str, ws: Workspace, pinned: Iterable[str] = (), owner_id: Optional[str] = None,
+) -> None:
     """Fill ``ws.tools`` the way the classic agent picker lists them, without configs, secrets or actions.
 
     The caller's own and team tools are listed by name and description; ``get_tool`` reads the actions of the
@@ -551,7 +568,7 @@ def load_tools(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) ->
     from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
     from docsgpt.storage.db.repositories.users import UsersRepository
 
-    saved = [row["id"] for row in _attachable_rows(conn, UserToolsRepository(conn), "tool", user_id)
+    saved = [row["id"] for row in _attachable_rows(conn, UserToolsRepository(conn), "tool", user_id, owner_id)
              if not is_server_attached_tool(row.get("name"))]
     builtin: dict[str, dict] = {}
     for row in default_tools_for_management(UsersRepository(conn).get(user_id)):
@@ -559,7 +576,7 @@ def load_tools(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) ->
     for row in builtin_agent_tools_for_management():
         if row.get("name") not in WORKFLOW_ONLY_BUILTINS:
             builtin.setdefault(str(row["id"]), row)
-    listed = _overview(conn, user_id, ws, "tools", saved, MAX_TOOLS, pinned)
+    listed = _overview(conn, owner_id or user_id, ws, "tools", saved, MAX_TOOLS, pinned)
     for tool_id, row in builtin.items():
         if is_server_attached_tool(row.get("name")):
             continue
@@ -570,7 +587,9 @@ def load_tools(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) ->
     ws.tools = listed
 
 
-def load_prompts(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) -> None:
+def load_prompts(
+    conn, user_id: str, ws: Workspace, pinned: Iterable[str] = (), owner_id: Optional[str] = None,
+) -> None:
     """Fill ``ws.prompts``: the built-in prompts, the caller's own, and the team-shared ones they may use.
 
     Saved prompts are listed by name; ``get_prompt`` reads the text of the one it is asked about. The built-in
@@ -583,21 +602,29 @@ def load_prompts(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = ()) 
     for preset, note in PRESET_PROMPTS.items():
         presets.append({"id": preset, "name": preset, "kind": "built-in", "description": note})
         ws.prompt_texts[preset] = clean_text(compose_preset(preset), PROMPT_CHARS)
-    rows = _attachable_rows(conn, PromptsRepository(conn), "prompt", user_id)
-    ws.own_prompts = {row["id"] for row in rows if str(row["user_id"]) == str(user_id)}
-    ws.prompts = presets + _overview(conn, user_id, ws, "prompts", [row["id"] for row in rows], MAX_PROMPTS, pinned)
+    rows = _attachable_rows(conn, PromptsRepository(conn), "prompt", user_id, owner_id)
+    owner = owner_id or user_id
+    ws.own_prompts = {row["id"] for row in rows if str(row["user_id"]) == str(owner)}
+    ws.prompts = presets + _overview(conn, owner, ws, "prompts", [row["id"] for row in rows], MAX_PROMPTS, pinned)
     ws.attachable["prompts"] = list(PRESET_PROMPTS) + ws.attachable["prompts"]
 
 
 def load_models(user_id: str, ws: Workspace) -> None:
-    """Fill ``ws.models`` with the models the caller can pick (names only)."""
+    """Fill ``ws.models`` with the models the caller can pick (names only).
+
+    In a team (``ws.owner_id``) these are the built-ins and the team's own models, as ``/api/models`` lists them
+    there: a team item saves only models its owner owns, so the caller's personal ones are never offered.
+    """
+    owner = ws.owner_id or user_id
     try:
         from docsgpt.core.model_registry import ModelRegistry
 
-        models = ModelRegistry.get_instance().get_enabled_models(user_id=user_id)
+        models = ModelRegistry.get_instance().get_enabled_models(user_id=owner)
     except Exception:
         logger.warning("drafter: could not list models", exc_info=True)
         models = []
+    if owner != user_id:
+        models = [model for model in models if getattr(model, "source", None) != "user"]
     rows = [{"id": str(m.id), "name": clean_text(m.display_name or m.id, NAME_CHARS)} for m in models]
     ws.models = _cap(rows, MAX_MODELS, "models", ws)
 
@@ -628,8 +655,49 @@ def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> No
     }
 
 
+def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None, *,
+                    team_id: Optional[str] = None) -> Optional[str]:
+    """Whose items the catalogue offers: a team's principal in a team workspace, None in Personal.
+
+    The agent being edited decides when there is one (a route about one item goes by the item's workspace).
+    Otherwise ``team_id`` does when given, else the request's workspace header; a refused or missing one reads
+    as Personal, which offers the caller nothing of any team's.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+        agent_id: The agent being edited, if any.
+        team_id: The team the request was made in, read while it was open: the drafter reads the workspace
+            on its stream's thread, where the request's header is gone. The caller's membership is checked
+            by :func:`read_workspace`.
+
+    Returns:
+        Optional[str]: The team's principal, or None for Personal.
+    """
+    from flask import has_request_context
+
+    from docsgpt.api.user.resource_access import resolve
+    from docsgpt.workspaces.context import WorkspaceError, current_workspace
+    from docsgpt.workspaces.principal import principal_id
+
+    if agent_id and isinstance(agent_id, str):
+        ra = resolve(conn, "agent", agent_id, user_id)
+        if ra is not None:
+            return ra.owner_id if ra.is_team_item else None
+    if team_id:
+        return principal_id(str(team_id))
+    if not has_request_context():
+        return None
+    try:
+        workspace = current_workspace(conn)
+    except WorkspaceError:
+        return None
+    return workspace.owner_id if workspace.is_team else None
+
+
 def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
-                   pinned: Optional[dict[str, list[str]]] = None) -> Workspace:
+                   pinned: Optional[dict[str, list[str]]] = None,
+                   owner_id: Optional[str] = None, team_id: Optional[str] = None) -> Workspace:
     """Read the overview of the caller's sources, tools and prompts and the agent being edited through ``conn``;
     models are left out.
 
@@ -639,14 +707,25 @@ def read_workspace(conn, user_id: str, agent_id: Optional[str] = None, *,
         agent_id: The agent being edited, if any.
         pinned: Kind -> ids the overview lists whatever its caps (what the form already uses, which the model
             is given by id only); an id the caller may not attach is still left out.
+        owner_id: A team's principal to read that team's workspace; by default :func:`workspace_owner` decides.
+            A caller who is not in that team reads Personal instead.
+        team_id: The team the request was made in, for a read after the request (see :func:`workspace_owner`).
 
     Returns:
         The workspace, without ``models`` (:func:`load_models` fills them).
     """
+    from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+    from docsgpt.workspaces.roles import team_role_for
+
     pinned = pinned or {}
-    ws = Workspace()
-    load_sources(conn, user_id, ws, pinned.get("sources", ()))
-    load_tools(conn, user_id, ws, pinned.get("tools", ()))
-    load_prompts(conn, user_id, ws, pinned.get("prompts", ()))
+    if owner_id is None:
+        owner_id = workspace_owner(conn, user_id, agent_id, team_id=team_id)
+    if not is_principal_id(owner_id) or team_role_for(conn, user_id, team_of_principal(owner_id)) is None:
+        # Never a team's items to someone outside it, whoever asked for them.
+        owner_id = None
+    ws = Workspace(owner_id=owner_id)
+    load_sources(conn, user_id, ws, pinned.get("sources", ()), owner_id)
+    load_tools(conn, user_id, ws, pinned.get("tools", ()), owner_id)
+    load_prompts(conn, user_id, ws, pinned.get("prompts", ()), owner_id)
     load_agent(conn, user_id, agent_id, ws)
     return ws

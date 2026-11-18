@@ -36,12 +36,17 @@ import { ActiveState, Doc } from '../models/misc';
 import {
   selectAttachmentBudgetShare,
   selectSelectedDocs,
+  selectSelectedFolders,
+  selectSelectedAgent,
   selectSelectedModel,
   selectSourceDocs,
   selectSttAvailable,
   selectToken,
   setSelectedDocs,
+  setSelectedFolders,
 } from '../preferences/preferenceSlice';
+import UsageNotice, { useUsageStop } from '../payer/UsageNotice';
+import { chatUsageScope } from '../payer/usageSlice';
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
@@ -94,15 +99,16 @@ import {
   getFileExtension,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
-import { useSourceKindFilter } from '../settings/SourceKindFilter';
 import { useDeviceOnline } from '../hooks/useDeviceOnline';
 import { useToolKindFilter } from '../settings/useToolKindFilter';
 import { sourceItemId } from '../utils/sourceUtils';
-import { toSourcePickerItems } from './sourcePickerItems';
+import type { KnowledgePick } from './folders/folderPick';
+import { useKnowledgeFolderPicker } from './folders/useKnowledgeFolderPicker';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
 import { toolInChat } from '../utils/toolUtils';
+import ChatWorkspaceLine from '../conversation/ChatWorkspaceLine';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -363,6 +369,14 @@ type MessageInputProps = {
   sendBlocked?: boolean;
   /** Replaces the empty field's prompt ("Or type your answer…"). */
   placeholder?: string;
+  /** The chat's own composer: in a team it says whose chat this is. */
+  workspaceLine?: boolean;
+  /**
+   * The person's allowance above the composer: the 80% line, and the stop
+   * at 100%, which holds sending. Defaults to `workspaceLine` (the chat's
+   * own composer); a chat someone else pays for (a public link) leaves it out.
+   */
+  usageNotice?: boolean;
 };
 
 export default function MessageInput({
@@ -376,6 +390,8 @@ export default function MessageInput({
   onQueuedQuestionConsumed,
   sendBlocked = false,
   placeholder,
+  workspaceLine = false,
+  usageNotice = workspaceLine,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -400,6 +416,7 @@ export default function MessageInput({
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
+  const selectedFolders = useSelector(selectSelectedFolders);
   const sourceDocs = useSelector(selectSourceDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
@@ -420,6 +437,10 @@ export default function MessageInput({
     [attachments, selectedModel],
   );
   const attachmentBudgetShare = useSelector(selectAttachmentBudgetShare);
+  // A chat with an agent spends the agent allowance, one without the direct
+  // one, and one with an agent reached only by its link spends the publisher's.
+  const usageScope = chatUsageScope(useSelector(selectSelectedAgent));
+  const usageStopped = useUsageStop(usageScope) && usageNotice;
   // No cap on how many files attach: past the model's attachment budget the
   // files still send, and Knowledge is offered as the better home for them.
   const overAttachmentBudget = useMemo(
@@ -1379,40 +1400,48 @@ export default function MessageInput({
     void _docs;
   };
 
-  // The picker's kind filter, back on All each time it opens.
-  const sourceKinds = useSourceKindFilter(sourceDocs, isSourcesPopupOpen);
-  const sourceItems: MultiSelectPopoverItem[] = useMemo(
-    () =>
-      toSourcePickerItems(sourceKinds.docs, {
-        t,
-        labels: {
-          own: t('conversation.sources.groupOwn'),
-          team: t('conversation.sources.groupTeam'),
-        },
-        connections,
-      }),
-    [sourceKinds.docs, t, connections],
+  // The picker's rows: folders (a folder picks whole, its chevron opens
+  // it), then sources, with the kind track counting the open place.
+  const selectedDocList = useMemo(
+    () => (Array.isArray(selectedDocs) ? selectedDocs : []),
+    [selectedDocs],
   );
-
-  const selectedSourceIds = (
-    selectedDocs && Array.isArray(selectedDocs) ? selectedDocs : []
-  ).map((doc) => sourceItemId(doc));
-
-  const handleToggleSource = (id: string) => {
-    if (!sourceDocs) return;
-    const current = Array.isArray(selectedDocs) ? selectedDocs : [];
-    const matched = current.find((doc) => sourceItemId(doc) === id);
-    let updated: Doc[];
-    if (matched) {
-      updated = current.filter((doc) => sourceItemId(doc) !== id);
-    } else {
-      const incoming = sourceDocs.find((doc) => sourceItemId(doc) === id);
-      if (!incoming) return;
-      updated = [...current, incoming];
-    }
-    dispatch(setSelectedDocs(updated.length > 0 ? updated : []));
+  const knowledgePick = useMemo<KnowledgePick>(
+    () => ({
+      sources: selectedDocList.map((doc) => sourceItemId(doc)),
+      folders: selectedFolders.map((folder) => folder.id),
+    }),
+    [selectedDocList, selectedFolders],
+  );
+  const handlePickChange = (next: KnowledgePick) => {
+    const docs = sourceDocs ?? [];
+    // A picked source keeps its stored copy; a new one comes from the list.
+    const updated = next.sources
+      .map(
+        (id) =>
+          selectedDocList.find((doc) => sourceItemId(doc) === id) ??
+          docs.find((doc) => sourceItemId(doc) === id),
+      )
+      .filter((doc): doc is Doc => Boolean(doc));
+    const folders = next.folders.map((id) => ({
+      id,
+      name:
+        knowledgeTree.byId.get(id)?.name ??
+        selectedFolders.find((folder) => folder.id === id)?.name ??
+        '',
+    }));
+    dispatch(setSelectedDocs(updated));
+    dispatch(setSelectedFolders(folders));
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
+  const { popoverProps: knowledgePopover, tree: knowledgeTree } =
+    useKnowledgeFolderPicker({
+      open: isSourcesPopupOpen,
+      docs: sourceDocs ?? [],
+      pick: knowledgePick,
+      onPickChange: handlePickChange,
+      connections,
+    });
 
   // The list loads on mount and on each open; the slice applies only the
   // newest request's answer, from this composer or one a chat switch
@@ -1518,6 +1547,7 @@ export default function MessageInput({
   const composerIdle =
     !loading &&
     !sendBlocked &&
+    !usageStopped &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
   const canSubmit = hasSubmittableContent && composerIdle;
@@ -1634,6 +1664,7 @@ export default function MessageInput({
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
       {signInAgain.modals}
+      {usageNotice && usageScope && <UsageNotice scope={usageScope} />}
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
       <input
@@ -1729,12 +1760,10 @@ export default function MessageInput({
               <SourcesTrigger
                 open={isSourcesPopupOpen}
                 onOpenChange={setIsSourcesPopupOpen}
-                items={sourceItems}
-                selectedIds={selectedSourceIds}
-                onToggle={handleToggleSource}
+                {...knowledgePopover}
                 selectedDocs={selectedDocs}
+                selectedFolders={selectedFolders}
                 onUploadClick={handleUploadClick}
-                filters={sourceKinds.filters}
               />
             )}
 
@@ -1817,6 +1846,8 @@ export default function MessageInput({
           )}
         </div>
       </div>
+
+      {workspaceLine && <ChatWorkspaceLine />}
 
       {uploadModalState === 'ACTIVE' && (
         <Upload

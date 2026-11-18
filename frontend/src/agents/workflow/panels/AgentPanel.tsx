@@ -38,6 +38,20 @@ import {
   selectToken,
 } from '../../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../../store';
+import {
+  type FolderRefDetail,
+  pickedFolderLabel,
+  pickedFolders,
+  pickedFoldersHint,
+  stoppedFolderLines,
+  unlistedFolderRow,
+} from '../../../components/folders/pickedFolders';
+import { useSourceFolderTree } from '../../../components/folders/useKnowledgeFolderPicker';
+import {
+  holderFolderOf,
+  type ItemWorkspace,
+  usePickerScope,
+} from '../../../components/pickerScope';
 import type { Connection } from '../../../connectors/types';
 import type { LeaveTo } from '../../../hooks/useLeaveGuard';
 import KnowledgePicker from '../../components/KnowledgePicker';
@@ -66,6 +80,7 @@ import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText, type UserTool } from '../workflowHelpers';
 import { type NodePanelBodyProps } from './types';
 
+import { groupModels } from '../../../models/modelGroups';
 import type { Model } from '../../../models/types';
 
 interface AgentPanelProps extends NodePanelBodyProps {
@@ -82,6 +97,12 @@ interface AgentPanelProps extends NodePanelBodyProps {
    */
   attachedTools?: { id: string; label: string; name?: string }[];
   attachedSources?: { id: string; label: string }[];
+  /**
+   * The knowledge folders the workflow's nodes reference
+   * (`ref_details.folders`): a teammate's or a deleted one still gets a
+   * remove-only row.
+   */
+  attachedFolders?: FolderRefDetail[];
   /** Upstream file variables the agent can read. */
   documentOptions: { value: string; label: string }[];
   /** The structured-output schema as typed. */
@@ -111,6 +132,13 @@ interface AgentPanelProps extends NodePanelBodyProps {
   onLeaveTo?: LeaveTo;
   /** Signs a broken connection behind the caller's tools in again. */
   onReconnect?: (connection: Connection, mcpToolId?: string) => void;
+  /**
+   * Where the workflow lives: its pickers list nothing of another
+   * workspace's (until the page follows it there). Left out for a new one.
+   */
+  holderWorkspace?: ItemWorkspace;
+  /** The workflow's folder: the pickers list what is filed there first. */
+  holderFolderId?: string | null;
 }
 
 /** A picked id added when missing, removed when present. */
@@ -169,6 +197,7 @@ export default function AgentPanel({
   availableTools,
   attachedTools = [],
   attachedSources = [],
+  attachedFolders = [],
   documentOptions,
   jsonSchemaText,
   jsonSchemaError,
@@ -179,6 +208,8 @@ export default function AgentPanel({
   onNavigateAway,
   onLeaveTo,
   onReconnect,
+  holderWorkspace,
+  holderFolderId = null,
 }: AgentPanelProps) {
   const { t } = useTranslation();
   const streamId = useId();
@@ -204,6 +235,29 @@ export default function AgentPanel({
     [storedDocs],
   );
   const pickedSources: string[] = config.sources || [];
+  const pickedFolderIds: string[] = Array.isArray(config.folders)
+    ? config.folders
+    : [];
+  const { tree: folderTree } = useSourceFolderTree();
+  // What the pickers list: the current workspace's items only, the
+  // workflow's folder first.
+  const pickerScope = usePickerScope(holderWorkspace);
+  const pickerDocs = useMemo(
+    () => pickerScope.scope(sourceDocs),
+    [pickerScope, sourceDocs],
+  );
+  const pickerTools = useMemo(
+    () => pickerScope.scope(availableTools),
+    [pickerScope, availableTools],
+  );
+  const holderFolder = pickerScope.holderElsewhere
+    ? null
+    : holderFolderOf(t, folderTree, holderFolderId, 'workflow');
+  const nodeFolders = useMemo(
+    () =>
+      pickedFolders(folderTree, sourceDocs, pickedFolderIds, attachedFolders),
+    [folderTree, sourceDocs, pickedFolderIds, attachedFolders],
+  );
   const pickedTools: string[] = config.tools || [];
 
   // An upload finishes after its dialog closes, maybe after the node did:
@@ -250,8 +304,15 @@ export default function AgentPanel({
     if (next) dispatch(loadConnectors({ token }));
   };
 
-  const builtinModels = availableModels.filter((m) => m.source !== 'user');
-  const userModels = availableModels.filter((m) => m.source === 'user');
+  const modelGroups = groupModels(availableModels);
+  const builtinModels = modelGroups.builtin;
+  // Custom models are the person's own: none for a workflow that lives in
+  // another workspace than the list.
+  const userModels = pickerScope.holderElsewhere ? [] : modelGroups.user;
+  // A team's models from the list are the workspace's; the owner's
+  // (`modelsFromOwner`) are the workflow's team's wherever it is shown.
+  const teamModels =
+    pickerScope.holderElsewhere && !modelsFromOwner ? [] : modelGroups.team;
   const schemaInvalid = jsonSchemaText.trim() !== '' && jsonSchemaError;
   // Marks a row only in the list; its chip keeps the plain name.
   const attachedDescription = t('agents.form.sponsors.addedByOther');
@@ -348,6 +409,18 @@ export default function AgentPanel({
                     ))}
                   </SelectGroup>
                 )}
+                {teamModels.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>
+                      {t('settings.customModels.team.pickerGroup')}
+                    </SelectLabel>
+                    {teamModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.display_name} · {model.provider}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
                 {userModels.length > 0 && (
                   <SelectGroup>
                     <SelectLabel>
@@ -409,17 +482,35 @@ export default function AgentPanel({
         <FormField
           label={t('agents.workflow.builder.sources')}
           labelSurface="background"
+          hint={
+            nodeFolders.length > 0
+              ? [
+                  pickedFoldersHint(t, nodeFolders),
+                  ...stoppedFolderLines(t, nodeFolders),
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+              : undefined
+          }
         >
           {/* The panel is docked beside the canvas, not a dialog, so the
               popover needs no modal (on a phone it is its own sheet). */}
           <KnowledgePicker
             open={sourcesOpen}
             onOpenChange={openPicker(setSourcesOpen)}
-            docs={sourceDocs}
-            selectedIds={pickedSources}
-            onToggle={(id) =>
-              updateConfig({ sources: toggled(pickedSources, id) })
+            docs={pickerDocs}
+            holderFolder={holderFolder}
+            foldersOffered={!pickerScope.holderElsewhere}
+            pick={{ sources: pickedSources, folders: pickedFolderIds }}
+            onPickChange={(next) =>
+              updateConfig({ sources: next.sources, folders: next.folders })
             }
+            unlistedFolder={(id) => {
+              const folder = nodeFolders.find((item) => item.id === id);
+              return folder
+                ? unlistedFolderRow(t, folder)
+                : { label: t('folders.picker.deletedFolder') };
+            }}
             connections={connections}
             unlistedLabel={(id) =>
               attachedSources.find((item) => item.id === id)?.label || id
@@ -435,7 +526,10 @@ export default function AgentPanel({
             onLeaveTo={onLeaveTo}
             trigger={
               <MultiSelectTrigger
-                labels={pickedSources.map(sourceName)}
+                labels={[
+                  ...nodeFolders.map((folder) => pickedFolderLabel(t, folder)),
+                  ...pickedSources.map(sourceName),
+                ]}
                 placeholder={t('agents.form.placeholders.selectSources')}
               />
             }
@@ -448,7 +542,8 @@ export default function AgentPanel({
           <ToolsPicker
             open={toolsOpen}
             onOpenChange={openPicker(setToolsOpen)}
-            tools={availableTools}
+            tools={pickerTools}
+            holderFolder={holderFolder}
             filter={isWorkflowNodeToolVisible}
             attached={attachedOnNode}
             attachedLine={attachedDescription}

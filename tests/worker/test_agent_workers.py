@@ -78,6 +78,8 @@ class TestAgentWebhookWorker:
         # The owner set the webhook up (its URL is a secret): the run keeps the
         # owner's rules, and headless runs still refuse approval-gated tools.
         assert not captured["kwargs"].get("external_caller")
+        # Outside traffic bills whoever pays for the agent's published access: its owner, for now.
+        assert captured["kwargs"].get("payer") == "alice"
 
     def test_passes_non_ascii_payload_text_unescaped(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
@@ -178,11 +180,15 @@ class TestAgentWebhookWorker:
     def test_quota_refusal_is_returned_not_retried(
         self, pg_conn, patch_worker_db, task_self, monkeypatch
     ):
-        """A spent quota cannot succeed on retry, so the task must not raise."""
+        """A spent quota cannot succeed on retry, so the task must not raise.
+
+        The payer's allowance reads to the webhook caller as a pause, without the payer's numbers.
+        """
         from datetime import datetime, timezone
 
         from docsgpt import worker
         from docsgpt.agents import headless_runner
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
         from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
 
         agent = AgentsRepository(pg_conn).create(
@@ -202,8 +208,8 @@ class TestAgentWebhookWorker:
 
         result = worker.agent_webhook_worker(task_self, str(agent["id"]), {"event": "ping"})
 
-        assert result["status"] == "quota_exceeded"
-        assert "$5.00 of $5.00" in result["error"]
+        assert result == {"status": PAUSED_CODE, "error": PAUSED_MESSAGE}
+        assert "$5.00" not in result["error"]
 
     def test_soft_time_limit_is_returned_as_timeout(
         self, pg_conn, patch_worker_db, task_self, monkeypatch

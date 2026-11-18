@@ -507,16 +507,20 @@ class ArtifactsRepository:
         )
         return [r[0] for r in result.fetchall()]
 
-    def storage_paths_for_user_conversations(self, user_id: str) -> list[str]:
-        """Return every stored version path for artifacts under a user's conversations."""
+    def storage_paths_for_user_conversations(self, user_id: str, team_id: Optional[str] = None) -> list[str]:
+        """Return every stored version path for artifacts under a user's conversations of one workspace.
+
+        ``team_id`` is the team workspace; None means the Personal chats.
+        """
         result = self._conn.execute(
             text(
                 "SELECT v.storage_path FROM artifact_versions v "
                 "JOIN artifacts a ON a.id = v.artifact_id "
                 "JOIN conversations c ON c.id = a.conversation_id "
-                "WHERE c.user_id = :user_id AND v.storage_path IS NOT NULL"
+                "WHERE c.user_id = :user_id AND v.storage_path IS NOT NULL "
+                "AND c.team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid)"
             ),
-            {"user_id": user_id},
+            {"user_id": user_id, "team_id": str(team_id) if team_id else None},
         )
         return [r[0] for r in result.fetchall()]
 
@@ -532,14 +536,18 @@ class ArtifactsRepository:
         )
         return result.rowcount
 
-    def delete_for_user_conversations(self, user_id: str) -> int:
-        """Delete every artifact parented to one of a user's conversations (+ versions)."""
+    def delete_for_user_conversations(self, user_id: str, team_id: Optional[str] = None) -> int:
+        """Delete every artifact parented to one of a user's conversations of one workspace (+ versions).
+
+        ``team_id`` is the team workspace; None means the Personal chats.
+        """
         result = self._conn.execute(
             text(
                 "DELETE FROM artifacts WHERE conversation_id IN "
-                "(SELECT id FROM conversations WHERE user_id = :user_id)"
+                "(SELECT id FROM conversations WHERE user_id = :user_id "
+                "AND team_id IS NOT DISTINCT FROM CAST(:team_id AS uuid))"
             ),
-            {"user_id": user_id},
+            {"user_id": user_id, "team_id": str(team_id) if team_id else None},
         )
         return result.rowcount
 

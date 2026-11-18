@@ -193,7 +193,11 @@
         "empty_output": "it produced nothing",
         "internal": "an internal error",
         "missed": "missed its time",
+        "no_payer": "paused: nobody pays for it",
         "overlap": "the previous run was still going",
+        "owner_inactive": "paused: the owner's account is deactivated",
+        "payer_left": "paused: its payer left the team or lost the role",
+        "payer_out_of_allowance": "its payer was out of allowance",
         "stream_error": "the answer stream broke",
         "timeout": "timed out",
         "tool_not_allowed": "a tool was not allowed"
@@ -330,29 +334,10 @@
       "all": "All",
       "byDocsGPT": "Templates",
       "byMe": "My agents",
-      "shared": "Discovered",
-      "team": "Team"
+      "shared": "Discovered"
     },
     "folders": {
-      "backToRoot": "Back",
-      "createFolder": "Create Folder",
-      "currentFolder": "This folder",
-      "delete": "Delete",
-      "deleteConfirm": "Delete \"{{name}}\"?",
-      "deleteConsequence": "The agents inside move out of the folder; they aren't deleted.",
-      "empty": "This folder is empty",
-      "folderName": "Folder name",
-      "menuAriaLabel": "Actions for {{folderName}}",
-      "move": "Move",
-      "moveTitle": "Move \"{{name}}\" to",
-      "moveTo": "Move",
-      "moveToFolder": "Move to folder",
-      "newFolder": "New Folder",
-      "noFolder": "No folder (root)",
-      "noFolders": "No folders yet",
-      "noSubfolders": "No subfolders",
-      "openFolder": "Open folder",
-      "rename": "Rename"
+      "emptyHint": "Create an agent here, or move one in from its ⋯ menu."
     },
     "form": {
       "advanced": {
@@ -497,7 +482,8 @@
       "errors": {
         "publishFailed": "Could not publish the agent. Please try again.",
         "saveDraftFailed": "Could not save the draft. Please try again.",
-        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again."
+        "staleWrite": "Someone else saved this agent after you opened it. Your changes are still here: copy what you need, reload the page, and apply them again.",
+        "teamConnectionAdded": "{{tools}} can't be added: this agent reaches people outside the team (an API key, public link, webhook or another team), and tools on an account connected for the team work only for its members, in the app."
       },
       "externalKb": "External KB",
       "guardrails": {
@@ -600,6 +586,13 @@
         "savedVersion": "saved version",
         "unsavedChanges": "You have unsaved changes. The preview uses the saved version until you save."
       },
+      "refusedModels": {
+        "line": "This agent can't run on {{names}}.",
+        "remove": "Remove from the agent",
+        "separator": ", ",
+        "unlisted_one": "{{count}} model not offered here",
+        "unlisted_other": "{{count}} models not offered here"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Ask an admin to turn it back on.",
@@ -615,6 +608,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} needs its {{service}} account signed in again.",
           "connectionNeedsReconnectNoService": "{{name}} needs signing in again.",
+          "connectionPaused": "{{name}} uses the team's {{service}} account, which is paused. A team Admin can reconnect it on the Connectors page.",
+          "connectionPausedNoService": "{{name}} uses a team account that is paused. A team Admin can reconnect it on the Connectors page.",
           "connectionRemoved": "The {{service}} account {{name}} used was removed.",
           "connectionRemovedNoService": "The account {{name}} used was removed.",
           "connectorDisabled": "An admin turned off {{service}}, so {{name}} can't run.",
@@ -627,6 +622,8 @@
           "sponsorCannotEditItem": "{{name}} ran as {{person}}, who can no longer edit it.",
           "sponsorCannotEditItemOther": "{{name}} ran as someone who can no longer edit it.",
           "sponsorCannotEditItemYou": "{{name}} ran with your access, and you can no longer edit it.",
+          "teamLocked": "{{name}} belongs to another team, which is locked, so it can't be used here until that team unlocks.",
+          "teamShareEnded": "{{name}} belongs to another team, which no longer shares it here. Ask that team to share it again.",
           "unknown": "{{name}} isn't running."
         },
         "reconnectLabel": "Reconnect {{name}}",
@@ -668,6 +665,8 @@
         "confirm": "Add with my access",
         "description_one": "The agent's owner can't use this. If you add it, it runs with your access for everyone who uses this agent.",
         "description_other": "The agent's owner can't use these. If you add them, they run with your access for everyone who uses this agent.",
+        "folderLive_one": "Sources you file in this folder later also run with your access.",
+        "folderLive_other": "Sources you file in these folders later also run with your access.",
         "stopNote_one": "It stops running if you lose edit access.",
         "stopNote_other": "They stop running if you lose edit access.",
         "takeOverConfirm": "Run with my access",
@@ -675,6 +674,7 @@
         "takeOverDescription_other": "The agent's owner can't use these. They will run with your access for everyone who uses this agent.",
         "title": "Run with your access?",
         "types": {
+          "folder": "Folder",
           "prompt": "Prompt",
           "source": "Source",
           "tool": "Tool"
@@ -743,7 +743,7 @@
       "noUsageHistory": "No usage history",
       "title": "Agent Logs"
     },
-    "newAgent": "New Agent",
+    "newAgent": "New agent",
     "noSearchResults": "No agents found",
     "pageHeader": {
       "crumbs": {
@@ -899,6 +899,7 @@
         "openConversation": "Open conversation",
         "output": "Output",
         "scheduledFor": "Scheduled for",
+        "skippedWithType": "Skipped ({{type}})",
         "started": "Started",
         "status": "Status",
         "title": "Run details",
@@ -912,6 +913,7 @@
         "duration": "Duration",
         "empty": "No runs recorded for this schedule yet.",
         "loadFailed": "Couldn't load the runs.",
+        "pausedStreak": "Later runs were skipped for the same reason, until the next row.",
         "when": "When"
       },
       "runNow": "Run now",
@@ -961,10 +963,18 @@
         "emptyState": "You haven't opened any public agents yet.",
         "title": "Discovered"
       },
+      "sharedWithYou": {
+        "description": "Agents people shared with you",
+        "emptyState": "No one has shared an agent with you yet."
+      },
       "team": {
-        "description": "Agents your teammates shared with you",
-        "emptyState": "No agents have been shared with your team yet.",
-        "title": "Team"
+        "description": "Agents the team owns. Everyone in it can use them.",
+        "emptyState": "This team has no agents yet.",
+        "title": "Agents"
+      },
+      "teamShared": {
+        "description": "Agents other teams shared with this team. Everyone in it can chat with them.",
+        "emptyState": "No other team has shared an agent with this team yet."
       },
       "template": {
         "description": "Agents provided by DocsGPT",
@@ -977,7 +987,7 @@
         "title": "My agents"
       }
     },
-    "shareWithTeam": "Share with team",
+    "shareWithTeam": "Share",
     "shared": {
       "connectedTools": "Connected Tools",
       "loadError": "Could not load this agent.",
@@ -1344,6 +1354,7 @@
         "monitor": "Monitor matched",
         "monitor_expired": "Monitor expired",
         "monitor_paused": "Monitor paused",
+        "payer_left": "Paused until someone takes over",
         "schedule": "Scheduled task finished",
         "schedule_failed": "Scheduled task failed",
         "schedule_paused": "Scheduled task paused",
@@ -1442,6 +1453,10 @@
     "share": "Share"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "This agent has reached its limit: {{used}} of {{limit}} requests in the last {{hours}} hours. Try again later.",
+      "tokens": "This agent has reached its limit: {{used}} of {{limit}} tokens in the last {{hours}} hours. Try again later."
+    },
     "answer": "Answer",
     "artifacts": {
       "backToList": "Back to files",
@@ -1558,6 +1573,7 @@
     },
     "quotaExceeded": {
       "cost": "You've used {{used}} of your {{limit}} usage budget. It resets {{resetsAt}}.",
+      "reached": "You've reached your usage allowance, so this answer stopped.",
       "tokens": "You've used {{used}} of your {{limit}} token quota. It resets {{resetsAt}}."
     },
     "reasoning": "Reasoning",
@@ -2178,6 +2194,98 @@
     "spaces": "Spaces",
     "updated": "Updated {{date}}"
   },
+  "folders": {
+    "and": "{{first}} and {{second}}",
+    "counts": {
+      "agent_one": "{{formatted}} agent",
+      "agent_other": "{{formatted}} agents",
+      "also": "also {{list}}",
+      "empty": "Empty",
+      "folder_one": "{{formatted}} folder",
+      "folder_other": "{{formatted}} folders",
+      "prompt_one": "{{formatted}} prompt",
+      "prompt_other": "{{formatted}} prompts",
+      "source_one": "{{formatted}} source",
+      "source_other": "{{formatted}} sources",
+      "tool_one": "{{formatted}} tool",
+      "tool_other": "{{formatted}} tools"
+    },
+    "create": "Create",
+    "current": "Current",
+    "delete": "Delete",
+    "deleteConfirm": "Delete \"{{name}}\"?",
+    "deleteEmpty": "The folder is empty. Nothing else is deleted.",
+    "deleteFolder": "Delete folder",
+    "deleteMoves_one": "Its {{what}} moves to {{parent}}. Nothing is deleted.",
+    "deleteMoves_other": "Its {{what}} move to {{parent}}. Nothing is deleted.",
+    "deletedRenamed_one": "Folder deleted. {{formatted}} folder was renamed to keep names unique: {{list}}.",
+    "deletedRenamed_other": "Folder deleted. {{formatted}} folders were renamed to keep names unique: {{list}}.",
+    "depthLimit": "Folders go 3 levels deep",
+    "emptyTitle": "This folder is empty",
+    "errors": {
+      "cantFile": "You can't file this item.",
+      "cycle": "A folder can't move into itself or a folder inside it.",
+      "deleteFailed": "Couldn't delete the folder. Try again.",
+      "invalidName": "Use 1 to 80 characters, without line breaks.",
+      "itemNotInTeam": "A team's folders hold only the team's own items. Move the item to the team first.",
+      "loadFailed": "Couldn't load your folders.",
+      "moveFailed": "Couldn't move it. Try again.",
+      "nameTaken": "A folder with this name already exists.",
+      "notFound": "This folder no longer exists.",
+      "openFailed": "That folder doesn't exist any more.",
+      "saveFailed": "Couldn't save the folder. Try again.",
+      "teamItemNotFileable": "A team's items can't go in a personal folder.",
+      "tooDeep": "Folders go 3 levels deep."
+    },
+    "inParent": "In {{name}}",
+    "listSeparator": ", ",
+    "menuLabel": "Actions for {{name}}",
+    "move": "Move",
+    "moveTitle": "Move \"{{name}}\"",
+    "moveToFolder": "Move to folder",
+    "name": "Folder name",
+    "newFolder": "New folder",
+    "noFolder": "no folder",
+    "noMatches": "No folders match",
+    "noSubfolders": "No folders inside",
+    "openFolder": "Open {{name}}",
+    "picker": {
+      "allOf": "All of {{name}}",
+      "back": "Back",
+      "deletedFolder": "Deleted folder",
+      "deletedLine": "No longer exists. Take it off.",
+      "deleted_one": "A picked folder was deleted. Take it off in the list.",
+      "deleted_other": "{{formatted}} picked folders were deleted. Take them off in the list.",
+      "hintMany_one": "{{names}} are folders: their {{formatted}} source today, and any added to them later.",
+      "hintMany_other": "{{names}} are folders: their {{formatted}} sources today, and any added to them later.",
+      "hintOne_one": "{{name}} is a folder: its {{formatted}} source today, and any added to it later.",
+      "hintOne_other": "{{name}} is a folder: its {{formatted}} sources today, and any added to it later.",
+      "inFolder": "In this folder",
+      "includedWith": "Included with {{name}}",
+      "live": "{{what}} · new sources included",
+      "ownersFolder": "{{person}}'s folder",
+      "partial": "{{picked}} of {{total}} picked",
+      "stopped": "{{name}} stopped: it's {{person}}'s folder, and they can no longer edit this agent.",
+      "stoppedOther": "{{name}} stopped: its owner can no longer edit this agent.",
+      "stoppedShort": "Stopped"
+    },
+    "rename": "Rename",
+    "renameTitle": "Rename folder",
+    "root": {
+      "agent": "My agents",
+      "prompt": "Prompts",
+      "source": "Knowledge",
+      "teamAgent": "Agents",
+      "tool": "Tools"
+    },
+    "searchFolders": "Search folders…",
+    "searchIn": "Search in {{name}}…",
+    "tooDeep": "Too deep",
+    "usedByWarningNoNames_one": "{{formatted}} agent uses this folder and will lose its sources.",
+    "usedByWarningNoNames_other": "{{formatted}} agents use this folder and will lose its sources.",
+    "usedByWarning_one": "{{formatted}} agent uses this folder and will lose its sources: {{names}}.",
+    "usedByWarning_other": "{{formatted}} agents use this folder and will lose its sources: {{names}}."
+  },
   "help": "Help",
   "hero": {
     "suggestions": {
@@ -2248,6 +2356,8 @@
       "resetKey": "Reset key",
       "resetKeyConfirm": "Reset the API key for \"{{name}}\"?",
       "resetKeyConsequence": "The current key stops working immediately, so anything using it must be updated. This can't be undone.",
+      "teamLocked": "{{team}} is locked, so this agent can't have a public link, API key or webhook. Only the team's Owner can unlock it.",
+      "teamLockedNoTeam": "This team is locked, so this agent can't have a public link, API key or webhook. Only the team's Owner can unlock it.",
       "test": "Test",
       "title": "Access details",
       "webhookUrl": "Webhook URL"
@@ -2285,8 +2395,6 @@
       "sourceDoc": "Source document"
     },
     "deleteConv": {
-      "confirm": "Delete all conversations?",
-      "consequence": "Every conversation in your account is deleted, with its messages. This can't be undone.",
       "delete": "Delete"
     },
     "importAgent": {
@@ -2295,15 +2403,21 @@
       "continueToAgent": "Continue to agent",
       "description": "Upload an agent YAML file. Sources and tools are matched to your account; anything missing can be mapped or created in the next step. A new agent is imported as a draft; re-importing updates the matching agent and keeps its current status.",
       "dropzoneText": "Click to upload or drag and drop a .yaml file",
+      "folderFor": "Folder to use for {{name}}",
+      "folderMatched": "{{name}}: using your folder",
+      "folderMissing": "{{name}}: you have no folder with this name",
       "import": "Import",
       "importError": "Import failed",
       "invalidFileType": "Only .yaml or .yml files are supported",
       "leaveUnattached": "Leave unattached",
       "modelCustom": "{{name}}: custom model",
+      "modelLeftOff": "{{name}}: not the team's model yet, will be left off",
       "models": "Models",
+      "planWarningsTitle": "Check before you import:",
       "readError": "Could not read this agent file",
       "review": "Review",
       "secretPlaceholder": "{{field}} (leave blank to skip this tool)",
+      "sourceFor": "Source to use for {{name}}",
       "sourceMatched": "{{name}}: using your existing source",
       "sourceMissing": "{{name}}: not found",
       "sources": "Sources",
@@ -2674,6 +2788,198 @@
     "perPage": "Per page",
     "previousPage": "Previous page",
     "range": "{{from}}–{{to}} of {{total}}"
+  },
+  "payer": {
+    "access": {
+      "notice": "Outside access is paused. {{reason}}",
+      "noticeUnknown": "Outside access is paused.",
+      "paused": "Paused",
+      "pausedBecause": "Paused · {{reason}}",
+      "takenOver": "You pay for this agent's outside use now."
+    },
+    "common": {
+      "access": {
+        "apiKey": "API key",
+        "publicLink": "public link",
+        "webhook": "webhook"
+      },
+      "errors": {
+        "maxSchedules": "You already have as many schedules as you can. Delete one, then try again.",
+        "noOutsideAccess": "This agent has no outside access turned on, so there's nothing to take over.",
+        "notAvailableToTokens": "Taking over isn't available with an access token. Sign in to the app to do it.",
+        "notFound": "This no longer exists, or you can no longer open it.",
+        "roleRequired": "Your role in this team doesn't let you take this over.",
+        "teamLocked": "This team is locked, so nothing in it can be reached from outside.",
+        "teamOnly": "Only an item that belongs to a team can be taken over."
+      },
+      "paidBy": "Paid by {{name}}",
+      "paidByYou": "Paid by you",
+      "pause": {
+        "noPayer": "Nobody pays for it.",
+        "outOfAllowance": "{{name}} is out of allowance until {{date}}.",
+        "outOfAllowanceUndated": "Its payer is out of allowance.",
+        "outOfAllowanceUnnamed": "Its payer is out of allowance until {{date}}.",
+        "outOfAllowanceYou": "You're out of allowance until {{date}}.",
+        "ownerInactive": "The account it runs as is deactivated.",
+        "payerLeft": "{{name}} left {{team}} or lost the role that pays for it.",
+        "payerLeftNoTeam": "{{name}} left the team or lost the role that pays for it.",
+        "payerLeftTeam": "{{name}} left {{team}}.",
+        "payerLeftTeamNoTeam": "{{name}} left the team.",
+        "payerLeftTeamUnnamed": "Its payer left the team.",
+        "payerLeftUnnamed": "Its payer left the team or lost the role that pays for it.",
+        "payerLostRole": "{{name}} no longer has the role in {{team}} that pays for it.",
+        "payerLostRoleNoTeam": "{{name}} no longer has the role that pays for it.",
+        "payerLostRoleUnnamed": "Its payer no longer has the role that pays for it.",
+        "teamLocked": "{{team}} is locked, so nothing in it can be reached from outside.",
+        "teamLockedNoTeam": "The team is locked, so nothing in it can be reached from outside.",
+        "withSince": "{{reason}} Paused since {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "You pay for its outside use from now on",
+          "youPayDetail": "Requests through its API key and webhook, and from visitors on its public link who aren't signed in, count against your allowance, not {{name}}'s. Signed-in visitors on the link pay for their own chats. What was used so far stays with {{name}}.",
+          "youPayUnnamed": "Requests through its API key and webhook, and from visitors on its public link who aren't signed in, count against your allowance. Signed-in visitors on the link pay for their own chats."
+        },
+        "failed": "Couldn't take it over. Please try again.",
+        "limitApplies": "The agent's limit still applies",
+        "limitDetail": "Whoever pays, the agent stops at its own limit.",
+        "schedule": {
+          "youPay": "You pay for its runs from now on",
+          "youPayDetail": "They count against your allowance, not {{name}}'s. Runs so far stay with {{name}}.",
+          "youPayUnnamed": "They count against your allowance."
+        },
+        "submit": "Take over",
+        "title": "Take over \"{{name}}\"?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "This agent is paused, so it can't answer right now.",
+        "noPayer": "This agent has nobody to pay for its use right now, so it can't answer."
+      },
+      "near": {
+        "day": "You've used {{percent}}% of your allowance for today. It resets at {{time}}.",
+        "month": "You've used {{percent}}% of your allowance for {{month}}. It resets on {{date}}.",
+        "week": "You've used {{percent}}% of your allowance for this week. It resets on {{date}}."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "It covers your chats with agents, the schedules you set and the agents you published.",
+          "all": "It covers your chats in every workspace, the schedules you set and the agents you published.",
+          "direct": "It covers your chats without an agent, in every workspace."
+        },
+        "publicLinkSignedOut": "public link (for visitors who aren't signed in)",
+        "published": "{{name}} has stopped answering through its {{access}}.",
+        "schedules_one": "{{count}} schedule you set is paused.",
+        "schedules_other": "{{count}} schedules you set are paused.",
+        "seeUsage": "See your usage",
+        "title": {
+          "day": "You've reached your allowance for today",
+          "month": "You've reached your allowance for {{month}}",
+          "week": "You've reached your allowance for this week"
+        }
+      },
+      "resets": {
+        "date": "It resets on {{date}}.",
+        "time": "It resets at {{time}}."
+      }
+    },
+    "schedules": {
+      "takenOver": "You pay for this schedule's runs now."
+    },
+    "team": {
+      "byAgent": {
+        "deleted": "Deleted agent",
+        "empty": "No agent was used in this period.",
+        "limitOn": "Agent limit on",
+        "movedOut": "Moved out",
+        "noLimit": "No agent limit",
+        "outsideNoPayer": "outside access with nobody paying",
+        "outsidePaidBy": "outside access paid by {{name}}",
+        "outsidePaidByYou": "outside access paid by you",
+        "people_one": "{{formatted}} person",
+        "people_other": "{{formatted}} people",
+        "requests_one": "{{formatted}} request",
+        "requests_other": "{{formatted}} requests",
+        "title": "By agent",
+        "totalsOnly": "Chats without an agent, and agents deleted since, count in the totals only."
+      },
+      "byPerson": {
+        "left": "Left the team",
+        "title": "By person",
+        "you": "you"
+      },
+      "demote": {
+        "description": "With the new role, {{name}} can't pay for these in {{team}} any more.",
+        "submit": "Change role",
+        "title": "Change \"{{name}}\" to {{role}}?"
+      },
+      "empty": "Nobody used anything here in this period.",
+      "export": {
+        "action": "Export",
+        "description": "One file with every chat in this workspace: who, when, which agent. Personal chats are never included. Each export is written to the audit log.",
+        "failed": "Couldn't export the chats. Please try again.",
+        "title": "Export chats"
+      },
+      "loadError": "Couldn't load the usage report.",
+      "notALimit": "What a person uses here counts against their own allowance, together with their work elsewhere. Nothing on this page is a limit.",
+      "paused": {
+        "access": "Outside access through its {{access}}",
+        "accessAll": "Outside access",
+        "description": "They stay paused until someone takes them over, or until the payer's allowance resets.",
+        "openConnection": "Open",
+        "openConnectionLabel": "Open \"{{name}}\" on the Connectors page",
+        "schedule": "Schedule on {{agent}}",
+        "scheduleNoAgent": "Schedule",
+        "sync": "Scheduled sync",
+        "syncNoPayer": "Nobody in the team can pay for it.",
+        "takeOverLabel": "Take over \"{{name}}\"",
+        "title": "Paused",
+        "unnamed": "Untitled"
+      },
+      "period": {
+        "current": {
+          "day": "Today",
+          "month": "This month",
+          "week": "This week"
+        },
+        "label": "Period",
+        "previous": {
+          "day": "Yesterday",
+          "month": "Last month",
+          "week": "Last week"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} pays for it. An admin can take it over on the agent's page.",
+        "access_one": "Outside access on {{count}} agent pauses",
+        "access_other": "Outside access on {{count}} agents pauses",
+        "connectionsDetail": "The team can't use them, for syncs or tools, until another team Admin reconnects them with their own account on the Connectors page.",
+        "connections_one": "{{count}} team account {{name}} connected pauses",
+        "connections_other": "{{count}} team accounts {{name}} connected pause",
+        "customModelsDetail": "Their keys stay in use. Replace a key on the team's Custom models page if it was {{name}}'s own.",
+        "customModels_one": "{{name}} added {{count}} custom model to the team",
+        "customModels_other": "{{name}} added {{count}} custom models to the team",
+        "schedulesDetail": "{{name}} pays for them. An editor or admin can take them over on the agent's Schedules page.",
+        "schedules_one": "{{count}} schedule {{name}} set on team agents pauses",
+        "schedules_other": "{{count}} schedules {{name}} set on team agents pause"
+      },
+      "showAll": "Show all {{formatted}}",
+      "showFewer": "Show fewer",
+      "stats": {
+        "chats": "Chats",
+        "chatsDetail": "Paid by the people chatting",
+        "people_one": "By {{formatted}} person",
+        "people_other": "By {{formatted}} people",
+        "runs": "Runs without a person",
+        "runsDetail": "Schedules, API keys, the widget and webhooks, paid by whoever set them up",
+        "used": "Used in {{team}}"
+      },
+      "tokens_one": "{{formatted}} token",
+      "tokens_other": "{{formatted}} tokens"
+    }
   },
   "prompts": {
     "checks": {
@@ -3046,14 +3352,27 @@
       "positiveFeedback": "Positive feedback",
       "promptTokens": "Prompt tokens",
       "quota": {
-        "cost": "Cost",
-        "resets": "Resets {{resetsAt}}",
-        "scope": {
-          "agent": "Through agents",
-          "direct": "Chat without an agent"
+        "allowance": "Your allowance",
+        "parts": {
+          "chat": "Your chats",
+          "chatDetail": "In Personal and in your teams",
+          "other": "Other",
+          "otherDetail": "Building knowledge, and use from before parts were counted",
+          "published": "Agents you published",
+          "publishedDetail": "Their API keys, public links and webhooks",
+          "schedule": "Schedules you set",
+          "scheduleDetail": "Their runs, and the monitors you set"
         },
-        "title": "Your usage quota",
-        "tokens": "Tokens",
+        "resetsAt": "Resets at {{time}}",
+        "resetsOn": "Resets on {{date}}",
+        "scope": {
+          "agent": "Your chats with agents, your schedules and the agents you published",
+          "all": "Everything you pay for",
+          "direct": "Your chats without an agent"
+        },
+        "titleDay": "Your usage today",
+        "titleMonth": "Your usage, {{month}}",
+        "titleWeek": "Your usage this week",
         "usedOf": "{{used}} of {{limit}}"
       },
       "scheduledRuns": "Scheduled runs",
@@ -3102,6 +3421,7 @@
       "connectionStatus": {
         "connected": "Connected",
         "disconnected": "Disconnected",
+        "paused": "Paused",
         "pending": "Waiting for sign-in"
       },
       "createFailed": "Could not add the connector. Try again.",
@@ -3134,6 +3454,7 @@
         "mcp_resend": "Send emails and manage contacts, audiences and domains.",
         "mcp_sentry": "Look up Sentry issues, events and releases.",
         "mcp_stripe": "Look up customers, payments and subscriptions in Stripe.",
+        "mcp_supabase": "List tables, run SQL, read logs and manage Supabase projects.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
         "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
@@ -3205,6 +3526,7 @@
       },
       "fieldHints": {
         "github_access_token": "Fine-grained, with read access to Contents and Metadata. For agent changes, also read and write on Issues and Pull requests. <link>Create a token on GitHub</link>",
+        "mcp_supabase_project_ref": "Copy it from Project Settings > General in your Supabase dashboard. The connection reaches this project only.",
         "telegram_chat_id": "Messages go only to this chat. Add the bot, send it a message, then find the chat ID with <link>getUpdates</link>."
       },
       "fields": {
@@ -3216,6 +3538,7 @@
         "client_secret": "Client secret",
         "endpoint_url": "Custom endpoint URL",
         "github_access_token": "Personal access token",
+        "mcp_supabase_project_ref": "Project ID",
         "ntfy_token": "Access token",
         "number_posts": "Number of posts",
         "postgres_token": "Connection string",
@@ -3358,6 +3681,7 @@
         "custom": "Custom",
         "disabledByAdmin": "Disabled by admin",
         "needsAdminSetup": "Needs admin setup",
+        "paused": "Paused",
         "reconnect": "Reconnect"
       },
       "statusFilterLabel": "Filter by status",
@@ -3369,6 +3693,44 @@
       },
       "subtitle": "Connect DocsGPT to the services your team uses. A connection can sync content into Knowledge and give agents tools.",
       "syncContent": "Sync content",
+      "team": {
+        "adminOnly": "Only team Admins can connect or change the team's accounts.",
+        "connectForTeam": "Connect for the team",
+        "connectedBy": "Connected by {{name}}",
+        "connectedByYou": "Connected by you",
+        "emptyAdmin": "No accounts connected for the team yet. Connect one and everyone in the team can use it.",
+        "emptyMember": "No accounts connected for the team yet. A team Admin can connect one.",
+        "errors": {
+          "accountAlreadyConnected": "The team already has this account connected. Use that connection instead.",
+          "adminRequired": "Only team Admins can do this with the team's accounts.",
+          "connectPersonalFirst": "Connect your own account for this service in Personal first. Each person then signs in with their own.",
+          "invalidOwner": "Couldn't tell whether this account is yours or the team's. Reload the page and try again.",
+          "memberModeNotAllowed": "An admin set this service to use one shared account, so people can't each sign in with their own.",
+          "notFound": "This connection no longer exists, or you can't see it.",
+          "paused": "This team account is paused. A team Admin can reconnect it.",
+          "personalOnly": "A team's source can only read through an account connected for the team. A team Admin can connect one on the Connectors page.",
+          "pickerOwnerOnly": "Only the person who connected this account can choose what to sync from it.",
+          "teamConnectionOutside": "It uses a tool on an account connected for the team. Those tools work only for the team's members, in the app.",
+          "teamConnectionOutsideNamed": "It uses {{tools}}, on an account connected for the team. Those tools work only for the team's members, in the app.",
+          "teamWorkspaceRequired": "Switch to the team to connect an account for it."
+        },
+        "notice": "These accounts belong to the team. Your own accounts are in Personal.",
+        "paused": "Paused: {{reason}}",
+        "pausedHintAdmin": "Reconnect it with your account, or disconnect it.",
+        "pausedHintMember": "A team Admin can reconnect it.",
+        "pausedUnknown": "Paused",
+        "pickerOwnerOnly": "Only {{name}}, who connected this account, can choose what to sync from it.",
+        "reconnect": {
+          "body": "{{name}} connected this account. If you reconnect, the team uses your account from now on, and you pay for its syncs.",
+          "bodyUnnamed": "If you reconnect, the team uses your account from now on, and you pay for its syncs.",
+          "confirm": "Reconnect with my account",
+          "dropNote": "Files your account can't open drop out at the next sync. You can pick them again from the source.",
+          "sources_one": "{{formatted}} source syncs from it:",
+          "sources_other": "{{formatted}} sources sync from it:",
+          "title": "Reconnect with your account?"
+        },
+        "teamAccount": "Team account"
+      },
       "unverified": "This server is not reviewed by DocsGPT. Only connect servers you trust.",
       "wizard": {
         "account": "Account",
@@ -3419,6 +3781,7 @@
         "toolsHeading": "Tools ({{formatted}})",
         "toolsUnavailable": "{{name}}'s tools could not be reached. Try again, or turn them off to continue.",
         "tryInChat": "Try it in chat",
+        "urlParameterInvalid": "Check this value: it isn't in the expected format.",
         "waiting": "Finish signing in to {{name}} in the window that opened."
       }
     },
@@ -3459,6 +3822,7 @@
       "editTitle": "Edit Custom Model",
       "empty": "No models found",
       "errors": {
+        "apiKeyNewHost": "Enter the API key for the new host. The saved key is only sent to the host it was saved for.",
         "apiKeyRequired": "API key is required",
         "baseUrlInvalid": "Please enter a valid URL",
         "baseUrlRequired": "Base URL is required",
@@ -3477,7 +3841,8 @@
         "modelId": "Model ID"
       },
       "hints": {
-        "apiKeyEdit": "Leave blank to keep existing key."
+        "apiKeyEdit": "Leave blank to keep the saved key while the address stays on the same host.",
+        "apiKeyNewHost": "The address is on a new host: enter its API key. The saved key is only sent to the host it was saved for."
       },
       "label": "Custom Models",
       "loadError": "Could not load your models.",
@@ -3500,6 +3865,48 @@
       "save": "Save",
       "searchPlaceholder": "Search models...",
       "subtitle": "Bring your own OpenAI-compatible model.",
+      "team": {
+        "actions": {
+          "disable": "Disable",
+          "enable": "Enable"
+        },
+        "addedBy": "Added by {{name}}",
+        "addedByYou": "Added by you",
+        "copy": {
+          "action": "Copy to a team",
+          "body": "The team gets its own copy of {{name}} with your API key. Your model stays as it is.",
+          "bodyTo": "{{team}} gets its own copy of {{name}} with your API key. Your model stays as it is.",
+          "confirm": "Copy",
+          "done": "{{name}} was copied to {{team}}.",
+          "team": "Team",
+          "title": "Copy to a team"
+        },
+        "delete": {
+          "fellBack": "Check the model on: {{names}}",
+          "mayBeUsed": "Any of the team's agents that use it will run on the default model instead, and workflow steps set to it stop until someone picks another model. This can't be undone.",
+          "usedBy": "Used by {{names}}. Agents will run on the default model instead; workflow steps set to it stop until someone picks another model. This can't be undone."
+        },
+        "emptyAdmin": "No models added for the team yet. Add one and everyone in the team can use it.",
+        "emptyMember": "No models added for the team yet. A team Admin can add one.",
+        "errors": {
+          "adminRequired": "Only a team Admin can add a custom model to the team. Ask one to add it, then import again.",
+          "alreadyInTeam": "The team already has this model.",
+          "chatPersonalOnly": "Your own custom models can't be used in a team chat. Pick one of the team's models or a model the whole instance offers.",
+          "credentialsUnreadable": "This model's API key can't be read. Replace the key, then copy the model.",
+          "modelAdminRequired": "Only team Admins can change the team's models.",
+          "notAvailableToTokens": "A team's custom models can only be changed in the app, not with an access token.",
+          "notFound": "This model no longer exists, or you can't see it.",
+          "personalOnly": "A team's agents and workflows can use only the team's custom models. Pick one of the team's models or a model the whole instance offers.",
+          "roleRequired": "Only the team's Admins can add models for it.",
+          "teamIdRequired": "Pick the team to copy the model to.",
+          "teamNotFound": "That team no longer exists, or you're not in it.",
+          "teamOnly": "A team's custom model can be used only by that team's agents and workflows. Pick one of your own models or a model the whole instance offers.",
+          "teamWorkspaceRequired": "Switch to the team to add a model for it."
+        },
+        "notice": "These models belong to the team. Your own models are in Personal.",
+        "pickerGroup": "Team models",
+        "teamModel": "Team model"
+      },
       "testConnection": "Test connection",
       "testHintNew": "Fill in Base URL, Model ID, and API key to enable connection tests.",
       "testSuccess": "Connection successful."
@@ -3543,6 +3950,7 @@
         "cancel": "Cancel",
         "descriptionLabel": "Description (optional)",
         "descriptionPlaceholder": "Visible to the agent so it can pick the right device.",
+        "expired": "This code expired. Generate a new one to pair the device.",
         "formSubtitle": "Set a name, description, and approval mode for the new device.",
         "fullAccessWarning": "Full access: agents can run any command on this machine without asking. The safety denylist still applies.",
         "installLink": "Don't have docsgpt-cli? Install it",
@@ -3567,7 +3975,7 @@
       "convHistory": "Conversation History",
       "dark": "Dark",
       "default": "Default",
-      "deleteAllDescription": "Permanently deletes every conversation in your account. This can't be undone.",
+      "deleteAllInWorkspace": "Permanently deletes every chat you started in {{name}}. This can't be undone.",
       "deleteAllLabel": "Delete all conversations",
       "high": "High",
       "label": "General",
@@ -3815,6 +4223,9 @@
       "filters": {
         "all": "All"
       },
+      "folders": {
+        "emptyHint": "Add a prompt here, or move one in from its ⋯ menu."
+      },
       "kindFilterLabel": "Filter by kind",
       "kinds": {
         "shared": "Shared"
@@ -3841,12 +4252,14 @@
       "saveFailed": "Couldn't save this prompt.",
       "searchPlaceholder": "Search prompts…",
       "sections": {
+        "folders": "Folders",
         "included": "Included",
-        "shared": "Shared with team",
+        "shared": "Shared with you",
+        "team": "Prompts",
         "yours": "Yours"
       },
       "select": "Select a prompt",
-      "shareWithTeam": "Share with team",
+      "shareWithTeam": "Share",
       "subtitle": "System prompts tell the model how to answer. The one you pick is used in chats without an agent; agents choose their own.",
       "unsavedChanges": "You have unsaved changes that will be lost if you leave without saving.",
       "useInChats": "Use {{name}} in chats",
@@ -3935,6 +4348,11 @@
       "filesLoadError": "Could not load the files",
       "filterFiles": "Filter files",
       "folderAlt": "Folder",
+      "folders": {
+        "emptyHint": "Add knowledge here, or move sources in from their ⋯ menu.",
+        "noMatchIn": "Nothing in {{name}} matches “{{query}}”.",
+        "searchAll": "Search all knowledge"
+      },
       "goToSources": "Go to Knowledge",
       "graphrag": {
         "badge": "GraphRAG",
@@ -4039,7 +4457,6 @@
       "kinds": {
         "all": "All",
         "files": "Files",
-        "shared": "Shared",
         "synced": "Synced",
         "websites": "Websites",
         "wikis": "Wikis"
@@ -4173,7 +4590,11 @@
       "searchAlt": "Search",
       "searchChunks": "Search chunks",
       "searchPlaceholder": "Search knowledge…",
-      "shareWithTeam": "Share with team",
+      "sections": {
+        "folders": "Folders",
+        "sources": "Sources"
+      },
+      "shareWithTeam": "Share",
       "size": "Size",
       "subtitle": "Content DocsGPT can search and cite: uploads, websites, wikis and content synced from your connections.",
       "syncConfirmation": "Sync \"{{sourceName}}\"?",
@@ -4186,6 +4607,14 @@
         "weekly": "Weekly"
       },
       "syncNow": "Sync now",
+      "syncPaused": {
+        "account": "Syncing paused: {{reason}}",
+        "noPayer": "Scheduled sync paused: nobody in the team can pay for it.",
+        "noPayerSince": "Scheduled sync paused since {{date}}: nobody in the team can pay for it.",
+        "other": "Scheduled sync paused.",
+        "otherSince": "Scheduled sync paused since {{date}}.",
+        "scheduled": "Scheduled sync paused: {{reason}}"
+      },
       "syncStarted": "Syncing {{name}}…",
       "syncing": "Syncing...",
       "testRetrieval": {
@@ -4526,6 +4955,11 @@
       "deleteTeamError": "Could not delete team.",
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "What's this team for? (optional)",
+      "detail": {
+        "backToTeams": "Back to teams",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "This team doesn't exist, or you're not in it."
+      },
       "drawer": {
         "accessIn": "Access in {{team}}",
         "capabilitiesHint": "From the owner’s access settings. Read-only here.",
@@ -4535,6 +4969,7 @@
         "open": "Open {{type}}",
         "otherTeamsHint": "Shared with other teams too? Those grants are managed in “Manage sharing”.",
         "owner": "Owner",
+        "paused": "Sharing is paused while {{name}} is out of the team. It comes back if they're added again.",
         "removeGrant": "Remove access",
         "shared": "Shared",
         "sharedOnBy": "{{date}} by {{name}}",
@@ -4549,7 +4984,6 @@
           "viewer": "Viewer"
         }
       },
-      "editTeam": "Edit",
       "editorHint": {
         "agent": "Editors can change it, including logs, schedules and access details.",
         "agentNoAccessDetails": "Editors can change it, including logs and schedules, but not access details.",
@@ -4564,7 +4998,31 @@
         "tool": "Editors can change actions and replace credentials, but can’t read secrets.",
         "toolNoCredentials": "Editors can change actions, but not credentials."
       },
+      "errors": {
+        "borrowedResource": "This agent uses sources, tools or prompts it doesn't own, so it can't be shared with another team or reached from outside. Remove them from the agent first.",
+        "invalidPolicy": "Choose who can take this team's items outside.",
+        "lastAdmin": "A team needs at least one admin. Make someone else an admin first.",
+        "ownerMustTransfer": "You own this team. Transfer it to another member first.",
+        "ownerProtected": "The team's owner can't be demoted or removed.",
+        "policyOwnerOnly": "Only the team's Owner can unlock it.",
+        "roleRequired": "Your role in this team doesn't allow this.",
+        "shareNotMember": "You can only share with a team you're in.",
+        "shareSameTeam": "This already belongs to that team.",
+        "shareViewerOnly": "Another team can use a team's item but not edit it.",
+        "shareWholeTeamOnly": "A team's item is shared with a whole team, not with one person.",
+        "teamItemSharedOutside": "This agent is shared with people who can't use that team's item. Use it in an agent that isn't shared outside the team, or stop that share first.",
+        "teamLocked": "This team is locked, so nothing in it can be taken outside. Only its Owner can unlock it.",
+        "teamNotEmpty": "The team still owns items. Move or delete them first.",
+        "usesTeamItems": "This agent uses a team's items, so it can only be shared with people who can use them."
+      },
       "label": "Teams",
+      "leave": {
+        "action": "Leave team",
+        "description": "You lose access to {{team}}'s agents, knowledge, tools, prompts and chats. Schedules you set on its agents and outside access you pay for pause until someone takes them over, and personal items you shared with it stop being shared. An admin can add you again.",
+        "done": "You left {{team}}.",
+        "error": "Could not leave the team.",
+        "title": "Leave {{team}}?"
+      },
       "loadError": "Failed to load teams.",
       "memberCount_one": "{{formatted}} member",
       "memberCount_other": "{{formatted}} members",
@@ -4579,13 +5037,136 @@
       "newTeam": "New team",
       "noMembers": "No members yet. Use “Add member” to invite someone by email.",
       "noTeams": "No teams yet.",
-      "nothingShared": "Nothing shared yet. Share an agent, source, prompt, or tool from its menu.",
+      "notEmpty": {
+        "connectionsHint": "Connections can't be moved. A team Admin removes them on the team's Connectors page.",
+        "counts": {
+          "agent_one": "{{count}} agent",
+          "agent_other": "{{count}} agents",
+          "connection_one": "{{count}} connection",
+          "connection_other": "{{count}} connections",
+          "custom_model_one": "{{count}} custom model",
+          "custom_model_other": "{{count}} custom models",
+          "folder_one": "{{count}} folder",
+          "folder_other": "{{count}} folders",
+          "other_one": "{{count}} other record",
+          "other_other": "{{count}} other records",
+          "prompt_one": "{{count}} prompt",
+          "prompt_other": "{{count}} prompts",
+          "source_one": "{{count}} source",
+          "source_other": "{{count}} sources",
+          "tool_one": "{{count}} tool",
+          "tool_other": "{{count}} tools",
+          "workflow_one": "{{count}} workflow",
+          "workflow_other": "{{count}} workflows"
+        },
+        "customModelsHint": "Custom models can't be moved. A team Admin removes them on the team's Custom models page.",
+        "hint": "Move them to Personal or delete them, then delete the team.",
+        "open": "Open {{name}}",
+        "openConnectors": "Open Connectors",
+        "openCustomModels": "Open Custom models",
+        "title": "{{name}} still owns items"
+      },
       "openTeamError": "Could not load team details.",
+      "outside": {
+        "confirm": {
+          "changeTitle": "Change who can take items outside?",
+          "kept": "Nothing is deleted: unlocking brings it all back.",
+          "lockIntro": "While it's locked:",
+          "lockStops": "Nobody can share its items with other teams, publish its agents outside, move items out of it or export its agents.",
+          "lockTitle": "Lock {{team}}?",
+          "ownerUnlocks": "Only the Owner can unlock it again.",
+          "pauses": {
+            "chatLinks": "The team's shared chat links stop opening",
+            "publishedAny": "Agents stop answering through their API key, widget, public link or webhook",
+            "published_one": "{{formatted}} agent stops answering through its API key, widget, public link or webhook",
+            "published_other": "{{formatted}} agents stop answering through their API key, widget, public link or webhook",
+            "sharesAny": "Shares with other teams pause",
+            "shares_one": "{{formatted}} share with another team pauses",
+            "shares_other": "{{formatted}} shares with other teams pause"
+          },
+          "returns": {
+            "chatLinks": "The team's shared chat links open again",
+            "publishedAny": "Agents answer through their API key, widget, public link or webhook again",
+            "published_one": "{{formatted}} agent answers through its API key, widget, public link or webhook again",
+            "published_other": "{{formatted}} agents answer through their API key, widget, public link or webhook again",
+            "sharesAny": "Shares with other teams work again",
+            "shares_one": "{{formatted}} share with another team works again",
+            "shares_other": "{{formatted}} shares with other teams work again"
+          },
+          "submit": {
+            "change": "Change",
+            "lock": "Lock",
+            "unlock": "Unlock"
+          },
+          "toAdmins": "Editors can no longer take items outside. Outside access an Editor pays for pauses until an Admin takes it over. Shares Editors made stay.",
+          "toEditors": "Editors will be able to share this team's items with other teams and turn on an agent's API key, widget, public link or webhook.",
+          "unlockIntro": "These come back as they were:",
+          "unlockTitle": "Unlock {{team}}?"
+        },
+        "description": "Outside means another team, or an agent's API key, widget, public link or webhook.",
+        "fromAnotherTeam": "From another team",
+        "fromTeams": {
+          "intro": "Other teams' items this team can use. They stay theirs: nobody here can change them or share them on.",
+          "remove": "Remove from this team",
+          "removeAgain": "Only {{from}} can share it again.",
+          "removeError": "Couldn't remove it from this team.",
+          "removeLabel": "Remove {{name}} from this team",
+          "removeTitle": "Remove {{name}} from {{team}}?",
+          "title": "Shared from other teams"
+        },
+        "hint": {
+          "admins": "Admins and the Owner can share this team's items with other teams and turn on an agent's API key, widget, public link or webhook.",
+          "editors": "Editors can do this too. Viewers never can.",
+          "locked": "Nobody can. What is already outside pauses, and items can't be moved out or exported, until the Owner unlocks the team."
+        },
+        "label": "Who can take this team's items outside",
+        "ownerOnly": "Only the team's Owner can unlock it.",
+        "paused": "Paused while {{team}} is locked",
+        "policy": {
+          "admins": "Admins and Owner",
+          "editors": "Editors too",
+          "locked": "No one (locked)"
+        },
+        "policyError": "Couldn't change who can take items outside.",
+        "published": {
+          "open": "Open",
+          "openLabel": "Open {{name}}",
+          "title": "Reachable from outside"
+        },
+        "shares": {
+          "by": "Shared by {{name}}",
+          "empty": "Nothing in this team is shared outside it.",
+          "intro": "This team's items other teams can use, and its agents people reach from outside.",
+          "loadError": "Couldn't load what this team shares outside.",
+          "locked": "{{team}} is locked: these are paused until its Owner unlocks it.",
+          "policy": "Who can take items outside: {{policy}}",
+          "revoke": "Stop sharing",
+          "revokeError": "Couldn't stop sharing it.",
+          "revokeLabel": "Stop sharing {{name}} with {{team}}",
+          "revokeTitle": "Stop sharing {{name}} with {{team}}?",
+          "title": "Shared outside the team",
+          "with": "Shared with {{team}}"
+        },
+        "stops": {
+          "agent": "Members of {{team}} can no longer chat with it. Their chats stay readable.",
+          "agents": "These agents in {{team}} will run without it: {{names}}.",
+          "none": "Nothing in {{team}} uses it yet.",
+          "unknown": "Whatever uses it in {{team}} stops using it.",
+          "usedBy_one": "{{formatted}} agent in {{team}} uses it and will run without it.",
+          "usedBy_other": "{{formatted}} agents in {{team}} use it and will run without it."
+        },
+        "title": "Outside the team"
+      },
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} team",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} teams",
       "remove": "Remove",
+      "removeMember": {
+        "personalItemsPaused": "They stop being shared with {{team}} while {{name}} is out of the team, and come back if {{name}} is added again. To keep the ones the team depends on, ask {{name}} to move them to the team first.",
+        "personalItems_one": "{{count}} personal item {{name}} shares with {{team}}",
+        "personalItems_other": "{{count}} personal items {{name}} shares with {{team}}",
+        "teamItemsStay": "Team items {{name}} added stay with {{team}}. {{name}} loses access to them; you can add them again at any time."
+      },
       "removeMemberConfirmation": "Remove \"{{name}}\" from {{team}}?",
-      "removeMemberConsequence": "They lose access to everything shared with {{team}}. You can add them again at any time.",
       "removeMemberError": "Could not remove member.",
       "resourceType": {
         "agent": "Agent",
@@ -4595,11 +5176,20 @@
       },
       "roleAdmin": "admin",
       "roleChangeError": "Could not change role (last admin is protected).",
+      "roleHints": {
+        "admin": "Also deletes items, manages members and roles, and turns on outside access.",
+        "editor": "Also adds, edits, moves and files items, and sees logs.",
+        "viewer": "Uses the team's agents, knowledge, tools and prompts."
+      },
       "roleMember": "member",
       "save": "Save",
       "searchMembers": "Search members…",
       "selectTeamHint": "Select a team to manage its members and shared resources.",
       "selectTeamTitle": "No team selected",
+      "settingsTab": {
+        "deleteHint": "Only an empty team can be deleted. Move or delete its agents, knowledge, tools, prompts and folders first.",
+        "details": "Details"
+      },
       "share": {
         "access": "Access",
         "accessLevel": {
@@ -4607,6 +5197,7 @@
           "viewer": "Viewer"
         },
         "addPlaceholder": "Add people or teams…",
+        "addedByYou": "Added by you",
         "allSummary": "{{name}} · Teams: {{teams}} · People: {{people}}",
         "andMore_one": "and {{formatted}} more",
         "andMore_other": "and {{formatted}} more",
@@ -4621,6 +5212,9 @@
         "loadError": "Could not load current shares.",
         "noMatches": "No people or teams found.",
         "noTeams": "You're not a member of any team yet. Create one in Settings → Teams.",
+        "notOwnedByTeam": "Shared, not owned by the team",
+        "ownOfferBody": "It would stay with the team if you leave.",
+        "ownOfferTitle": "Should {{team}} own this?",
         "owner": "Owner",
         "peopleGroup": "People",
         "peopleWithAccess": "People with access",
@@ -4633,7 +5227,6 @@
         "shareError": "Could not share with the team.",
         "showAll": "Show all {{formatted}}",
         "subtitle": "Team members can use it; editors can also modify it. You stay the owner.",
-        "teamLabel": "Team",
         "teamsGroup": "Teams",
         "titleGeneric": "Share this {{type}}",
         "titleNamed": "Share \"{{name}}\"",
@@ -4653,6 +5246,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "Signed out of {{service}}",
             "connectionNeedsReconnectNoService": "Signed out",
+            "connectionPaused": "Team's {{service}} account paused",
+            "connectionPausedNoService": "Team account paused",
             "connectionRemoved": "{{service}} account removed",
             "connectionRemovedNoService": "Account removed",
             "connectorDisabled": "{{service}} turned off by an admin",
@@ -4665,6 +5260,8 @@
             "sponsorCannotEditItem": "{{person}} can't edit it any more",
             "sponsorCannotEditItemOther": "Whoever added it can't edit it any more",
             "sponsorCannotEditItemYou": "You can't edit it any more",
+            "teamLocked": "Its team is locked",
+            "teamShareEnded": "No longer shared by its team",
             "unknown": "Not running"
           },
           "stopped": "Stopped",
@@ -4679,6 +5276,11 @@
       },
       "sharedCount_one": "{{formatted}} shared",
       "sharedCount_other": "{{formatted}} shared",
+      "sharedItems": {
+        "empty": "No one has shared a personal item with this team.",
+        "intro": "These belong to the people who shared them, not to the team. Ask the owner to move the ones the team depends on.",
+        "title": "Personal items shared with the team"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} editors",
@@ -4694,18 +5296,36 @@
         "noMatches": "Nothing matches.",
         "pageRange_one": "{{from}}–{{to}} of {{formatted}} resource",
         "pageRange_other": "{{from}}–{{to}} of {{formatted}} resources",
+        "paused": "Paused: {{name}} left the team",
         "search": "Search shared…"
       },
-      "sharedResources": "Shared resources",
       "sharedWithTeam": "Shared with this team ({{count}})",
       "sourceManual": "Added manually",
       "sourceScim": "via SCIM",
       "sourceSso": "via SSO",
       "subtitle": "Manage your teams, members, and shared resources.",
-      "teamActions": "Team actions",
+      "tabs": {
+        "label": "Team pages",
+        "members": "Members",
+        "settings": "Settings",
+        "shared": "Personal items shared",
+        "usage": "Usage"
+      },
       "teamNamePlaceholder": "Team name",
       "teamSubtitle": "Manage members and the resources shared with this team.",
       "teamsHeading": "Your teams",
+      "transfer": {
+        "action": "Transfer",
+        "confirm": "Transfer {{team}} to {{name}}?",
+        "consequence": "They become the owner and an admin. Only the new owner can transfer it back.",
+        "description": "Only the owner can delete the team or transfer it.",
+        "error": "Could not transfer the team.",
+        "memberLabel": "New owner",
+        "noMatches": "No other member matches.",
+        "placeholder": "Choose a member",
+        "submit": "Transfer",
+        "title": "Transfer ownership"
+      },
       "unshare": "Unshare",
       "unshareError": "Could not unshare resource.",
       "updateFailed": "Update failed"
@@ -4753,9 +5373,13 @@
       "fieldDescription": "Field description",
       "fieldName": "Field Name",
       "fieldType": "Field Type",
+      "fileFailed": "The tool was added, but it couldn't go in this folder.",
       "filledBy": "Filled in by",
       "filters": {
         "all": "All"
+      },
+      "folders": {
+        "emptyHint": "Add a tool here, or move one in from its ⋯ menu."
       },
       "groupAdded": "Added",
       "groupBuiltIn": "Built-in",
@@ -4828,6 +5452,15 @@
         "sharedByEditor": "Shared by {{owner}} · you're an editor",
         "sharedCredentialsNotice": "Saved credentials stay hidden. Anything you enter replaces them for everyone who uses this tool.",
         "sharedOAuthOwnerOnly": "Only the owner can change this server's connection or reconnect its sign-in. You can still rename it and edit its actions.",
+        "team": {
+          "eachPerson": "Each person signs in with their own account",
+          "eachPersonHint": "Everyone who uses this server signs in to it with their own account. You need your own sign-in to it in Personal first.",
+          "oauthNewServerOnly": "To use a server you sign in to (OAuth) in a team, add it as a new server.",
+          "signInInPersonal": "Sign in to it in Personal",
+          "teamOnce": "The team signs in once, with your account",
+          "teamOnceHint": "Everyone in the team uses the account you sign in with. It becomes the team's connection, connected by you.",
+          "whoSignsIn": "Who signs in"
+        },
         "testBeforeSave": "Test the connection before you save.",
         "testConnection": "Test connection",
         "timeout": "Timeout (seconds)",
@@ -4851,12 +5484,28 @@
       "savedSecretPlaceholder": "Saved · enter a new value to replace",
       "searchActions": "Search actions...",
       "searchPlaceholder": "Search tools…",
+      "sections": {
+        "folders": "Folders"
+      },
       "selectToolSetup": "Add a tool",
       "settingsIconAlt": "Settings icon",
-      "shareWithTeam": "Share with team",
+      "shareWithTeam": "Share",
       "sharedBy": "Shared by {{team}}",
       "statusUpdateFailed": "Couldn't change whether this tool is in your chats.",
       "subtitle": "Actions your agents can take. Included tools come with DocsGPT. Tools from a connected service are grouped under that service.",
+      "team": {
+        "addFailed": "Couldn't add the tool. Try again.",
+        "connectForTeam": "Connect an account for the team",
+        "connectForTeamHint": "Connect a {{name}} account for the whole team on the Connectors page. Its tools then run on that account for everyone in the team.",
+        "connectInPersonal": "Connect your own account in Personal",
+        "eachPerson": "Each person signs in with their own account",
+        "eachPersonHint": "Everyone who uses this tool signs in to {{name}} with their own account. No account is shared.",
+        "eachPersonMeta": "Each person's own account",
+        "serviceDescription": "Choose whose {{name}} account the team's tool runs on.",
+        "serviceTitle": "Add {{name}} to the team",
+        "teamAccount": "Use the team's account",
+        "teamAccountHint": "The team's {{name}} account and its tools are managed on the Connectors page. They run on that account for everyone in the team."
+      },
       "toolActions": "Tool actions",
       "toolIconTitle": "{{name}} icon",
       "triggerLabel_one": "Tools, {{formatted}} selected",
@@ -4906,14 +5555,292 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Switch team",
+      "ariaLabel": "Switch workspace",
       "createTeam": "Create team",
       "logoAlt": "DocsGPT logo",
-      "manageTeams": "Manage teams",
-      "personal": "Personal account",
-      "personalSubtitle": "Personal workspace",
-      "roleAdmin": "Admin",
-      "roleMember": "Member"
+      "manageTeams": "Manage teams"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "deleteAll": {
+        "confirm": "Delete all your chats in {{name}}?",
+        "consequence": "Every chat you started in {{name}} is deleted, with its messages. Chats in your other workspaces stay. This can't be undone."
+      },
+      "mismatch": "This agent belongs to another workspace than this chat.",
+      "notFound": "You're no longer in this team, so the chat can't continue here.",
+      "onlyYou": "Only you can see this chat",
+      "switchTo": "Switch to {{name}}",
+      "thisTeam": "this team"
+    },
+    "common": {
+      "personal": "Personal",
+      "roles": {
+        "admin": "Admin",
+        "editor": "Editor",
+        "owner": "Owner",
+        "viewer": "Viewer"
+      },
+      "you": "You"
+    },
+    "folders": {
+      "alsoInFolder": "Also in this folder"
+    },
+    "line": {
+      "people_one": "{{count}} person",
+      "people_other": "{{count}} people",
+      "personal": "Personal",
+      "personalScope": "Only you, unless you share an item",
+      "teamScope": "Everyone in the team can use what's here"
+    },
+    "menu": {
+      "moveToPersonal": "Move to Personal…",
+      "moveToTeam": "Move to team…"
+    },
+    "move": {
+      "access": {
+        "gainsDetail": "Editors and admins in {{team}} can change it. Viewers can use it.",
+        "gainsNone": "No one else gets access",
+        "gains_one": "{{count}} person gets access",
+        "gains_other": "{{count}} people get access",
+        "loseTeamNone": "No one else loses access",
+        "loseTeam_one": "{{count}} person in {{team}} loses access",
+        "loseTeam_other": "{{count}} people in {{team}} lose access",
+        "losesShared_one": "{{count}} person you shared this with outside {{team}} will lose access: {{names}}.",
+        "losesShared_other": "{{count}} people you shared this with outside {{team}} will lose access: {{names}}.",
+        "onlyYou": "Only you will have it, until you share it."
+      },
+      "anotherTeam": "another team",
+      "borrow": {
+        "in_one": "{{names}} can be reached from outside the team and uses what this move brings in, which outside access must not serve. Move it too, turn its outside access off, or remove those items from it first.",
+        "in_other": "{{names}} can be reached from outside the team and use what this move brings in, which outside access must not serve. Move them too, turn their outside access off, or remove those items from them first.",
+        "keeps_one": "Your agent {{names}} uses what moves. It can keep using it from the team, but can't be published while it does.",
+        "keeps_other": "Your agents {{names}} use what moves. They can keep using it from the team, but can't be published while they do.",
+        "out_one": "{{names}} stays in {{team}} and uses what this move takes out. Move it too, or remove those items from it first.",
+        "out_other": "{{names}} stay in {{team}} and use what this move takes out. Move them too, or remove those items from them first."
+      },
+      "cannotTitle": "Can't move",
+      "chats": {
+        "in_one": "{{count}} of your chats with it moves to {{team}}.",
+        "in_other": "{{count}} of your chats with it move to {{team}}.",
+        "out_one": "{{count}} of your chats with it moves to Personal.",
+        "out_other": "{{count}} of your chats with it move to Personal."
+      },
+      "comesAlong": "Moves along",
+      "comesWith": "Moves with \"{{name}}\"",
+      "customModelHint": "To keep it, add it to the team on Custom models first.",
+      "done": {
+        "personal": "\"{{name}}\" is in your Personal workspace now.",
+        "team": "\"{{name}}\" now belongs to {{team}}."
+      },
+      "doneButton": "Done",
+      "droppedShares": {
+        "description": "Whatever uses these in those teams stops.",
+        "title": "Sharing with other teams ends",
+        "with": "Shared with {{team}}"
+      },
+      "effects": {
+        "removed_from_holder": "It will be removed from what uses it.",
+        "stays": "It stays where it is."
+      },
+      "errors": {
+        "already_in_workspace": "It's already there.",
+        "credentials_unavailable": "A saved key can't be moved right now. Try again later.",
+        "credentials_unreadable_one": "The saved secret of {{names}} can't be read, so it can't move. Enter it again first.",
+        "credentials_unreadable_other": "The saved secrets of {{names}} can't be read, so they can't move. Enter them again first.",
+        "fingerprint_required": "Check the plan again, then move.",
+        "folder_not_found": "That folder isn't there any more.",
+        "folder_too_deep": "That folder is too deep for this one: folders nest at most 3 levels.",
+        "invalid_request": "This move can't be made.",
+        "move_failed": "The move failed; nothing changed.",
+        "move_needs_admin": "Only a team Admin can bring in an agent people outside the team can reach.",
+        "move_plan_changed": "Something changed; check again",
+        "move_would_borrow": "An agent people outside the team can reach uses what this move takes.",
+        "not_a_person": "Only a person can move items.",
+        "not_found": "It isn't there any more.",
+        "nothing_to_move": "None of these items can move.",
+        "team_locked": "{{team}} is locked, so nothing moves out of it. Only its Owner can unlock it.",
+        "workspace_not_found": "That team isn't available any more.",
+        "workspace_role_required": "Your role there doesn't allow this move."
+      },
+      "folderLabel": "Folder",
+      "foldersFailed": "Couldn't load the folders there, so it goes in at the top level.",
+      "kinds": {
+        "agent": "Agent",
+        "folder": "Folder",
+        "model": "Model",
+        "prompt": "Prompt",
+        "source": "Source",
+        "tool": "Tool"
+      },
+      "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "\"{{from}}\" → the team's \"{{to}}\"",
+        "out": "\"{{from}}\" → your \"{{to}}\"",
+        "title": "Switches to a matching custom model"
+      },
+      "needsAdmin_one": "{{names}} can be reached from outside the team (a key, public link or webhook), and only an Admin of {{team}} brings that in. Turn its outside access off first, or ask an Admin.",
+      "needsAdmin_other": "{{names}} can be reached from outside the team (a key, public link or webhook), and only an Admin of {{team}} brings those in. Turn their outside access off first, or ask an Admin.",
+      "noFolder": "No folder",
+      "openIn": "Open {{name}}",
+      "othersYouCantOpen_one": "{{count}} agent you can't open",
+      "othersYouCantOpen_other": "{{count}} agents you can't open",
+      "outside": {
+        "apiKey": "API key and widget",
+        "publicLink": "public link",
+        "webhook": "webhook"
+      },
+      "owner": {
+        "team": "{{team}} will own it",
+        "teamDetail": "It stays with the team if you leave. You stay listed as the person who added it.",
+        "you": "You will own it",
+        "youDetail": "It leaves {{team}} for your Personal workspace."
+      },
+      "payerYou": "you",
+      "pays": {
+        "chats": "Each person pays for their own chats.",
+        "outside": "Outside access ({{list}}) keeps running, paid by {{name}}.",
+        "schedules_one": "{{count}} schedule keeps running, paid by {{names}}.",
+        "schedules_other": "{{count}} schedules keep running, paid by {{names}}.",
+        "title": "Nothing changes about who pays"
+      },
+      "planChanged": "Something changed; check again",
+      "quoted": "\"{{name}}\"",
+      "reasons": {
+        "connection_account": "Signed in with an account that stays in this workspace.",
+        "connector_synced": "Synced from an account that stays in this workspace.",
+        "credentials_unreadable": "Its saved secret can't be read any more.",
+        "custom_model": "A personal custom model the team doesn't have.",
+        "custom_model_out": "A team's custom model you don't have.",
+        "in_knowledge_folder": "Filed in a folder the agent reads; only its sources come along.",
+        "not_yours": "Someone else's, so it isn't yours to move.",
+        "remote_device": "Runs on a paired device."
+      },
+      "renames": {
+        "folder": "Folder \"{{from}}\" becomes \"{{to}}\"",
+        "other": "\"{{from}}\" becomes \"{{to}}\"",
+        "slug": "The agent's address \"{{from}}\" becomes \"{{to}}\"",
+        "title": "Renamed to avoid a clash"
+      },
+      "sharedRefs": {
+        "from": "Used through the share from {{team}}",
+        "title": "Kept through another team's share"
+      },
+      "someone": "someone",
+      "submit": "Move to {{name}}",
+      "teamLabel": "Team",
+      "teamLocked_one": "{{names}} can be reached from outside the team (a key, public link or webhook), and {{team}} is locked, so it can't come in. Turn its outside access off first.",
+      "teamLocked_other": "{{names}} can be reached from outside the team (a key, public link or webhook), and {{team}} is locked, so they can't come in. Turn their outside access off first.",
+      "titleToPersonal": "Move \"{{name}}\" to Personal",
+      "titleToTeam": "Move \"{{name}}\" to a team",
+      "unnamed": "An item you can't open",
+      "withReasons": {
+        "in_folder": "In the folder",
+        "same_workflow": "On the same workflow",
+        "used_by_agent": "Used by the agent"
+      }
+    },
+    "notices": {
+      "lost": "You're no longer in {{name}}; switched to Personal",
+      "lostUnnamed": "You're no longer in that team; switched to Personal",
+      "ownerInactive": "Outside access is paused: its owner's account is deactivated.",
+      "ownerInactiveShort": "Outside access paused",
+      "roleChanged": "Your role in {{name}} has changed. The page now shows what you can do.",
+      "switched": "Switched to {{name}}"
+    },
+    "page": {
+      "sharedFromTeams": {
+        "from": "From {{team}}",
+        "title": "Shared with this team"
+      },
+      "sharedWithYou": "Shared with you"
+    },
+    "pickers": {
+      "inAgentFolder": "In {{folder}}, this agent's folder",
+      "inWorkflowFolder": "In {{folder}}, this workflow's folder",
+      "otherFolders": "In other folders",
+      "thisTeam": "This team"
+    },
+    "share": {
+      "access": "Access",
+      "adminsOnly": "Only admins change these, on the agent's own page.",
+      "apiKey": "API key and widget",
+      "belongsTo": "It belongs to {{team}}. Access follows team membership.",
+      "everyoneInTeam": "Everyone in {{team}}",
+      "fromTeam": "From the team",
+      "manageMembers": "Manage members",
+      "members_one": "{{count}} person, by their team role",
+      "members_other": "{{count}} people, by their team role",
+      "off": "Off",
+      "on": "On",
+      "onPaidBy": "On · paid by {{name}}",
+      "outside": {
+        "again": "You can share it again at any time.",
+        "locked": "{{team}} is locked, so nothing in it can be shared with another team. Only its Owner can unlock it.",
+        "noMatches": "No teams found.",
+        "noTargets": "You're not in another team to share it with.",
+        "pausedLocked": "Paused while {{owner}} is locked",
+        "picker": "Team to share with",
+        "pickerPlaceholder": "Choose a team…",
+        "pickerSearch": "Search teams…",
+        "received": {
+          "body": "{{owner}} shares it with everyone in {{team}}.",
+          "bodyNoOwner": "Another team shares it with everyone in {{team}}.",
+          "note": "You can use it, but you can't change it or share it with anyone else."
+        },
+        "revoke": "Stop sharing",
+        "revokeAgent": "Members of {{team}} can no longer chat with it. Their past chats stay readable.",
+        "revokeConfirm": "Stop sharing with {{team}}?",
+        "revokeUnused": "Members of {{team}} can no longer use it.",
+        "revokeUsed_one": "{{formatted}} agent in {{team}} uses it and will run without it.",
+        "revokeUsed_other": "{{formatted}} agents in {{team}} use it and will run without it.",
+        "share": "Share",
+        "shareError": "Could not share with that team.",
+        "sharedBy": "Shared by {{name}}",
+        "sharedByYou": "Shared by you",
+        "teamsTitle": "Shared with other teams",
+        "title": "Outside the team",
+        "unknownTeam": "A team you're not in",
+        "unshareError": "Could not stop sharing.",
+        "usedBy_one": "Used by {{formatted}} agent",
+        "usedBy_other": "Used by {{formatted}} agents",
+        "uses": {
+          "fromTeam": "From {{team}}: {{items}}.",
+          "hidden_one": "{{count}} item you can't see",
+          "hidden_other": "{{count}} items you can't see",
+          "moveTo": "Move to {{team}}",
+          "note": "This agent uses a team's items, so only people who can use them are suggested.",
+          "remove": "Remove them from the agent to share it with others.",
+          "someTeam": "another team"
+        },
+        "warning": {
+          "agent": "Members of {{team}} can chat with it. It runs with {{owner}}'s knowledge and tools. People in {{owner}} who see its Logs and Insights see their questions.",
+          "always": "They can't change it, share it further or publish agents that use it. Stop sharing at any time; whatever uses it in {{team}} stops.",
+          "prompt": "Members of {{team}} can read it and use it in their agents.",
+          "source": "Members of {{team}} can read every file in it and use it in their agents.",
+          "teamModels_one": "Members of {{team}} will run this agent on {{owner}}'s model {{names}}.",
+          "teamModels_other": "Members of {{team}} will run this agent on {{owner}}'s models {{names}}.",
+          "toolMember": "Each member uses their own account.",
+          "toolStored": "Members of {{team}} will run this tool on {{owner}}'s stored account. What they do with it is done as {{owner}}."
+        }
+      },
+      "payerYou": "you",
+      "publicLink": "Public link",
+      "teamTitle": "Who can use \"{{name}}\"",
+      "teamTitleGeneric": "Who can use this {{type}}",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} in {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Only you",
+      "personal": "Personal",
+      "teamMeta_one": "{{count}} person · {{role}}",
+      "teamMeta_other": "{{count}} people · {{role}}",
+      "teamRole": "Team · {{role}}",
+      "teams": "Teams"
+    },
+    "team": {
+      "navEntry": "Team"
     }
   }
 }

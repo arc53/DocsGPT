@@ -163,6 +163,51 @@ def reseal_credentials(encrypted_data: str, user_id: str) -> tuple[str, Optional
     return ("rewritten", resealed) if resealed else ("failed", None)
 
 
+def reseal_for_owner(encrypted_data: Optional[str], old_owner: str, new_owner: str) -> str:
+    """Re-encrypt a credential blob for another owner (a person and a team principal, either way).
+
+    A blob is bound to its owner (v1 by the PBKDF2 password, v2 by the HKDF
+    info and the GCM associated data), so moving an item to a team or out of
+    one needs its secrets re-sealed. The format is kept: a v1 blob comes back
+    as v1 under ``ENCRYPTION_SECRET_KEY``, a v2 envelope as v2.
+
+    Args:
+        encrypted_data: A blob from :func:`encrypt_credentials` or :func:`encrypt_json`; empty means none.
+        old_owner: The owner it was written for.
+        new_owner: The owner to write it for.
+
+    Returns:
+        The new blob; ``""`` for an empty one; the same blob when the owner doesn't change.
+
+    Raises:
+        CredentialDecryptionError: No key opens the blob for ``old_owner``, or it could not be re-written.
+            Never answers with an empty blob for a real one, so a move fails instead of losing secrets.
+    """
+    if not encrypted_data:
+        return ""
+    if old_owner == new_owner:
+        return encrypted_data
+    if envelope_key_id(encrypted_data) is not None:
+        return encrypt_json(decrypt_json(encrypted_data, old_owner), new_owner)
+    try:
+        data = base64.b64decode(encrypted_data.encode(), validate=True)
+    except Exception as exc:
+        raise CredentialDecryptionError("Credential could not be decrypted") from exc
+    credentials: Optional[dict] = None
+    for app_secret in _v1_secrets():
+        try:
+            credentials = _decrypt_v1(data, old_owner, app_secret)
+            break
+        except Exception:
+            continue
+    if credentials is None:
+        raise CredentialDecryptionError("Credential could not be decrypted")
+    resealed = encrypt_credentials(credentials, new_owner)
+    if not resealed:
+        raise CredentialDecryptionError("Credential could not be re-encrypted")
+    return resealed
+
+
 def _pad_data(data: bytes) -> bytes:
     block_size = 16
     padding_len = block_size - (len(data) % block_size)

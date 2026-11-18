@@ -13,6 +13,7 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 
 
 pytestmark = pytest.mark.fresh_db
@@ -61,6 +62,7 @@ def patched_engine(pg_engine, monkeypatch):
             "POSTGRES_URI": str(pg_engine.url),
             "SCHEDULE_AUTOPAUSE_FAILURES": 2,
             "SCHEDULE_NOTIFY_RECURRING_FAILURES": False,
+            "SCHEDULE_MIN_INTERVAL": 900,
         })(),
     )
     yield pg_engine
@@ -138,7 +140,7 @@ class TestExecuteScheduledRunBody:
         assert sched["consecutive_failure_count"] == 1
         assert "schedule.run.failed" in {e[0] for e in stub_events}
 
-    def test_quota_refusal_marks_budget_exceeded(
+    def test_an_allowance_refusal_before_start_skips_the_run_as_a_payer_pause(
         self, pg_engine, patched_engine, stub_events,
     ):
         from datetime import datetime, timezone
@@ -157,11 +159,54 @@ class TestExecuteScheduledRunBody:
             side_effect=QuotaExceededError(exceeded),
         ):
             result = execute_scheduled_run_body(str(run["id"]), "celery-q")
-        assert result["status"] == "failed"
+        # The setter's allowance pauses the schedule until the window resets; it is not a failure.
+        assert result["status"] == "skipped"
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+        assert row["status"] == "skipped"
+        assert row["error_type"] == "payer_out_of_allowance"
+
+    def test_agent_limit_refusal_marks_budget_exceeded_naming_the_limit(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        from docsgpt.quotas.agent_limits import AgentLimitExceeded, AgentLimitExceededError
+
+        hit = AgentLimitExceeded(agent_id=None, dimension="requests", usage=5, limit=5)
+        with pg_engine.begin() as conn:
+            _, run, _ = _make_pending_run(conn)
+        with patch(
+            "docsgpt.api.user.scheduler_worker.run_agent_headless",
+            side_effect=AgentLimitExceededError(hit),
+        ):
+            execute_scheduled_run_body(str(run["id"]), "celery-al")
         with pg_engine.connect() as conn:
             row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
         assert row["error_type"] == "budget_exceeded"
-        assert "Usage quota reached" in row["error"]
+        assert "agent's request limit" in row["error"]
+
+    def test_a_teammates_schedule_bills_the_teammate(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        with pg_engine.begin() as conn:
+            agent_id = _make_agent(conn, "owner")
+            schedule = SchedulesRepository(conn).create(
+                user_id="teammate", agent_id=agent_id, trigger_type="recurring",
+                instruction="hello", cron="* * * * *", next_run_at=_now() + timedelta(minutes=5),
+            )
+            run = ScheduleRunsRepository(conn).record_pending(str(schedule["id"]), "teammate", agent_id, _now())
+        captured = {}
+
+        def _fake_run(agent_config, query, **kwargs):
+            captured.update(config=agent_config, **kwargs)
+            return {"answer": "done", "tool_calls": [], "sources": [], "thought": "", "generated_tokens": 1}
+
+        # Who may still run it is another check's business; the teammate has access here.
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", _fake_run), \
+                patch("docsgpt.api.user.scheduler_worker._scheduler_still_allowed", return_value=True):
+            execute_scheduled_run_body(str(run["id"]), "celery-tm")
+        assert captured["payer"] == "teammate"
+        # Still runs as the agent's owner.
+        assert captured["config"]["user_id"] == "owner"
 
     def test_autopause_after_threshold(
         self, pg_engine, patched_engine, stub_events,
@@ -1164,7 +1209,9 @@ _OK = {
 class TestCallerRules:
     """A scheduled run acts as the owner but keeps the rules of whoever set it."""
 
-    def _run(self, conn, *, owner="owner-x", user="owner-x", shared=False, created_via="ui", grant=False):
+    def _run(
+        self, conn, *, owner="owner-x", user="owner-x", shared=False, created_via="ui", grant=False, opened=False,
+    ):
         import uuid as _uuid
 
         from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
@@ -1174,8 +1221,14 @@ class TestCallerRules:
         from docsgpt.storage.db.repositories.teams import TeamsRepository
 
         agent_id = _make_agent(conn, owner)
-        conn.execute(text("UPDATE agents SET shared = :s WHERE id = CAST(:id AS uuid)"),
-                     {"s": shared, "id": agent_id})
+        conn.execute(
+            text("UPDATE agents SET shared = :s, shared_token = :t WHERE id = CAST(:id AS uuid)"),
+            {"s": shared, "t": f"tok-{agent_id}" if shared else None, "id": agent_id},
+        )
+        if opened:
+            # Opening the share link records it for the user.
+            UsersRepository(conn).upsert(user)
+            UsersRepository(conn).add_shared(user, agent_id)
         if grant:
             team = TeamsRepository(conn).create("T", f"t-{_uuid.uuid4().hex[:8]}", owner)
             TeamMembersRepository(conn).add_member(str(team["id"]), user)
@@ -1196,9 +1249,18 @@ class TestCallerRules:
         return {k: headless.call_args.kwargs.get(k) for k in ("external_caller", "public_link_caller")}
 
     def test_public_link_users_schedule_runs_as_a_public_link_caller(self, pg_engine, patched_engine, stub_events):
-        assert self._caller(pg_engine, user="stranger", shared=True) == {
+        assert self._caller(pg_engine, user="stranger", shared=True, opened=True) == {
             "external_caller": False, "public_link_caller": True,
         }
+
+    def test_a_schedule_on_a_link_shared_agent_needs_the_link_opened(self, pg_engine, patched_engine, stub_events):
+        # The agent being link-shared is not enough: its id alone grants nothing.
+        with pg_engine.begin() as conn:
+            run = self._run(conn, user="stranger", shared=True)
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless") as headless:
+            result = execute_scheduled_run_body(str(run["id"]), "celery-c")
+        headless.assert_not_called()
+        assert result["status"] == "failed"
 
     def test_team_members_schedule_runs_as_a_teammate(self, pg_engine, patched_engine, stub_events):
         assert self._caller(pg_engine, user="member-y", shared=True, grant=True) == {
@@ -1467,3 +1529,61 @@ class TestWorkflowRunTokens:
         assert row["error_type"] == "budget_exceeded"
         assert row["error"] == "used 2650 tokens exceeds budget 1000"
         assert billed == [(1200, 300), (900, 250)]
+
+
+def _deactivate(conn, user_id: str) -> None:
+    UsersRepository(conn).upsert(user_id)
+    conn.execute(text("UPDATE users SET active = false WHERE user_id = :u"), {"u": user_id})
+
+
+class TestDeactivatedOwnerPausesSchedules:
+    """While the agent's owner (or the schedule's setter) is deactivated, a run is
+    skipped with a reason, counts toward nothing, and runs again on reactivation."""
+
+    def _skipped(self, pg_engine, run):
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=_OK) as headless:
+            result = execute_scheduled_run_body(str(run["id"]), "celery-p")
+        headless.assert_not_called()
+        with pg_engine.connect() as conn:
+            row = ScheduleRunsRepository(conn).get_internal(str(run["id"]))
+            sched = SchedulesRepository(conn).get_internal(str(run["schedule_id"]))
+        return result, row, sched
+
+    def test_the_owners_schedule_is_skipped_with_the_reason(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            _, run, _ = _make_pending_run(conn, user_id="owner-x")
+            _deactivate(conn, "owner-x")
+        result, row, sched = self._skipped(pg_engine, run)
+        assert result["status"] == "skipped"
+        assert row["status"] == "skipped"
+        assert row["error"] == "owner_inactive"
+        assert row["finished_at"] is not None
+        # A pause, not a failure: nothing counts toward auto-pause.
+        assert sched["consecutive_failure_count"] == 0
+        assert sched["status"] == "active"
+
+    def test_a_teammates_schedule_on_a_deactivated_owners_agent_is_skipped(
+        self, pg_engine, patched_engine, stub_events,
+    ):
+        with pg_engine.begin() as conn:
+            run = TestCallerRules()._run(conn, user="member-y", grant=True)
+            _deactivate(conn, "owner-x")
+        result, row, _ = self._skipped(pg_engine, run)
+        assert result["status"] == "skipped"
+        assert row["error"] == "owner_inactive"
+
+    def test_a_schedule_set_by_a_deactivated_person_is_skipped(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            run = TestCallerRules()._run(conn, user="member-y", grant=True)
+            _deactivate(conn, "member-y")
+        result, row, _ = self._skipped(pg_engine, run)
+        assert result["status"] == "skipped"
+        assert row["error"] == "owner_inactive"
+
+    def test_reactivating_the_owner_runs_it_again(self, pg_engine, patched_engine, stub_events):
+        with pg_engine.begin() as conn:
+            _, run, _ = _make_pending_run(conn, user_id="owner-x")
+            _deactivate(conn, "owner-x")
+            conn.execute(text("UPDATE users SET active = true WHERE user_id = 'owner-x'"))
+        with patch("docsgpt.api.user.scheduler_worker.run_agent_headless", return_value=_OK):
+            assert execute_scheduled_run_body(str(run["id"]), "celery-p")["status"] == "success"

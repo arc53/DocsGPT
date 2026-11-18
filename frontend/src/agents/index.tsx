@@ -57,6 +57,8 @@ export default function Agents() {
       <Route path="manage" element={<AgentsList />} />
       <Route path="manage/templates" element={<AgentsList />} />
       <Route path="manage/mine" element={<AgentsList />} />
+      <Route path="manage/shared-with-you" element={<AgentsList />} />
+      {/* The old Team section's address (see `workspaceFilter`). */}
       <Route path="manage/team" element={<AgentsList />} />
       <Route path="manage/discovered" element={<AgentsList />} />
       <Route path="manage/new" element={<NewAgent mode="new" />} />

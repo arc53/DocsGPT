@@ -10,7 +10,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
 from docsgpt.agents.cannot_complete import cannot_complete_reason
@@ -871,11 +871,27 @@ class WorkflowEngine:
             prompt_embeds_documents as _prompt_embeds_documents,
         )
 
-        node_config = AgentNodeConfig(**node.config.get("config", node.config))
+        raw_config = node.config.get("config", node.config)
+        # A null list (a graph saved through the API) means none, as an omitted key does.
+        node_config = AgentNodeConfig(**{
+            key: value for key, value in raw_config.items()
+            if not (value is None and key in ("tools", "sources", "folders", "input_documents"))
+        })
 
         self._node_search_outcome = None
+        # The node's sources and folders are resolved once: its prefetch and its
+        # on-demand search read the same ones. A failed resolution is retried.
+        resolved: Dict[str, list] = {}
+
+        def _node_sources() -> list:
+            if "ids" not in resolved:
+                resolved["ids"] = self._node_source_ids(node_config)
+            return list(resolved["ids"])
+
         node_docs = (
-            self._retrieve_node_sources(node_config) if node_config.sources else []
+            self._retrieve_node_sources(node_config, source_ids=_node_sources)
+            if node_config.sources or node_config.folders
+            else []
         )
 
         if node_config.prompt_template:
@@ -961,7 +977,9 @@ class WorkflowEngine:
             "prompt_embeds_documents": _prompt_embeds_documents(
                 node_config.prompt_template
             ),
-            "sources_were_searched": bool(node_config.sources),
+            # What the retrieval actually covered: a node whose folders are gone
+            # or empty, or whose sources all went, searched nothing.
+            "sources_were_searched": bool(self._node_search_outcome and self._node_search_outcome.searched),
             "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
@@ -972,8 +990,8 @@ class WorkflowEngine:
         if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
             factory_kwargs["retriever_config"] = {
                 "source": (
-                    {"active_docs": self._authorized_node_sources(node_config.sources)}
-                    if node_config.sources
+                    {"active_docs": _node_sources()}
+                    if node_config.sources or node_config.folders
                     else {}
                 ),
                 "retriever_name": node_config.retriever or "classic",
@@ -986,6 +1004,7 @@ class WorkflowEngine:
             }
 
         node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
+        self._share_run_request_id(node_agent)
         # Attribute this node's tool calls to the run's message and, crucially,
         # namespace their durability journal keys by it: node executors are built
         # without a message_id, so providers that reuse deterministic call ids
@@ -1112,6 +1131,28 @@ class WorkflowEngine:
 
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
+
+    def _share_run_request_id(self, node_agent: Any) -> None:
+        """Give a step the request id of the run it belongs to.
+
+        A step's calls then write their usage rows under the run's request,
+        so the agent's request limit counts the run once, not once per call.
+        A headless run has no id here; its steps take the one ``billed_to``
+        holds for the run.
+
+        Args:
+            node_agent: The step's agent, just built.
+        """
+        run_request_id = getattr(self.agent, "request_id", None) or getattr(
+            getattr(self.agent, "llm", None), "_request_id", None
+        )
+        if not run_request_id:
+            return
+        if getattr(node_agent, "request_id", None) is None:
+            node_agent.request_id = run_request_id
+        node_llm = getattr(node_agent, "llm", None)
+        if node_llm is not None and not getattr(node_llm, "_request_id", None):
+            node_llm._request_id = run_request_id
 
     def _add_node_token_usage(self, node_agent: Any, node_events: Any) -> None:
         """Add an agent node's LLM tokens to the run's tally, once its stream is closed."""
@@ -2392,6 +2433,51 @@ class WorkflowEngine:
         resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
         return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
 
+    def _node_source_ids(self, node_config: AgentNodeConfig) -> list:
+        """The sources a node retrieves from: its own authorized ones, then its knowledge folders'.
+
+        Args:
+            node_config: The node's resolved configuration.
+
+        Returns:
+            list: Source ids, each once.
+        """
+        return self._with_folder_sources(self._authorized_node_sources(node_config.sources), node_config.folders)
+
+    def _with_folder_sources(self, source_ids: list, folders) -> list:
+        """``source_ids`` plus the sources a node's knowledge folders hold, each once.
+
+        A folder reads as its owner's filing (``folder_knowledge``); a
+        teammate's folder feeds only what they could sponsor, and nothing once
+        they no longer edit the workflow. A folder that no longer exists adds nothing.
+
+        Args:
+            source_ids: The node's authorized source ids.
+            folders: Folder ids from the stored node config.
+
+        Returns:
+            list: ``source_ids`` followed by the folders' sources.
+        """
+        if not folders:
+            return source_ids
+        owner = self._workflow_owner_id()
+        if not owner:
+            return source_ids
+        from docsgpt.api.user.folder_knowledge import folder_source_ids
+        from docsgpt.api.user.resource_access import reader_sources
+        from docsgpt.storage.db.session import db_readonly
+
+        holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
+        try:
+            with db_readonly() as conn:
+                # A folder's team sources reach the run's reader only as a node's own source would.
+                extra = reader_sources(conn, "workflow", holder, folder_source_ids(conn, folders, "workflow", holder))
+        except Exception:
+            logger.exception("Workflow node knowledge folders could not be read; dropping them.")
+            return source_ids
+        seen = {str(sid).lower() for sid in source_ids}
+        return list(source_ids) + [sid for sid in extra if sid not in seen]
+
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -2432,7 +2518,9 @@ class WorkflowEngine:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
 
-    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
+    def _retrieve_node_sources(
+        self, node_config: AgentNodeConfig, source_ids: Optional[Callable[[], list]] = None
+    ) -> list:
         """Retrieve this node's source documents.
 
         The node's own retriever searches every source at once; each source's
@@ -2441,6 +2529,8 @@ class WorkflowEngine:
 
         Args:
             node_config: The node's resolved configuration.
+            source_ids: Returns the node's source ids (the node's one
+                resolution); :meth:`_node_source_ids` when None.
 
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
@@ -2456,7 +2546,10 @@ class WorkflowEngine:
 
         sources: list = []
         try:
-            sources = self._authorized_node_sources(node_config.sources)
+            sources = source_ids() if source_ids is not None else self._node_source_ids(node_config)
+            if not sources:
+                # Nothing left to search: no outcome, so the node isn't told it searched.
+                return []
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
                 source={"active_docs": sources},

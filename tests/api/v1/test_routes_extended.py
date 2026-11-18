@@ -978,3 +978,27 @@ class TestChatCompletionsHappyPath:
         assert "message_id" not in types_translated
         assert "id" in types_translated
         assert "answer" in types_translated
+
+
+@pytest.mark.unit
+class TestChatCompletionsOwnerPaused:
+    def test_a_deactivated_owners_key_is_refused_without_naming_them(self, pg_conn):
+        from sqlalchemy import text
+
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        AgentsRepository(pg_conn).create("owner-p", "A", "published", key="paused-key")
+        UsersRepository(pg_conn).upsert("owner-p")
+        pg_conn.execute(text("UPDATE users SET active = false WHERE user_id = 'owner-p'"))
+        app = _build_app()
+        with _patch_v1_db(pg_conn), app.test_client() as c:
+            resp = c.post(
+                "/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": "Hi"}]},
+                headers={"Authorization": "Bearer paused-key"},
+            )
+        assert resp.status_code == 403
+        error = resp.get_json()["error"]
+        assert error["code"] == "agent_paused"
+        assert "owner-p" not in error["message"]

@@ -103,6 +103,7 @@ class TestAdminsAndRoles:
         with _admin(
             UserRolesRepository=Mock(return_value=roles),
             AuthEventsRepository=Mock(return_value=events),
+            UsersRepository=Mock(return_value=Mock(get=Mock(return_value={"user_id": "alice", "kind": "user"}))),
         ):
             resp = client.post("/api/admin/users/alice/role")
         assert resp.status_code == 200
@@ -183,6 +184,7 @@ class TestUserLifecycle:
         with _admin(
             AuthEventsRepository=Mock(return_value=events),
             PersonalAccessTokensRepository=Mock(return_value=tokens),
+            UsersRepository=Mock(return_value=Mock(get=Mock(return_value={"user_id": "bob", "kind": "user"}))),
         ), patch("docsgpt.api.admin.routes.denylist") as dl:
             dl.deny_user.return_value = True
             resp = client.post("/api/admin/users/bob/revoke-sessions")

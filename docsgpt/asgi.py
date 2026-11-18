@@ -94,8 +94,11 @@ asgi_app = Starlette(
                 "Authorization",
                 "Mcp-Session-Id",
                 "Idempotency-Key",
+                # The workspace a list or create works in (docsgpt/workspaces/context.py).
+                "X-DocsGPT-Workspace",
             ],
-            expose_headers=["Mcp-Session-Id"],
+            # Content-Disposition carries a download's filename (a team's chat export) to a web app on another origin.
+            expose_headers=["Mcp-Session-Id", "Content-Disposition"],
         ),
     ],
     lifespan=mcp_app.lifespan,

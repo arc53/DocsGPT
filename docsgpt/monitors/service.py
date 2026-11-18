@@ -261,6 +261,37 @@ def _cap_error(live: int, cap: int) -> Dict[str, Any]:
     }
 
 
+def _watchable_source(conn: Any, source_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """The source an ingest monitor may watch: the caller's own, or a team's they are in.
+
+    A team's ingest events reach every member's monitor on its source, so a
+    member may watch it. A person's source lent to the caller's team stays
+    refused: its events reach only its owner's monitors.
+
+    Args:
+        conn: Open connection.
+        source_id: The source's id (a legacy id is looked up among the caller's own sources).
+        user_id: The caller.
+
+    Returns:
+        The source row, or None when the caller may not watch it.
+    """
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+    from docsgpt.workspaces.roles import team_role_for
+
+    repo = SourcesRepository(conn)
+    found = repo.get_any(source_id, user_id)
+    if found is not None:
+        return found
+    row = repo.get_by_id(source_id)
+    owner = (row or {}).get("user_id")
+    if not is_principal_id(owner):
+        return None
+    team_id = team_of_principal(owner)
+    return row if team_id and team_role_for(conn, user_id, team_id) is not None else None
+
+
 def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """Create a monitor for this conversation.
 
@@ -283,9 +314,7 @@ def create(caller: Caller, arguments: Dict[str, Any]) -> Dict[str, Any]:
     with db_readonly() as conn:
         live = MonitorsRepository(conn).count_live_for_user(caller.user_id)
         if request.source["type"] == "ingest":
-            from docsgpt.storage.db.repositories.sources import SourcesRepository
-
-            found = SourcesRepository(conn).get_any(request.source["source_id"], caller.user_id)
+            found = _watchable_source(conn, request.source["source_id"], caller.user_id)
             if found is None:
                 return {"error": "`source.source_id` is not one of the user's sources."}
             request.source["source_id"] = str(found["id"])

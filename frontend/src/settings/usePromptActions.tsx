@@ -1,9 +1,11 @@
-import { Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
+import { Copy, Eye, FolderInput, Pencil, Trash2, Users } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import { canMoveToFolder } from '../components/folders/folderFiling';
+import MoveToFolderModal from '../components/folders/MoveToFolderModal';
 import type { MenuOption } from '../components/ui/dropdown-menu';
 import ConfirmationModal from '../modals/ConfirmationModal';
 import { Prompt } from '../models/misc';
@@ -12,6 +14,10 @@ import ShareToTeamModal from '../teams/ShareToTeamModal';
 import { can } from '../utils/accessUtils';
 import { formatCount } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
+import type { AccessFields } from '../utils/accessUtils';
+import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
+import type { FiledItem } from './folderListing';
+import { selectCanCreateHere, selectInTeam } from './workspaceAccess';
 import {
   canDeletePrompt,
   canEditPrompt,
@@ -27,21 +33,27 @@ type PromptActionsOptions = {
   onOpen: (prompt: Prompt) => void;
   /** The menu's Duplicate: the host opens a copy. */
   onDuplicate: (prompt: Prompt) => void;
+  /** A prompt moved to a folder or another workspace: the list loads again. */
+  onMoved: () => void;
 };
+
+/** A prompt as the list carries it: its workspace fields and its filing. */
+type ListedPrompt = Prompt & AccessFields & FiledItem;
 
 /**
  * What can be done to a prompt: the ⋯ menu (Edit or View and Duplicate
- * through the host's `onOpen` and `onDuplicate`, Share with team and Delete
- * with their dialogs).
+ * through the host's `onOpen` and `onDuplicate`; Move to folder, Move to
+ * team… or Move to Personal…, Share and Delete with their dialogs).
  *
  * Args:
  *   onSaved: Called after a share.
  *   onDeleted: Called after a delete.
  *   onOpen: Opens a prompt from its menu.
  *   onDuplicate: Opens a copy from its menu.
+ *   onMoved: Called after a move to a folder or another workspace.
  *
  * Returns:
- *   `menuOptions(prompt, detail)` and `dialogs` (delete and share) to
+ *   `menuOptions(prompt, detail)` and `dialogs` (move, delete and share) to
  *   render.
  */
 export default function usePromptActions({
@@ -49,10 +61,17 @@ export default function usePromptActions({
   onDeleted,
   onOpen,
   onDuplicate,
+  onMoved,
 }: PromptActionsOptions) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
   const chatPrompt = useSelector(selectPrompt);
+  const inTeam = useSelector(selectInTeam);
+  const canFile = useSelector(selectCanCreateHere);
+  const moveToWorkspace = useMoveToWorkspace('prompt');
+  const [promptToFile, setPromptToFile] = React.useState<ListedPrompt | null>(
+    null,
+  );
 
   const [promptToDelete, setPromptToDelete] = React.useState<Prompt | null>(
     null,
@@ -106,13 +125,36 @@ export default function usePromptActions({
               variant: 'default',
             },
       );
-    if (can(prompt, 'duplicate'))
+    // The copy is saved in the current workspace, so it needs create there.
+    if (canFile && can(prompt, 'duplicate'))
       options.push({
         icon: Copy,
         label: t('settings.prompts.duplicate'),
         onClick: () => onDuplicate(prompt),
         variant: 'default',
       });
+    // The built-in prompts belong to no workspace and sit in no folder.
+    const listed = prompt as ListedPrompt;
+    const builtIn = prompt.type === 'public';
+    if (!builtIn && canFile && canMoveToFolder(listed, inTeam))
+      options.push({
+        icon: FolderInput,
+        label: t('folders.moveToFolder'),
+        onClick: () => setPromptToFile(listed),
+        variant: 'default',
+      });
+    const moveOut = builtIn
+      ? null
+      : moveToWorkspace.menuOption(
+          {
+            ...listed,
+            id: prompt.id,
+            name: prompt.name,
+            allowed_actions: prompt.allowed_actions,
+          },
+          { onMoved },
+        );
+    if (moveOut) options.push(moveOut);
     if (canSharePrompt(prompt))
       options.push({
         icon: Users,
@@ -133,6 +175,24 @@ export default function usePromptActions({
 
   const dialogs = (
     <>
+      {promptToFile ? (
+        <MoveToFolderModal
+          open
+          onOpenChange={(open) => !open && setPromptToFile(null)}
+          kind="prompt"
+          subject={{
+            kind: 'items',
+            ids: [promptToFile.id],
+            name: promptToFile.name,
+            folderId: promptToFile.folder_id ?? null,
+          }}
+          onMoved={() => {
+            setPromptToFile(null);
+            onMoved();
+          }}
+        />
+      ) : null}
+      {moveToWorkspace.dialog}
       {promptToDelete && (
         <ConfirmationModal
           message={t('modals.prompts.deleteConfirmation', {
@@ -158,6 +218,7 @@ export default function usePromptActions({
             setPromptToShare(null);
             onSaved();
           }}
+          onMoved={onMoved}
         />
       )}
     </>

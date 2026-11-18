@@ -74,3 +74,54 @@ def test_a_rerun_sets_both_prompt_columns_together(pg_conn):
     assert _prompt_columns(pg_conn) == {"a": (str(prompt), None)}
     _run(pg_conn, [{"_id": oid, "user": "u", "name": "a", "prompt_id": "creative"}])
     assert _prompt_columns(pg_conn) == {"a": (None, "creative")}
+
+
+def test_a_mongo_folder_becomes_the_owners_filing(pg_conn):
+    folder_oid, foreign_oid = ObjectId(), ObjectId()
+    folder = pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('u', 'F', :oid) RETURNING id"),
+        {"oid": folder_oid},
+    ).scalar()
+    pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('v', 'G', :oid)"), {"oid": foreign_oid}
+    )
+    filed, stray = ObjectId(), ObjectId()
+    stats = _run(
+        pg_conn,
+        [
+            {"_id": filed, "user": "u", "name": "filed", "folder_id": folder_oid},
+            # Another user's folder is not this owner's to file into.
+            {"_id": stray, "user": "u", "name": "stray", "folder_id": foreign_oid},
+        ],
+    )
+    rows = pg_conn.execute(
+        text(
+            "SELECT a.name, fi.user_id, fi.folder_id FROM folder_items fi "
+            "JOIN agents a ON a.id = fi.resource_id WHERE fi.resource_type = 'agent'"
+        )
+    ).fetchall()
+    assert [tuple(r) for r in rows] == [("filed", "u", folder)]
+    assert stats["folder_refs"] == 2
+
+
+def test_a_rerun_clears_a_filing_mongo_no_longer_has(pg_conn):
+    folder_oid, foreign_oid = ObjectId(), ObjectId()
+    pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('u', 'F', :oid)"), {"oid": folder_oid}
+    )
+    pg_conn.execute(
+        text("INSERT INTO folders (user_id, name, legacy_mongo_id) VALUES ('v', 'G', :oid)"), {"oid": foreign_oid}
+    )
+    unset, unknown, foreign = ObjectId(), ObjectId(), ObjectId()
+    _run(pg_conn, [{"_id": oid, "user": "u", "name": oid, "folder_id": folder_oid} for oid in (unset, unknown, foreign)])
+    # The Mongo agents left their folder, point at one that never came over, or at someone else's.
+    _run(
+        pg_conn,
+        [
+            {"_id": unset, "user": "u", "name": unset},
+            {"_id": unknown, "user": "u", "name": unknown, "folder_id": ObjectId()},
+            {"_id": foreign, "user": "u", "name": foreign, "folder_id": foreign_oid},
+        ],
+    )
+    rows = pg_conn.execute(text("SELECT count(*) FROM folder_items WHERE resource_type = 'agent'")).scalar()
+    assert rows == 0

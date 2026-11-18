@@ -17,6 +17,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../components/ui/select';
+import {
+  customModelErrorCode,
+  customModelErrorMessage,
+  customModelRequestError,
+} from '../models/customModelErrors';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import { Modal, ModalActions } from '../components/ui/modal';
@@ -25,6 +30,7 @@ import type {
   CreateCustomModelPayload,
   CustomModel,
   CustomModelCapabilities,
+  CustomModelOwner,
   ModelApiFlavor,
   ReasoningEffort,
   ToolResultImages,
@@ -35,6 +41,11 @@ interface CustomModelModalProps {
   setModalState: (state: ActiveState) => void;
   model?: CustomModel | null;
   onSaved: (model: CustomModel) => void;
+  /**
+   * Whose a new model is: `team` adds it (and tests it) for the current
+   * team. An edit goes by the model itself.
+   */
+  owner?: CustomModelOwner;
 }
 
 interface FormState {
@@ -101,11 +112,29 @@ export const buildInitialFormState = (
   };
 };
 
+/**
+ * The origin (scheme, host, port) of a URL, or '' while it doesn't parse.
+ * The saved key is sent only to the origin it was saved for, as the server
+ * rules: another one needs the key typed again.
+ */
+function originOf(url: string): string {
+  try {
+    return new URL(url.trim()).origin.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// The refusal of a save or test that moved the model to another host
+// without its key.
+const NEW_HOST_CODE = 'api_key_required_for_new_host';
+
 export default function CustomModelModal({
   modalState,
   setModalState,
   model,
   onSaved,
+  owner,
 }: CustomModelModalProps) {
   const { t } = useTranslation();
   const token = useSelector(selectToken);
@@ -153,6 +182,14 @@ export default function CustomModelModal({
     setTestResult(null);
   };
 
+  // A saved model whose address moves to another host needs its key typed
+  // again; the saved one stays only on the same host.
+  const newOrigin = originOf(formData.base_url);
+  const hostChanged =
+    isEditMode && !!newOrigin && newOrigin !== originOf(model?.base_url ?? '');
+  const keyRequired = !isEditMode || hostChanged;
+  const keyMissing = keyRequired && !formData.api_key.trim();
+
   const validate = (): boolean => {
     const newErrors: { [key: string]: string } = {};
     if (!formData.display_name.trim()) {
@@ -177,8 +214,10 @@ export default function CustomModelModal({
         newErrors.base_url = t('settings.customModels.errors.baseUrlInvalid');
       }
     }
-    if (!isEditMode && !formData.api_key.trim()) {
-      newErrors.api_key = t('settings.customModels.errors.apiKeyRequired');
+    if (keyMissing) {
+      newErrors.api_key = hostChanged
+        ? t('settings.customModels.errors.apiKeyNewHost')
+        : t('settings.customModels.errors.apiKeyRequired');
     }
     const ctxValue =
       formData.context_window === '' ? NaN : Number(formData.context_window);
@@ -252,28 +291,37 @@ export default function CustomModelModal({
       const payload = buildPayload();
       const saved = isEditMode
         ? await customModelsService.updateCustomModel(model!.id, payload, token)
-        : await customModelsService.createCustomModel(payload, token);
+        : await customModelsService.createCustomModel(
+            owner === 'team' ? { ...payload, owner } : payload,
+            token,
+          );
       onSaved(saved);
       closeModal();
     } catch (err) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : t('settings.customModels.errors.saveFailed');
-      const mapped = mapErrorToField(message);
+      // A refusal code reads in the app's words; a sentence (an unsafe
+      // URL) is the server's.
+      const message = customModelRequestError(
+        t,
+        err,
+        t('settings.customModels.errors.saveFailed'),
+      );
+      const refusal = (err as { payload?: unknown } | null)?.payload;
+      const mapped =
+        customModelErrorCode(refusal) === NEW_HOST_CODE
+          ? { field: 'api_key', message }
+          : mapErrorToField(message);
       setErrors((prev) => ({ ...prev, [mapped.field]: mapped.message }));
     } finally {
       setSaving(false);
     }
   };
 
-  // Edit mode allows blank api_key (by-id endpoint falls back to stored).
+  // Edit mode allows a blank api_key on the same host (the by-id endpoint
+  // falls back to the stored one).
   const trimmedBaseUrl = formData.base_url.trim();
   const trimmedApiKey = formData.api_key.trim();
   const trimmedUpstreamId = formData.upstream_model_id.trim();
-  const canTest = isEditMode
-    ? !!(trimmedBaseUrl && trimmedUpstreamId)
-    : !!(trimmedBaseUrl && trimmedApiKey && trimmedUpstreamId);
+  const canTest = !!(trimmedBaseUrl && trimmedUpstreamId) && !keyMissing;
   const handleTest = async () => {
     if (!canTest) return;
     setTesting(true);
@@ -296,6 +344,7 @@ export default function CustomModelModal({
                 api_key: trimmedApiKey,
                 upstream_model_id: trimmedUpstreamId,
                 capabilities,
+                ...(owner === 'team' && { owner }),
               },
               token,
             );
@@ -305,11 +354,19 @@ export default function CustomModelModal({
           message: t('settings.customModels.testSuccess'),
         });
       } else {
-        const message =
-          result.error || t('settings.customModels.errors.testFailed');
+        const message = customModelErrorMessage(
+          t,
+          { error: result.error, code: result.code },
+          { fallback: t('settings.customModels.errors.testFailed') },
+        );
         setTestResult({ ok: false, message });
-        const mapped = mapErrorToField(message);
-        if (mapped.field === 'base_url_remote') {
+        const mapped =
+          result.code === NEW_HOST_CODE
+            ? { field: 'api_key', message }
+            : mapErrorToField(message);
+        if (mapped.field === 'api_key') {
+          setErrors((prev) => ({ ...prev, api_key: message }));
+        } else if (mapped.field === 'base_url_remote') {
           setErrors((prev) => ({ ...prev, base_url_remote: message }));
         }
       }
@@ -356,6 +413,7 @@ export default function CustomModelModal({
           submitLabel={t('settings.customModels.save')}
           onSubmit={handleSave}
           pending={saving}
+          disabled={hostChanged && keyMissing}
         />
       }
     >
@@ -416,11 +474,13 @@ export default function CustomModelModal({
 
           <FormField
             label={t('settings.customModels.fields.apiKey')}
-            required={!isEditMode}
+            required={keyRequired}
             hint={
-              isEditMode
-                ? t('settings.customModels.hints.apiKeyEdit')
-                : undefined
+              hostChanged
+                ? t('settings.customModels.hints.apiKeyNewHost')
+                : isEditMode
+                  ? t('settings.customModels.hints.apiKeyEdit')
+                  : undefined
             }
             error={errors.api_key}
           >
@@ -433,7 +493,7 @@ export default function CustomModelModal({
               value={formData.api_key}
               onChange={(e) => handleChange('api_key', e.target.value)}
               placeholder={
-                isEditMode
+                isEditMode && !hostChanged
                   ? t('settings.customModels.placeholders.apiKeyEdit')
                   : t('settings.customModels.placeholders.apiKey')
               }

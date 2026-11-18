@@ -143,6 +143,31 @@ def parse_messages(raw: Any) -> list[dict]:
     return out
 
 
+def request_team_id() -> Optional[str]:
+    """The team workspace the current request names, or None for Personal (and for a refused or missing one).
+
+    Read while the Flask request is still open, since the draft streams after it.
+
+    Returns:
+        The team id, or None.
+    """
+    from flask import has_request_context
+
+    from docsgpt.workspaces import context
+
+    if not has_request_context():
+        return None
+    try:
+        workspace = context.current_workspace()
+    except context.WorkspaceError:
+        return None
+    except Exception:
+        # Only where the draft's usage is recorded; never a reason to refuse it.
+        logger.exception("drafter: could not read the request's workspace")
+        return None
+    return str(workspace.team_id) if workspace.is_team and workspace.team_id else None
+
+
 def prepare(user_id: str, body: Any) -> Refusal | PreparedDraft:
     """Every check a draft passes before it streams, in order: enabled, request shape, model, quota, rate.
 
@@ -190,6 +215,7 @@ def prepare(user_id: str, body: Any) -> Refusal | PreparedDraft:
         messages=messages,
         context=context,
         request_id=f"drafter:{uuid.uuid4()}",
+        team_id=request_team_id(),
     )
     return PreparedDraft(request, recipe, model)
 

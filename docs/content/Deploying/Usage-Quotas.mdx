@@ -43,7 +43,7 @@ Team membership can change without an instance admin — team admins add members
 
 Usage is counted over a calendar window in UTC, chosen for the whole instance with [`QUOTA_PERIOD`](/Deploying/Settings-Reference#quotas): `day` (from 00:00), `week` (from Monday) or `month` (from the 1st, the default). Windows are worked out when a request arrives, so there is no reset job to run.
 
-The quota is checked **before** a request starts. The request that crosses a limit completes; the next one is refused with HTTP `429`:
+The quota is checked before a run starts, and again before **every model call** of the run, so an agent in a long tool loop stops at the limit rather than after it. The call that crosses a limit completes; the next one is refused. A guardrail judge's call is the exception: it counts, but it is never refused, so the answer that crossed the limit is still checked. A request refused before it starts gets HTTP `429`:
 
 ```json
 {
@@ -61,20 +61,51 @@ The quota is checked **before** a request starts. The request that crosses a lim
 }
 ```
 
-The response carries a `Retry-After` header with the seconds until the reset, and `x-should-retry: false` so the OpenAI SDKs don't retry with backoff. `dimension` is `tokens` or `cost`; for `cost`, `usage` and `limit` are in USD. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs (recorded as `budget_exceeded`), webhook runs and [Draft with DocsGPT](/Agents/draft-with-docsgpt#model-and-usage). If the quota check itself fails, the request is allowed.
+The response carries a `Retry-After` header with the seconds until the reset, and `x-should-retry: false` so the OpenAI SDKs don't retry with backoff. `dimension` is `tokens` or `cost`; for `cost`, `usage` and `limit` are in USD. The check covers chat, the agent and OpenAI-compatible APIs, scheduled runs, webhook runs and [Draft with DocsGPT](/Agents/draft-with-docsgpt#model-and-usage). If the quota check itself fails, the request is allowed.
 
-Who is charged:
+When a limit is reached during a run:
+
+- **A chat** stops where it is, keeps the partial answer, and says that the allowance is reached and when it resets.
+- **A scheduled run** is recorded as failed with `payer_out_of_allowance` and keeps its partial output. Later runs are skipped while the payer is out of allowance; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
+- **A webhook run** ends with what it did so far and `"status": "agent_paused"` for the payer's allowance (the caller learns nothing more), or `"status": "quota_exceeded"` for the agent's own limit; see [Agent webhooks](/API/webhooks).
+
+### Who pays
+
+Whoever starts a run pays for it, from their own quota. Where an agent lives and who owns it don't decide it.
 
 | Traffic | Charged to |
 | --- | --- |
-| Chat without an agent | The user |
-| A user's own agent, its API key, webhooks and schedules | The agent's owner |
-| An agent shared with the user | The user |
-| [Draft with DocsGPT](/Agents/draft-with-docsgpt) | The user, as chat without an agent |
+| A chat, with or without an agent, in Personal or in a [team workspace](/Using/team-workspaces), including a signed-in visitor chatting through an agent's public link | The person chatting |
+| A schedule's runs | The person the schedule is stored under, shown as **Paid by** on it (see [Who owns a schedule](/Agents/schedules#who-owns-a-schedule-and-who-pays-for-it)) |
+| An agent's API key and widget, webhook, `/v1` and MCP traffic, and public-link visitors who aren't signed in | On a personal agent, its owner. On a team agent, the Admin who turned its outside access on, or who [took it over](/Using/team-workspaces#take-over) |
+| A background continuation, a retry, a chat's title, a workflow step, a sub-agent | Whoever pays for the run it belongs to |
+| [Draft with DocsGPT](/Agents/draft-with-docsgpt) | The person drafting, as chat without an agent |
+| A graph built from a source ([GraphRAG](/Sources/GraphRAG)) | The person adding or syncing the source |
 
-Per-agent token and request limits still apply on top of the owner's quota.
+Per-agent token and request limits still apply on top of the payer's quota. A team has no budget of its own: a [team allowance](#teams) is what each member gets, and the team's **Usage** tab reports what the workspace used without limiting it (see [Usage](/Using/team-workspaces#usage)).
 
-Users with a quota see their usage and the reset time under **Settings → Analytics** (see [Analytics and Logs](/Using/analytics-and-logs)).
+Embeddings, OCR and speech-to-text aren't counted against any quota.
+
+### What people see
+
+- From **80%** of an allowance, a line above the chat input says how much is used and when it resets.
+- At **100%**, the chat shows a card in its place: the period, what the allowance covers, and what of the person's has stopped, such as "2 schedules you set are paused" or an agent they pay for that has stopped answering through its API key. Sending stays off until the allowance resets or an admin raises it.
+- **Settings → Analytics** shows one meter for the period, split into the person's chats, the schedules they set, the agents they published and other use (see [Analytics and Logs](/Using/analytics-and-logs#analytics)).
+
+### Outside callers
+
+When the payer of an agent's outside access is out of quota, people reaching the agent through its API key, widget, webhook, `/v1` or MCP, or through its public link without signing in, are told only that the agent is paused. They never see the payer's usage, limit or reset. A signed-in visitor on the public link pays for their own chat, so only their own quota stops them, with the usual message:
+
+```json
+{
+  "success": false,
+  "error_code": "agent_paused",
+  "code": "agent_paused",
+  "message": "This agent is paused, so it can't answer right now."
+}
+```
+
+It is a `429` with `Retry-After` set to the reset and `x-should-retry: false`. On `/v1` the body has the OpenAI error shape the API's other errors use: `{"error": {"message": "...", "type": "rate_limit_error", "code": "agent_paused"}}`. A run stopped part way for the same reason ends with the same code and message. The agent's own limit keeps its own message, which is about the agent, not a person. The same `agent_paused` refusal, as a `403`, answers outside callers while the payer's account is deactivated or, on a team agent, while the payer is no longer an Admin there. A team agent whose outside access has nobody to pay for it answers `no_payer`.
 
 ## Pricing
 
@@ -92,7 +123,7 @@ models:
 The built-in catalogs ship list prices for hosted models. Override or add rates by dropping a YAML with the same model `id` into `MODELS_CONFIG_DIR`. The cost of each call is stored with its usage row when the call is made, so later price changes do not rewrite history.
 
 <Callout type="warning" emoji="⚠️">
-A model with no declared price is recorded at $0, so a cost budget cannot see it. The Quotas tab lists such models once they have been used. Either limit them with a token budget, declare their rates, or set [`QUOTA_UNPRICED_RATE_PER_MILLION`](/Deploying/Settings-Reference#quotas) to charge a fallback rate. Models a user adds with their own API key are always $0, but their tokens still count.
+A model with no declared price is recorded at $0, so a cost budget cannot see it. The Quotas tab lists such models once they have been used. Either limit them with a token budget, declare their rates, or set [`QUOTA_UNPRICED_RATE_PER_MILLION`](/Deploying/Settings-Reference#quotas) to charge a fallback rate. Custom models, added by a user or a team with their own API key, are always $0, but their tokens still count.
 </Callout>
 
 ## API
@@ -105,7 +136,7 @@ Every admin endpoint requires the admin role, and every change is written to the
 | `PUT` `DELETE` | `/api/admin/quotas/instance` | The instance default. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/teams/<team_id>` | A team's per-member allowance. |
 | `GET` `PUT` `DELETE` | `/api/admin/quotas/users/<user_id>` | A user's override; the user must already exist (SCIM-provisioned, or signed in once), otherwise `404`. `GET` also returns the limits the user ends up with, the layer each came from, and their usage. |
-| `GET` | `/api/user/quota` | The caller's own limits, usage and reset time. |
+| `GET` | `/api/user/quota` | The caller's own limits, usage and reset time. With a limit set it also returns `notice` (`{level, percent, bucket, budget, resets_at}` from 80% used, `level` `near` or `reached`; otherwise `null`) and `parts` (this period's use as `chat`, `schedule`, `published` and `other`), and once a limit is reached, `paused` (`{schedules, published}`: what the caller pays for that has stopped; a `public_link` in an agent's `access` has stopped only for visitors who aren't signed in). |
 
 A `PUT` body sets, per budget, a limit or the unlimited flag; leave both out to defer to the next layer:
 

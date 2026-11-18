@@ -15,7 +15,7 @@ so a new endpoint is given to agents, or kept from them, on purpose.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Optional
 
 from docsgpt.api.pat.rules import RULES
@@ -94,6 +94,9 @@ _AGENT_ID = "The agent's id, from list_agents."
 _AGENT_FILTER = "The agent's id, from list_agents. Leave empty for the whole account."
 _SOURCE_ID = "The source's id, from list_sources."
 _SCHEDULE_ID = "The schedule's id, from list_schedules."
+_FOLDER_ID = "The folder's id, from list_folders."
+_FOLDER_TYPE = "agent, source (Knowledge), tool or prompt: the kind of the items."
+_FOLDER_COUNT_TYPE = "agent, source, tool or prompt: the kind item_count counts. Leave empty to count every kind."
 _PERIOD = "One of last_hour, last_24_hour, last_7_days, last_15_days, last_30_days."
 _SYNC = "How often to re-fetch: never, daily, weekly or monthly."
 _WEBSITE_ENTRIES = (
@@ -117,6 +120,7 @@ def _agent_fields(*, creating: bool) -> dict:
         "agent_type": _param("classic (the default), react or workflow."),
         "prompt_id": _param("A prompt id from list_prompts, or a preset: default, creative or strict."),
         "sources": _list("Ids of the sources the agent answers from, from list_sources."),
+        "folders": _list("Ids of knowledge folders the agent reads every source in, from list_folders (type source)."),
         "tools": _list("Ids of the tools the agent may use, from list_tools."),
         "chunks": _int("How many retrieved chunks each answer gets."),
         "retriever": _param("Retriever id; leave empty for the default."),
@@ -158,7 +162,14 @@ CATALOG: tuple[Action, ...] = (
     Action("get_account", "GET", "/api/user/me", "Who this token acts as: user id, roles, email and name."),
     Action("get_quota", "GET", "/api/user/quota", "The account's usage limits: tokens and cost used, and when each resets."),
     Action("list_models", "GET", "/api/models", "List the models this account can use, with their ids and capabilities."),
-    Action("list_custom_models", "GET", "/api/user/models", "List the custom models this account registered."),
+    Action(
+        "list_custom_models",
+        "GET",
+        "/api/user/models",
+        "List the custom models this account registered, or with owner=team and a workspace, the team's.",
+        {"owner": _param("team to list the custom models of the team named by workspace. Leave empty for "
+                         "this account's own.")},
+    ),
     Action(
         "get_custom_model",
         "GET",
@@ -236,7 +247,7 @@ CATALOG: tuple[Action, ...] = (
         },
     ),
     Action("delete_agent_folder", "DELETE", "/api/agents/folders/<string:folder_id>",
-           "Delete a folder. Its agents are kept, outside any folder.",
+           "Delete a folder. What was in it moves to its parent.",
            {"folder_id": _req("The folder's id, from list_agent_folders.")}, active=False),
     Action("move_agent_to_folder", "POST", "/api/agents/folders/move_agent", "Move one agent into a folder, or out of its folder.",
            {}, {"agent_id": _req(_AGENT_ID), "folder_id": _param("Target folder id. Leave out to take it out of its folder.")}),
@@ -447,6 +458,25 @@ CATALOG: tuple[Action, ...] = (
     Action("get_source_graph_node", "GET", "/api/sources/<string:source_id>/graph/node/<string:node_id>",
            "Read one knowledge-graph node: its description and the chunks it links to.",
            {"source_id": _req(_SOURCE_ID), "node_id": _req("The node's id, from get_source_graph.")}),
+    # --- Folders (agents and knowledge) ---
+    Action("list_folders", "GET", "/api/folders",
+           "List this account's folders: one tree holding agents, sources, tools and prompts, with counts of each "
+           "kind; a folder names the agents that read its sources.",
+           {"type": _param(_FOLDER_COUNT_TYPE)}),
+    Action("create_folder", "POST", "/api/folders",
+           "Create a folder. Any kind of item can be filed in it. Folders nest up to 3 levels deep.", {},
+           {"name": _req("Name of the folder."), "parent_id": _param("Id of the folder to put it in.")}),
+    Action("update_folder", "PUT", "/api/folders/<string:folder_id>",
+           "Rename a folder or move it. Send only the fields to change.",
+           {"folder_id": _req(_FOLDER_ID)},
+           {"name": _param("New name."), "parent_id": _param("Id of the folder to move it into.")}),
+    Action("delete_folder", "DELETE", "/api/folders/<string:folder_id>",
+           "Delete a folder. What was in it moves to its parent; agents reading it lose it.",
+           {"folder_id": _req(_FOLDER_ID)}, active=False),
+    Action("file_in_folder", "POST", "/api/folders/items",
+           "File agents, sources, tools or prompts of one kind in a folder, or take them out.", {},
+           {"type": _req(_FOLDER_TYPE), "ids": _list("Ids of the items, all of that kind.", required=True),
+            "folder_id": _param("Target folder id. Leave out to take them out of their folder.")}),
     # --- Prompts ---
     Action("list_prompts", "GET", "/api/get_prompts", "List the prompts of this account with their ids and names."),
     Action("get_prompt", "GET", "/api/get_single_prompt", "Read one prompt's content.",
@@ -668,6 +698,8 @@ CATALOG: tuple[Action, ...] = (
            {"agent_id": _req(_AGENT_ID)}),
     # --- Teams ---
     Action("list_teams", "GET", "/api/teams", "List the teams this account belongs to, with its role in each."),
+    Action("list_workspaces", "GET", "/api/workspaces",
+           "List the workspaces this account works in: Personal, then each team with its role there."),
     Action("get_team", "GET", "/api/teams/<string:team_id>", "Read one team with its members.",
            {"team_id": _req("The team's id, from list_teams.")}),
     Action("list_team_members", "GET", "/api/teams/<string:team_id>/members", "List or search the members of a team.",
@@ -675,6 +707,10 @@ CATALOG: tuple[Action, ...] = (
             "page": _int("Page number, from 1."), "page_size": _int("Rows per page, up to 100.")}),
     Action("list_team_resources", "GET", "/api/teams/<string:team_id>/grants", "List what is shared with a team.",
            {"team_id": _req("The team's id, from list_teams."), "resource_type": _param("Only agent, source, prompt or tool.")}),
+    Action("list_team_outside", "GET", "/api/teams/<string:team_id>/outside",
+           "List what a team takes outside it: its items shared with other teams, and its agents with an API key, "
+           "public link or webhook on.",
+           {"team_id": _req("The team's id, from list_teams.")}),
     Action("list_resource_shares", "GET", "/api/resource_shares", "List the teams one agent, source, prompt or tool is shared with.",
            {"resource_type": _req("agent, source, prompt or tool."), "resource_id": _req("The resource's id.")}),
     Action("get_resource_sharing_settings", "GET", "/api/resource_settings", "Read the sharing switches of one agent, source, prompt or tool.",
@@ -698,15 +734,35 @@ CATALOG: tuple[Action, ...] = (
     ),
 )
 
+#: Actions that list or create in one workspace. An API tool can't set the workspace header, so each takes
+#: the ``workspace`` query parameter instead; the route checks the token's person is in that team, as for
+#: the header. Left empty, the action works in Personal.
+WORKSPACE_ACTIONS = frozenset({
+    "list_agents", "create_agent", "list_agent_folders", "create_agent_folder", "list_schedules",
+    "list_sources", "search_sources_list", "create_wiki_source", "list_folders", "create_folder",
+    "file_in_folder", "list_prompts", "create_prompt", "list_tools", "create_tool", "list_artifacts",
+    "list_conversations", "search_conversations", "list_custom_models",
+})
+_WORKSPACE = "A team id from list_workspaces to work in that team. Leave empty for Personal."
+CATALOG = tuple(
+    replace(entry, query={**entry.query, "workspace": _param(_WORKSPACE)}) if entry.name in WORKSPACE_ACTIONS
+    else entry
+    for entry in CATALOG
+)
+
 #: Token routes that are not actions, by reason. Every route in ``RULES`` is here or in ``CATALOG``.
 LEFT_OUT: dict[str, tuple[tuple[str, str], ...]] = {
     "wipes the whole account's history in one call": (("/api/delete_all_conversations", "GET"),),
+    "read only by the app's delete confirm, and a token can't delete a custom model": (
+        ("/api/user/models/<string:model_id>/usage", "GET"),
+    ),
     "custom models carry a provider key and a base URL that every chat is sent to": (
         ("/api/user/models", "POST"),
         ("/api/user/models/<string:model_id>", "PATCH"),
         ("/api/user/models/<string:model_id>", "DELETE"),
         ("/api/user/models/test", "POST"),
         ("/api/user/models/<string:model_id>/test", "POST"),
+        ("/api/user/models/<string:model_id>/copy", "POST"),
     ),
     "needs a file upload, a stream, or an agent API key the tool does not have": (
         ("/api/upload", "POST"),
@@ -730,10 +786,14 @@ LEFT_OUT: dict[str, tuple[tuple[str, str], ...]] = {
         ("/api/guardrails/catalog", "GET"),
         ("/api/agents/defaults", "GET"),
         ("/api/sources/defaults", "GET"),
+        ("/api/sources/<string:source_id>/workspace", "GET"),
         ("/api/analytics/topic_folders", "GET"),
         ("/api/user/preferences", "GET"),
         ("/api/user/preferences", "PUT"),
         ("/api/mcp_server/oauth_cancel", "POST"),
+    ),
+    "a team tool on each person's own account needs its creator signed in to the service first, in the app": (
+        ("/api/tools/member", "POST"),
     ),
     "covered by update_tool": (
         ("/api/update_tool_config", "POST"),

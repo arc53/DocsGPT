@@ -312,15 +312,25 @@ describe('ConnectWizard', () => {
         notifications: notificationsReducer,
         // Applies the chat selection, as the real slice does.
         preference: (
-          state: { token: null; selectedDocs: { id: string }[] } = {
+          state: {
+            token: null;
+            selectedDocs: { id: string }[];
+            selectedFolders: { id: string }[];
+          } = {
             token: null,
             selectedDocs: [],
+            selectedFolders: [],
           },
           action: { type: string; payload?: unknown },
         ) =>
           action.type === 'preference/setSelectedDocs'
             ? { ...state, selectedDocs: action.payload as { id: string }[] }
-            : state,
+            : action.type === 'preference/setSelectedFolders'
+              ? {
+                  ...state,
+                  selectedFolders: action.payload as { id: string }[],
+                }
+              : state,
         conversation: (state = {}) => state,
       },
       preloadedState: {
@@ -332,7 +342,14 @@ describe('ConnectWizard', () => {
           loaded: true,
           failed: false,
         },
-        preference: { token: null, selectedDocs },
+        // The last chat's folder rides along with its sources.
+        preference: {
+          token: null,
+          selectedDocs,
+          selectedFolders: selectedDocs.length
+            ? [{ id: 'old-chat-folder' }]
+            : [],
+        },
         conversation: {},
       },
     });
@@ -568,6 +585,17 @@ describe('ConnectWizard', () => {
     expect(successAlert()?.textContent).toContain(
       'settings.connectors.wizard.doneSources',
     );
+  });
+
+  // Add knowledge inside a Knowledge folder: the new source is filed there.
+  it('files the synced source into the folder it was added from', async () => {
+    setupOk([{ id: 'src-1', name: 'Handbook' }]);
+    await render(drive, vi.fn(), { purpose: 'knowledge', folderId: 'fold-1' });
+    await click('settings.connectors.wizard.signIn');
+    await click('pick-folder');
+    await click('modals.uploadDoc.train');
+    const [, body] = service.setup.mock.calls[0];
+    expect(body.sync.folder_id).toBe('fold-1');
   });
 
   describe('Sync into Knowledge', () => {
@@ -943,11 +971,12 @@ describe('ConnectWizard', () => {
     await click('settings.connectors.wizard.tryInChat');
     expect(onClose).toHaveBeenCalled();
     expect(document.body.textContent).toContain('NEW_CHAT');
-    // The last chat's sources don't come along.
-    expect(
-      (store.getState() as { preference: { selectedDocs: unknown[] } })
-        .preference.selectedDocs,
-    ).toEqual([]);
+    // The last chat's sources and folders don't come along.
+    const { preference } = store.getState() as {
+      preference: { selectedDocs: unknown[]; selectedFolders: unknown[] };
+    };
+    expect(preference.selectedDocs).toEqual([]);
+    expect(preference.selectedFolders).toEqual([]);
   });
 
   // A builder opens the wizard from Add tool: leaving goes through it, so
@@ -1254,6 +1283,97 @@ describe('ConnectWizard', () => {
     await click('settings.connectors.wizard.done');
     expect(onClose).toHaveBeenCalledWith(true, []);
     open.mockRestore();
+  });
+
+  describe('an MCP preset that needs a project', () => {
+    const REF = 'abcdefghijklmnopqrst';
+    const supabase: ConnectorDefinition = {
+      ...base,
+      key: 'mcp:supabase',
+      name: 'Supabase',
+      icon: 'supabase',
+      auth_kind: 'mcp_oauth',
+      credential_fields: [],
+      tool_templates: ['mcp_tool'],
+      mcp_url: 'https://mcp.supabase.com/mcp',
+      oauth_scopes: [],
+      publisher: 'preset',
+      url_parameters: [
+        {
+          key: 'project_ref',
+          label: 'Project ref',
+          secret: false,
+          required: true,
+          pattern: '[a-z]{20}',
+        },
+      ],
+    };
+    const refField = () =>
+      document.body.querySelector<HTMLInputElement>(
+        '#connect-mcp_supabase-project_ref',
+      );
+    const signIn = () => button('settings.connectors.wizard.signIn');
+
+    it('asks for the project first, then signs in to that project only', async () => {
+      const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+      const open = vi.spyOn(window, 'open').mockReturnValue(popup as never);
+      mcpApi.testMCPConnection.mockResolvedValue({
+        json: async () => ({ requires_oauth: true, task_id: 'task-1' }),
+      });
+      await render(supabase);
+      expect(signIn()?.disabled).toBe(true);
+
+      await typeInto(refField()!, 'not-a-ref');
+      expect(signIn()?.disabled).toBe(true);
+      expect(document.body.textContent).toContain(
+        'settings.connectors.wizard.urlParameterInvalid',
+      );
+
+      await typeInto(refField()!, REF);
+      expect(signIn()?.disabled).toBe(false);
+      expect(document.body.textContent).not.toContain(
+        'settings.connectors.wizard.urlParameterInvalid',
+      );
+      await click('settings.connectors.wizard.signIn');
+      expect(mcpApi.testMCPConnection.mock.calls[0][0]).toMatchObject({
+        config: {
+          server_url: `https://mcp.supabase.com/mcp?project_ref=${REF}`,
+          auth_type: 'oauth',
+        },
+      });
+      open.mockRestore();
+    });
+
+    it('signs in again to the project the connection is on', async () => {
+      await render(
+        supabase,
+        vi.fn(),
+        { mode: 'reconnect', connectionId: 'conn-1', mcpToolId: 'tool-1' },
+        [
+          {
+            id: 'conn-1',
+            connector_key: 'mcp:supabase',
+            name: 'Supabase',
+            display_name: null,
+            icon: 'supabase',
+            account_label: 'mcp.supabase.com',
+            auth_kind: 'mcp_oauth',
+            status: 'reconnect_needed',
+            server_url: 'https://mcp.supabase.com',
+            last_error: null,
+            created_at: null,
+            updated_at: null,
+            last_used_at: null,
+            source_count: 0,
+            tool_count: 1,
+            url_parameters: { project_ref: REF },
+          },
+        ],
+      );
+
+      expect(refField()?.value).toBe(REF);
+      expect(signIn()?.disabled).toBe(false);
+    });
   });
 
   it('connects a no-auth MCP preset with one Connect button', async () => {

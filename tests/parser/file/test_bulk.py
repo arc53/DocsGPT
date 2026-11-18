@@ -888,3 +888,47 @@ def test_gained_suffix_without_a_parser_is_rejected_not_read_as_text(tmp_path):
 
     with pytest.raises(DocumentParseError, match="firecrawl-anydoc"):
         reader.load_data()
+
+
+_LEGACY_XLS = Path(__file__).parent / "fixtures" / "legacy.xls"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("engine", ["anydoc", "docling"])
+def test_a_workbook_without_its_reader_is_skipped_by_name(tmp_path, monkeypatch, engine):
+    """One workbook pandas has no reader for costs that file, not the source (ledger #90).
+
+    Legacy bytes under an .xlsx name reach ``ExcelParser``: directly on the plain
+    map, through anydoc's fallback when anydoc refuses the file.
+    """
+    import shutil
+    import sys
+
+    from docsgpt.parser.file import anydoc_parser
+    from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
+
+    monkeypatch.setitem(sys.modules, "python_calamine", None)
+    monkeypatch.setitem(sys.modules, "docling", None)
+    if engine == "anydoc":
+        import anydoc
+
+        def _refuse(path):
+            if path.endswith(".xlsx"):
+                raise anydoc.MalformedError("not an OOXML workbook")
+            return Path(path).read_text()
+
+        monkeypatch.setattr(anydoc, "to_markdown", _refuse)
+        assert anydoc_parser.anydoc_available()
+    (tmp_path / "notes.md").write_text("first file")
+    (tmp_path / "guide.md").write_text("second file")
+    shutil.copy(_LEGACY_XLS, tmp_path / "budget.xlsx")
+
+    reader = SimpleDirectoryReader(
+        input_dir=str(tmp_path),
+        file_extractor=get_default_file_extractor(ocr_enabled=False, engine=engine),
+    )
+    docs = reader.load_data()
+
+    assert sorted(doc.text for doc in docs) == ["first file", "second file"]
+    assert [Path(p).name for p, _ in reader.failed_files] == ["budget.xlsx"]
+    assert "python-calamine" in reader.failed_files[0][1]

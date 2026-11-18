@@ -50,6 +50,7 @@ describe('notification kinds', () => {
       'schedule_paused',
       'schedule_failed',
       'docs_gaps',
+      'payer_left',
     ]);
     expect(notificationHeadingKey('schedule')).toBe(
       'backgroundJobs.notify.title.schedule',
@@ -62,6 +63,9 @@ describe('notification kinds', () => {
     );
     expect(notificationHeadingKey('docs_gaps')).toBe(
       'backgroundJobs.notify.title.docs_gaps',
+    );
+    expect(notificationHeadingKey('payer_left')).toBe(
+      'backgroundJobs.notify.title.payer_left',
     );
   });
 

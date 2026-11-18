@@ -17,6 +17,15 @@ from docsgpt.storage.db.base_repository import like_escape, row_to_dict
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 
 
+def _person(col: str) -> str:
+    """SQL predicate: the user id in ``col`` is not a team principal or ``__system__``.
+
+    The admin views count and list people only. An id with no ``users`` row
+    still counts as a person, as it did before rows had a kind.
+    """
+    return f"NOT EXISTS (SELECT 1 FROM users np WHERE np.user_id = {col} AND np.kind <> 'user')"
+
+
 def _round_ms(value: Optional[float]) -> Optional[int]:
     """Round a percentile to whole milliseconds, preserving NULL as None."""
     return int(round(float(value))) if value is not None else None
@@ -37,8 +46,8 @@ class AdminStatsRepository:
         cutoff_7d = now - timedelta(days=7)
         cutoff_30d = now - timedelta(days=30)
 
-        users_total = self._scalar("SELECT count(*) FROM users")
-        users_active = self._scalar("SELECT count(*) FROM users WHERE active")
+        users_total = self._scalar("SELECT count(*) FROM users WHERE kind = 'user'")
+        users_active = self._scalar("SELECT count(*) FROM users WHERE kind = 'user' AND active")
         return {
             "users": {
                 "total": users_total,
@@ -46,17 +55,18 @@ class AdminStatsRepository:
                 "inactive": users_total - users_active,
             },
             "admins": self._scalar(
-                "SELECT count(DISTINCT user_id) FROM user_roles WHERE role = 'admin'"
+                "SELECT count(DISTINCT r.user_id) FROM user_roles r "
+                f"WHERE r.role = 'admin' AND {_person('r.user_id')}"
             ),
             "agents": self._scalar("SELECT count(*) FROM agents"),
             "sources": self._scalar("SELECT count(*) FROM sources"),
             "conversations": self._scalar("SELECT count(*) FROM conversations"),
             "new_users_7d": self._scalar(
-                "SELECT count(*) FROM users WHERE created_at >= :c", {"c": cutoff_7d}
+                "SELECT count(*) FROM users WHERE kind = 'user' AND created_at >= :c", {"c": cutoff_7d}
             ),
             "active_users_30d": self._scalar(
-                "SELECT count(DISTINCT user_id) FROM token_usage "
-                "WHERE timestamp >= :c AND user_id IS NOT NULL",
+                "SELECT count(DISTINCT t.user_id) FROM token_usage t "
+                f"WHERE t.timestamp >= :c AND t.user_id IS NOT NULL AND {_person('t.user_id')}",
                 {"c": cutoff_30d},
             ),
             "failed_logins_7d": self._scalar(
@@ -93,6 +103,7 @@ class AdminStatsRepository:
                 FROM token_usage t
                 LEFT JOIN users u ON u.user_id = t.user_id
                 WHERE t.timestamp >= :since AND t.user_id IS NOT NULL
+                  AND COALESCE(u.kind, 'user') = 'user'
                   AND t.source <> ALL(:rollup_sources)
                 GROUP BY t.user_id, u.email
                 ORDER BY tokens DESC
@@ -225,13 +236,14 @@ class AdminStatsRepository:
         Ordering surfaces active accounts first, dormant ones last — the natural
         triage order for an operator. Each row carries the stored ``email``
         (NULL when none is on file), and the filter matches the user id or the
-        email, case-insensitively.
+        email, case-insensitively. People only: team principals and
+        ``__system__`` are never listed.
         """
-        where = ""
+        where = "WHERE u.kind = 'user'"
         count_params: dict = {}
         if user_id_filter is not None:
-            where = (
-                "WHERE (u.user_id ILIKE :uid ESCAPE '\\'"
+            where += (
+                " AND (u.user_id ILIKE :uid ESCAPE '\\'"
                 " OR COALESCE(u.email, '') ILIKE :uid ESCAPE '\\')"
             )
             count_params["uid"] = f"%{like_escape(user_id_filter)}%"

@@ -1157,6 +1157,51 @@ class TestApiKeyPrincipal:
         assert ok.status_code == 200
         assert ok.content == b"BYTES"
 
+    def test_api_key_stops_while_the_owner_is_deactivated(self, _patch_db, flask_app, monkeypatch):
+        # Outside access pauses with its owner: the key's downloads, reads and list pause with it.
+        from docsgpt.api.user.artifacts.routes import GetArtifact, ListArtifacts
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        agent = _make_agent(_patch_db)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        query = {"api_key": "secret-key", "conversation_id": str(conv["id"])}
+        assert _download(art["id"], token=None, query=query).status_code == 200
+
+        UsersRepository(_patch_db).upsert(OWNER)
+        _patch_db.execute(text("UPDATE users SET active = false WHERE user_id = :u"), {"u": OWNER})
+
+        assert _download(art["id"], token=None, query=query).status_code in (401, 403)
+        assert _call(flask_app, GetArtifact, art["id"], token=None, query=query).status_code in (401, 403)
+        assert _call(flask_app, ListArtifacts, token=None, query=query).status_code in (401, 403)
+
+    def test_api_key_stops_while_the_agents_team_is_locked(self, _patch_db, monkeypatch):
+        from tests.workspaces.move_support import team
+
+        team_id, principal = team(_patch_db)
+        agent = AgentsRepository(_patch_db).create(
+            principal, "team-widget", "active", key="team-key", access_payer_id="alice", created_by="alice",
+        )
+        conv = _make_agent_conversation(_patch_db, agent["id"], user_id=principal)
+        art = _make_artifact(
+            _patch_db, user_id=principal, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/team/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        query = {"api_key": "team-key", "conversation_id": str(conv["id"])}
+        assert _download(art["id"], token=None, query=query).status_code == 200
+
+        _patch_db.execute(
+            text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": team_id}
+        )
+        assert _download(art["id"], token=None, query=query).status_code in (401, 403)
+
     def test_api_key_download_outside_agent_scope_denied(self, _patch_db, monkeypatch):
         _make_agent(_patch_db)
         other_conv = _make_conversation(_patch_db, user_id=OWNER)  # no agent_id

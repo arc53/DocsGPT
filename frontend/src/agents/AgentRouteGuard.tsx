@@ -10,10 +10,22 @@ import {
   selectSharedAgents,
   selectToken,
 } from '../preferences/preferenceSlice';
+import { useFollowPending } from '../conversation/followWorkspace';
+import type { WorkspaceItemFields } from '../workspace/itemOrigin';
+import useFollowItemWorkspace, {
+  type ItemWorkspace,
+} from '../workspace/useFollowItemWorkspace';
 import { canAgent } from './agentAccess';
 import { GuardedAgentContext } from './hooks/useAgent';
+import { AgentNoticeContext } from './OwnerInactiveNotice';
 import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
 import type { Agent } from './types';
+
+/** Takes the app to an agent's workspace (an agent opened by its link). */
+function FollowWorkspace({ workspace }: { workspace: ItemWorkspace }) {
+  useFollowItemWorkspace(workspace);
+  return null;
+}
 
 type AgentRouteGuardProps = {
   /**
@@ -42,6 +54,9 @@ type AgentRouteGuardProps = {
  * On the classic edit page a workflow agent opens in the workflow editor
  * (an old `/agents/edit/<id>` link, a typed URL, or a link built before the
  * agent's type was known).
+ * An agent opened by its link from another workspace takes the app there
+ * first (the loading ring stays meanwhile); the page then loads again in
+ * that workspace. The agent it read is given to the pages' notices.
  *
  * @param action The agent action the wrapped page needs.
  * @param classicEditor Whether the page is the classic edit form.
@@ -87,11 +102,27 @@ export default function AgentRouteGuard({
     };
   }, [agentId, needsFetch, token]);
 
+  // Agents in the store are the current workspace's; only one read by its
+  // id can live elsewhere.
+  const fetchedWorkspace =
+    !stored && fetched && fetched.id === agentId && fetched.agent
+      ? (fetched.agent as WorkspaceItemFields).workspace
+      : null;
+  const following = useFollowPending(fetchedWorkspace);
+
   if (!agentId) return <>{children}</>;
 
   let agent: Agent | null | undefined = stored;
   if (!agent) {
-    if (fetched?.id !== agentId) return <LoadingState fill="parent" />;
+    if (fetched?.id !== agentId || following)
+      return (
+        <>
+          {fetchedWorkspace ? (
+            <FollowWorkspace workspace={fetchedWorkspace} />
+          ) : null}
+          <LoadingState fill="parent" />
+        </>
+      );
     agent = fetched.agent;
   }
   if (!agent || !canAgent(agent, action))
@@ -103,7 +134,9 @@ export default function AgentRouteGuard({
     <GuardedAgentContext.Provider
       value={fetched?.id === agentId ? fetched.agent : null}
     >
-      {children}
+      <AgentNoticeContext.Provider value={agent}>
+        {children}
+      </AgentNoticeContext.Provider>
     </GuardedAgentContext.Provider>
   );
 }

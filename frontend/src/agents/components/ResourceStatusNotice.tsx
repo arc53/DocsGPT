@@ -70,6 +70,11 @@ export function stoppedReason(
       return 'deleted';
     case 'owner_lost_access':
       return ownerReads ? 'ownerLostAccessYou' : 'ownerLostAccess';
+    // Another team's item: only that team can share it again or unlock.
+    case 'team_share_ended':
+      return 'teamShareEnded';
+    case 'team_locked':
+      return 'teamLocked';
     case 'sponsor_cannot_edit_agent':
       // The reader can edit the agent, so they are never this sponsor.
       return `sponsorCannotEditAgent${who === 'You' ? '' : who}`;
@@ -81,6 +86,10 @@ export function stoppedReason(
       return `connectionRemoved${service}`;
     case 'connector_disabled':
       return `connectorDisabled${service}`;
+    // A team's account whoever connected it can't use now: a team Admin
+    // reconnects it on the Connectors page, so the line says so itself.
+    case 'connection_paused':
+      return `connectionPaused${service}`;
     default:
       return 'unknown';
   }

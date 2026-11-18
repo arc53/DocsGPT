@@ -3,11 +3,16 @@ import type { TFunction } from 'i18next';
 import { intlLocale } from '../utils/dateTimeUtils';
 import type { ToolSummary } from './types';
 
-/** A resource a save would have run with the caller's access. */
+/**
+ * A resource a save would have run with the caller's access. A `folder` is
+ * the caller's own knowledge folder: it stays live, so sources filed there
+ * later run with their access too. It is only ever asked about, never a
+ * stored sponsor.
+ */
 export type SponsorResource = {
   /** `"<type>:<id>"`, the value `confirm_sponsor` takes. */
   key: string;
-  type: 'tool' | 'source' | 'prompt';
+  type: 'tool' | 'source' | 'prompt' | 'folder';
   id: string;
   name: string | null;
 };

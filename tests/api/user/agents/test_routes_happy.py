@@ -100,6 +100,60 @@ class TestGetAgent:
         assert response.json["name"] == "Al"
 
 
+def _share_with_member(pg_conn, agent_id, owner, member):
+    import uuid
+
+    from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+    from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+    team = TeamsRepository(pg_conn).create("T", f"t-{uuid.uuid4().hex[:8]}", owner)
+    TeamMembersRepository(pg_conn).add_member(str(team["id"]), member)
+    TeamResourceGrantsRepository(pg_conn).grant(
+        str(team["id"]), "agent", agent_id, owner, owner, access_level="viewer",
+    )
+
+
+def _set_active(pg_conn, user_id, active):
+    from sqlalchemy import text
+
+    from docsgpt.storage.db.repositories.users import UsersRepository
+
+    UsersRepository(pg_conn).upsert(user_id)
+    pg_conn.execute(text("UPDATE users SET active = :a WHERE user_id = :u"), {"a": active, "u": user_id})
+
+
+class TestOwnerInactiveFlag:
+    """A teammate sees that a deactivated owner's agent has its outside access paused."""
+
+    def _as(self, app, pg_conn, user, resource, url):
+        with _patch_db(pg_conn), app.test_request_context(url):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return resource().get()
+
+    def test_the_list_flags_a_deactivated_owners_shared_agent(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgents
+
+        agent = _seed_agent(pg_conn, user="owner-d", name="Shared")
+        _share_with_member(pg_conn, str(agent["id"]), "owner-d", "member-d")
+        _set_active(pg_conn, "owner-d", False)
+        response = self._as(app, pg_conn, "member-d", GetAgents, "/api/get_agents")
+        listed = {a["name"]: a for a in response.json}
+        assert listed["Shared"]["owner_inactive"] is True
+
+    def test_the_detail_flags_it_and_clears_on_reactivation(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgent
+
+        agent = _seed_agent(pg_conn, user="owner-d", name="Shared")
+        _share_with_member(pg_conn, str(agent["id"]), "owner-d", "member-d")
+        url = f"/api/get_agent?id={agent['id']}"
+        _set_active(pg_conn, "owner-d", False)
+        assert self._as(app, pg_conn, "member-d", GetAgent, url).json["owner_inactive"] is True
+        _set_active(pg_conn, "owner-d", True)
+        assert self._as(app, pg_conn, "member-d", GetAgent, url).json["owner_inactive"] is False
+
+
 class TestGetAgents:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.agents.routes import GetAgents

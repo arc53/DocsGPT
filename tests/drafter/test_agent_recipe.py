@@ -339,7 +339,8 @@ class TestAvailability:
         assert one_conn.opened == 1
         # What the form uses is handed over, so the overview lists it whatever its caps.
         read_ws.assert_called_once_with(one_conn.conn, "alice", "a1",
-                                        pinned={"sources": [SOURCE_ID], "tools": [], "prompts": [PROMPT_ID]})
+                                        pinned={"sources": [SOURCE_ID], "tools": [], "prompts": [PROMPT_ID]},
+                                        team_id=None)
         prompt.assert_called_once_with(one_conn.conn, "alice", PROMPT_ID)
         # The agent row is read once, and the saved sources and the conversations count reuse it.
         agent.assert_called_once_with(one_conn.conn, "alice", "a1")

@@ -22,6 +22,7 @@ export default function CredentialForm({
   onChange,
   idPrefix,
   labelSurface = 'card',
+  errors,
 }: {
   /** Picks the connector's own label for a shared key (Telegram's "Bot token"). */
   connectorKey: string;
@@ -30,6 +31,8 @@ export default function CredentialForm({
   onChange: (values: Record<string, string>) => void;
   idPrefix: string;
   labelSurface?: 'card' | 'background' | 'muted';
+  /** A field's error, by key: shown under it, and marks it invalid. */
+  errors?: Record<string, ReactNode>;
 }) {
   const { t } = useTranslation();
   return (
@@ -52,7 +55,8 @@ export default function CredentialForm({
           onChange: (e: ChangeEvent<HTMLInputElement>) =>
             onChange({ ...values, [field.key]: e.target.value }),
         };
-        if (!field.hint)
+        const error = errors?.[field.key];
+        if (!field.hint && !error)
           return (
             <Input
               key={field.key}
@@ -68,12 +72,18 @@ export default function CredentialForm({
             label={label}
             required={field.required}
             labelSurface={labelSurface}
-            hint={renderHint(
-              t(`settings.connectors.fieldHints.${connectorKey}_${field.key}`, {
-                defaultValue: field.hint,
-              }),
-              field.hint_url,
-            )}
+            hint={
+              field.hint
+                ? renderHint(
+                    t(
+                      `settings.connectors.fieldHints.${connectorKey}_${field.key}`,
+                      { defaultValue: field.hint },
+                    ),
+                    field.hint_url,
+                  )
+                : undefined
+            }
+            error={error}
           >
             <Input {...inputProps} />
           </FormField>

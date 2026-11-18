@@ -62,19 +62,21 @@ export const isSyncedSource = (doc: Doc): boolean =>
 export const syncNowIsPrimary = (doc: Doc): boolean =>
   !isGraphSource(doc) && !doc.website && isSyncedSource(doc);
 
-/** The Knowledge filter's values: All, the four content kinds, and Shared. */
+/**
+ * The Knowledge filter's values: All and the four content kinds. Whose a
+ * source is (shared with you or not) is a section of the page, not a kind.
+ */
 export const SOURCE_KINDS = [
   'all',
   'files',
   'websites',
   'synced',
   'wikis',
-  'shared',
 ] as const;
 export type SourceKindFilter = (typeof SOURCE_KINDS)[number];
 
 /** The four content kinds; every source is exactly one of them. */
-export type SourceKind = Exclude<SourceKindFilter, 'all' | 'shared'>;
+export type SourceKind = Exclude<SourceKindFilter, 'all'>;
 
 /**
  * Which content kind a source is, as the backend's `source_kind` decides it
@@ -101,15 +103,9 @@ export const sourceKindOf = (doc: Doc): SourceKind => {
   return 'files';
 };
 
-/**
- * Whether a source passes a Knowledge filter: All; Shared, a team's source of
- * any kind (so the counts don't sum to All); otherwise its content kind.
- */
-export const matchesKind = (kind: SourceKindFilter, doc: Doc): boolean => {
-  if (kind === 'all') return true;
-  if (kind === 'shared') return doc.ownership === 'team';
-  return sourceKindOf(doc) === kind;
-};
+/** Whether a source passes a Knowledge filter: All, or its content kind. */
+export const matchesKind = (kind: SourceKindFilter, doc: Doc): boolean =>
+  kind === 'all' || sourceKindOf(doc) === kind;
 
 /** How many sources each Knowledge filter keeps. */
 export const kindCounts = (docs: Doc[]): Record<SourceKindFilter, number> =>

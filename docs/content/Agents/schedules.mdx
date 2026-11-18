@@ -60,7 +60,7 @@ If you later mark one of a tool's actions as needing approval, schedules that do
 
 **Activity → Schedules** in the sidebar lists every schedule you own, across all your agents, grouped by agent. Tasks the assistant set up in a chat without an agent are grouped last under **Created in chat**, each with a link to its chat. The page has the same **Recurring** and **One-time tasks** tabs, row actions and run log as an agent's Schedules tab. **New schedule** there asks you to choose the agent first. To get there from an agent, select **All schedules** on its Schedules tab.
 
-It also lists the schedules of teammates' agents you manage through a team (an **Editor** badge marks those groups). Those schedules belong to the agent's owner (see [Who owns a schedule](#who-owns-a-schedule-and-whose-quota-it-uses)); a teammate's own one-time task set from a chat stays private to them.
+It also lists the schedules of teammates' agents you manage through a team (an **Editor** badge marks those groups). Those schedules belong to the agent's owner (see [Who owns a schedule](#who-owns-a-schedule-and-who-pays-for-it)); a teammate's own one-time task set from a chat stays private to them.
 
 ## Run now and the run log
 
@@ -73,9 +73,9 @@ A run ends in one of these statuses:
 | Status | Meaning |
 | --- | --- |
 | **Success** | The run finished and produced an answer, tool calls or workflow steps, even if a tool call was refused along the way. |
-| **Failed** | The run raised an error, was refused a tool and ended without an answer (`tool_not_allowed`), went over the owner's [usage quota](/Deploying/Usage-Quotas) or the schedule's token budget (`budget_exceeded`), produced nothing at all (`empty_output`), or the agent said it can't do the task (`cannot_complete`, see [below](#when-the-agent-cant-do-the-task)). |
+| **Failed** | The run raised an error, was refused a tool and ended without an answer (`tool_not_allowed`), went over the agent's limit or the schedule's token budget (`budget_exceeded`), stopped because its payer ran out of allowance during the run (`payer_out_of_allowance`, see [Paid by and paused schedules](#paid-by-and-paused-schedules)), produced nothing at all (`empty_output`), or the agent said it can't do the task (`cannot_complete`, see [below](#when-the-agent-cant-do-the-task)). |
 | **Timeout** | The run went past `SCHEDULE_RUN_TIMEOUT`. |
-| **Skipped** | The run didn't start: the previous run was still in progress (`overlap`), or the scheduler was down past the due time plus `SCHEDULE_MISFIRE_GRACE` (`missed`). |
+| **Skipped** | The run didn't start: the previous run was still in progress (`overlap`), the scheduler was down past the due time plus `SCHEDULE_MISFIRE_GRACE` (`missed`), or the schedule is paused for its payer (`payer_out_of_allowance`, `payer_left`, `no_payer` or `owner_inactive`, see [Paid by and paused schedules](#paid-by-and-paused-schedules)). |
 
 One-time tasks have a run log too, so a finished task shows its result. Every scheduled run also appears in **Settings → Logs** with the type **Scheduled**, with its execution trace, and, for a schedule with an agent, in the agent's Logs tab; over the API, use `GET /api/schedules/<id>/runs`. A run's details link to its conversation with **Open conversation**.
 
@@ -98,7 +98,7 @@ This relies on the model reporting it: it catches a missing tool or account, not
 
 ## Auto-pause
 
-After `SCHEDULE_AUTOPAUSE_FAILURES` (default 3) failed or timed-out scheduled runs in a row, a recurring schedule pauses itself. Runs started with **Run now** don't count. The schedule shows **Paused** and how many runs failed in a row. Fix the cause, then select **Resume**. Resuming resets the failure count and computes the next run from now. One-time tasks are never auto-paused.
+After `SCHEDULE_AUTOPAUSE_FAILURES` (default 3) failed or timed-out scheduled runs in a row, a recurring schedule pauses itself. Runs started with **Run now** don't count, and neither do runs skipped or stopped for the schedule's payer (see [Paid by and paused schedules](#paid-by-and-paused-schedules)). The schedule shows **Paused** and how many runs failed in a row. Fix the cause, then select **Resume**. Resuming resets the failure count and computes the next run from now. One-time tasks are never auto-paused.
 
 When a schedule pauses itself, its owner is notified once, as for a [background job](/Tools/background-jobs#notifications): a toast in an open tab, or Web Push when no tab is open. The notification names the schedule and gives the last run's error on one line (the agent's `cannot_complete` reason, a timeout, the tool that wasn't allowed). **Open** goes to the schedule in **Activity → Schedules** with its run log open. A toast still on screen goes away once the schedule is resumed, runs successfully or is deleted. A schedule that is resumed and pauses again notifies again. The paused schedule also stays under **Needs you** in [Activity → Now](/Using/activity#now) until it is resumed.
 
@@ -115,17 +115,48 @@ The chat shows a card for each task with a **Cancel task** button. Tasks set in 
 
 A task set from chat pre-approves only the tools whose actions never need approval. Tool calls that need approval are refused when it runs.
 
-## Who owns a schedule and whose quota it uses
+## Who owns a schedule and who pays for it
 
-- A run always executes as the agent's owner, with the owner's sources, tools and model, and is checked against the owner's [usage quota](/Deploying/Usage-Quotas).
-- Its tokens and trace are recorded under the schedule's user: the agent's owner for a schedule from the Schedules tab, and the person who set it for a task set from chat. So a teammate's chat task on your agent is checked against your quota but shows up in their [Analytics and Logs](/Using/analytics-and-logs).
-- A schedule created in the Schedules tab belongs to the agent's owner, whoever creates it. Owners and team editors of the agent can manage it.
-- A task someone sets from chat on a shared agent stays theirs. It stops running when they lose access to the agent.
+The person a schedule is stored under pays for its runs: each run counts against their [usage quota](/Deploying/Usage-Quotas), after the agent's own limit, and its tokens and trace are recorded under them. The schedule names them: **Paid by Dana**, or **Paid by you**.
+
+- **On a team agent,** a schedule is stored under the person who set it, in the Schedules tab or from chat. The team's Editors and up can manage every member's schedule on the team's agents; it keeps running on its setter's allowance until someone [takes it over](#take-over).
+- **On a personal agent,** a schedule created in the Schedules tab is stored under the agent's owner, whoever creates it, so the owner pays and the row says so. Owners and editors of the agent can manage it.
+- **A task someone sets from chat** on a shared agent stays theirs, and they pay for it. It stops running when they lose access to the agent. So a teammate's chat task on your agent counts against their quota and shows up in their [Analytics and Logs](/Using/analytics-and-logs).
+- A run always executes as the agent's owner (on a team agent, as the team), with the owner's sources, tools and model, whoever pays.
 - A task set through the agent's API key, or by someone who reaches the agent only through its public link, keeps that caller's limits: it writes to the owner's connected accounts and saved credentials only for actions allowed under [Letting API callers make changes](/API/agent-api#letting-api-callers-make-changes). It edits the owner's [wikis](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links) only when the wiki's owner lets API and widget users edit them.
+
+### Paid by and paused schedules
+
+A running schedule pauses when its payer can't pay. It shows why, and since when, for example "Dana is out of allowance until 1 Dec. Paused since 26 Nov."
+
+| Reason | Error type | Runs again when |
+| --- | --- | --- |
+| The payer is out of allowance | `payer_out_of_allowance` | Their allowance resets or is raised, or someone takes the schedule over |
+| On a team agent, the payer left the team or dropped to Viewer | `payer_left` | They're added back as an Editor or above, or someone takes it over |
+| Nobody can pay for it | `no_payer` | Someone takes it over |
+| The payer's or the agent owner's account is deactivated | `owner_inactive` | The account is reactivated |
+
+While it is paused:
+
+- Each due run is recorded as **Skipped**, with the reason as its error type. One row stands for the whole streak: later skips for the same reason and payer aren't stored, so a schedule paused for three weeks leaves one row. A **Run now** keeps its row.
+- Skipped runs don't count toward [auto-pause](#auto-pause) and send no failure notification. The schedule keeps its cadence and runs again by itself once the reason clears; nobody needs to resume it. A one-time task waits the same way: it is tried again when the allowance resets, or every `SCHEDULE_MIN_INTERVAL` seconds for the other reasons, and right away after a take over.
+- When the payer runs out of allowance, they get one notification on the first skipped run, such as "Paused: you're out of allowance until 1 Dec". When a member leaves or loses the role, the team's Owner and Admins are told once, at that change (see [When someone leaves a team](/Using/team-workspaces#when-someone-leaves-a-team)).
+
+The allowance is also checked before each model call of a run. If it runs out during a run, the run stops there: it is recorded as **Failed** with `payer_out_of_allowance` and keeps its partial output. That failure doesn't count toward auto-pause either. The agent's own limit stops a run the same way, as `budget_exceeded`, and that one does count.
+
+A schedule that a person paused, or that auto-pause stopped, isn't reported as paused for its payer: it isn't running anyway.
+
+### Take over
+
+On a team agent, Editors and up can choose **Take over** on a schedule someone else pays for, running or paused. After one confirmation you pay for its runs from then on; the runs so far stay with the earlier payer, and the agent's own limit still applies. The schedule also starts its failure count again and is no longer linked to the chat it was set from, which stays private to its earlier payer. A run already going finishes on the earlier payer's allowance.
+
+A schedule on a personal agent can't be taken over. Taking over isn't available with a personal access token, and it is refused when you already have `SCHEDULE_MAX_PER_USER` schedules. Each take over is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.schedule_taken_over`. See [Take over](/Using/team-workspaces#take-over) for outside access.
 
 ## REST API
 
 Schedules have their own endpoints. Call them with a session token or a [personal access token](/API/personal-access-tokens) with the `schedules:read` or `schedules:write` scope. The [REST API reference](/API/reference) lists them all.
+
+Every schedule in a response has `paid_by` (`{user_id, label}`, `null` when nobody pays for it), `paused_for` (`{reason, until, since}` while it is paused for its payer, else `null`) and `can_take_over`.
 
 A workflow agent's schedule runs its saved graph, so creating, resuming or running one now for a draft whose workflow isn't finished answers `400` with the [graph rules](/Agents/nodes#graph-rules) it breaks.
 
@@ -138,6 +169,7 @@ A workflow agent's schedule runs its saved graph, so creating, resuming or runni
 | `GET`, `PUT`, `DELETE /api/schedules/<id>` | Read, edit or delete a schedule |
 | `PATCH /api/schedules/<id>` | `{"action": "pause"}` or `{"action": "resume"}` |
 | `POST /api/schedules/<id>/run` | Run now |
+| `POST /api/schedules/<id>/take_over` | [Take over](#take-over) a schedule on a team agent: `{success, schedule, changed}`, `changed` false when you already pay. Refusals: `404` `schedule_not_found`, `403` `workspace_role_required`, `409` `take_over_team_only` or `schedule_finished` (completed or cancelled), `429` `max_schedules`. Not open to personal access tokens |
 | `GET /api/schedules/<id>/runs?limit=50&offset=0` | The run log |
 | `GET /api/schedules/<id>/runs/<run_id>` | One run's output and error |
 
@@ -171,7 +203,7 @@ curl -X POST "$API/api/agents/$AGENT_ID/schedules" \
 
 To resume a one-time task whose time has passed, send a new future `run_at` with the resume action.
 
-Schedule changes are also published on the [realtime events](/API/realtime-events) stream: `schedule.run.completed`, `schedule.run.failed`, `schedule.autopaused`, `schedule.completed` (a one-time task closed after its stuck run was marked failed), `schedule.resumed`, `schedule.cancelled`, and `schedule.message.appended` when a one-time task adds its answer to a conversation.
+Schedule changes are also published on the [realtime events](/API/realtime-events) stream: `schedule.run.completed`, `schedule.run.failed`, `schedule.run.skipped` (a run that started but was refused for its payer), `schedule.autopaused`, `schedule.completed` (a one-time task closed after its stuck run was marked failed), `schedule.resumed`, `schedule.cancelled`, and `schedule.message.appended` when a one-time task adds its answer to a conversation.
 
 ## Limits
 

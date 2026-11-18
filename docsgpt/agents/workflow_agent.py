@@ -376,7 +376,18 @@ class WorkflowAgent(BaseAgent):
         return getattr(self, "initial_user_id", None) or getattr(self, "user", None) or workflow_owner_id
 
     def _resolve_owned_workflow_pg_id(self, conn: Any, owner_id: Optional[str]) -> Optional[str]:
-        """Return the owned workflow's PG id, or None for an unowned/draft id."""
+        """Return the owned workflow's PG id, or None for an unowned/draft id.
+
+        An embedded (Preview) graph has no row loaded yet, so the saved row found
+        here becomes ``workflow_row``: node folders and sources check it as their holder.
+
+        Args:
+            conn: Open database connection.
+            owner_id: The workflow's owner.
+
+        Returns:
+            The workflow's id, or None when ``owner_id`` owns no such workflow.
+        """
         if not self.workflow_id or not owner_id:
             return None
         wf_repo = WorkflowsRepository(conn)
@@ -384,7 +395,11 @@ class WorkflowAgent(BaseAgent):
             workflow_row = wf_repo.get(self.workflow_id, owner_id)
         else:
             workflow_row = wf_repo.get_by_legacy_id(self.workflow_id, owner_id)
-        return str(workflow_row["id"]) if workflow_row is not None else None
+        if workflow_row is None:
+            return None
+        if getattr(self, "workflow_row", None) is None:
+            self.workflow_row = workflow_row
+        return str(workflow_row["id"])
 
     def _precreate_workflow_run(
         self,

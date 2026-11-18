@@ -68,9 +68,22 @@ A Telegram connection can hold a **Default chat ID**. When it's set, messages al
 
 If a provider rejects a token that DocsGPT cannot refresh, the connection is marked **Reconnect needed**, its synced sources pause, and you get a notification. Reconnecting the same account resumes them. In a chat, a tool whose connection is missing or expired shows a **Connect** prompt instead of failing; the answer continues once you connect.
 
+### In a team workspace
+
+A team Admin can connect an account for the team. In a team, **Settings > Connectors** lists the team's accounts, under "These accounts belong to the team. Your own accounts are in Personal.", and Admins connect a service with **Connect for the team**. The account belongs to the team: its sources are the team's knowledge, and its tools run on it for every member.
+
+- **Everyone in the team** sees each account, who connected it ("Connected by Lena"), and its status or why it is paused. Viewers and Editors see only the services the team has connected.
+- **Editors** sync the team's sources with **Sync now**, and pay for that sync.
+- **Admins** manage the accounts: tools and what each action may do, how often a source syncs, **Reconnect**, **Disconnect** and remove.
+- **Only whoever connected an account** browses it and picks what it syncs, while they're an Admin. Scheduled syncs are paid by them.
+
+The account pauses when whoever connected it leaves the team, stops being an Admin or is deactivated, and its scheduled syncs pause while they're out of allowance. Another Admin can then choose **Reconnect** and sign in with their own account: the sources and tools stay on the connection, and files the new account can't open drop out at the next sync.
+
+A tool on a team account works only for the team's members, in the app: an agent that uses one can't get an API key, widget, public link or webhook, or be shared with another team. A team can also add a tool each person signs in to with their own account. See [Team connections](/Using/team-workspaces#team-connections).
+
 ### Sharing a tool with a team
 
-Sharing a tool that uses a connection asks whose account team members use:
+Sharing a personal tool that uses a connection asks whose account team members use:
 
 - **Your account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
 - **Each person's own.** Each person uses their own account, and sees a **Connect** prompt the first time they use the tool. Through an agent's API key or widget, the agent runs as its owner, so the tool uses the agent owner's account.

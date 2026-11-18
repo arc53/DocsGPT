@@ -1,3 +1,4 @@
+import { Folder as FolderIcon, FolderOpen } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -5,9 +6,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
-import RoleMeta from '../components/RoleMeta';
-import { can, isOwner } from '../utils/accessUtils';
-import { MetaLine } from '../components/ui/meta-line';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import { canCreateIn } from '../components/folders/folderTree';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import { can, type AccessFields } from '../utils/accessUtils';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import {
   Tooltip,
   TooltipContent,
@@ -58,22 +63,56 @@ import { type PromptDetail, usePromptDetail } from '../prompts/usePromptDetail';
 import type { AppDispatch } from '../store';
 import { agentChatPath, agentEditPath } from '../agents/paths';
 import { agentUseCount } from '../utils/resourceUsage';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
+import { captureWorkspace } from '../workspace/requestWorkspace';
+import WorkspaceLine from '../workspace/WorkspaceLine';
+import {
+  type FiledItem,
+  filedAt,
+  folderLabelOf,
+  itemsWithin,
+  listedFolders,
+} from './folderListing';
+import FolderSection from './FolderSection';
 import UsedByAgents from './UsedByAgents';
+import { useFolderPage } from './useFolderPage';
 import usePromptActions from './usePromptActions';
+import { selectCanCreateHere, selectInTeam } from './workspaceAccess';
 
 const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
 type UsageFilter = (typeof USAGE_FILTERS)[number];
 
-/** The page's sections, by the prompt's `type`. */
-const SECTIONS = [
-  { key: 'included', type: 'public' },
-  { key: 'yours', type: 'private' },
-  { key: 'shared', type: 'team' },
-] as const;
+/** A prompt as the list carries it: its workspace fields and its filing. */
+type ListedPrompt = Prompt & AccessFields & FiledItem;
+
+/**
+ * The page's sections: the built-in prompts, the workspace's own (yours in
+ * Personal, the team's in a team), those other teams shared with the team,
+ * and those shared with the caller.
+ */
+const SECTIONS = ['included', 'yours', 'teamShared', 'shared'] as const;
+type SectionKey = (typeof SECTIONS)[number];
+
+/**
+ * A prompt's section. A built-in one is `public`; the rest go by `origin`,
+ * where one without it (an API older than workspaces) is the caller's own.
+ */
+const sectionOf = (prompt: ListedPrompt): SectionKey =>
+  prompt.type === 'public'
+    ? 'included'
+    : prompt.origin === 'shared'
+      ? 'shared'
+      : prompt.origin === 'team_shared'
+        ? 'teamShared'
+        : 'yours';
 
 /** The kind track's values: All, then one per section. */
-const KINDS = ['all', ...SECTIONS.map((section) => section.key)] as const;
+const KINDS = ['all', ...SECTIONS] as const;
 type KindFilter = (typeof KINDS)[number];
+
+const GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
 
 /**
  * Arrow keys move the checked radio card by card; the save waits this long
@@ -83,19 +122,25 @@ const ARROW_PICK_DELAY_MS = 600;
 const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 
 /**
- * Settings › Prompts: the presets, the user's own prompts and the ones shared
- * with them, as cards. A radio on each card picks the prompt chats without an
- * agent use (kept on the server); the ⋯ opens, duplicates, shares or deletes.
- * Opening a prompt, Add and Duplicate show it as a detail view in place of
- * the list (PromptDetailPage).
+ * Settings › Prompts in the current workspace: the line saying whose they
+ * are, the workspace's folders, the presets, the workspace's own prompts
+ * and, in Personal, the ones shared with the caller, as cards. A folder
+ * opens in place (`?folder=`) with its crumb row; a search or a filter lists
+ * everything in reach, each prompt naming its folder. A radio on each card
+ * picks the prompt chats without an agent use (kept on the server); the ⋯
+ * opens, duplicates, files, moves, shares or deletes. Opening a prompt, Add
+ * and Duplicate show it as a detail view in place of the list
+ * (PromptDetailPage); a prompt added inside a folder is filed there.
  */
 export default function Prompts() {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const chatPrompt = useSelector(selectPrompt);
+  const inTeam = useSelector(selectInTeam);
+  const canCreate = useSelector(selectCanCreateHere);
 
-  const [prompts, setPromptList] = React.useState<Prompt[]>([]);
+  const [prompts, setPromptList] = React.useState<ListedPrompt[]>([]);
   const [loading, setLoading] = React.useState(true);
   // The first load failed: an error with Retry, not an empty page.
   const [loadFailed, setLoadFailed] = React.useState(false);
@@ -119,15 +164,17 @@ export default function Prompts() {
     setHeldUsage({ key: '', inUse: {} });
   const heldInUse = heldUsage.key === filterKey ? heldUsage.inUse : {};
 
-  const showList = (list: Prompt[]) => {
+  const showList = (list: ListedPrompt[]) => {
     setPromptList(list);
     // The pickers (agent form, Teams) read the same list.
     dispatch(setPrompts(list));
   };
 
-  // `quiet`: a reload after a change keeps the cards on screen.
+  // `quiet`: a reload after a change keeps the cards on screen. A list that
+  // answers after a workspace switch is the old workspace's: dropped.
   const loadPrompts = (quiet = false) => {
     if (!quiet) setLoading(true);
+    const workspace = captureWorkspace();
     return userService
       .getPrompts(token)
       .then((response: Response) => {
@@ -135,7 +182,8 @@ export default function Prompts() {
           throw new Error(`Failed to load prompts (${response.status})`);
         return response.json();
       })
-      .then((data: Prompt[]) => {
+      .then((data: ListedPrompt[]) => {
+        if (!workspace.isCurrent()) return;
         showList(Array.isArray(data) ? data : []);
         setHeldUsage({ key: '', inUse: {} });
         setLoadFailed(false);
@@ -151,8 +199,17 @@ export default function Prompts() {
     loadPrompts();
   }, [token]);
 
+  const page = useFolderPage('prompt', () => void loadPrompts(true));
+  const { folderId, folder, tree } = page;
+  const inFolder = folderId !== null;
+  // Opening a folder (or leaving one) starts a fresh search there.
+  React.useEffect(() => {
+    setSearchTerm('');
+  }, [folderId]);
+
   const detail = usePromptDetail({
     prompts,
+    folderId,
     // Saved: back on the list, which loads again.
     onSaved: () => {
       detail.close();
@@ -174,6 +231,7 @@ export default function Prompts() {
     },
     onOpen: detail.open,
     onDuplicate: (prompt) => void detail.duplicate(prompt),
+    onMoved: () => void loadPrompts(true),
   });
 
   /** In use: an agent uses it, or chats without an agent do. */
@@ -208,11 +266,22 @@ export default function Prompts() {
   const matchesUsage = (prompt: Prompt, key: UsageFilter) =>
     key === 'all' ||
     (key === 'inUse') === (heldInUse[prompt.id] ?? isInUse(prompt));
-  const matchesKind = (prompt: Prompt, key: KindFilter) =>
-    key === 'all' ||
-    SECTIONS.some((s) => s.key === key && s.type === prompt.type);
+  const matchesKind = (prompt: ListedPrompt, key: KindFilter) =>
+    key === 'all' || sectionOf(prompt) === key;
   const query = searchTerm.trim().toLowerCase();
-  const searched = prompts.filter((prompt) =>
+  // A search or a filter lists everything in reach, folders' contents too;
+  // otherwise the level shows what is filed right here.
+  const flat = query !== '' || kind !== 'all' || usage !== 'all';
+  // In reach: every prompt at the root; inside a folder, those filed in it
+  // or below (the presets are never filed).
+  const inReach = inFolder
+    ? itemsWithin(
+        tree,
+        prompts.filter((prompt) => prompt.type !== 'public'),
+        folderId,
+      )
+    : prompts;
+  const searched = inReach.filter((prompt) =>
     prompt.name.toLowerCase().includes(query),
   );
   // Each filter counts with the other one and the search applied, so a pill
@@ -234,21 +303,40 @@ export default function Prompts() {
   // No pill leads to an empty list; with only All left there is no track.
   const kinds = shownFilters(KINDS, kind, kindCounts);
 
-  const shown = searched.filter(
-    (prompt) => matchesKind(prompt, kind) && matchesUsage(prompt, usage),
-  );
-  const sections = SECTIONS.map((section) => ({
-    ...section,
-    prompts: shown.filter((prompt) => prompt.type === section.type),
+  const shown = flat
+    ? searched.filter(
+        (prompt) => matchesKind(prompt, kind) && matchesUsage(prompt, usage),
+      )
+    : searched.filter(
+        (prompt) => prompt.type === 'public' || filedAt(tree, prompt, folderId),
+      );
+  const sections = SECTIONS.map((key) => ({
+    key,
+    prompts: shown.filter((prompt) => sectionOf(prompt) === key),
   })).filter((section) => section.prompts.length > 0);
+  // A filter alone lists prompts only; a search also finds folders.
+  const folders =
+    flat && !query ? [] : listedFolders(tree, 'prompt', folderId, query);
 
-  const renderCard = (prompt: Prompt) => {
+  /** A section's title (and its kind pill's): the team's own say so. */
+  const sectionTitle = (key: SectionKey) =>
+    key === 'shared'
+      ? t('workspace.page.sharedWithYou')
+      : key === 'teamShared'
+        ? t('workspace.page.sharedFromTeams.title')
+        : key === 'yours' && inTeam
+          ? t('settings.prompts.sections.team')
+          : t(`settings.prompts.sections.${key}`);
+
+  const renderCard = (prompt: ListedPrompt) => {
     const inChats = prompt.id === chatPrompt.id;
     // The presets open with the same lines, so they say what they do.
     const description = PRESET_PROMPT_IDS.includes(prompt.id)
       ? t(`settings.prompts.presets.${prompt.id}`)
       : prompt.preview;
     const options = menuOptions(prompt);
+    // Where a prompt a search or filter found is filed.
+    const folderLabel = flat ? folderLabelOf(tree, prompt, folderId) : null;
     return (
       // DESIGN "A clickable card that holds a link": a stretched button
       // opens the prompt; the menu, the usage link and the radio sit above
@@ -292,7 +380,14 @@ export default function Prompts() {
             prompt, with no badge repeating it. */}
         <CardFooter className="mt-auto w-full">
           <MetaLine className="relative z-10">
-            {isOwner(prompt) ? null : <RoleMeta item={prompt} />}
+            {folderLabel ? (
+              <MetaItem icon={<FolderIcon />} title={folderLabel}>
+                {folderLabel}
+              </MetaItem>
+            ) : null}
+            {showsCreator(prompt) ? <CreatorMeta item={prompt} /> : null}
+            {showsSharedFrom(prompt) ? <SharedFromMeta item={prompt} /> : null}
+            {showsRole(prompt) ? <RoleMeta item={prompt} /> : null}
             {agentUseCount(prompt.used_by) > 0 ? (
               <UsedByAgents usage={prompt.used_by} />
             ) : null}
@@ -333,28 +428,71 @@ export default function Prompts() {
       />
     );
 
+  // The open folder before the tree has loaded: wait for it (or say it
+  // failed) rather than draw a folder with no name.
+  const folderPending = inFolder && !folder;
+  const foldersFailed = page.list.failed && !page.list.loaded;
+  const addPrompt = (
+    <Button type="button" size="field" shape="pill" onClick={detail.add}>
+      {t('settings.prompts.addPrompt')}
+    </Button>
+  );
+
   return (
     <SectionShell>
+      {/* Inside a folder its crumb row stands where the intro was: the
+          trail, its count line, what else it holds, and its ⋯ last. */}
+      {folder ? (
+        <div className="mb-5">
+          <FolderCrumbRow
+            kind="prompt"
+            trail={page.trail}
+            onNavigate={page.openFolder}
+            meta={folderCountLine(t, folder, 'prompt')}
+            menu={page.folderMenu.crumbMenu(folder)}
+          />
+        </div>
+      ) : inFolder ? null : (
+        <div className="mb-5">
+          <p className="text-muted-foreground text-sm leading-6">
+            {t('settings.prompts.subtitle')}
+          </p>
+          <WorkspaceLine kind="prompts" />
+        </div>
+      )}
       <PageToolbar
-        intro={t('settings.prompts.subtitle')}
         search={
           <SearchInput
             maxLength={256}
-            label={t('settings.prompts.searchPlaceholder')}
+            label={
+              folder
+                ? t('folders.searchIn', {
+                    name: folder.name,
+                    interpolation: { escapeValue: false },
+                  })
+                : t('settings.prompts.searchPlaceholder')
+            }
             name="prompt-search-input"
             id="prompt-search-input"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         }
+        // Below Editor in a team nothing can be added here.
         action={
-          <Button type="button" size="field" shape="pill" onClick={detail.add}>
-            {t('settings.prompts.addPrompt')}
-          </Button>
+          canCreate ? (
+            <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
+              <NewFolderButton
+                atDepthLimit={!canCreateIn(tree, folderId)}
+                onClick={page.newFolder}
+              />
+              {addPrompt}
+            </div>
+          ) : undefined
         }
         divider
       >
-        {!loading && !loadFailed && prompts.length > 0 ? (
+        {!loading && !loadFailed && inReach.length > 0 ? (
           <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
             {kinds.length > 0 ? (
               <ToggleGroup
@@ -373,7 +511,7 @@ export default function Prompts() {
                       ? t('settings.prompts.filters.all')
                       : key === 'shared'
                         ? t('settings.prompts.kinds.shared')
-                        : t(`settings.prompts.sections.${key}`)}
+                        : sectionTitle(key)}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -389,8 +527,16 @@ export default function Prompts() {
           </div>
         ) : null}
       </PageToolbar>
-      {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {folderPending && foldersFailed ? (
+        <FolderSection
+          kind="prompt"
+          page={page}
+          folders={[]}
+          query=""
+          title=""
+        />
+      ) : loading || folderPending ? (
+        <div className={GRID}>
           <SkeletonLoader component="toolCards" count={6} />
         </div>
       ) : loadFailed ? (
@@ -400,50 +546,72 @@ export default function Prompts() {
           title={t('settings.prompts.loadError')}
           onRetry={() => loadPrompts()}
         />
-      ) : sections.length === 0 ? (
-        <EmptyState
-          size="xs"
-          illustration="none"
-          title={t('settings.prompts.noPromptsFound')}
-        />
+      ) : sections.length === 0 && folders.length === 0 && !foldersFailed ? (
+        folder && !flat ? (
+          <EmptyState
+            size="sm"
+            icon={FolderOpen}
+            title={t('folders.emptyTitle')}
+            description={t('settings.prompts.folders.emptyHint')}
+            action={canCreate ? addPrompt : undefined}
+          />
+        ) : (
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.prompts.noPromptsFound')}
+          />
+        )
       ) : (
-        // One group across the sections: one Tab stop, arrow keys between
-        // the cards, and one prompt picked.
-        <RadioGroup
-          value={chatPrompt.id}
-          onValueChange={pickChatPrompt}
-          // Only an arrow key on one of the radios moves the pick; one in a
-          // card's ⋯ menu (portalled, outside this element) doesn't, and a
-          // pointer press never waits.
-          onKeyDownCapture={(event) => {
-            const target = event.target as HTMLElement;
-            arrowPick.current =
-              ARROW_KEYS.has(event.key) &&
-              event.currentTarget.contains(target) &&
-              target.getAttribute('role') === 'radio';
-          }}
-          onPointerDownCapture={() => {
-            arrowPick.current = false;
-          }}
-          aria-label={t('settings.prompts.chatPromptLabel')}
-        >
-          <div className="flex flex-col gap-8">
-            {sections.map((section) => (
-              <section key={section.key} className="flex flex-col gap-3">
-                <SectionHeader
-                  as="h2"
-                  size="sm"
-                  title={t(`settings.prompts.sections.${section.key}`)}
-                  count={section.prompts.length}
-                />
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {section.prompts.map(renderCard)}
-                </div>
-              </section>
-            ))}
-          </div>
-        </RadioGroup>
+        <div className="flex flex-col gap-8">
+          <FolderSection
+            kind="prompt"
+            page={page}
+            folders={folders}
+            query={query}
+            title={t('settings.prompts.sections.folders')}
+          />
+          {sections.length > 0 ? (
+            // One group across the sections: one Tab stop, arrow keys
+            // between the cards, and one prompt picked.
+            <RadioGroup
+              value={chatPrompt.id}
+              onValueChange={pickChatPrompt}
+              // Only an arrow key on one of the radios moves the pick; one
+              // in a card's ⋯ menu (portalled, outside this element)
+              // doesn't, and a pointer press never waits.
+              onKeyDownCapture={(event) => {
+                const target = event.target as HTMLElement;
+                arrowPick.current =
+                  ARROW_KEYS.has(event.key) &&
+                  event.currentTarget.contains(target) &&
+                  target.getAttribute('role') === 'radio';
+              }}
+              onPointerDownCapture={() => {
+                arrowPick.current = false;
+              }}
+              aria-label={t('settings.prompts.chatPromptLabel')}
+            >
+              <div className="flex flex-col gap-8">
+                {sections.map((section) => (
+                  <section key={section.key} className="flex flex-col gap-3">
+                    <SectionHeader
+                      as="h2"
+                      size="sm"
+                      title={sectionTitle(section.key)}
+                      count={section.prompts.length}
+                    />
+                    <div className={GRID}>
+                      {section.prompts.map(renderCard)}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </RadioGroup>
+          ) : null}
+        </div>
       )}
+      {page.dialogs}
       {dialogs}
     </SectionShell>
   );
@@ -471,6 +639,7 @@ function PromptDetailPage({
 }) {
   const { t } = useTranslation();
   const { target, readOnly } = detail;
+  const canCreate = useSelector(selectCanCreateHere);
   // The open prompt as the list last loaded it (a share changes it).
   const saved =
     target?.kind === 'edit'
@@ -526,9 +695,11 @@ function PromptDetailPage({
 
   const drafterOn =
     drafterConfig?.enabled === true && detail.status === 'ready';
-  // A prompt the caller can't change is improved as a copy.
+  // A prompt the caller can't change is improved as a copy, saved in the
+  // current workspace, so only by someone who may create there.
   const canImprove =
-    drafterOn && (!readOnly || (!!saved && can(saved, 'duplicate')));
+    drafterOn &&
+    (!readOnly || (!!saved && canCreate && can(saved, 'duplicate')));
   const improve = () => {
     if (readOnly && saved) void detail.duplicate(saved, { draft: true });
     else setDrawerOpen((open) => !open);

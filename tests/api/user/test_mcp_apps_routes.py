@@ -6,8 +6,10 @@ import pytest
 from flask import Flask
 
 from docsgpt.api.user.mcp_apps import routes
+from docsgpt.workspaces.principal import principal_id
 
 ROW_ID = "00000000-0000-0000-0000-0000000000aa"
+TEAM_ID = "00000000-0000-0000-0000-0000000000bb"
 VIEW = "ui://excalidraw/mcp-app.html"
 
 
@@ -253,6 +255,33 @@ class TestCall:
             response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "save_checkpoint"})
         assert response.status_code == 200
 
+    def test_approval_does_not_open_another_persons_account(self, app, tool):
+        row = _row(user="owner", save_checkpoint={"require_approval": False})
+        with _found(row, _executor(resolved=MagicMock(delegated=True))):
+            response = _post(
+                app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "save_checkpoint", "approved": True}
+            )
+        assert response.status_code == 403
+        tool.call_app_tool.assert_not_called()
+
+    @pytest.mark.parametrize("resolved", [None, MagicMock(delegated=True)], ids=["own-config", "team-connection"])
+    def test_a_write_on_a_team_tool_asks_first_then_runs(self, app, tool, resolved):
+        # A team's tool runs on the team's account: like an agent's call on it, a write asks the caller first.
+        team_row = _row(user=principal_id(TEAM_ID), save_checkpoint={"require_approval": False})
+        body = {"tool_id": ROW_ID, "name": "save_checkpoint"}
+        with _found(team_row, _executor(resolved=resolved)):
+            asked = _post(app, routes.McpAppCall, body)
+            assert asked.status_code == 409 and asked.get_json()["needs_approval"] is True
+            tool.call_app_tool.assert_not_called()
+            approved = _post(app, routes.McpAppCall, {**body, "approved": True})
+        assert approved.status_code == 200
+        tool.call_app_tool.assert_called_once()
+
+    def test_a_read_on_a_team_tool_needs_no_approval(self, app, tool):
+        with _found(_row(user=principal_id(TEAM_ID))):
+            response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint"})
+        assert response.status_code == 200
+
     def test_arguments_must_be_an_object(self, app, tool):
         with _found(_row()):
             response = _post(app, routes.McpAppCall, {"tool_id": ROW_ID, "name": "read_checkpoint", "arguments": [1]})
@@ -329,6 +358,38 @@ class TestAppTool:
         assert seen == {"tool_id": ROW_ID, "user": "alice"}
         assert executor.user == "alice"
         assert row["id"] == ROW_ID
+
+
+class TestTeamToolAccess:
+    """Only someone who can use a team's tool reaches its view calls at all."""
+
+    @pytest.fixture
+    def team_tool(self, pg_conn, monkeypatch):
+        from contextlib import contextmanager
+
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+        from docsgpt.workspaces.principal import create_principal
+
+        @contextmanager
+        def _conn():
+            yield pg_conn
+
+        monkeypatch.setattr(routes, "db_readonly", _conn)
+        team_id = str(TeamsRepository(pg_conn).create("Ops", "ops-apps", "alice")["id"])
+        TeamMembersRepository(pg_conn).add_member(team_id, "eddie", "team_editor")
+        owner = create_principal(pg_conn, team_id)["user_id"]
+        row = UserToolsRepository(pg_conn).create(
+            owner, "mcp_tool", actions=_row()["actions"], config={}, created_by="alice"
+        )
+        return str(row["id"])
+
+    def test_a_member_reaches_it_and_an_outsider_does_not(self, app, tool, team_tool):
+        body = {"tool_id": team_tool, "name": "save_checkpoint", "approved": True}
+        assert _post(app, routes.McpAppCall, body, user="eddie").status_code == 200
+        assert _post(app, routes.McpAppCall, body, user="mallory").status_code == 404
+        tool.call_app_tool.assert_called_once()
 
 
 RESULT = {"content": [], "structuredContent": {"elements": []}, "isError": False}

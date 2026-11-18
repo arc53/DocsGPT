@@ -133,7 +133,7 @@ class TestConvertSourceToWikiTask:
 
         result = convert_source_to_wiki("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", actor_id=None)
         assert result == {"status": "converted"}
 
 
@@ -501,7 +501,7 @@ class TestMcpOauthTask:
 
         result = mcp_oauth_task({"server": "mcp"}, "user1")
 
-        mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1")
+        mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1", None)
         assert result == {"url": "http://auth"}
 
 
@@ -1176,7 +1176,7 @@ class TestIngestPoisonEvent:
             published.append((user, event_type, payload, scope))
 
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
             side_effect=_fake_publish,
         ):
             _emit_ingest_poison_event(
@@ -1198,7 +1198,7 @@ class TestIngestPoisonEvent:
         from docsgpt.api.user.tasks import _emit_ingest_poison_event
 
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
         ) as mock_publish:
             _emit_ingest_poison_event("ingest", {"user": "u1"})
 
@@ -1210,7 +1210,7 @@ class TestIngestPoisonEvent:
 
         published = []
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
             side_effect=lambda *a, **k: published.append((a, k)),
         ):
             _emit_ingest_poison_event(

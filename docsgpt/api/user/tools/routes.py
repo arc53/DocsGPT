@@ -26,17 +26,27 @@ from docsgpt.api import api
 from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.pat.tokens import is_pat, TOKEN_PREFIX
 from docsgpt.api.user.artifacts.authz import Principal, authorize_artifact
+from docsgpt.api.user.folders.service import FolderError, ItemFiling, filing_folder, filing_owner
 from docsgpt.api.user.resource_access import (
+    _user_labels,
     AccessDenied,
+    created_by_payload,
+    creator_payloads,
     delete_settings,
     payload_for,
     require,
     ResourceAccess,
     settings_many,
 )
+from docsgpt.api.user.received_shares import received_into
 from docsgpt.api.user.resource_usage import attach_used_by, deletable_ids_of
 from docsgpt.api.user.team_sharing import visible_with_access
-from docsgpt.connectors.catalog import base_url, definition_for_tool
+from docsgpt.connectors.catalog import (
+    UrlParametersRequired,
+    base_url,
+    check_url_parameters,
+    definition_for_tool,
+)
 from docsgpt.connectors.resolve import carry_removed_connection
 from docsgpt.connectors.service import account_tool_names
 from docsgpt.connectors.permissions import action_access, owner_credential_writes
@@ -45,7 +55,9 @@ from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.storage.db.repositories.notes import NotesRepository
+from docsgpt.storage.db.repositories.team_scope import live_grant_sql
 from docsgpt.storage.db.repositories.todos import TodosRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import (
     UserToolPreferencesRepository,
@@ -59,6 +71,14 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import check_required_fields, validate_function_name
+from docsgpt.workspaces.context import (
+    current_workspace,
+    parse_workspace_ref,
+    require_workspace_role,
+    Workspace,
+    WorkspaceError,
+)
+from docsgpt.workspaces.principal import is_principal_id
 
 tool_config = {}
 tool_manager = ToolManager(config=tool_config)
@@ -220,6 +240,100 @@ def check_action(ra: ResourceAccess, action: str) -> None:
     """Raise a 403 :class:`AccessDenied` unless ``ra`` allows ``action``."""
     if not ra.can(action):
         raise AccessDenied(403, _FORBIDDEN_MESSAGE)
+
+
+def holds_owner_rights(ra: ResourceAccess) -> bool:
+    """Whether the caller decides what only a tool's owner decides: its fixed values and pinned parameters.
+
+    On a personal tool that is its person-owner; a grantee's ``edit_credentials``
+    is not enough, since the owner's account is behind those values. A team's
+    tool has no person-owner: the team holds it, and the roles that may change
+    its credentials (Editor and up) also set its fixed values.
+
+    Args:
+        ra: The caller's access to the tool.
+
+    Returns:
+        bool: True for the owner, or for a team role with ``edit_credentials``.
+    """
+    return ra.access == "owner" or (ra.is_team_item and ra.can("edit_credentials"))
+
+
+# What a team workspace can't hold: a paired device runs on one person's
+# machine; a connected service's tool runs on the team's own connection (set
+# up from it) or on each person's own account (``/api/tools/member``).
+CODE_OAUTH_PERSONAL_ONLY = "oauth_personal_only"
+CODE_REMOTE_DEVICE_PERSONAL_ONLY = "remote_device_personal_only"
+CODE_CONNECTOR_PERSONAL_ONLY = "connector_personal_only"
+_PERSONAL_ONLY_MESSAGES = {
+    CODE_OAUTH_PERSONAL_ONLY: "A server you sign in to can only be added in your Personal workspace for now",
+    CODE_REMOTE_DEVICE_PERSONAL_ONLY: "A paired device can only be added in your Personal workspace",
+    CODE_CONNECTOR_PERSONAL_ONLY: "A connected service can only be added in your Personal workspace for now",
+}
+
+
+def personal_only_response(code: str):
+    """403 ``{success: false, error: code, message}`` for something a team workspace can't hold.
+
+    Args:
+        code: One of the ``CODE_*_PERSONAL_ONLY`` codes.
+
+    Returns:
+        The Flask response.
+    """
+    return WorkspaceError(403, code, _PERSONAL_ONLY_MESSAGES[code]).response()
+
+
+def team_tool_refusal(
+    tool_name: str, config: Optional[dict] = None, *, member: bool = False, team_connection: bool = False,
+) -> Optional[str]:
+    """Why a team workspace can't hold a tool of this kind, or None when it can.
+
+    A paired device runs on one person's machine. A connected service's tool
+    needs an account: in a team either each person's own (``member``) or a
+    connection the team holds (``team_connection``); with neither (a pasted
+    secret, an imported agent's tool) it can't be held. An MCP server you sign
+    in to is still personal here.
+
+    Args:
+        tool_name: The tool's catalog name (``remote_device``, ``telegram``, ``mcp_tool``, ...).
+        config: The tool's config; only an MCP server's ``auth_type`` is read. Without it (the
+            catalog), the kind alone decides.
+        member: The tool runs on each person's own account.
+        team_connection: The tool runs on a connection the team holds.
+
+    Returns:
+        Optional[str]: One of the ``CODE_*_PERSONAL_ONLY`` codes, or None.
+    """
+    if tool_name == "remote_device":
+        return CODE_REMOTE_DEVICE_PERSONAL_ONLY
+    if definition_for_tool(tool_name) is not None and not (member or team_connection):
+        return CODE_CONNECTOR_PERSONAL_ONLY
+    if tool_name == "mcp_tool" and isinstance(config, dict) and config.get("auth_type") == "oauth":
+        return CODE_OAUTH_PERSONAL_ONLY
+    return None
+
+
+def create_workspace(conn: Connection) -> Workspace:
+    """The workspace a create goes into, checked: Personal, or a team where the caller is Editor or above.
+
+    Args:
+        conn: Open connection.
+
+    Returns:
+        Workspace: Where the new item lives; ``owner_for_create`` gives its owner and creator.
+
+    Raises:
+        WorkspaceError: 404 for a team the caller isn't in, 403 ``workspace_role_required`` for a Viewer.
+    """
+    workspace = current_workspace(conn)
+    require_workspace_role(workspace, "editor")
+    return workspace
+
+
+def team_access_compat(team_role: Optional[str]) -> str:
+    """The legacy ``team_access`` of a team row (today's UI knows ``viewer`` and ``editor`` only)."""
+    return "viewer" if team_role in (None, "viewer") else "editor"
 
 
 def check_token_tool_untouched(decoded_token: Optional[dict], tool_doc: dict, owner_id: str) -> None:
@@ -460,6 +574,28 @@ def _api_tool_fixed_values_changed(new_config: dict, existing_config: dict) -> b
     return False
 
 
+def _mcp_url_parameters_refused(tool_name: Optional[str], config: Optional[dict]):
+    """A 400 when an MCP tool's new URL is at a preset's server and lacks a parameter it needs, else None.
+
+    The same check as ``/api/mcp_server/save``, so these routes can't put a
+    tool back on a preset's plain URL (Supabase's without its project ref).
+
+    Args:
+        tool_name: The tool's template name.
+        config: The incoming ``config``.
+
+    Returns:
+        The response to send, or None to go on.
+    """
+    if tool_name != "mcp_tool" or not isinstance(config, dict) or "server_url" not in config:
+        return None
+    try:
+        check_url_parameters(str(config.get("server_url") or "").strip())
+    except UrlParametersRequired as exc:
+        return make_response(jsonify({"success": False, "message": str(exc)}), 400)
+    return None
+
+
 def _connection_server_moved(tool_doc: dict, new_config: Optional[dict]) -> bool:
     """Whether a config save re-points a connection-backed MCP tool.
 
@@ -507,7 +643,9 @@ def check_oauth_mcp_owner_only(
     server to OAuth, or re-ran its sign-in would be using the owner's account
     somewhere the owner never chose. Until connectors own OAuth accounts, any
     connection change on a server that is (or would become) OAuth is
-    owner-only.
+    owner-only. A team's tool has no person-owner (``access`` is never
+    ``owner`` on it), so nobody changes an OAuth server there: a team can't
+    hold one in v1.
 
     Args:
         ra: The caller's access to the tool.
@@ -536,10 +674,10 @@ def check_api_tool_fixed_values(
         existing_config: The stored ``config``.
 
     Raises:
-        AccessDenied: 403 when a non-owner changes a fixed value (see
-            :func:`_api_tool_fixed_values_changed`).
+        AccessDenied: 403 when someone without owner rights (:func:`holds_owner_rights`) changes a fixed
+            value (see :func:`_api_tool_fixed_values_changed`).
     """
-    if ra.access != "owner" and _api_tool_fixed_values_changed(new_config or {}, existing_config or {}):
+    if not holds_owner_rights(ra) and _api_tool_fixed_values_changed(new_config or {}, existing_config or {}):
         raise AccessDenied(403, _FIXED_VALUES_OWNER_ONLY)
 
 
@@ -573,13 +711,16 @@ def _prepare_tool_config(tool_doc: dict, new_config: dict, config_requirements: 
 
 
 def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
-    """``tool_id -> team name`` through which a grant reaches ``user_id``."""
+    """``tool_id -> team name`` through which a grant reaches ``user_id``.
+
+    Only a grant that gives access counts: one whose owner left that team is paused.
+    """
     ids = [str(t) for t in tool_ids if looks_like_uuid(str(t))]
     if not ids:
         return {}
     rows = conn.execute(
         text(
-            """
+            f"""
             SELECT DISTINCT ON (g.resource_id) g.resource_id, t.name
             FROM team_resource_grants g
             JOIN team_members m ON m.team_id = g.team_id
@@ -587,6 +728,7 @@ def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
             WHERE m.user_id = :user_id AND g.resource_type = 'tool'
               AND g.resource_id = ANY(CAST(:ids AS uuid[]))
               AND (g.target_user_id IS NULL OR g.target_user_id = :user_id)
+              AND {live_grant_sql("tool")}
             ORDER BY g.resource_id, (g.access_level = 'editor') DESC, t.name
             """
         ),
@@ -596,15 +738,11 @@ def _shared_via(conn: Connection, user_id: str, tool_ids: list) -> dict:
 
 
 def _owner_labels(conn: Connection, owner_ids) -> dict:
-    """``user_id -> email`` for the owners that have one on record."""
-    ids = sorted({str(o) for o in owner_ids if o})
-    if not ids:
-        return {}
-    rows = conn.execute(
-        text("SELECT user_id, email FROM users WHERE user_id = ANY(:ids) AND email IS NOT NULL"),
-        {"ids": ids},
-    ).fetchall()
-    return {r[0]: r[1] for r in rows}
+    """``user_id -> label`` for the owners that have one: a person's email, a team principal's team name.
+
+    A team's tool is named by its team, never by the principal id.
+    """
+    return _user_labels(conn, (str(o) for o in owner_ids if o))
 
 
 def _load_owned_row(conn: Connection, ra: ResourceAccess) -> Optional[dict]:
@@ -670,20 +808,34 @@ _CUSTOM_CONNECTOR_TOOLS = {"mcp_tool": "custom_mcp", "api_tool": "custom_openapi
 
 @tools_ns.route("/available_tools")
 class AvailableTools(Resource):
-    @api.doc(description="Get available tools for a user")
+    @api.doc(
+        description=(
+            "Get the tools the caller can add in the current workspace. A team workspace leaves out "
+            "what a team can't hold (connected services and the paired-device tool). The response "
+            "echoes ``workspace`` ({kind, team_id, role})."
+        )
+    )
     def get(self):
         if not request.decoded_token:
             return make_response(jsonify({"success": False}), 401)
         from docsgpt.connectors import service as connection_service
 
+        workspace: Optional[Workspace] = None
         try:
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 policies = connection_service.load_policies(conn)
+        except WorkspaceError as err:
+            return err.response()
         except Exception:
             # Without the admin's switches, fall back to the defaults (a
             # connector is on when its server settings are present).
             current_app.logger.warning("Could not read connector policies", exc_info=True)
             policies = {}
+        # Unread membership must not widen a team's list: a named team still gets the team's.
+        in_team = workspace.is_team if workspace is not None else parse_workspace_ref(request) is not None
+        # The services the team holds a connection for; any other one's tool runs on each person's own.
+        team_keys = _team_connector_keys(workspace) if in_team else set()
         tools_metadata = []
         for tool_name, tool_instance in tool_manager.tools.items():
             # One broken tool (a custom one without a class docstring, or one
@@ -709,23 +861,52 @@ class AvailableTools(Resource):
                     group, connector_key = "custom", _CUSTOM_CONNECTOR_TOOLS[tool_name]
                 else:
                     group, connector_key = "built_in", None
+                if in_team and team_tool_refusal(tool_name, member=group == "service") is not None:
+                    continue
             except Exception as err:
                 current_app.logger.error(
                     f"Skipping tool {tool_name!r} in available tools: {err}", exc_info=True
                 )
                 continue
-            tools_metadata.append(
+            entry = {
+                "name": tool_name,
+                "displayName": name,
+                "description": description,
+                "configRequirements": config_req,
+                "actions": actions,
+                "group": group,
+                "connector_key": connector_key,
+            }
+            if in_team and group == "service":
+                # Without a team connection for it, only "each person signs in" is on offer.
+                entry["member_only"] = connector_key not in team_keys
+            tools_metadata.append(entry)
+        return make_response(
+            jsonify(
                 {
-                    "name": tool_name,
-                    "displayName": name,
-                    "description": description,
-                    "configRequirements": config_req,
-                    "actions": actions,
-                    "group": group,
-                    "connector_key": connector_key,
+                    "success": True,
+                    "data": tools_metadata,
+                    "workspace": workspace.payload() if workspace is not None else None,
                 }
-            )
-        return make_response(jsonify({"success": True, "data": tools_metadata}), 200)
+            ),
+            200,
+        )
+
+
+def _team_connector_keys(workspace: Optional[Workspace]) -> set:
+    """The catalog keys of the connections a team workspace holds; empty when unknown."""
+    if workspace is None or not workspace.is_team:
+        return set()
+    from docsgpt.connectors.catalog import connector_key_for_row
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    try:
+        with db_readonly() as conn:
+            rows = ConnectorSessionsRepository(conn).list_for_user(workspace.owner_id)
+    except Exception:
+        current_app.logger.warning("Could not read the team's connections", exc_info=True)
+        return set()
+    return {connector_key_for_row(row) for row in rows}
 
 
 def _stamp_action_access(tool: dict) -> dict:
@@ -752,7 +933,17 @@ def _stamp_action_access(tool: dict) -> dict:
 
 @tools_ns.route("/get_tools")
 class GetTools(Resource):
-    @api.doc(description="Get tools created by a user")
+    @api.doc(
+        description=(
+            "Get the tools of the workspace the request names (header X-DocsGPT-Workspace, default Personal): "
+            "in a team, the team's tools with the caller's team role, then those other teams share with it (origin "
+            "team_shared, shared_from {team_id, name}, the receiver's actions); in Personal, the caller's own and those "
+            "shared with them, never a team's. Each row carries workspace, created_by {user_id, label}, access, "
+            "allowed_actions, team_role, origin and its filing in the workspace's folder tree (folder_id, "
+            "folder_path [{id, name}] from the top-level folder down; built-in tools have none); the response "
+            "echoes workspace {kind, team_id, role}"
+        )
+    )
     def get(self):
         try:
             decoded_token = request.decoded_token
@@ -760,22 +951,45 @@ class GetTools(Resource):
                 return make_response(jsonify({"success": False}), 401)
             user = decoded_token.get("sub")
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 tools_repo = UserToolsRepository(conn)
-                rows = tools_repo.list_for_user(user)
                 user_doc = UsersRepository(conn).get(user)
+                if workspace.is_team:
+                    # The team's tools by the caller's role, then those other teams share with it; nobody's
+                    # personal ones.
+                    rows = []
+                    team_rows = tools_repo.list_for_user(workspace.owner_id)
+                    received = received_into(conn, workspace, "tool")
+                    received_rows = tools_repo.list_by_ids(list(received))
+                    team_ids = [str(r["id"]) for r in [*team_rows, *received_rows]]
+                    shared_rows, shared_ids, team_shared = [], [], {}
+                    owner_labels = _owner_labels(conn, [workspace.owner_id])
+                else:
+                    rows = [r for r in tools_repo.list_for_user(user) if not is_principal_id(r.get("user_id"))]
+                    team_rows, team_ids = [], []
+                    received, received_rows = {}, []
+                    owned_ids = {str(r["id"]) for r in rows}
+                    # Tools shared with the caller's teams. Secrets are stripped
+                    # unconditionally below — a grantee never sees the owner's
+                    # credentials (they only run with the owner's creds server-side).
+                    team_shared = visible_with_access(conn, user, "tool")
+                    shared_ids = [tid for tid in team_shared if tid not in owned_ids]
+                    # A team's tool never shows in Personal, whatever a lookup answered.
+                    shared_rows = [
+                        r for r in tools_repo.list_by_ids(shared_ids) if not is_principal_id(r.get("user_id"))
+                    ]
+                    shared_ids = [str(r["id"]) for r in shared_rows]
+                    owner_labels = _owner_labels(conn, [r.get("user_id") for r in shared_rows])
                 owned_ids = {str(r["id"]) for r in rows}
-                # Tools shared with the caller's teams. Secrets are stripped
-                # unconditionally below — a grantee never sees the owner's
-                # credentials (they only run with the owner's creds server-side).
-                team_shared = visible_with_access(conn, user, "tool")
-                shared_ids = [tid for tid in team_shared if tid not in owned_ids]
-                shared_rows = tools_repo.list_by_ids(shared_ids)
                 # "Telegram · Alerts bot" when the owner has several bots.
-                account_names = account_tool_names(conn, [*rows, *shared_rows])
+                account_names = account_tool_names(conn, [*rows, *shared_rows, *team_rows, *received_rows])
                 switches = settings_many(conn, "tool", [*owned_ids, *shared_ids])
-                prefs = UserToolPreferencesRepository(conn).in_chat_many(user, shared_ids)
+                # A member's "In my chats" switch is theirs, for shared and team tools alike.
+                prefs = UserToolPreferencesRepository(conn).in_chat_many(user, [*shared_ids, *team_ids])
                 shared_via = _shared_via(conn, user, shared_ids)
-                owner_labels = _owner_labels(conn, [r.get("user_id") for r in shared_rows])
+                creators = creator_payloads(conn, user, [*rows, *shared_rows, *team_rows, *received_rows])
+                # Each tool's filing in this workspace's folder tree.
+                filing = ItemFiling(conn, workspace.owner_id, "tool")
             user_tools = []
 
             def _shape_tool(row, *, ownership="user", force_strip_secret=False):
@@ -805,6 +1019,8 @@ class GetTools(Resource):
                     # Header / query-param values are secrets for everyone.
                     tool_copy["config"] = mask_api_tool_config(tool_copy.get("config") or {})
                 tool_copy["ownership"] = ownership
+                tool_copy["created_by"] = created_by_payload(row, creators)
+                tool_copy.update(filing.fields(row["id"]))
                 if str(row["id"]) in account_names:
                     tool_copy["customName"] = tool_copy["displayName"] = account_names[str(row["id"])]
                 return _stamp_action_access(tool_copy)
@@ -822,6 +1038,30 @@ class GetTools(Resource):
                 shaped["in_chat"] = prefs.get(tid, False)
                 shaped["shared_via"] = shared_via.get(tid)
                 shaped["owner_label"] = owner_labels.get(row.get("user_id"))
+                user_tools.append(shaped)
+            for row in team_rows:
+                tid = str(row["id"])
+                # Compat: today's UI reads a team row like a shared one (secrets stripped, owner named).
+                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
+                shaped["team_access"] = team_access_compat(workspace.role)
+                shaped.update(payload_for(
+                    "tool", None, None, team_id=workspace.team_id, team_role=workspace.role,
+                    policy=workspace.outside_policy,
+                ))
+                # ``status`` is nobody's switch on a team tool: each member has their own.
+                shaped["in_chat"] = prefs.get(tid, False)
+                shaped["owner_label"] = owner_labels.get(row.get("user_id"))
+                user_tools.append(shaped)
+            for row in received_rows:
+                tid = str(row["id"])
+                access = received[tid.lower()]
+                # As a team row (secrets stripped), named by the team that shares it; filed in no tree here.
+                shaped = _shape_tool(row, ownership="team", force_strip_secret=True)
+                shaped.update({"folder_id": None, "folder_path": []})
+                shaped["team_access"] = "viewer"
+                shaped.update(access)
+                shaped["in_chat"] = prefs.get(tid, False)
+                shaped["owner_label"] = access["shared_from"]["name"]
                 user_tools.append(shaped)
 
             # ``scheduler`` is dual-registered (default chat tool + agent-
@@ -861,10 +1101,12 @@ class GetTools(Resource):
                     conn, user, "tool", user_tools,
                     deletable_ids=deletable_ids_of(user_tools), agent_allowlist=used_by_agent_allowlist(request),
                 )
+        except WorkspaceError as err:
+            return err.response()
         except Exception as err:
             current_app.logger.error(f"Error getting user tools: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify({"success": True, "tools": user_tools}), 200)
+        return make_response(jsonify({"success": True, "tools": user_tools, "workspace": workspace.payload()}), 200)
 
 
 @tools_ns.route("/create_tool")
@@ -888,6 +1130,9 @@ class CreateTool(Resource):
                 ),
                 "status": fields.Boolean(
                     required=True, description="Status of the tool"
+                ),
+                "folder_id": fields.String(
+                    required=False, description="A folder of the workspace's tree to file the new tool in"
                 ),
             },
         )
@@ -913,6 +1158,22 @@ class CreateTool(Resource):
             # Only removing a connection notes that it was removed.
             data["config"] = carry_removed_connection(data["config"], None)
         try:
+            with db_readonly() as conn:
+                workspace = create_workspace(conn)
+        except WorkspaceError as err:
+            return err.response()
+        if workspace.is_team:
+            refusal = team_tool_refusal(data["name"], data.get("config"))
+            if refusal is not None:
+                return personal_only_response(refusal)
+        owner_id, created_by = workspace.owner_for_create(user)
+        try:
+            with db_readonly() as conn:
+                # A folder of the tree the new tool lands in: the caller's own, or the team's.
+                folder_pg = filing_folder(conn, owner_id, data.get("folder_id"))
+        except FolderError as err:
+            return err.response()
+        try:
             if data["name"] == "mcp_tool":
                 server_url = (data.get("config", {}).get("server_url") or "").strip()
                 if server_url:
@@ -923,6 +1184,9 @@ class CreateTool(Resource):
                             jsonify({"success": False, "message": f"Invalid server URL: {exc}"}),
                             400,
                         )
+            refused = _mcp_url_parameters_refused(data["name"], data.get("config"))
+            if refused is not None:
+                return refused
             tool_instance = tool_manager.tools.get(data["name"])
             if not tool_instance:
                 return make_response(
@@ -937,7 +1201,7 @@ class CreateTool(Resource):
             return make_response(jsonify({"success": False}), 400)
         definition = definition_for_tool(data["name"])
         if definition is not None:
-            connected = _create_connected_tool(user, data, definition, tool_instance)
+            connected = _create_connected_tool(user, data, definition, tool_instance, folder_id=folder_pg)
             if connected is not None:
                 return connected
         try:
@@ -957,15 +1221,18 @@ class CreateTool(Resource):
                         ),
                         400,
                     )
+            # Secrets are sealed under the owner: the team's principal for a team tool,
+            # so every member's run decrypts them as the team.
             if data["name"] == "api_tool":
-                storage_config = _seal_api_tool_secrets(data["config"], {}, user)
+                storage_config = _seal_api_tool_secrets(data["config"], {}, owner_id)
             else:
                 storage_config = _encrypt_secret_fields(
-                    data["config"], config_requirements, user
+                    data["config"], config_requirements, owner_id
                 )
+            in_chat = bool(data.get("status", True))
             with db_session() as conn:
                 created = UserToolsRepository(conn).create(
-                    user,
+                    owner_id,
                     data["name"],
                     config=storage_config,
                     custom_name=data.get("customName", ""),
@@ -973,8 +1240,15 @@ class CreateTool(Resource):
                     description=data["description"],
                     config_requirements=config_requirements,
                     actions=transformed_actions,
-                    status=bool(data.get("status", True)),
+                    # A team tool's ``status`` stays off: each member switches it into
+                    # their own chats, the creator included.
+                    status=in_chat and workspace.is_personal,
+                    created_by=created_by,
                 )
+                if workspace.is_team and in_chat:
+                    UserToolPreferencesRepository(conn).set_in_chat(created_by, str(created["id"]), True)
+                if folder_pg:
+                    FolderItemsRepository(conn).file(owner_id, "tool", str(created["id"]), folder_pg)
             new_id = str(created["id"])
         except Exception as err:
             current_app.logger.error(f"Error creating tool: {err}", exc_info=True)
@@ -982,12 +1256,237 @@ class CreateTool(Resource):
         return make_response(jsonify({"id": new_id}), 200)
 
 
-def _create_connected_tool(user, data, definition, tool_instance):
+CODE_CONNECT_PERSONAL_FIRST = "connect_personal_first"
+CODE_MEMBER_MODE_NOT_ALLOWED = "member_mode_not_allowed"
+
+
+@tools_ns.route("/tools/member")
+class CreateMemberTool(Resource):
+    @api.expect(
+        api.model(
+            "CreateMemberToolModel",
+            {
+                "connector_key": fields.String(
+                    required=True, description="The service each person signs in to (a catalog key)"
+                ),
+                "server_url": fields.String(
+                    required=False,
+                    description="For custom_mcp: the sign-in MCP server each person signs in to (a preset's "
+                    "server counts as that preset)",
+                ),
+                "transport_type": fields.String(
+                    required=False, description="For custom_mcp: auto (default), http or sse"
+                ),
+                "displayName": fields.String(required=False, description="For custom_mcp: the tool's name"),
+                "permissions": fields.Raw(
+                    required=False, description="Per-action permission overrides: {action: always|ask|off}"
+                ),
+                "folder_id": fields.String(
+                    required=False, description="A folder of the team's tree to file the new tool in"
+                ),
+                "status": fields.Boolean(
+                    required=False, description="Switch it into the creator's own chats (default true)"
+                ),
+            },
+        )
+    )
+    @api.doc(
+        description=(
+            "Add a team tool that runs on each person's own account for a service (member mode). "
+            "Editor and up in the team the workspace header names. No secret is stored: each run uses "
+            "the caller's own connection. An MCP service's actions are read with the creator's own "
+            "connection (409 connect_personal_first without one). 409 member_mode_not_allowed when an "
+            "admin makes every tool of that service run on its owner's account. A custom sign-in MCP server "
+            "(connector_key custom_mcp with server_url) is read with the creator's own sign-in to that server."
+        )
+    )
+    def post(self):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        data = request.get_json(silent=True) or {}
+        from docsgpt.connectors import catalog as connector_catalog
+        from docsgpt.connectors import service as connection_service
+        from docsgpt.connectors.permissions import apply_default_permissions, apply_permission
+        from docsgpt.connectors.resolve import MODE_OWNER, own_connection
+
+        key = str(data.get("connector_key") or "").strip()
+        server_url = None
+        if key == "custom_mcp":
+            server_url, refused = _member_custom_server(data)
+            if refused is not None:
+                return refused
+            preset = connector_catalog.preset_for_url(server_url)
+            if preset is not None:
+                # A preset's server is that preset, with its own tool.
+                key, server_url = preset.key, None
+        definition = connector_catalog.get_definition(key) if key else None
+        permissions = data.get("permissions") if isinstance(data.get("permissions"), dict) else {}
+        try:
+            with db_readonly() as conn:
+                workspace = create_workspace(conn)
+                if not workspace.is_team:
+                    raise WorkspaceError(
+                        400, "team_workspace_required", "A tool for each person's own account is added in a team",
+                    )
+                owner_id, created_by = workspace.owner_for_create(user)
+                folder_pg = filing_folder(conn, owner_id, data.get("folder_id"))
+                custom_server = server_url is not None
+                if definition is None or not definition.tool_templates or (
+                    definition.publisher == "custom" and not custom_server
+                ):
+                    return make_response(
+                        jsonify({"success": False, "message": "This service has no tool to add"}), 400,
+                    )
+                if not (definition.configured and connection_service.connector_is_enabled(
+                    connection_service.load_policies(conn), definition.key,
+                )):
+                    return make_response(jsonify({"success": False, "message": "This service is turned off"}), 403)
+                if connection_service.forced_credential_mode(conn, definition.key) == MODE_OWNER:
+                    return WorkspaceError(
+                        409, CODE_MEMBER_MODE_NOT_ALLOWED,
+                        "An admin set this service to run on the account of whoever sets it up",
+                    ).response()
+                template = definition.tool_templates[0]
+                tool_instance = tool_manager.tools.get(template)
+                if tool_instance is None:
+                    return make_response(jsonify({"success": False, "message": "Tool not found"}), 404)
+                config: dict = {}
+                mine = None
+                if template == "mcp_tool":
+                    probe = {"name": template, "connector_key": definition.key,
+                             "config": {"server_url": server_url if custom_server else definition.mcp_url}}
+                    mine = own_connection(conn, user, probe)
+                    if custom_server and mine is not None and mine.get("auth_kind") != "mcp_oauth":
+                        # A custom server on each person's account is one each person signs in to.
+                        mine = None
+        except WorkspaceError as err:
+            return err.response()
+        except FolderError as err:
+            return err.response()
+        description = (tool_instance.__doc__ or template).strip().split("\n", 1)
+        description = description[1].strip() if len(description) > 1 else ""
+        display_name = definition.name
+        if template == "mcp_tool":
+            if mine is None:
+                return _connect_personal_first(definition.key)
+            if custom_server:
+                config = _custom_member_config(server_url, data.get("transport_type"))
+                display_name = str(data.get("displayName") or "").strip() or urlparse(server_url).netloc
+            else:
+                config = connection_service.connection_mcp_config(definition, connection=mine)
+            if config is None:
+                return make_response(
+                    jsonify({"success": False, "message": "This service needs its server address first"}), 400,
+                )
+            from docsgpt.connectors import mcp as connector_mcp
+
+            try:
+                # Read with the creator's own sign-in; none of its tokens are kept on the tool.
+                if custom_server:
+                    discovered = connector_mcp.discover_server_actions(user, mine, config)
+                else:
+                    discovered = connector_mcp.discover_connection_actions(user, mine)
+            except connection_service.ConnectionUnavailable:
+                return _connect_personal_first(definition.key)
+            except Exception as err:
+                current_app.logger.warning(f"Could not read {definition.key} actions: {err}", exc_info=True)
+                return make_response(
+                    jsonify({"success": False, "message": "Could not read the service's actions"}), 502,
+                )
+            actions = transform_actions(copy.deepcopy(discovered))
+            if definition.publisher == "preset" or custom_server:
+                description = connection_service.mcp_tool_description(config)
+        else:
+            actions = transform_actions(copy.deepcopy(tool_instance.get_actions_metadata()))
+        actions = apply_default_permissions(template, actions, definition.default_actions)
+        try:
+            for index, action in enumerate(actions):
+                permission = permissions.get(action.get("name"))
+                if permission:
+                    actions[index] = apply_permission(action, permission)
+        except ValueError as err:
+            return make_response(jsonify({"success": False, "message": str(err)}), 400)
+        in_chat = bool(data.get("status", True))
+        try:
+            with db_session() as conn:
+                created = UserToolsRepository(conn).create(
+                    owner_id,
+                    template,
+                    config=config,
+                    custom_name=display_name,
+                    display_name=display_name,
+                    description=description,
+                    config_requirements=tool_instance.get_config_requirements(),
+                    actions=actions,
+                    # A team tool's ``status`` stays off: each member switches it into their own chats.
+                    status=False,
+                    credential_mode="member",
+                    connector_key=definition.key,
+                    created_by=created_by,
+                )
+                if in_chat:
+                    UserToolPreferencesRepository(conn).set_in_chat(created_by, str(created["id"]), True)
+                if folder_pg:
+                    FolderItemsRepository(conn).file(owner_id, "tool", str(created["id"]), folder_pg)
+        except Exception as err:
+            current_app.logger.error(f"Error creating member tool: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "id": str(created["id"])}), 200)
+
+
+_MEMBER_MCP_TRANSPORTS = ("auto", "http", "sse")
+
+
+def _member_custom_server(data: dict):
+    """The custom MCP server a member-mode tool names, checked against the outbound URL rules.
+
+    Args:
+        data: The request body (``server_url``, ``transport_type``).
+
+    Returns:
+        ``(server_url, None)``, or ``(None, response)`` with a 400 to return.
+    """
+    server_url = str(data.get("server_url") or "").strip()
+    if not server_url:
+        return None, make_response(jsonify({"success": False, "message": "server_url is required"}), 400)
+    if (data.get("transport_type") or "auto").lower() not in _MEMBER_MCP_TRANSPORTS:
+        return None, make_response(jsonify({"success": False, "message": "Unsupported transport_type"}), 400)
+    try:
+        validate_url(server_url)
+    except SSRFError as exc:
+        message = f"Invalid server URL: {exc}"
+        return None, make_response(jsonify({"success": False, "error": message, "message": message}), 400)
+    return server_url, None
+
+
+def _custom_member_config(server_url: str, transport_type: Optional[str]) -> dict:
+    """The stored config of a custom sign-in server's tool on each person's own account: no secret, no account."""
+    return {
+        "server_url": server_url,
+        "auth_type": "oauth",
+        "transport_type": (transport_type or "auto").lower(),
+        "timeout": 30,
+    }
+
+
+def _connect_personal_first(connector_key: str):
+    """409 ``connect_personal_first``: the caller connects their own account to the service first."""
+    return make_response(jsonify({
+        "success": False, "error": CODE_CONNECT_PERSONAL_FIRST, "connector_key": connector_key,
+        "message": "Connect your own account to this service first",
+    }), 409)
+
+
+def _create_connected_tool(user, data, definition, tool_instance, folder_id: Optional[str] = None):
     """Create a service tool whose secret lives on a connection, not the tool.
 
     Uses ``connection_id`` when given, otherwise stores the pasted secret on
     a connection (reusing an identical one). Returns None to fall back to the
     legacy path when a multi-user install still runs on the default key.
+    ``folder_id`` (one of the caller's folders, already checked) files the new
+    tool there.
     """
     from docsgpt.connectors import catalog as connector_catalog
     from docsgpt.connectors import service as connection_service
@@ -1021,6 +1520,8 @@ def _create_connected_tool(user, data, definition, tool_instance):
                 config=public,
                 status=bool(data.get("status", True)),
             )
+            if folder_id:
+                FolderItemsRepository(conn).file(user, "tool", str(created["id"]), folder_id)
     except connection_service.EncryptionKeyNotConfigured:
         return None
     except connection_service.ConnectorDisabled as err:
@@ -1074,6 +1575,9 @@ class UpdateTool(Resource):
                     fields.Raw, description="Actions the tool can perform"
                 ),
                 "status": fields.Boolean(description="Status of the tool"),
+                "folder_id": fields.String(
+                    description="File the tool in this folder of its workspace's tree; null takes it out"
+                ),
             },
         )
     )
@@ -1175,7 +1679,7 @@ class UpdateTool(Resource):
                     # the owner's (as on /api/update_tool_actions).
                     try:
                         update_data["actions"] = merge_submitted_actions(
-                            _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                            _stored_actions(tool_doc), data["actions"], may_change_pins=holds_owner_rights(ra),
                         )
                     except PinChangeRefused as err:
                         return make_response(jsonify({"success": False, "message": str(err)}), 403)
@@ -1188,6 +1692,9 @@ class UpdateTool(Resource):
                         check_oauth_mcp_owner_only(ra, existing_config, data["config"])
                     if _connection_server_moved(tool_doc, data["config"]):
                         return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                    refused = _mcp_url_parameters_refused(tool_name, data["config"])
+                    if refused is not None:
+                        return refused
                     if tool_name == "api_tool":
                         check_api_tool_fixed_values(ra, data["config"], existing_config)
                     if tool_name == "api_tool" and not _api_tool_config_needs_credentials(
@@ -1246,12 +1753,21 @@ class UpdateTool(Resource):
                         UserToolPreferencesRepository(conn).set_in_chat(
                             user, str(tool_doc["id"]), bool(data["status"])
                         )
+                if "folder_id" in data:
+                    # A team's tool is filed in the team's tree, anyone else's in the caller's own.
+                    check_action(ra, "move_folder")
+                    tree_owner = filing_owner(ra, user)
+                    FolderItemsRepository(conn).file(
+                        tree_owner, "tool", str(tool_doc["id"]), filing_folder(conn, tree_owner, data["folder_id"]),
+                    )
                 if update_data:
                     UserToolsRepository(conn).update(
                         str(tool_doc["id"]), ra.owner_id, _api_to_update_fields(update_data),
                     )
         except AccessDenied as err:
             return denied_response(err)
+        except FolderError as err:
+            return err.response()
         except CredentialsRequired as err:
             return make_response(jsonify({"success": False, "message": str(err)}), 400)
         except Exception as err:
@@ -1327,6 +1843,9 @@ class UpdateToolConfig(Resource):
                             )
                 if _connection_server_moved(tool_doc, data["config"]):
                     return make_response(jsonify({"success": False, "message": _MOVE_THROUGH_MCP_SAVE}), 400)
+                refused = _mcp_url_parameters_refused(tool_name, data["config"])
+                if refused is not None:
+                    return refused
                 if tool_name == "api_tool":
                     check_api_tool_fixed_values(ra, data["config"], tool_doc.get("config"))
                 tool_instance = tool_manager.tools.get(tool_name)
@@ -1430,7 +1949,7 @@ class UpdateToolActions(Resource):
                 # a Telegram chat would redirect the owner's bot).
                 try:
                     actions = merge_submitted_actions(
-                        _stored_actions(tool_doc), data["actions"], may_change_pins=ra.access == "owner",
+                        _stored_actions(tool_doc), data["actions"], may_change_pins=holds_owner_rights(ra),
                     )
                 except PinChangeRefused as err:
                     return make_response(jsonify({"success": False, "message": str(err)}), 403)

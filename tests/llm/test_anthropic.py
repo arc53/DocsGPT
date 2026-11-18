@@ -1168,7 +1168,7 @@ class TestStructuredOutput:
 
         status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
 
-        assert status == {"type": "string", "enum": ["open", "closed"]}
+        assert status == {"enum": ["open", "closed"]}
 
     def test_prepare_type_list_splits_enum_values_by_type(self, llm):
         schema = {
@@ -1181,14 +1181,8 @@ class TestStructuredOutput:
 
         props = llm.prepare_structured_output_format(schema)["schema"]["properties"]
 
-        assert props["status"]["anyOf"] == [
-            {"type": "string", "enum": ["open"]},
-            {"type": "null"},
-        ]
-        assert props["code"]["anyOf"] == [
-            {"type": "integer", "enum": [1]},
-            {"type": "string", "enum": ["a"]},
-        ]
+        assert props["status"]["anyOf"] == [{"enum": ["open"]}, {"type": "null"}]
+        assert props["code"]["anyOf"] == [{"enum": [1]}, {"enum": ["a"]}]
 
     def test_prepare_type_list_enum_matching_no_type_returns_none(self, llm):
         """No value satisfies such a schema; it goes out unenforced rather
@@ -1210,7 +1204,7 @@ class TestStructuredOutput:
 
         kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
 
-        assert kind["anyOf"][0] == {"type": "string", "enum": ["a"]}
+        assert kind["anyOf"][0] == {"enum": ["a"]}
         assert {branch["type"] for branch in kind["anyOf"][1]["anyOf"]} == {"integer", "null"}
 
     def test_prepare_typeless_enum_of_containers_returns_none(self, llm):
@@ -1236,10 +1230,10 @@ class TestStructuredOutput:
 
         kind = llm.prepare_structured_output_format(schema)["schema"]["properties"]["kind"]
 
-        assert kind["enum"] == ["invoice"]
-        assert kind["type"] == "string"
+        assert kind == {"enum": ["invoice"]}
 
-    def test_prepare_typeless_enum_gets_its_type(self, llm):
+    def test_prepare_typeless_enum_is_kept(self, llm):
+        """The SDK sends ``enum`` and ``const`` without a ``type`` beside them (anthropic 2.7)."""
         schema = {
             "type": "object",
             "properties": {"status": {"enum": ["open", "closed"]}},
@@ -1247,7 +1241,7 @@ class TestStructuredOutput:
 
         status = llm.prepare_structured_output_format(schema)["schema"]["properties"]["status"]
 
-        assert status == {"type": "string", "enum": ["open", "closed"]}
+        assert status == {"enum": ["open", "closed"]}
 
     def test_prepare_definitions_become_defs(self, llm):
         """Draft-07 ``definitions`` would otherwise land in a description and

@@ -304,7 +304,12 @@ def _sent_chars(messages: list[dict]) -> int:
 
 
 def _failure_event(error: BaseException, fallback: str) -> dict:
-    """The ``error`` event for a failed model call: ``model_auth`` for a key problem, else ``model_error``."""
+    """The ``error`` event for a failed model call: ``quota`` when the caller's allowance ran out during the turn,
+    ``model_auth`` for a key problem, else ``model_error``."""
+    from docsgpt.quotas.run_limits import RunLimitReached
+
+    if isinstance(error, RunLimitReached):
+        return _error("quota", error.message)
     if is_auth_failure(error):
         return _error("model_auth", KEY_REFUSED)
     return _error("model_error", fallback)
@@ -312,7 +317,13 @@ def _failure_event(error: BaseException, fallback: str) -> dict:
 
 def _log_failure(what: str, error: BaseException) -> None:
     """Log a failed model call or build: one line for a refused key (``model_auth``, an expected setup problem whose
-    message may quote the key), the traceback for anything else."""
+    message may quote the key), one line for a turn stopped at the caller's allowance (expected, not a fault), the
+    traceback for anything else."""
+    from docsgpt.quotas.run_limits import RunLimitReached
+
+    if isinstance(error, RunLimitReached):
+        logger.info("drafter: %s: the caller's allowance is used up (%s)", what, error.error_type)
+        return
     if is_auth_failure(error):
         status = getattr(error, "status_code", None)
         logger.warning("drafter: %s: model_auth (%s%s)", what, type(error).__name__,
@@ -830,6 +841,9 @@ def run_draft(
     Yields:
         Event dicts.
     """
+    from docsgpt.quotas.payer import billed_to
+    from docsgpt.quotas.run_limits import RunLimits
+
     stop = should_stop or (lambda: False)
     if recipe.reads_workspace:
         yield {"type": "status", "step": "reading", "counts": ws.counts()}
@@ -842,7 +856,11 @@ def run_draft(
         return
     turn = _Turn(req, recipe, ws, llm, model["id"], tool_mode=bool(model.get("supports_tools")))
     try:
-        yield from turn.run(stop)
+        # The caller pays; the draft is recorded in the workspace the request was made in. Each of the turn's
+        # model calls is checked against the caller's allowance, not only the start of the turn.
+        limits = RunLimits.start(req.user_id, bucket="direct")
+        with billed_to(req.user_id, req.request_id, kind="drafter", team_id=req.team_id, limits=limits):
+            yield from turn.run(stop)
     finally:
         # How much context the turn cost: the workspace is resent with every model call.
         logger.info("drafter: %s turn: %d model call(s), workspace %d chars, last call %d chars", recipe.id,

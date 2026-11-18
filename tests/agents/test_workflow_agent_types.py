@@ -314,6 +314,52 @@ class TestWorkflowEngineAgenticNode:
         assert rc["retriever_name"] == "semantic"
         assert rc["chunks"] == 4
 
+    @pytest.mark.parametrize("agent_type", ["agentic", "research"])
+    def test_a_node_resolves_its_sources_and_folders_once(self, monkeypatch, agent_type):
+        """The node's prefetch and its on-demand search get the same sources from one resolution."""
+        engine = create_engine()
+        engine.state["query"] = "q"
+        calls = {"authorized": 0, "folders": 0}
+
+        def _authorized(self, sources):
+            calls["authorized"] += 1
+            return list(sources or [])
+
+        def _with_folders(self, source_ids, folders):
+            calls["folders"] += 1
+            return list(source_ids) + ["folder-source"]
+
+        monkeypatch.setattr(type(engine), "_authorized_node_sources", _authorized)
+        monkeypatch.setattr(type(engine), "_with_folder_sources", _with_folders)
+        searched = []
+
+        class _R:
+            def search(self, q):
+                return []
+
+        def _create_retriever(*_a, **kwargs):
+            searched.append(kwargs["source"])
+            return _R()
+
+        monkeypatch.setattr("docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever", _create_retriever)
+        node = create_agent_node(node_id="agent_once", agent_type=agent_type, sources=["source-abc"])
+        node.config["folders"] = ["folder-1"]
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        expected = {"active_docs": ["source-abc", "folder-source"]}
+        assert searched == [expected]
+        assert captured["retriever_config"]["source"] == expected
+        assert calls == {"authorized": 1, "folders": 1}
+
     def test_agentic_node_empty_sources_gives_empty_source_dict(self, monkeypatch):
         engine = create_engine()
         node = create_agent_node(
@@ -697,8 +743,8 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         node_config = AgentNodeConfig(agent_type="classic", sources=[foreign], **broken)
 
         assert engine._retrieve_node_sources(node_config) == []
-        outcome = engine._node_search_outcome
-        assert foreign not in outcome.searched and foreign not in outcome.failed
+        # Nothing it may read is left, so nothing is searched and nothing named.
+        assert engine._node_search_outcome is None
 
     def test_retrieve_keeps_the_retrievers_outcome(self, monkeypatch):
         from docsgpt.retriever.base import SearchOutcome
@@ -729,7 +775,7 @@ class TestWorkflowNodeDocumentsReachTheAgent:
         engine = create_engine()
         outcome = SearchOutcome.of(["s1"], ["s1"])
 
-        def retrieve(self, node_config):
+        def retrieve(self, node_config, source_ids=None):
             self._node_search_outcome = outcome
             return []
 
@@ -748,6 +794,51 @@ class TestWorkflowNodeDocumentsReachTheAgent:
 
         assert captured["search_outcome"] is outcome
         assert captured["sources_were_searched"] is True
+
+    @pytest.mark.parametrize("config", [{"folders": ["0b6c1f3e-8a4c-4c1e-9f3a-2d1e5c7a9b10"]}, {"sources": ["gone"]}])
+    def test_a_node_whose_sources_resolve_to_nothing_searched_nothing(self, monkeypatch, config):
+        """A folder that is gone or empty, or sources that are all gone, are not "searched, nothing matched"."""
+        engine = create_engine()
+        engine.state["query"] = "q"
+        monkeypatch.setattr(type(engine), "_node_source_ids", lambda self, node_config: [])
+        retrieve = MagicMock()
+        monkeypatch.setattr(
+            "docsgpt.retriever.retriever_creator.RetrieverCreator.create_retriever", retrieve,
+        )
+        node = create_agent_node(node_id="n", agent_type="classic")
+        node.config.update(config)
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["sources_were_searched"] is False
+        assert captured["search_outcome"] is None
+        retrieve.assert_not_called()
+
+    def test_null_lists_read_as_empty(self, monkeypatch):
+        """A graph saved through the API with ``null`` for a node's tools, sources or folders still runs."""
+        engine = create_engine()
+        node = create_agent_node(node_id="n", agent_type="classic")
+        node.config.update({"tools": None, "sources": None, "folders": None, "input_documents": None})
+        captured: Dict[str, Any] = {}
+
+        def capture_create(**kwargs):
+            captured.update(kwargs)
+            return StubNodeAgent([{"answer": "ok"}])
+
+        monkeypatch.setattr(WorkflowNodeAgentFactory, "create", staticmethod(capture_create))
+        monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda _provider: None)
+
+        list(engine._execute_agent_node(node))
+
+        assert captured["sources_were_searched"] is False
 
 
 @pytest.mark.unit

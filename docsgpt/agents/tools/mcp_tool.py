@@ -337,6 +337,8 @@ class MCPTool(Tool):
     """
 
     connection_id: Optional[str] = None
+    oauth_connected_by: Optional[str] = None
+    _oauth_provider: Optional["DocsGPTOAuth"] = None
 
     def __init__(self, config: Dict[str, Any], user_id: Optional[str] = None):
         """
@@ -387,6 +389,10 @@ class MCPTool(Tool):
         # serialize. ``DocsGPTOAuth`` invokes it from ``redirect_handler``
         # so the SSE envelope can carry ``authorization_url``.
         self.oauth_redirect_publish = config.pop("oauth_redirect_publish", None)
+        # Set only by the OAuth worker for a team's sign-in: the Admin signing
+        # in, recorded as who connected the team's account. Popped so it
+        # never lands in a stored config.
+        self.oauth_connected_by = config.pop("oauth_connected_by", None)
 
         self.available_tools = []
         # Tool name -> ``x-mcp-header`` map; seeded from the stored actions,
@@ -523,7 +529,9 @@ class MCPTool(Tool):
                     user_id=self.user_id,
                     redirect_publish=self.oauth_redirect_publish,
                     connection_id=self.connection_id,
+                    connected_by=self.oauth_connected_by,
                 )
+            self._oauth_provider = auth
         elif self.auth_type == "bearer":
             token = self.auth_credentials.get(
                 "bearer_token", ""
@@ -537,6 +545,12 @@ class MCPTool(Tool):
             else {}
         )
         return Client(transport, auth=auth, **extensions)
+
+    @property
+    def oauth_connection_id(self) -> Optional[str]:
+        """The connection this tool's sign-in wrote its tokens to, once it did (a team's new one included)."""
+        provider = self._oauth_provider
+        return provider.token_storage.connection_id if provider is not None else self.connection_id
 
     def _create_transport(self):
         """Create appropriate transport based on configuration."""
@@ -1308,6 +1322,7 @@ class DocsGPTOAuth(OAuthClientProvider):
         skip_redirect_validation: bool = False,
         redirect_publish=None,
         connection_id: Optional[str] = None,
+        connected_by: Optional[str] = None,
     ):
         self.redirect_uri = redirect_uri
         self.redis_client = redis_client
@@ -1338,7 +1353,9 @@ class DocsGPTOAuth(OAuthClientProvider):
             user_id=self.user_id,
             expected_redirect_uri=None if skip_redirect_validation else redirect_uri,
             connection_id=connection_id,
+            connected_by=connected_by,
         )
+        self.token_storage = storage
 
         # The SDK checks the server's protected-resource metadata against a
         # resource derived from this URL, so it gets the full MCP endpoint:
@@ -1586,6 +1603,29 @@ class NonInteractiveOAuth(DocsGPTOAuth):
         )
 
 
+def _default_token_endpoint_auth_method(info: dict) -> dict:
+    """Apply RFC 7591 §2's default when a registration omits the auth method.
+
+    A server that issues a ``client_secret`` has registered a confidential
+    client, but a registration response need not echo
+    ``token_endpoint_auth_method``: Supabase returns only ``client_id``,
+    ``client_secret``, ``client_secret_expires_at``, ``id`` and
+    ``redirect_uris``. The SDK reads an absent method as a public client and
+    sends no credentials at all, which no confidential server accepts —
+    Supabase answers ``422 {"message":"Required parameter: client_secret"}``.
+
+    RFC 7591 §2 makes ``client_secret_basic`` the default in exactly this
+    case, and it is a form this client already applies: the Basic header is
+    what ``DocsGPTOAuth._one_client_authentication`` handles by dropping the
+    redundant ``client_id`` from the body.
+
+    A registration that names a method, or issued no secret, is left alone.
+    """
+    if info.get("client_secret") and not info.get("token_endpoint_auth_method"):
+        info["token_endpoint_auth_method"] = "client_secret_basic"
+    return info
+
+
 class DBTokenStorage(TokenStorage):
     """MCP OAuth tokens and client registration, kept encrypted on the connection.
 
@@ -1594,6 +1634,12 @@ class DBTokenStorage(TokenStorage):
     that runs with a specific connection (``owner`` mode on a shared tool)
     passes its ``connection_id``; otherwise the invoking user's connection
     for the server's base URL is used.
+
+    A team's sign-in (``connected_by``, the Admin signing in) starts from
+    nothing and keeps what it learns in memory until the server hands over
+    tokens; then it writes the team's connection whole, by its id once it
+    has one, naming that Admin. An abandoned sign-in never touches the
+    team's connection, and a stored one never answers it.
     """
 
     def __init__(
@@ -1602,11 +1648,14 @@ class DBTokenStorage(TokenStorage):
         user_id: str,
         expected_redirect_uri: Optional[str] = None,
         connection_id: Optional[str] = None,
+        connected_by: Optional[str] = None,
     ):
         self.server_url = server_url
         self.user_id = user_id
         self.expected_redirect_uri = expected_redirect_uri
         self.connection_id = connection_id
+        self.connected_by = connected_by
+        self._unsaved: Optional[dict] = {} if connected_by else None
         # When the stored access token expires (epoch seconds), once read.
         self.expires_at: Optional[float] = None
 
@@ -1622,6 +1671,8 @@ class DBTokenStorage(TokenStorage):
         """The decrypted ``tokens`` / ``client_info`` for this MCP server."""
         from docsgpt.connectors import service
 
+        if self._unsaved is not None:
+            return dict(self._unsaved)
         return service.read_mcp_secrets(
             self.user_id, self.get_base_url(self.server_url), self.connection_id,
         )
@@ -1641,6 +1692,9 @@ class DBTokenStorage(TokenStorage):
         """Merge ``patch`` into the connection's secrets; ``None`` drops a key."""
         from docsgpt.connectors import service
 
+        if self._unsaved is not None:
+            self._save_team_sign_in(patch)
+            return
         status = None
         if patch.get("tokens"):
             status = service.STATUS_CONNECTED
@@ -1652,7 +1706,36 @@ class DBTokenStorage(TokenStorage):
             status=status,
         )
 
+    def _save_team_sign_in(self, patch: dict) -> None:
+        """Keep ``patch`` in memory; once it holds tokens, write the team's connection naming who signed in.
+
+        Args:
+            patch: Secrets to merge; ``None`` drops a key.
+        """
+        from docsgpt.connectors import service
+
+        for key, value in patch.items():
+            if value is None:
+                self._unsaved.pop(key, None)
+            else:
+                self._unsaved[key] = value
+        if not self._unsaved.get("tokens"):
+            return
+        row = service.update_mcp_secrets(
+            self.user_id,
+            self.get_base_url(self.server_url),
+            dict(self._unsaved),
+            connection_id=self.connection_id,
+            status=service.STATUS_CONNECTED,
+            connected_by=self.connected_by,
+        )
+        self.connection_id = str(row["id"])
+
     def _delete(self) -> None:
+        if self._unsaved is not None:
+            # A team's sign-in never deletes the team's connection.
+            self._unsaved.clear()
+            return
         from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,
         )
@@ -1679,7 +1762,9 @@ class DBTokenStorage(TokenStorage):
             logger.debug("No client_info in DB for %s", base_url)
             return None
         try:
-            client_info = OAuthClientInformationFull.model_validate(data["client_info"])
+            client_info = OAuthClientInformationFull.model_validate(
+                _default_token_endpoint_auth_method(dict(data["client_info"]))
+            )
             if self.expected_redirect_uri:
                 stored_uris = [
                     str(uri).rstrip("/") for uri in client_info.redirect_uris
@@ -1711,7 +1796,18 @@ class DBTokenStorage(TokenStorage):
         return info
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
-        serialized_info = self._serialize_client_info(client_info.model_dump())
+        """Save a registration, applying the RFC 7591 default auth method to it.
+
+        The SDK exchanges a fresh registration's first code with this same
+        object, so the default goes onto it as well as onto the saved copy.
+
+        Args:
+            client_info: The registration the SDK holds for this flow.
+        """
+        serialized_info = _default_token_endpoint_auth_method(
+            self._serialize_client_info(client_info.model_dump())
+        )
+        client_info.token_endpoint_auth_method = serialized_info.get("token_endpoint_auth_method")
         base_url = self.get_base_url(self.server_url)
         await asyncio.to_thread(
             self._merge, {"client_info": serialized_info},

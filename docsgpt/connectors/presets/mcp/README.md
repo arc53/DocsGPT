@@ -35,6 +35,25 @@ docs_url: https://example.com/docs/mcp
 - `part_of` shows the preset on another connector's card.
 - `rank` places a card ahead of the others (lower first). Leave it out: cards
   without one follow the ranked ones in name order.
+- `url_parameters` lists query parameters every connection must carry, for a
+  server whose plain URL reaches more than one connection should (Supabase's
+  project ref). The connect form asks for each one before sign-in, and the
+  server refuses a URL at the preset's address without a value that matches
+  its `pattern`, custom MCP servers at that address included. The values are
+  kept on the connection, so a reconnect or a rebuilt tool keeps them:
+
+  ```yaml
+  url_parameters:
+    - key: project_ref
+      label: Project ref
+      pattern: "[a-z]{20}"
+      hint: In the project's settings, under General.
+  ```
+
+  The frontend translates the label from
+  `settings.connectors.fields.mcp_<name>_<key>` (then `fields.<key>`) and the
+  hint from `settings.connectors.fieldHints.mcp_<name>_<key>`, falling back
+  to the English in the file.
 
 The preset list in the docs is generated from these files
 (`python -m docsgpt.connectors.reference --write`, run on `main` after a merge);

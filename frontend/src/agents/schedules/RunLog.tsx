@@ -23,6 +23,7 @@ import {
 import type { AppDispatch, RootState } from '../../store';
 import { formatTimestamp } from '../../utils/dateTimeUtils';
 import type { ScheduleRun } from '../types/schedule';
+import { isPauseSkip, runReason } from './runReason';
 import ScheduleStatusBadge from './StatusBadge';
 import {
   loadRunsForSchedule,
@@ -145,16 +146,22 @@ export default function RunLog({ scheduleId, onSelect }: RunLogProps) {
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     <ScheduleStatusBadge status={run.status} />
-                    {run.error_type && (
+                    {runReason(run) && (
                       <span className="text-muted-foreground text-xs">
                         (
-                        {t(`activity.now.errorType.${run.error_type}`, {
-                          defaultValue: run.error_type,
+                        {t(`activity.now.errorType.${runReason(run)}`, {
+                          defaultValue: runReason(run),
                         })}
                         )
                       </span>
                     )}
                   </div>
+                  {/* One row stands for every run skipped while paused. */}
+                  {isPauseSkip(run) && (
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      {t('agents.schedules.runLog.pausedStreak')}
+                    </p>
+                  )}
                   {/* The agent's own one-line reason says what to fix. */}
                   {run.error_type === 'cannot_complete' && run.error && (
                     <p

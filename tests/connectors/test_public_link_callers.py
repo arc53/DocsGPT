@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -122,6 +122,7 @@ class TestPublicLinkDetection:
 
         return str(AgentsRepository(conn).create(
             "alice", "A", "published", key=f"k-{uuid.uuid4().hex}", shared=shared,
+            shared_token=f"t-{uuid.uuid4().hex}" if shared else None,
         )["id"])
 
     def _run(self, conn, agent_id: str, caller: str):
@@ -134,7 +135,14 @@ class TestPublicLinkDetection:
 
     @pytest.mark.parametrize(("caller", "public"), [("alice", False), ("stranger", True)])
     def test_only_a_link_user_is_a_public_caller(self, pg_conn, caller, public):
-        processor = self._run(pg_conn, self._agent(pg_conn), caller)
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        agent_id = self._agent(pg_conn)
+        if public:
+            # Opening the link is what makes someone its user: the id alone runs nothing.
+            UsersRepository(pg_conn).upsert(caller)
+            UsersRepository(pg_conn).add_shared(caller, agent_id)
+        processor = self._run(pg_conn, agent_id, caller)
         assert processor.agent_config["public_link_caller"] is public
 
     def test_teammate_of_a_public_agent_is_not_a_link_user(self, pg_conn):
@@ -166,12 +174,16 @@ class TestPublicLinkDetection:
         assert executor.public_link_caller is True
         assert executor.api_write_allowlist == {f"tool-1:{ACTION}"}
 
-    def test_resumed_run_stays_a_public_caller(self, monkeypatch):
+    def test_resumed_run_stays_a_public_caller(self, monkeypatch, pg_conn):
         from docsgpt.agents import agent_creator as ac_mod
         from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.api.answer.services.stream_processor import StreamProcessor
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {

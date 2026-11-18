@@ -18,7 +18,7 @@ installed, run ``python -m docsgpt grant-admin ...``.
 
 Exit codes:
     0 — success
-    1 — user not found (without --force)
+    1 — user not found (without --force), or the id is a team or the system (even with --force)
     2 — bad usage (argparse) or database error
 """
 
@@ -33,6 +33,7 @@ from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger("grant_admin")
 
@@ -65,10 +66,18 @@ def _grant(user_id: str, force: bool) -> int:
         force: Grant even when the user has never signed in.
 
     Returns:
-        0 on success or when the grant already exists, 1 when the user is unknown and ``force`` is off.
+        0 on success or when the grant already exists, 1 when the user is unknown and ``force`` is off,
+        or when the id is a team principal or a row that is not a person (``force`` doesn't change that).
     """
+    if is_principal_id(user_id):
+        print(f"{user_id!r} is a team, not a person; it can't be an admin.", file=sys.stderr)
+        return 1
     with db_session() as conn:
-        if not force and UsersRepository(conn).get(user_id) is None:
+        row = UsersRepository(conn).get(user_id)
+        if row is not None and row.get("kind", "user") != "user":
+            print(f"{user_id!r} is not a person ({row.get('kind')}); it can't be an admin.", file=sys.stderr)
+            return 1
+        if not force and row is None:
             print(
                 f"No users row for {user_id!r}. The user must have signed in at least "
                 f"once, or pass --force to grant anyway (creates a dangling grant).",
