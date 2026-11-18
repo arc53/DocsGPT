@@ -11,6 +11,7 @@ from docsgpt.api.user.folder_knowledge import (
     FolderRefError,
     caller_folder_source_ids,
     expand_folders,
+    expand_folders_of_holders,
     folder_details,
     folder_source_ids,
     owned_source_folders,
@@ -133,6 +134,48 @@ class TestExpansion:
         _file(pg_conn, b, theirs, user=MATE)
         assert caller_folder_source_ids(pg_conn, [mine, theirs], OWNER) == [a]
         assert caller_folder_source_ids(pg_conn, [mine, theirs], None) == []
+
+
+class TestExpansionOfSeveralHolders:
+    def test_each_holder_gets_what_its_own_expansion_gives_from_one_load(self, pg_conn):
+        from sqlalchemy import event
+
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        _teammates(pg_conn, OWNER, MATE)
+        mine = _folder(pg_conn, "Mine")
+        child = _folder(pg_conn, "Child", parent=mine)
+        theirs = _folder(pg_conn, "Theirs", owner=MATE)
+        _file(pg_conn, _source(pg_conn, "a"), mine)
+        _file(pg_conn, _source(pg_conn, "deep"), child)
+        _file(pg_conn, _source(pg_conn, "stray", owner=STRANGER), mine)
+        _file(pg_conn, _source(pg_conn, "b", owner=MATE), theirs, user=MATE)
+        agents = AgentsRepository(pg_conn)
+        owners_bot = agents.create(OWNER, "Owner's", "draft", knowledge_folder_ids=[mine, theirs])
+        mates_bot = agents.create(MATE, "Mate's", "draft", knowledge_folder_ids=[theirs])
+        holders = [
+            ("agent", owners_bot, [mine, theirs, str(uuid.uuid4())]),
+            ("agent", mates_bot, [theirs]),
+            ("agent", mates_bot, []),
+            ("workflow", {"user_id": OWNER}, [child]),
+        ]
+        alone = [expand_folders(pg_conn, ids, kind, holder) for kind, holder, ids in holders]
+        statements: list[str] = []
+
+        def _count(_conn, _cursor, statement, *args):
+            statements.append(statement)
+
+        event.listen(pg_conn, "before_cursor_execute", _count)
+        try:
+            together = expand_folders_of_holders(pg_conn, holders)
+        finally:
+            event.remove(pg_conn, "before_cursor_execute", _count)
+        assert together == alone
+        # Mate can't edit the owner's agent, so their folder feeds it nothing; the rest feed what they hold.
+        assert together[0][theirs] == [] and len(together[0][mine]) == 2
+        assert len(together[1][theirs]) == 1 and together[2] == {} and len(together[3][child]) == 1
+        assert sum("WITH RECURSIVE tree" in s for s in statements) == 1
+        assert expand_folders_of_holders(pg_conn, []) == []
 
 
 class TestAttachGate:

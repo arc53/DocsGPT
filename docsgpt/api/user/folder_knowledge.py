@@ -304,7 +304,50 @@ def _expand(
     ids = _ids(folder_ids)
     if not ids:
         return {}, {}
+    owners, filings = _load_folders(conn, ids)
+    return _judge(conn, ids, owners, filings, holder_type, holder, keep_borrowed=keep_borrowed)
+
+
+def _load_folders(conn: Connection, ids: list[str]) -> tuple[dict[str, str], list[tuple]]:
+    """Who owns each folder, and the sources filed across each one's subtree, in two queries for all of them.
+
+    Args:
+        conn: Open connection.
+        ids: Lower-case folder ids (from :func:`_ids`).
+
+    Returns:
+        tuple: ``(folder_id -> owner, filings)``; each filing is ``(root, owner, source_id,
+        source_owner, depth, sort_name)``, every root's in folder order.
+    """
     owners = {r[0].lower(): r[2] for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
+    return owners, [tuple(row) for row in conn.execute(text(_EXPAND_SQL), {"ids": ids})]
+
+
+def _judge(
+    conn: Connection,
+    ids: list[str],
+    owners: dict[str, str],
+    filings: Iterable[tuple],
+    holder_type: Optional[str],
+    holder: Optional[dict],
+    *,
+    keep_borrowed: bool = False,
+) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """What :func:`_expand` returns, from folders already loaded by :func:`_load_folders`.
+
+    Args:
+        conn: Open connection (the feed checks still read access).
+        ids: The holder's lower-case folder ids.
+        owners: ``folder_id -> owner`` for those of ``ids`` that exist, and no other folder.
+        filings: The filings of those folders' subtrees, in folder order; filings of other roots are skipped.
+        holder_type: ``agent`` or ``workflow`` when a holder reads them.
+        holder: The holder row.
+        keep_borrowed: See :func:`_expand`.
+
+    Returns:
+        tuple: ``(folder_id -> [source_id], folder_id -> reason)``.
+    """
+    wanted = set(ids)
     out: dict[str, list[str]] = {fid: [] for fid in ids if fid in owners}
     holder_owner = (holder or {}).get("user_id") if holder_type else None
     stopped: dict[str, str] = {}
@@ -338,9 +381,9 @@ def _expand(
             conn, "source", source_id, owner
         )
 
-    for root, owner, source_id, source_owner, _level, _name in conn.execute(text(_EXPAND_SQL), {"ids": ids}):
+    for root, owner, source_id, source_owner, _level, _name in filings:
         root, source_id = root.lower(), source_id.lower()
-        if root in stopped:
+        if root in stopped or root not in wanted:
             continue
         key = (owner, source_id)
         if key not in usable:
@@ -378,6 +421,37 @@ def expand_folders(
         teammate's folder maps to ``[]``.
     """
     return _expand(conn, folder_ids, holder_type, holder, keep_borrowed=keep_borrowed)[0]
+
+
+def expand_folders_of_holders(
+    conn: Connection, holders: list[tuple[str, dict, Iterable[Any]]]
+) -> list[dict[str, list[str]]]:
+    """:func:`expand_folders` for several holders at once: every folder and its filings are read once.
+
+    Each holder's answer is the one ``expand_folders(conn, folder_ids, holder_type, holder)`` gives; only
+    the loading is shared, the holder rules are still applied holder by holder.
+
+    Args:
+        conn: Open connection.
+        holders: ``(holder_type, holder row, folder ids)`` per holder.
+
+    Returns:
+        list[dict[str, list[str]]]: One ``folder_id -> [source_id, ...]`` per holder, in order.
+    """
+    per_holder = [_ids(folder_ids) for _type, _holder, folder_ids in holders]
+    every = _ids(fid for ids in per_holder for fid in ids)
+    if not every:
+        return [{} for _ in holders]
+    owners, filings = _load_folders(conn, every)
+    out = []
+    for (holder_type, holder, _folder_ids), ids in zip(holders, per_holder):
+        if not ids:
+            out.append({})
+            continue
+        wanted = set(ids)
+        mine = {fid: owner for fid, owner in owners.items() if fid in wanted}
+        out.append(_judge(conn, ids, mine, filings, holder_type, holder)[0])
+    return out
 
 
 def folder_source_ids(

@@ -116,8 +116,52 @@ class TestTeamUsageQueryCount:
             assert {a["id"] for a in usage[sid]["agents"]} == agents
             assert all(a["can_edit"] for a in usage[sid]["agents"]) and usage[sid]["others"] == 0
 
+    @pytest.mark.parametrize("deletable", [False, True])
+    def test_the_same_queries_for_a_small_team_and_a_large_one(self, pg_conn, deletable):
+        # The holders reading a folder, and what their folders hold, load together, not one holder at a time.
+        small, _ = _uses(pg_conn, 2, 1)
+        large, agents = _uses(pg_conn, 12, 4)
+        _usage, few = _statements(pg_conn, EDITOR, small, small if deletable else [])
+        usage, more = _statements(pg_conn, EDITOR, large, large if deletable else [])
+        assert len(more) == len(few)
+        assert {a["id"] for a in usage[large[0]]["agents"]} == agents
+
     def test_a_viewer_reads_the_same_agents_without_their_editors(self, pg_conn):
         ids, agents = _uses(pg_conn, 3, 2)
         usage, _ = _statements(pg_conn, VIEWER, ids, [])
         for sid in ids:
             assert {(a["id"], a["can_edit"]) for a in usage[sid]["agents"]} == {(a, False) for a in agents}
+
+
+class TestSourcesListingQueryCount:
+    def test_a_team_sources_page_costs_the_same_however_many_sources_and_agents(self, pg_conn):
+        """Every matching source's usage feeds the filters and counts, so it is read in fixed queries."""
+        from flask import Flask
+        from sqlalchemy import event, text
+
+        from docsgpt.api.user.sources.routes import PaginatedSources
+        from docsgpt.workspaces.principal import team_of_principal
+        from tests.api.user.test_team_shared_lists import _call
+
+        app = Flask(__name__)
+        counts, totals = [], []
+        for sources, agents in ((3, 1), (15, 4)):
+            ids, _agents = _uses(pg_conn, sources, agents)
+            owner = pg_conn.execute(text("SELECT user_id FROM sources WHERE id = CAST(:i AS uuid)"), {"i": ids[0]})
+            team_id = team_of_principal(owner.scalar())
+            statements: list[str] = []
+
+            def _count(_conn, _cursor, statement, *args, into=statements):
+                into.append(statement)
+
+            event.listen(pg_conn, "before_cursor_execute", _count)
+            try:
+                resp = _call(app, pg_conn, PaginatedSources, "/api/sources/paginated?rows=5&usage=in_use", EDITOR,
+                             team_id=team_id)
+            finally:
+                event.remove(pg_conn, "before_cursor_execute", _count)
+            assert resp.status_code == 200, resp.json
+            counts.append(len(statements))
+            totals.append((resp.json["total"], resp.json["usage_counts"]["in_use"], len(resp.json["paginated"])))
+        assert counts[0] == counts[1]
+        assert totals == [(3, 3, 3), (15, 15, 5)]

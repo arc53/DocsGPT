@@ -39,7 +39,7 @@ from sqlalchemy import Connection, text
 
 from docsgpt.api.user.resource_access import allowed_actions, settings_many, workspace_allowed_actions
 from docsgpt.api.user.team_sharing import visible_with_access
-from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.workspaces.outside import team_policy
@@ -167,6 +167,9 @@ _FOLDER_FED_SQL = _FOLDER_FED_UP + f"""
     WHERE a.agent_type = 'workflow' AND n.node_type = 'agent' AND ({{match}})
 """
 _FOLDER_FED_MATCH = "u.sid = ANY(CAST({ids} AS uuid[]))"
+
+# The workflows whose agent nodes read a candidate folder.
+_WORKFLOWS_BY_ID_SQL = "SELECT * FROM workflows WHERE id = ANY(CAST(:ids AS uuid[]))"
 
 # Installs migrated from Mongo (``scripts/db/backfill.py``) may still name a
 # tool in ``agents.tools``, or a tool or source in a workflow node, by its
@@ -395,7 +398,7 @@ def _folder_fed_rows(conn: Connection, full_ids: list[str], scoped_ids: list[str
     """The usage rows of sources an agent or workflow node reads through one of its knowledge folders.
 
     A filing under a holder's folder is a candidate; it counts only when the
-    folder feeds that holder the source (``folder_source_ids``: the folder
+    folder feeds that holder the source (``expand_folders``: the folder
     owner may use it, the teammate rules, no borrowed source on a holder
     with outside access).
 
@@ -408,27 +411,39 @@ def _folder_fed_rows(conn: Connection, full_ids: list[str], scoped_ids: list[str
     Returns:
         list[tuple]: ``(agent_id, name, user_id, agent_type, status, ref)`` rows.
     """
-    from docsgpt.api.user.folder_knowledge import folder_source_ids
+    from docsgpt.api.user.folder_knowledge import expand_folders_of_holders
     from docsgpt.storage.db.repositories.agents import AgentsRepository
-    from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 
     match = _match(_FOLDER_FED_MATCH, full_ids, scoped_ids)
     candidates = conn.execute(text(_FOLDER_FED_SQL.format(match=match)), params).fetchall()
-    holders: dict[tuple[str, str], Optional[dict]] = {}
-    fed: dict[tuple[str, str, str], set[str]] = {}
+    if not candidates:
+        return []
+    # Every holder, and what each of its candidate folders feeds it, read together: the holder rules
+    # still apply holder by holder, but the rows and folder contents load once for the whole listing.
+    folders_of: dict[tuple[str, str], list[str]] = {}
+    for *_agent, holder_type, holder_id, folder_id in candidates:
+        holder_folders = folders_of.setdefault((holder_type, holder_id), [])
+        if folder_id not in holder_folders:
+            holder_folders.append(folder_id)
+    agent_ids = [hid for kind, hid in folders_of if kind == "agent"]
+    workflow_ids = [hid for kind, hid in folders_of if kind == "workflow"]
+    holders: dict[tuple[str, str], dict] = {
+        ("agent", str(row["id"]).lower()): row for row in AgentsRepository(conn).list_by_ids(agent_ids)
+    }
+    if workflow_ids:
+        for row in conn.execute(text(_WORKFLOWS_BY_ID_SQL), {"ids": workflow_ids}).fetchall():
+            workflow = row_to_dict(row)
+            holders[("workflow", str(workflow["id"]).lower())] = workflow
+    present = [key for key in folders_of if key in holders]
+    expanded = expand_folders_of_holders(conn, [(key[0], holders[key], folders_of[key]) for key in present])
+    fed: dict[tuple[str, str, str], set[str]] = {
+        (*key, folder_id): set(sources)
+        for key, by_folder in zip(present, expanded)
+        for folder_id, sources in by_folder.items()
+    }
     rows: list[tuple] = []
     for agent_id, name, owner, agent_type, status, ref, holder_type, holder_id, folder_id in candidates:
-        holder_key = (holder_type, holder_id)
-        if holder_key not in holders:
-            repo = AgentsRepository(conn) if holder_type == "agent" else WorkflowsRepository(conn)
-            holders[holder_key] = repo.get_by_id(holder_id)
-        holder = holders[holder_key]
-        if holder is None:
-            continue
-        fed_key = (holder_type, holder_id, folder_id)
-        if fed_key not in fed:
-            fed[fed_key] = set(folder_source_ids(conn, [folder_id], holder_type, holder))
-        if ref.lower() in fed[fed_key]:
+        if ref.lower() in fed.get((holder_type, holder_id, folder_id), ()):
             rows.append((agent_id, name, owner, agent_type, status, ref))
     return rows
 
