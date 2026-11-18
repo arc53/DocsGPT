@@ -106,7 +106,7 @@ from docsgpt.workspaces.locks import lock_owner_items
 from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_LOCKED, may_take_outside, team_policy
 from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
 from docsgpt.workspaces.roles import from_stored_role, role_rank, team_role_for
-from docsgpt.workspaces.team_models import owners_matching_model, unowned_custom_models
+from docsgpt.workspaces.team_models import endpoint_key, index_models, unowned_custom_models
 
 logger = logging.getLogger(__name__)
 
@@ -469,6 +469,8 @@ class _Planner:
         self.shared_refs: dict[tuple[str, str], str] = {}
         # Custom models swapped for the new owner's match: lower-case old id -> the plan's remap entry.
         self.model_remaps: dict[str, dict] = {}
+        # The new owner's custom models by endpoint, read on the first model that needs a match.
+        self._destination_models: Optional[dict[tuple[str, str], dict]] = None
         self.policy: Optional[str] = None
         # Folders that take every item filed in them: the dragged ones and their sub-folders.
         self.whole_folders: set[str] = set()
@@ -756,7 +758,7 @@ class _Planner:
             self.referenced.add(key)
             row = repo.get_by_id(model_id)
             held = row is not None and row.get("user_id") == self.old_owner
-            match = owners_matching_model(self.conn, self.new_owner, row) if held else None
+            match = self._destination_match(row) if held else None
             if match is not None:
                 self.model_remaps[key[1]] = {
                     "from_id": str(row["id"]), "from_name": row.get("display_name"),
@@ -764,6 +766,22 @@ class _Planner:
                 }
                 continue
             self._cannot(key, CANT_CUSTOM_MODEL, row.get("display_name") if held else None)
+
+    def _destination_match(self, row: dict) -> Optional[dict]:
+        """The new owner's model that is the same model as ``row`` (same endpoint and upstream id), or None.
+
+        Their models are read once per plan, however many models the moving items name.
+
+        Args:
+            row: The old owner's ``user_custom_models`` row.
+
+        Returns:
+            The new owner's matching row: enabled first, then the oldest.
+        """
+        if self._destination_models is None:
+            rows = UserCustomModelsRepository(self.conn).list_for_user(self.new_owner) if self.new_owner else []
+            self._destination_models = index_models(rows)
+        return self._destination_models.get(endpoint_key(row.get("base_url"), row.get("upstream_model_id")))
 
     def _expand_folder(self, entry: _Entry) -> None:
         conn, via = self.conn, ("folder", entry.id)

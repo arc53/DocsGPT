@@ -280,3 +280,56 @@ class TestFingerprint:
         with pytest.raises(MoveError) as err:
             apply_move(pg_conn, "eddie", parse_move_request({**request, "fingerprint": stale}))
         assert err.value.code == "move_plan_changed"
+
+
+class TestDestinationCatalog:
+    """The plan reads the new owner's models once, however many models the moving items name."""
+
+    def _count_catalog_reads(self, monkeypatch, owner) -> list:
+        calls = []
+        original = UserCustomModelsRepository.list_for_user
+
+        def spy(repo, user_id):
+            if user_id == owner:
+                calls.append(user_id)
+            return original(repo, user_id)
+
+        monkeypatch.setattr(UserCustomModelsRepository, "list_for_user", spy)
+        return calls
+
+    def test_six_models_read_the_catalog_once(self, pg_conn, monkeypatch):
+        tid, principal = team(pg_conn)
+        mine = [_model(pg_conn, "eddie", f"M{i}", upstream=f"up-{i}") for i in range(6)]
+        theirs = [_model(pg_conn, principal, f"T{i}", upstream=f"up-{i}") for i in range(6)]
+        first = agent(pg_conn, "eddie", default_model_id=mine[0], models=mine[:3])
+        second = agent(pg_conn, "eddie", "Other", models=mine[3:5])
+        src = _graph_source(pg_conn, "eddie", mine[5])
+        request = body(tid, [("agent", first), ("agent", second), ("source", src)])
+
+        calls = self._count_catalog_reads(monkeypatch, principal)
+        out = plan(pg_conn, "eddie", request)
+        assert len(calls) == 1
+        assert sorted((r["from_id"], r["to_id"]) for r in out["model_remaps"]) == sorted(zip(mine, theirs))
+
+    def test_a_plan_without_held_models_reads_no_catalog(self, pg_conn, monkeypatch):
+        tid, principal = team(pg_conn)
+        ag = agent(pg_conn, "eddie", default_model_id="gpt-4o")
+        calls = self._count_catalog_reads(monkeypatch, principal)
+        plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        assert calls == []
+
+    def test_an_enabled_match_wins_then_the_oldest(self, pg_conn):
+        tid, principal = team(pg_conn)
+        mine = _model(pg_conn, "eddie")
+        off = _model(pg_conn, principal, "Off")
+        newer = _model(pg_conn, principal, "Newer")
+        older = _model(pg_conn, principal, "Older")
+        pg_conn.execute(text("UPDATE user_custom_models SET enabled = false WHERE id = CAST(:i AS uuid)"), {"i": off})
+        for mid, stamp in ((off, "2020-01-01"), (newer, "2024-01-01"), (older, "2022-01-01")):
+            pg_conn.execute(
+                text("UPDATE user_custom_models SET created_at = CAST(:t AS timestamptz) WHERE id = CAST(:i AS uuid)"),
+                {"i": mid, "t": stamp},
+            )
+        ag = agent(pg_conn, "eddie", default_model_id=mine)
+        out = plan(pg_conn, "eddie", body(tid, [("agent", ag)]))
+        assert [r["to_id"] for r in out["model_remaps"]] == [older]

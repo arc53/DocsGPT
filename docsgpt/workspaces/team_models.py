@@ -387,8 +387,33 @@ def matching_model(rows: Iterable[Mapping[str, Any]], base_url: Any, upstream_mo
     if not key[0] or not key[1]:
         return None
     found = [dict(r) for r in rows if endpoint_key(r.get("base_url"), r.get("upstream_model_id")) == key]
-    found.sort(key=lambda r: (not r.get("enabled", True), str(r.get("created_at") or ""), str(r.get("id"))))
+    found.sort(key=_match_order)
     return found[0] if found else None
+
+
+def _match_order(row: Mapping[str, Any]) -> tuple[bool, str, str]:
+    """The order :func:`matching_model` picks in: enabled rows first, then the oldest, then by id."""
+    return not row.get("enabled", True), str(row.get("created_at") or ""), str(row.get("id"))
+
+
+def index_models(rows: Iterable[Mapping[str, Any]]) -> dict[tuple[str, str], dict]:
+    """Each endpoint's match among ``rows``, for looking up many models against one owner's.
+
+    Looking a model's :func:`endpoint_key` up here gives what :func:`matching_model` would pick from the
+    same rows.
+
+    Args:
+        rows: ``user_custom_models`` rows of one owner.
+
+    Returns:
+        ``{endpoint_key: row}``; rows without a base URL or upstream id never match and are left out.
+    """
+    index: dict[tuple[str, str], dict] = {}
+    for row in sorted((dict(r) for r in rows), key=_match_order):
+        key = endpoint_key(row.get("base_url"), row.get("upstream_model_id"))
+        if key[0] and key[1]:
+            index.setdefault(key, row)
+    return index
 
 
 def owners_matching_model(conn: Any, owner_id: Optional[str], row: Optional[Mapping[str, Any]]) -> Optional[dict]:
