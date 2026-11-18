@@ -30,12 +30,17 @@ from sqlalchemy import text
 from docsgpt.core.settings import settings
 from docsgpt.quotas.agent_limits import WINDOW_HOURS, AgentLimitExceeded, _flag
 from docsgpt.quotas.pause import PAYER_OUT_OF_ALLOWANCE
-from docsgpt.quotas.providers import default_rows
 from docsgpt.quotas.resolver import ResolvedLimits, resolve_limits
-from docsgpt.quotas.service import REQUEST_BUCKETS, BucketStatus, NoPayerError, QuotaExceeded, QuotaExceededError
+from docsgpt.quotas.service import (
+    REQUEST_BUCKETS,
+    BucketStatus,
+    NoPayerError,
+    QuotaExceeded,
+    QuotaExceededError,
+    policy_rows,
+)
 from docsgpt.quotas.windows import window_bounds
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.quota_policies import QuotaPoliciesRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.workspaces.principal import is_principal_id
@@ -176,17 +181,21 @@ class RunLimits:
         api_key: Optional[str] = None,
         outside: bool = False,
         now: Optional[datetime.datetime] = None,
+        policy_memo: Optional[dict[str, list[dict]]] = None,
     ) -> Optional["RunLimits"]:
         """Resolve a run's limits as it starts.
 
         Args:
             payer: The run's payer.
             bucket: ``direct`` for a run with no agent, ``agent`` for one through an agent.
-            agent: The agent row, when the caller has it (no read is needed).
+            agent: The agent row, when the caller has it (no read is needed); an
+                empty mapping when the caller looked for it and found none.
             agent_id: The agent's id, read when ``agent`` is not given.
             api_key: The agent's key, read when neither ``agent`` nor ``agent_id`` is given.
             outside: The run is outside traffic on a published agent.
             now: Reference instant, for tests.
+            policy_memo: Policy rows already read in this request, by payer
+                (:func:`~docsgpt.quotas.service.policy_rows`).
 
         Returns:
             The run's limits, or None when there is no payer to check.
@@ -206,10 +215,14 @@ class RunLimits:
         resolved: dict[str, ResolvedLimits] = {}
         agent_limit = _agent_token_limit(agent)
         try:
-            with db_readonly() as conn:
-                if agent is None and (agent_id or api_key):
-                    agent_limit = _agent_token_limit(_agent_row(conn, agent_id, api_key))
-                rows = QuotaPoliciesRepository(conn).policies_for_user(payer) + default_rows(payer)
+            read_agent = agent is None and bool(agent_id or api_key)
+            if read_agent or policy_memo is None or payer not in policy_memo:
+                with db_readonly() as conn:
+                    if read_agent:
+                        agent_limit = _agent_token_limit(_agent_row(conn, agent_id, api_key))
+                    rows = policy_rows(conn, payer, policy_memo)
+            else:
+                rows = policy_memo[payer]
             for name in ("all", bucket):
                 resolved[name] = resolve_limits(rows, name)
         except Exception:
@@ -219,6 +232,17 @@ class RunLimits:
         return cls(
             payer, limits=resolved, window_start=start, resets_at=resets_at, agent=agent_limit, outside=outside
         )
+
+    def fresh(self) -> "RunLimits":
+        """The same resolved limits with no stop recorded, for another part of the run to start checking.
+
+        Returns:
+            A new :class:`RunLimits` over the same budgets, window and agent limit.
+        """
+        renewed = RunLimits(self.payer, agent=self._agent, outside=self.outside)
+        renewed._limits = dict(self._limits)
+        renewed._window_start, renewed._resets_at = self._window_start, self._resets_at
+        return renewed
 
     @property
     def limited(self) -> bool:

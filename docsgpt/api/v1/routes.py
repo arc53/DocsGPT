@@ -15,7 +15,7 @@ from typing import Any, Dict, Generator, List, Optional
 
 from flask import Blueprint, current_app, jsonify, make_response, request, Response
 
-from docsgpt.api.answer.routes.base import BaseAnswerResource, UsageRefused
+from docsgpt.api.answer.routes.base import BaseAnswerResource, UsageReads, UsageRefused
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_CODE,
@@ -331,6 +331,8 @@ class _V1AnswerHelper(BaseAnswerResource):
         agent_config: Dict,
         decoded_token: Optional[Dict] = None,
         agent_id: Optional[str] = None,
+        *,
+        reads: Optional[UsageReads] = None,
     ) -> Optional[Response]:
         """``BaseAnswerResource.check_usage``, with a paused agent's refusal in the ``/v1`` error shape.
 
@@ -338,11 +340,12 @@ class _V1AnswerHelper(BaseAnswerResource):
             agent_config: The run's agent config.
             decoded_token: The run's identity.
             agent_id: The agent the request runs through.
+            reads: Filled with what the check read, for the turn's billing to reuse.
 
         Returns:
             None, or the refusal.
         """
-        refusal = super().check_usage(agent_config, decoded_token, agent_id=agent_id)
+        refusal = super().check_usage(agent_config, decoded_token, agent_id=agent_id, reads=reads)
         return _openai_pause(refusal) if refusal is not None else None
 
 

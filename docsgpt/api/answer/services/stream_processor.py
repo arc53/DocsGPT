@@ -691,6 +691,8 @@ class StreamProcessor:
         self.setup_gate: Optional[Callable[["StreamProcessor"], Any]] = None
         # True once that check passed, so the route doesn't repeat it.
         self.setup_gate_passed = False
+        # The billing that check resolved; the agent carries it to its stream.
+        self.run_admission: Any = None
 
     @functools.cached_property
     def decision_record(self) -> DecisionRecord:
@@ -3485,6 +3487,8 @@ class StreamProcessor:
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.decision_record = self.decision_record
+        # The stream reuses the payer and limits the setup gate resolved instead of resolving them again.
+        agent.run_admission = getattr(self, "run_admission", None)
 
         return self._answers_read_by_caller(agent)
 

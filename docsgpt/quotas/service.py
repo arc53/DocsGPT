@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from docsgpt.core.settings import settings
 from docsgpt.quotas.payer import NO_PAYER_CODE, NO_PAYER_MESSAGE
@@ -159,6 +159,27 @@ class NoPayerError(QuotaExceededError):
         return {"success": False, "error_code": NO_PAYER_CODE, "code": NO_PAYER_CODE, "message": NO_PAYER_MESSAGE}
 
 
+def policy_rows(conn: Any, user_id: str, memo: Optional[dict[str, list[dict]]] = None) -> list[dict]:
+    """The policy rows that apply to ``user_id``: the stored ones and the defaults provider's.
+
+    Args:
+        conn: Open connection.
+        user_id: The payer.
+        memo: Rows already read in this request, by payer; filled on a read.
+            A turn's pre-run check and its run limits read the same payer's
+            rows, so they share one read.
+
+    Returns:
+        The rows :func:`~docsgpt.quotas.resolver.resolve_limits` takes.
+    """
+    if memo is not None and user_id in memo:
+        return memo[user_id]
+    rows = QuotaPoliciesRepository(conn).policies_for_user(user_id) + default_rows(user_id)
+    if memo is not None:
+        memo[user_id] = rows
+    return rows
+
+
 class QuotaService:
     """Resolve limits and measure usage for the current ``QUOTA_PERIOD`` window."""
 
@@ -167,11 +188,19 @@ class QuotaService:
         user_id: str,
         buckets: tuple[str, ...] = ("all",),
         now: Optional[datetime] = None,
+        *,
+        policy_memo: Optional[dict[str, list[dict]]] = None,
     ) -> list[BucketStatus]:
         """Return the user's status for each of ``buckets``.
 
         Usage is only summed for buckets that carry a limit, so a user with no
         applicable policy costs one policy lookup and no usage query.
+
+        Args:
+            user_id: The user.
+            buckets: The buckets to report.
+            now: Reference instant, for tests.
+            policy_memo: Policy rows already read in this request (:func:`policy_rows`).
 
         Raises:
             NoPayerError: ``user_id`` is a team principal, which has no allowance
@@ -182,7 +211,7 @@ class QuotaService:
         start, resets_at = window_bounds(settings.QUOTA_PERIOD, now)
         statuses: list[BucketStatus] = []
         with db_readonly() as conn:
-            rows = QuotaPoliciesRepository(conn).policies_for_user(user_id) + default_rows(user_id)
+            rows = policy_rows(conn, user_id, policy_memo)
             usage_repo = TokenUsageRepository(conn)
             for bucket in buckets:
                 limits = resolve_limits(rows, bucket)
@@ -194,7 +223,12 @@ class QuotaService:
 
     @classmethod
     def check(
-        cls, user_id: Optional[str], bucket: str = "direct", now: Optional[datetime] = None
+        cls,
+        user_id: Optional[str],
+        bucket: str = "direct",
+        now: Optional[datetime] = None,
+        *,
+        policy_memo: Optional[dict[str, list[dict]]] = None,
     ) -> Optional[QuotaExceeded]:
         """Return why ``user_id`` may not start a request, or ``None`` if they may.
 
@@ -207,6 +241,8 @@ class QuotaService:
             user_id: The billable user. Requests with no user are not limited.
             bucket: ``direct`` for chat without an agent, ``agent`` for traffic through one.
             now: Reference instant, for tests.
+            policy_memo: Policy rows already read in this request, filled on a
+                read (:func:`policy_rows`), so the run's limits reuse them.
 
         Raises:
             NoPayerError: ``user_id`` is a team principal. This fails closed,
@@ -220,7 +256,7 @@ class QuotaService:
         if bucket not in REQUEST_BUCKETS:
             raise ValueError(f"unknown request bucket: {bucket!r}")
         try:
-            statuses = cls.status(user_id, ("all", bucket), now)
+            statuses = cls.status(user_id, ("all", bucket), now, policy_memo=policy_memo)
         except Exception:
             logger.exception("quota check failed; allowing the request", extra={"user_id": user_id})
             return None

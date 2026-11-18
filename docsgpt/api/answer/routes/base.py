@@ -7,6 +7,7 @@ import threading
 import time
 import traceback
 import uuid
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 
 from flask import jsonify, make_response, Response
@@ -124,6 +125,123 @@ def _publisher_pays(external: bool, decoded_token: Any) -> bool:
     return bool(external) or not sub or is_principal_id(sub)
 
 
+@dataclass
+class UsageReads:
+    """What a turn's usage check read, so the billing resolved after it reuses it instead of reading it again.
+
+    Attributes:
+        agent: The agent row the check read, or None when it found none.
+        lookup: How the check looked the agent up, ``("key", key)`` or
+            ``("id", agent_id)``; None when it looked nothing up.
+        policies: The policy rows read, by payer (``quotas.service.policy_rows``).
+    """
+
+    agent: Optional[Dict[str, Any]] = None
+    lookup: Optional[Tuple[str, str]] = None
+    policies: Dict[str, List[Dict[str, Any]]] = field(default_factory=dict)
+
+    def agent_row(self, agent_id: Any, api_key: Optional[str]) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        """The agent row a lookup by id (else by key) finds, when the check already read that agent.
+
+        The payer and the run limits look an agent up by its id, else its
+        key; the check looked it up by its key, else its id. The row is
+        reused only when both lookups name the same agent.
+
+        Args:
+            agent_id: The agent's id.
+            api_key: The agent's key.
+
+        Returns:
+            ``(known, row)``: ``known`` is False when the row must be read;
+            otherwise ``row`` is the agent, or None when there is none.
+        """
+        by_id = str(agent_id).lower() if agent_id and looks_like_uuid(str(agent_id)) else None
+        if by_id is None and not api_key:
+            # Nothing to look up.
+            return True, None
+        if self.lookup is None:
+            return False, None
+        kind, value = self.lookup
+        if by_id is not None:
+            if kind == "id" and str(value).lower() == by_id:
+                return True, self.agent
+            if self.agent is not None and str(self.agent.get("id") or "").lower() == by_id:
+                return True, self.agent
+            return False, None
+        if kind == "key" and value == api_key:
+            return True, self.agent
+        return False, None
+
+
+@dataclass(frozen=True)
+class RunAdmission:
+    """The billing a turn's setup resolved, carried on its agent to the stream it starts.
+
+    Attributes:
+        basis: What it was resolved from (:func:`_billing_basis`); a stream
+            whose own inputs differ resolves its billing itself.
+        payer: Who the turn bills.
+        run_kind: ``chat`` or ``published``.
+        team_id: The workspace its spend belongs to.
+        limits: The limits each model call is checked against, or None.
+    """
+
+    basis: Tuple[Any, ...]
+    payer: Optional[str]
+    run_kind: str
+    team_id: Optional[str]
+    limits: Optional[RunLimits]
+
+    def stream_limits(self) -> Optional[RunLimits]:
+        """The stream's limits: the same budgets, with no stop the setup recorded (the stream checks again)."""
+        return self.limits.fresh() if self.limits is not None else None
+
+
+def _billing_basis(
+    *,
+    outside: bool,
+    decoded_token: Any,
+    team_id: Any,
+    agent_id: Any,
+    user_api_key: Optional[str],
+) -> Tuple[Any, ...]:
+    """What :func:`_run_billing` and :func:`_stream_limits` resolve a turn's billing from, as one comparable value.
+
+    Args:
+        outside: Traffic its agent's publisher pays for.
+        decoded_token: The turn's identity.
+        team_id: The chat's workspace team.
+        agent_id: The agent the turn runs.
+        user_api_key: The agent key the turn runs with, if any.
+
+    Returns:
+        The basis.
+    """
+    sub = decoded_token.get("sub") if isinstance(decoded_token, dict) else None
+    return bool(outside), sub, team_id or None, str(agent_id) if agent_id else None, user_api_key or None
+
+
+def _stream_billing_inputs(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """What a stream's billing is resolved from, read from ``complete_stream``'s bound arguments.
+
+    Args:
+        arguments: ``complete_stream``'s bound arguments.
+
+    Returns:
+        The keyword arguments of :func:`_run_billing`.
+    """
+    executor = getattr(arguments.get("agent"), "tool_executor", None)
+    # A new chat names its workspace; a resumed one carries it on its executor.
+    team_id = arguments.get("workspace_team_id") or getattr(executor, "workspace_team_id", None)
+    return {
+        "outside": _publisher_pays(getattr(executor, "external_caller", False) is True, arguments.get("decoded_token")),
+        "decoded_token": arguments.get("decoded_token"),
+        "team_id": team_id,
+        "agent_id": arguments.get("agent_id"),
+        "user_api_key": arguments.get("user_api_key"),
+    }
+
+
 def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Optional[str]]:
     """Who a stream bills, what kind of run it is, and which workspace its spend belongs to.
 
@@ -141,16 +259,7 @@ def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Opti
         chat, and for outside traffic whose payer can't be read (``check_usage``
         already refused traffic nobody pays for; the usage guard reports a principal).
     """
-    executor = getattr(arguments.get("agent"), "tool_executor", None)
-    # A new chat names its workspace; a resumed one carries it on its executor.
-    team_id = arguments.get("workspace_team_id") or getattr(executor, "workspace_team_id", None)
-    return _run_billing(
-        outside=_publisher_pays(getattr(executor, "external_caller", False) is True, arguments.get("decoded_token")),
-        decoded_token=arguments.get("decoded_token"),
-        team_id=team_id,
-        agent_id=arguments.get("agent_id"),
-        user_api_key=arguments.get("user_api_key"),
-    )
+    return _run_billing(**_stream_billing_inputs(arguments))
 
 
 def _run_billing(
@@ -160,6 +269,7 @@ def _run_billing(
     team_id: Any,
     agent_id: Any,
     user_api_key: Optional[str],
+    reads: Optional[UsageReads] = None,
 ) -> Tuple[Optional[str], str, Optional[str]]:
     """Who a turn bills, its run kind and its workspace, from what the turn is (see :func:`_stream_billing`).
 
@@ -169,6 +279,7 @@ def _run_billing(
         team_id: The chat's workspace team.
         agent_id: The agent the turn runs.
         user_api_key: The agent key the turn runs with, if any.
+        reads: What the turn's usage check read; its agent row is reused.
 
     Returns:
         ``(payer, run_kind, team_id)``.
@@ -177,7 +288,13 @@ def _run_billing(
     if not outside and not is_principal_id(sub):
         return sub, "chat", team_id if isinstance(team_id, str) and team_id else None
     try:
-        payer, agent_team = agent_payer_and_team(agent_id, user_api_key)
+        known, row = reads.agent_row(agent_id, user_api_key) if reads is not None else (False, None)
+        if not known:
+            payer, agent_team = agent_payer_and_team(agent_id, user_api_key)
+        elif row is not None:
+            payer, agent_team = published_access_payer(row), team_of_principal(row.get("user_id"))
+        else:
+            payer, agent_team = None, None
     except Exception:
         logger.exception("Could not read the agent's published-access payer")
         payer, agent_team = None, None
@@ -224,13 +341,16 @@ def _outside_paused_response(exceeded: QuotaExceeded) -> Response:
     return response
 
 
-def _stream_limits(arguments: Dict[str, Any], payer: Optional[str], run_kind: str) -> Optional[RunLimits]:
+def _stream_limits(
+    arguments: Dict[str, Any], payer: Optional[str], run_kind: str, reads: Optional[UsageReads] = None
+) -> Optional[RunLimits]:
     """The limits each model call of a stream is checked against: its payer's allowance and its agent's limit.
 
     Args:
         arguments: ``complete_stream``'s bound arguments.
         payer: The stream's payer (:func:`_stream_billing`).
         run_kind: ``chat`` or ``published`` (outside traffic, told only that the agent is paused).
+        reads: What the turn's usage check read; its agent row and policy rows are reused.
 
     Returns:
         The limits, or None with no payer.
@@ -241,13 +361,17 @@ def _stream_limits(arguments: Dict[str, Any], payer: Optional[str], run_kind: st
     agent_id = arguments.get("agent_id")
     agent_id = str(agent_id) if agent_id and looks_like_uuid(str(agent_id)) else None
     api_key = arguments.get("user_api_key") or None
+    known, row = reads.agent_row(agent_id, api_key) if reads is not None else (False, None)
     return RunLimits.start(
         payer,
         # As ``check_usage``: traffic through an agent, by key or id, counts in the agent bucket.
         bucket="agent" if api_key or agent_id else "direct",
+        # An empty row: the check looked for the agent and found none, so there is nothing to read.
+        agent=(row or {}) if known else None,
         agent_id=agent_id,
         api_key=api_key,
         outside=run_kind == "published",
+        policy_memo=reads.policies if reads is not None else None,
     )
 
 
@@ -299,14 +423,21 @@ def _traced_stream(
         decisions = getattr(arguments.get("agent"), "decision_record", None)
         if not isinstance(decisions, decision_record.DecisionRecord):
             decisions = decision_record.DecisionRecord()
-        payer, run_kind, team_id = _stream_billing(arguments)
-        try:
-            limits = _stream_limits(arguments, payer, run_kind)
-        except NoPayerError as refusal:
-            # Fails closed before anything is spent; ``check_usage`` normally refused this already.
-            tracing.discard(trace)
-            yield f"data: {sse_json({'type': 'error', 'error': refusal.message, 'code': refusal.code})}\n\n"
-            return
+        inputs = _stream_billing_inputs(arguments)
+        admission = getattr(arguments.get("agent"), "run_admission", None)
+        if isinstance(admission, RunAdmission) and admission.basis == _billing_basis(**inputs):
+            # The setup gate resolved this turn's billing already: the same caller, agent and workspace.
+            payer, run_kind, team_id = admission.payer, admission.run_kind, admission.team_id
+            limits = admission.stream_limits()
+        else:
+            payer, run_kind, team_id = _run_billing(**inputs)
+            try:
+                limits = _stream_limits(arguments, payer, run_kind)
+            except NoPayerError as refusal:
+                # Fails closed before anything is spent; ``check_usage`` normally refused this already.
+                tracing.discard(trace)
+                yield f"data: {sse_json({'type': 'error', 'error': refusal.message, 'code': refusal.code})}\n\n"
+                return
         billing = billed_to(payer, request_id, kind=run_kind, team_id=team_id, limits=limits)
         with tracing.activate(trace), decision_record.activate(decisions), billing:
             try:
@@ -648,6 +779,8 @@ class BaseAnswerResource:
         agent_config: Dict,
         decoded_token: Optional[Dict] = None,
         agent_id: Optional[str] = None,
+        *,
+        reads: Optional[UsageReads] = None,
     ) -> Optional[Response]:
         """Refuse the request when a usage limit is exhausted.
 
@@ -669,6 +802,8 @@ class BaseAnswerResource:
                 billable user.
             agent_id: The agent the request runs through. A draft agent has no
                 key, but its usage rows carry the agent id, so it is agent traffic.
+            reads: Filled with the agent row and policy rows the check read,
+                for the turn's billing to reuse.
 
         Returns:
             None or Response if either of limits exceeded.
@@ -681,6 +816,8 @@ class BaseAnswerResource:
                 repo = AgentsRepository(conn)
                 agent = repo.find_by_key(api_key) if api_key else repo.get_by_id(str(agent_id))
                 hit = agent_limit_exceeded(conn, agent) if agent else None
+            if reads is not None:
+                reads.agent, reads.lookup = agent, ("key", api_key) if api_key else ("id", str(agent_id))
             if hit is not None:
                 return agent_limit_response(hit)
         sub = (decoded_token or {}).get("sub")
@@ -695,7 +832,11 @@ class BaseAnswerResource:
             ):
                 return _no_payer_response()
         try:
-            exceeded = QuotaService.check(user_id, "agent" if api_key or agent_id else "direct")
+            exceeded = QuotaService.check(
+                user_id,
+                "agent" if api_key or agent_id else "direct",
+                policy_memo=reads.policies if reads is not None else None,
+            )
         except NoPayerError:
             return _no_payer_response()
         if exceeded is not None:
@@ -716,7 +857,10 @@ class BaseAnswerResource:
         reaches a model (history compression, the query rephrase, the source
         prescreen), so a refused turn spends nothing. What passes runs its
         setup billed like the stream it starts: the same payer, run kind,
-        workspace and per-call limits.
+        workspace and per-call limits. The check, the billing and the limits
+        share one read of the agent and of the payer's policies, and what they
+        resolve is kept on the processor (``run_admission``) for the agent to
+        carry to its stream.
 
         Args:
             processor: The ``StreamProcessor`` whose agent was just resolved.
@@ -728,19 +872,24 @@ class BaseAnswerResource:
             UsageRefused: A limit is used up, or nobody can pay.
         """
         agent_config = processor.agent_config
-        if error := self.check_usage(agent_config, processor.decoded_token, agent_id=processor.agent_id):
+        reads = UsageReads()
+        if error := self.check_usage(
+            agent_config, processor.decoded_token, agent_id=processor.agent_id, reads=reads
+        ):
             raise UsageRefused(error)
         run = {"agent_id": processor.agent_id, "user_api_key": agent_config.get("user_api_key")}
-        payer, run_kind, team_id = _run_billing(
-            outside=_publisher_pays(bool(agent_config.get("external_api_caller")), processor.decoded_token),
-            decoded_token=processor.decoded_token,
-            team_id=getattr(processor, "workspace_team_id", None),
+        inputs = {
+            "outside": _publisher_pays(bool(agent_config.get("external_api_caller")), processor.decoded_token),
+            "decoded_token": processor.decoded_token,
+            "team_id": getattr(processor, "workspace_team_id", None),
             **run,
-        )
+        }
+        payer, run_kind, team_id = _run_billing(**inputs, reads=reads)
         try:
-            limits = _stream_limits(run, payer, run_kind)
+            limits = _stream_limits(run, payer, run_kind, reads=reads)
         except NoPayerError:
             raise UsageRefused(_no_payer_response())
+        processor.run_admission = RunAdmission(_billing_basis(**inputs), payer, run_kind, team_id, limits)
         return billed_to(payer, processor.request_id, kind=run_kind, team_id=team_id, limits=limits)
 
     def check_usage_on_resume(self, processor: Any, conversation_id: Any) -> Optional[Response]:
