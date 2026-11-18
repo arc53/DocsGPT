@@ -3495,6 +3495,7 @@
         "cancel": "取消",
         "descriptionLabel": "描述（選填）",
         "descriptionPlaceholder": "代理可見，以便選擇正確的裝置。",
+        "expired": "此配對碼已過期。請產生新的配對碼以配對裝置。",
         "formSubtitle": "為新裝置設定名稱、描述與核准模式。",
         "fullAccessWarning": "完整存取：代理可在此機器上執行任何指令而不需詢問。安全拒絕清單仍然適用。",
         "installLink": "還沒有 docsgpt-cli？安裝它",

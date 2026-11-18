@@ -3641,6 +3641,7 @@
         "cancel": "Annuler",
         "descriptionLabel": "Description (facultatif)",
         "descriptionPlaceholder": "Visible par l’agent pour qu’il choisisse le bon appareil.",
+        "expired": "Ce code a expiré. Générez-en un nouveau pour associer l’appareil.",
         "formSubtitle": "Définissez un nom, une description et un mode d’approbation pour le nouvel appareil.",
         "fullAccessWarning": "Accès complet : les agents peuvent exécuter n’importe quelle commande sur cette machine sans demander. La liste de blocage de sécurité s’applique toujours.",
         "installLink": "Vous n’avez pas docsgpt-cli ? Installez-le",

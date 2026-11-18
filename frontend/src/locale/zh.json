@@ -3493,6 +3493,7 @@
         "cancel": "取消",
         "descriptionLabel": "描述（可选）",
         "descriptionPlaceholder": "对智能体可见，以便其选择正确的设备。",
+        "expired": "此代码已过期。请生成新代码以配对设备。",
         "formSubtitle": "为新设备设置名称、描述和审批模式。",
         "fullAccessWarning": "完全访问：智能体无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
         "installLink": "还没有 docsgpt-cli？安装它",

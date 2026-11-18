@@ -3641,6 +3641,7 @@
         "cancel": "Cancelar",
         "descriptionLabel": "Descripción (opcional)",
         "descriptionPlaceholder": "Visible para el agente para que pueda elegir el dispositivo correcto.",
+        "expired": "Este código ha caducado. Genera uno nuevo para emparejar el dispositivo.",
         "formSubtitle": "Define un nombre, una descripción y un modo de aprobación para el nuevo dispositivo.",
         "fullAccessWarning": "Acceso completo: los agentes pueden ejecutar cualquier comando en esta máquina sin preguntar. La lista de denegación de seguridad sigue aplicándose.",
         "installLink": "¿No tienes docsgpt-cli? Instálalo",
