@@ -1997,10 +1997,27 @@ class BaseAgent(ABC):
             text = doc.get("text") if isinstance(doc, dict) else None
             decision = cache.get(key(doc)) if isinstance(text, str) else None
             if decision is not None and decision.blocked and not doc.get("withheld"):
-                doc = {
-                    **self._retrieval_doc_with_guarded_text(doc, self.RETRIEVAL_WITHHELD_TEXT),
-                    "withheld": "policy",
-                }
+                matched_text = doc.get("matched_text")
+                if isinstance(matched_text, str) and matched_text:
+                    child = {**doc, "text": matched_text}
+                    child_key = key(child)
+                    if child_key not in cache:
+                        hint = (_retrieval_hints([child]) or [None])[0]
+                        self._score_retrieval_items(
+                            [(child_key, matched_text, _chunk_ref(child), hint)]
+                        )
+                    child_decision = cache.get(child_key)
+                    if child_decision is not None and not child_decision.blocked:
+                        doc = {**doc, "text": matched_text}
+                        doc.pop("matched_text", None)
+                        decision = child_decision
+                    elif child_decision is not None:
+                        decision = child_decision
+                if decision.blocked:
+                    doc = {
+                        **self._retrieval_doc_with_guarded_text(doc, self.RETRIEVAL_WITHHELD_TEXT),
+                        "withheld": "policy",
+                    }
             name = one_line(doc.get("source_name")) if isinstance(doc, dict) else ""
             if name and self._source_name_blocked(str(doc.get("source_id") or ""), name):
                 doc = {k: v for k, v in doc.items() if k != "source_name"}

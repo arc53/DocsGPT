@@ -227,6 +227,7 @@ class TestRetrievalStage:
         assert block == ClassicAgent.RETRIEVAL_BLOCKED_NOTE
         (source,) = client_sources(agent.retrieved_docs)
         assert source["text"] == ClassicAgent.RETRIEVAL_WITHHELD_TEXT
+        assert "matched_text" not in agent.retrieved_docs[0]
         assert "raw child that must not leave the server" not in repr(source)
 
     def test_clean_documents_render_normally(self, agent_base_params):
@@ -263,7 +264,36 @@ class TestRetrievalStage:
         (source,) = client_sources(agent.retrieved_docs)
         assert token not in source["text"]
         assert "[REDACTED]" in source["text"]
+        assert "matched_text" not in agent.retrieved_docs[0]
         assert child not in repr(source)
+
+    def test_expanded_parent_block_falls_back_to_allowed_child(self, agent_base_params, monkeypatch):
+        from types import SimpleNamespace
+
+        config = {
+            "enabled": True,
+            "mode": "scan_all",
+            "controls": [{"check": "injection_model", "stage": "retrieval", "action": "block"}],
+        }
+        parent, child = "parent with suspicious context", "owner-reviewed child"
+        agent = _agent(
+            agent_base_params, config,
+            retrieved_docs=[{"text": parent, "matched_text": child, "source_id": "source-1"}],
+        )
+        monkeypatch.setattr("docsgpt.agents.base._retrieval_hints", lambda docs: [
+            {"allowed": docs[0]["text"] == child}
+        ])
+
+        def score(items):
+            for cache_key, text, _ref, hint in items:
+                agent._guardrail_cache[cache_key] = SimpleNamespace(
+                    blocked=(text == parent and not (hint or {}).get("allowed"))
+                )
+
+        agent._score_retrieval_items = score
+        screened = agent._screen_docs(agent.retrieved_docs)
+
+        assert screened == [{"text": child, "source_id": "source-1"}]
 
 
 @pytest.mark.unit
