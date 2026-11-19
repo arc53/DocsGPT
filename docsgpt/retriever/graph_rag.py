@@ -29,7 +29,9 @@ import networkx as nx
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.graphrag.store import GraphStore
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text, expand_to_parent
+from docsgpt.retriever.base import (
+    BaseRetriever, SearchOutcome, budget_text, expand_to_parent, parent_dedupe_key,
+)
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
@@ -610,18 +612,9 @@ class GraphRAGRetriever(BaseRetriever):
 
             # Deduplication: sibling children sharing the same parent expand to
             # identical text — keep only the first (highest-ranked) occurrence.
-            parent_text = (metadata or {}).get("parent_text")
-            parent_key = None
-            if isinstance(parent_text, str) and parent_text:
-                meta = metadata or {}
-                identities = [meta.get(key) for key in ("source", "filename", "file_name", "title", "post_title")]
-                source_key = next(
-                    (identity for identity in identities if isinstance(identity, str) and identity), None
-                )
-                if source_key is not None:
-                    parent_key = (source_id, source_key, parent_text)
-                    if parent_key in seen_parents:
-                        continue
+            parent_key = parent_dedupe_key(metadata, text, source_id)
+            if parent_key is not None and parent_key in seen_parents:
+                continue
 
             labels = labels_from_metadata(metadata, text, source_id)
             attribution = self._connector_labels.for_source(source_id, metadata)

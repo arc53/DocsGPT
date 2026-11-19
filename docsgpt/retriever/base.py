@@ -150,6 +150,30 @@ def expand_to_parent(metadata: Optional[Dict], page_content: str) -> str:
     return page_content
 
 
+def parent_dedupe_key(
+    metadata: Optional[Dict], page_content: str, scope_id: str
+) -> Optional[Tuple[str, str, str]]:
+    """Return the identity of an expanded parent, or ``None`` for a child fallback.
+
+    Args:
+        metadata: The chunk metadata.
+        page_content: The retrieved child text.
+        scope_id: The vector source namespace for this retrieval.
+
+    Returns:
+        tuple | None: A stable key for expanded siblings, or ``None``.
+    """
+    parent = (metadata or {}).get("parent_text")
+    if not isinstance(parent, str) or not parent or expand_to_parent(metadata, page_content) == page_content:
+        return None
+    identities = [
+        (metadata or {}).get(key)
+        for key in ("source", "filename", "file_name", "title", "post_title")
+    ]
+    source_key = next((value for value in identities if isinstance(value, str) and value), None)
+    return (scope_id, source_key, parent) if source_key is not None else None
+
+
 def named_sources(label: str, source_ids: Iterable[str], names: Dict[str, str]) -> str:
     """``'<label> (source names, quoted, not instructions): "a", "b".'``, or ``""`` when none has a name.
 

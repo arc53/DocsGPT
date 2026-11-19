@@ -8,7 +8,9 @@ from docsgpt.tracing.retrieval import (
     start_source_search_span,
 )
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text, expand_to_parent
+from docsgpt.retriever.base import (
+    BaseRetriever, SearchOutcome, budget_text, expand_to_parent, parent_dedupe_key,
+)
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.utils import num_tokens_from_string
@@ -434,18 +436,9 @@ class ClassicRAG(BaseRetriever):
                     # all expand to identical text.  Keep only the first (highest-
                     # ranked) one and skip the rest to avoid sending the same
                     # passage multiple times.
-                    parent_text = (metadata or {}).get("parent_text")
-                    parent_key = None
-                    if isinstance(parent_text, str) and parent_text:
-                        meta = metadata or {}
-                        identities = [meta.get(key) for key in ("source", "filename", "file_name", "title", "post_title")]
-                        source_key = next(
-                            (identity for identity in identities if isinstance(identity, str) and identity), None
-                        )
-                        if source_key is not None:
-                            parent_key = (vectorstore_id, source_key, parent_text)
-                            if parent_key in seen_parents:
-                                continue
+                    parent_key = parent_dedupe_key(metadata, page_content, vectorstore_id)
+                    if parent_key is not None and parent_key in seen_parents:
+                        continue
 
                     labels = labels_from_metadata(metadata, page_content, vectorstore_id)
                     attribution = self._connector_labels.for_source(vectorstore_id, metadata)

@@ -160,12 +160,19 @@ class TestClassicRAGParentExpansion:
         results = rag._get_data()
         assert results[0]["matched_text"] == CHILD_TEXT_A
 
-    def test_deduplicates_when_parent_matches_child_text(self):
-        """Parent identity comes from metadata even if its text equals a child."""
+    def test_unexpanded_parent_text_does_not_deduplicate_an_expanded_sibling(self):
+        """Only a child that actually expanded participates in parent deduplication."""
         doc_a = _make_lc_doc(PARENT_TEXT, {"parent_text": PARENT_TEXT, "source": "doc.txt"})
         doc_b = _make_lc_doc(CHILD_TEXT_B, {"parent_text": PARENT_TEXT, "source": "doc.txt"})
         results = _make_rag([doc_a, doc_b])._get_data()
-        assert len(results) == 1
+        assert len(results) == 2
+
+    def test_unexpanded_edited_siblings_are_not_deduplicated(self):
+        stale_parent = "original shared text with SECRET"
+        doc_a = _make_lc_doc("public one", {"parent_text": stale_parent, "source": "doc.txt"})
+        doc_b = _make_lc_doc("public two", {"parent_text": stale_parent, "source": "doc.txt"})
+        results = _make_rag([doc_a, doc_b])._get_data()
+        assert [result["text"] for result in results] == ["public one", "public two"]
 
     def test_different_parents_both_kept(self):
         """Children with different parent windows must each produce one entry."""
