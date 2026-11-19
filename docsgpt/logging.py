@@ -278,6 +278,18 @@ def _end_agent_span(span: Any, context: "LogContext", *, error: BaseException | 
         span.end(None if completed else tracing.STATUS_CANCELLED, attributes=attributes)
 
 
+def _error_class(error: BaseException) -> str:
+    """The activity log's label for the error that ended a run.
+
+    A stop by the payer's allowance or the agent's limit (``stops_run``) is
+    checked first: ``is_budget_exhausted`` matches it too, but it is not a
+    run out of time.
+    """
+    if getattr(error, "stops_run", False) is True:
+        return "LimitReached"
+    return "TimeLimit" if is_budget_exhausted(error) else type(error).__name__
+
+
 def _emit_activity_finished(
     *,
     context: "LogContext",
@@ -299,9 +311,7 @@ def _emit_activity_finished(
             "duration_ms": duration_ms,
             "status": "error" if (error is not None or context.stream_error) else "ok",
             "error_class": (
-                ("TimeLimit" if is_budget_exhausted(error) else type(error).__name__)
-                if error is not None
-                else ("StreamError" if context.stream_error else None)
+                _error_class(error) if error is not None else ("StreamError" if context.stream_error else None)
             ),
             "answer_length": context.answer_length,
             "thought_length": context.thought_length,

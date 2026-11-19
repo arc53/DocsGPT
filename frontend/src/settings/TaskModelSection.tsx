@@ -9,9 +9,15 @@ import { SectionHeader } from '../components/ui/section-header';
 import { Skeleton } from '../components/ui/skeleton';
 import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
 import { SettingRows } from '../components/ui/setting-row';
+import { isCatalogModel } from '../models/modelGroups';
+import { isTeamModel } from '../models/teamModels';
 import type { Model } from '../models/types';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectToken } from '../preferences/preferenceSlice';
+import {
+  PERSONAL_WORKSPACE,
+  workspaceHeader,
+} from '../workspace/requestWorkspace';
 import TaskModelRow, {
   refusedModel,
   TASK_MODEL_UNAVAILABLE as UNAVAILABLE,
@@ -70,7 +76,9 @@ export default function TaskModelSection() {
     let cancelled = false;
     Promise.all([
       userService.getPreferences(token),
-      modelService.getModels(token),
+      // The task model is the person's own setting, their custom models
+      // included, whatever workspace the app is in: Personal's list.
+      modelService.getModels(token, workspaceHeader(PERSONAL_WORKSPACE)),
     ])
       .then(async ([prefsRes, modelsRes]) => {
         if (!prefsRes?.ok || !modelsRes?.ok) throw new Error('load failed');
@@ -82,7 +90,11 @@ export default function TaskModelSection() {
           setUnsupported(true);
           return;
         }
-        const models = modelService.transformModels(data?.models || []);
+        // A team's model is never the person's own setting (Personal's list
+        // carries none; this holds should it ever).
+        const models = modelService
+          .transformModels(data?.models || [])
+          .filter((m) => !isTeamModel(m));
         const picked =
           typeof prefs.task_model_id === 'string' &&
           models.some((m) => m.id === prefs.task_model_id)
@@ -224,7 +236,7 @@ export default function TaskModelSection() {
           groups={[
             {
               label: t('settings.customModels.modelsGroup.builtin'),
-              models: loaded.models.filter((m) => m.source !== 'user'),
+              models: loaded.models.filter(isCatalogModel),
             },
             {
               label: t('settings.customModels.modelsGroup.user'),

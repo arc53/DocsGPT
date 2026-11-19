@@ -328,16 +328,16 @@ class TestUpdatedAtTracksContent:
         assert _stamp(pg_conn, agent["id"]) > stamp
 
     def test_a_folder_move_keeps_the_stamp(self, pg_conn):
-        """Folders are the owner's own filing: moving or unfiling an agent isn't an edit to it."""
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
+        """Folders are each user's own filing: filing, moving or unfiling an agent isn't an edit to it."""
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
 
         repo = _repo(pg_conn)
         agent = repo.create("u", "a", "draft")
-        folder = AgentFoldersRepository(pg_conn).create("u", "F")
+        folder = FoldersRepository(pg_conn).create("u", "F")
         stamp = _age(pg_conn, agent["id"])
-        repo.set_folder(str(agent["id"]), "u", str(folder["id"]))
+        FolderItemsRepository(pg_conn).file("u", "agent", str(agent["id"]), str(folder["id"]))
         assert _stamp(pg_conn, agent["id"]) == stamp
-        repo.clear_folder_for_all(str(folder["id"]), "u")
+        FoldersRepository(pg_conn).delete_into_parent(folder)
         assert _stamp(pg_conn, agent["id"]) == stamp
 
     def test_touch_for_workflow_moves_only_the_linked_agents(self, pg_conn):
@@ -446,44 +446,6 @@ class TestDelete:
         deleted = repo.delete_by_legacy_id("507f1f77bcf86cd799439011", "user-1")
         assert deleted is True
         assert repo.get(created["id"], "user-1") is None
-
-
-class TestSetFolder:
-    def test_assigns_folder(self, pg_conn):
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
-
-        folder_repo = AgentFoldersRepository(pg_conn)
-        folder = folder_repo.create("user-1", "f")
-        repo = _repo(pg_conn)
-        agent = repo.create("user-1", "a", "draft")
-        repo.set_folder(agent["id"], "user-1", folder["id"])
-        fetched = repo.get(agent["id"], "user-1")
-        assert str(fetched["folder_id"]) == str(folder["id"])
-
-    def test_clear_folder(self, pg_conn):
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
-
-        folder_repo = AgentFoldersRepository(pg_conn)
-        folder = folder_repo.create("user-1", "f")
-        repo = _repo(pg_conn)
-        agent = repo.create("user-1", "a", "draft", folder_id=folder["id"])
-        repo.set_folder(agent["id"], "user-1", None)
-        fetched = repo.get(agent["id"], "user-1")
-        assert fetched["folder_id"] is None
-
-
-class TestClearFolderForAll:
-    def test_clears_folder_from_all_agents(self, pg_conn):
-        from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
-
-        folder_repo = AgentFoldersRepository(pg_conn)
-        folder = folder_repo.create("user-1", "f")
-        repo = _repo(pg_conn)
-        a1 = repo.create("user-1", "a1", "draft", folder_id=folder["id"])
-        a2 = repo.create("user-1", "a2", "draft", folder_id=folder["id"])
-        repo.clear_folder_for_all(folder["id"], "user-1")
-        assert repo.get(a1["id"], "user-1")["folder_id"] is None
-        assert repo.get(a2["id"], "user-1")["folder_id"] is None
 
 
 class TestPromptPresets:

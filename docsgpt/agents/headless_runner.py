@@ -30,24 +30,57 @@ from docsgpt.api.answer.services.stream_processor import (
     source_for_docs,
     wiki_tool_config,
 )
+from docsgpt.api.user.resource_access import run_reader
 from docsgpt.connectors.attribution import client_sources
 from docsgpt.core.run_budget import StreamCancelled, is_budget_exhausted
 from docsgpt.core.settings import settings
 from docsgpt.decisions import record as decision_record
 from docsgpt.llm.deadlines import interruptible
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of
-from docsgpt.quotas.service import QuotaExceededError, QuotaService
+from docsgpt.quotas.agent_limits import AgentLimitExceededError, agent_limit_exceeded, has_agent_limit
+from docsgpt.quotas.payer import billed_to, current_run_billing, published_access_payer
+from docsgpt.quotas.run_limits import RunLimitReached, RunLimits, limits_stop
+from docsgpt.quotas.service import NoPayerError, QuotaExceededError, QuotaService
 from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.storage.db.session import db_readonly
 from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_owner(agent_config: Dict[str, Any]) -> Optional[str]:
+    """The identity the run executes as: the agent's owner, whose sources, tools, prompt and model it uses.
+
+    Not who pays for it: that is the run's ``payer`` (see ``run_agent_headless``).
+    """
     return agent_config.get("user_id") or agent_config.get("user")
+
+
+def _check_run_limits(agent_config: Dict[str, Any], payer: Optional[str], is_agent_run: bool) -> None:
+    """Refuse a run that would start over a limit: the agent's own first, then the payer's allowance.
+
+    Args:
+        agent_config: The agent row (or an agentless config, which has no agent limit).
+        payer: Who the run bills.
+        is_agent_run: The run goes through an agent (the allowance's ``agent`` bucket).
+
+    Raises:
+        AgentLimitExceededError: The agent's 24-hour token or request limit is used up.
+        QuotaExceededError: The payer's allowance is used up. On outside
+            traffic (a webhook) it says only that the agent is paused.
+    """
+    if is_agent_run and has_agent_limit(agent_config):
+        with db_readonly() as conn:
+            hit = agent_limit_exceeded(conn, agent_config)
+        if hit is not None:
+            raise AgentLimitExceededError(hit)
+    exceeded = QuotaService.check(payer, "agent" if is_agent_run else "direct")
+    if exceeded is not None:
+        billing = current_run_billing()
+        raise QuotaExceededError(exceeded, outside=getattr(billing, "kind", None) == "published")
 
 
 def _resolve_agent_id(agent_config: Dict[str, Any]) -> Optional[str]:
@@ -130,6 +163,13 @@ def _scheduled_cannot_complete(
     return reason, answer[:last_round_start] + lead + drop_cannot_complete_marker(last_round)
 
 
+#: The run kind an ``endpoint`` records by default; any other endpoint names its own (``run_kind=``).
+_ENDPOINT_RUN_KINDS = {"schedule": "schedule", "webhook": "published"}
+
+#: ``team_id`` left out: the run's spend belongs to the agent's team (None for a personal agent).
+_AGENT_TEAM: Any = object()
+
+
 def run_agent_headless(
     agent_config: Dict[str, Any],
     query: str,
@@ -149,8 +189,25 @@ def run_agent_headless(
     background: Any = None,
     on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    payer: Optional[str] = None,
+    run_kind: Optional[str] = None,
+    team_id: Any = _AGENT_TEAM,
 ) -> Dict[str, Any]:
     """Run an agent with no live client; returns a structured outcome dict.
+
+    The run executes as the agent's owner (their sources, tools, prompt and
+    model) and bills ``payer``, fixed here for the whole run: every model call
+    in it (workflow steps, sub-agents, compression, guardrail and fallback
+    calls) records the payer, and the run counts as one request. A schedule
+    passes the person who set it, a continuation the person whose chat it
+    carries on; None bills whoever pays for the agent's outside traffic
+    (``published_access_payer``), as for a webhook. Before the run starts the
+    agent's own limit is checked, then the payer's allowance; a refusal then
+    raises. While it runs, each model call is checked against both again
+    (``RunLimits``): once one is used up the run ends there and returns its
+    partial answer and tool calls with ``error_type`` ``budget_exceeded``
+    (the agent's limit) or ``payer_out_of_allowance`` (the payer's), and the
+    message as ``error``, never as a time limit.
 
     ``query`` is the agent's input. Its sources are searched with
     ``retrieval_query`` when one is given -- a webhook passes its payload's
@@ -186,9 +243,33 @@ def run_agent_headless(
     after each event; once it says yes the run ends, keeping what it has, and
     the outcome's ``stopped`` is True.
 
+    A team principal is never a payer: a team agent's run with no person to
+    bill (no ``payer`` given and no published-access payer) never starts.
+
+    The run's usage rows record ``run_kind`` (by default ``schedule`` for the
+    ``schedule`` endpoint and ``published`` for ``webhook``; a continuation
+    passes its conversation's) and ``team_id``, the workspace the spend belongs
+    to: the agent's team unless given (a continuation passes its
+    conversation's; None is Personal).
+
     Raises:
-        QuotaExceededError: If the agent owner's usage quota is exhausted.
+        AgentLimitExceededError: If the agent's own 24-hour limit is used up.
+        QuotaExceededError: If the payer's allowance is used up.
+        NoPayerError: If nobody but a team principal could be billed.
     """
+    payer = payer or published_access_payer(agent_config)
+    if is_principal_id(payer) or (not payer and is_principal_id(_resolve_owner(agent_config))):
+        raise NoPayerError(payer or _resolve_owner(agent_config))
+    run_kind = run_kind or _ENDPOINT_RUN_KINDS.get(endpoint)
+    if team_id is _AGENT_TEAM:
+        team_id = team_of_principal(_resolve_owner(agent_config))
+    # Each model call of the run is checked against these (an agent run counts in the agent bucket).
+    limits = RunLimits.start(
+        payer or _resolve_owner(agent_config),
+        bucket="agent" if (agent_config.get("key") or _resolve_agent_id(agent_config)) else "direct",
+        agent=agent_config,
+        outside=run_kind == "published",
+    )
     trace = tracing.start_trace(
         source=endpoint,
         request_id=request_id,
@@ -197,7 +278,11 @@ def run_agent_headless(
         conversation_id=conversation_id,
     )
     status = None
-    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()):
+    billing = billed_to(payer, kind=run_kind, team_id=team_id, limits=limits)
+    # Who reads the run: whoever set the schedule or carries on the chat (the payer); outside traffic is
+    # read by nobody known. A team's item that reader can't use is left out of the run.
+    reader = run_reader("" if run_kind == "published" else (payer or _resolve_owner(agent_config)))
+    with tracing.activate(trace), decision_record.activate(decision_record.DecisionRecord()), billing, reader:
         try:
             outcome = _run_agent_headless(
                 agent_config,
@@ -216,6 +301,7 @@ def run_agent_headless(
                 request_id=request_id,
                 on_event=on_event,
                 should_stop=should_stop,
+                payer=payer,
             )
             if outcome.get("error"):
                 status = tracing.STATUS_ERROR
@@ -245,6 +331,7 @@ def _run_agent_headless(
     request_id: Optional[str] = None,
     on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
+    payer: Optional[str] = None,
 ) -> Dict[str, Any]:
     from docsgpt.core.model_utils import (
         get_api_key_for_provider,
@@ -257,24 +344,24 @@ def _run_agent_headless(
     owner = _resolve_owner(agent_config)
     if not owner:
         raise ValueError("Agent config is missing user_id; cannot run headless.")
+    # Runs as the owner; ``payer`` is billed (``billed_to`` around this run).
     decoded_token = {"sub": owner}
     # An agent run is agent traffic whether or not the agent has a key yet.
     is_agent_run = bool(agent_config.get("key") or _resolve_agent_id(agent_config))
-    exceeded = QuotaService.check(owner, "agent" if is_agent_run else "direct")
-    if exceeded is not None:
-        raise QuotaExceededError(exceeded)
+    _check_run_limits(agent_config, payer or owner, is_agent_run)
 
-    retriever_kind = agent_config.get("retriever", "classic")
+    # A row's unset retriever is None, not missing: unset means classic.
+    retriever_kind = agent_config.get("retriever") or "classic"
     # PG rows carry every column: an unset type is None, not missing.
     agent_type = (agent_config.get("agent_type") or "").strip() or "classic"
     # Every source a chat with this agent searches: the primary and the
     # extras, each owned or team-shared to the owner, else attached by an
-    # editor who still qualifies.
+    # editor who still qualifies, then its knowledge folders' sources.
     sources_row = dict(agent_config)
     sources_row["source_id"] = agent_config.get("source_id") or agent_config.get("source")
     primary, source_docs = None, []
     wiki_config: Optional[Dict[str, Any]] = None
-    if sources_row["source_id"] or sources_row.get("extra_source_ids"):
+    if sources_row["source_id"] or sources_row.get("extra_source_ids") or sources_row.get("knowledge_folder_ids"):
         with db_readonly() as conn:
             primary, source_docs = authorized_agent_sources(conn, sources_row)
             if agent_type in WIKI_AGENT_TYPES and source_docs:
@@ -488,6 +575,8 @@ def _run_agent_headless(
     if should_stop is not None:
         events = interruptible(events, lambda: StreamCancelled() if should_stop() else None)
     budget_error = False
+    # A limit that refused one of the run's model calls: the run ends there, keeping what it did.
+    limit_stop: Optional[RunLimitReached] = None
     try:
         for event in events:
             if not isinstance(event, dict):
@@ -564,6 +653,10 @@ def _run_agent_headless(
         else:
             # A Stop can also end the agent mid-read, which it reports by returning.
             stopped = should_stop is not None and should_stop()
+    except RunLimitReached as exc:
+        # Checked before the time limit, which it would otherwise read as.
+        limit_stop = exc
+        tool_calls = merge_tool_calls(tool_calls, tool_executor.get_truncated_tool_calls())
     except Exception as exc:
         if not is_budget_exhausted(exc) or endpoint != "continuation":
             # Scheduled/webhook runs retain their existing outer time-limit handlers.
@@ -586,8 +679,15 @@ def _run_agent_headless(
         cannot_complete, answer_full = _scheduled_cannot_complete(
             agent, tool_executor, agent_type, answer_full, last_round_start
         )
+    if limit_stop is None and stream_error:
+        # A workflow step reports a refused call as its own error event; the run's limits remember the stop.
+        limit_stop = limits_stop()
     error: Optional[str] = None
-    if budget_error:
+    if limit_stop is not None:
+        # ``payer_out_of_allowance`` or ``budget_exceeded``; the partial answer and calls are kept.
+        error_type = limit_stop.error_type
+        error = str(limit_stop)[:500]
+    elif budget_error:
         error_type = "TimeLimit"
         error = stream_error
     # A refused tool is the exact cause of a run that then says it couldn't

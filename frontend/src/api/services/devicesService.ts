@@ -1,5 +1,6 @@
 import apiClient from '../client';
 import endpoints from '../endpoints';
+import { ApiError, readRefusal, requestFailed } from './apiError';
 
 export type ApprovalMode = 'ask' | 'full';
 
@@ -51,16 +52,14 @@ export interface AuditEntry {
   created_at: string;
 }
 
-/** A non-2xx device API response; `code` is the server's `error` field. */
-export class DevicesApiError extends Error {
-  status: number;
-  code?: string;
-
+/**
+ * A non-2xx device API response; `code` is the server's `error` field, and
+ * also its message (the server's own text is not shown).
+ */
+export class DevicesApiError extends ApiError {
   constructor(status: number, code?: string) {
-    super(code || `Request failed (${status})`);
+    super(status, code || requestFailed(status), code);
     this.name = 'DevicesApiError';
-    this.status = status;
-    this.code = code;
   }
 }
 
@@ -70,16 +69,7 @@ const json = async (response: Response | unknown) => {
   const r = response as Response;
   if (!('json' in r) || typeof r.json !== 'function') return r as unknown;
   if (typeof r.ok === 'boolean' && !r.ok) {
-    let code: string | undefined;
-    try {
-      const body = await r.json();
-      if (body && typeof body.error === 'string' && body.error) {
-        code = body.error;
-      }
-    } catch {
-      // Not JSON (a proxy's error page): the status is all there is.
-    }
-    throw new DevicesApiError(r.status, code);
+    throw new DevicesApiError(r.status, (await readRefusal(r)).code);
   }
   return r.json();
 };

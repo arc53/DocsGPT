@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LoadingState } from '@/components/ui/loading-state';
 import { Checkbox } from './ui/checkbox';
+import { IconButton } from './ui/icon-button';
 import {
   Command,
   CommandEmpty,
@@ -35,6 +37,36 @@ export type MultiSelectPopoverItem = {
   /** The group's heading when it is more than its key (an icon and a name). */
   groupHeading?: React.ReactNode;
   disabled?: boolean;
+  /**
+   * The box's tick when it isn't simply "picked": `indeterminate` for a
+   * folder partly picked, `true` for a row a picked folder brings in.
+   * Left out, the box follows `selectedIds`.
+   */
+  checked?: boolean | 'indeterminate';
+  /**
+   * A row included with something picked above it ("Included with
+   * Carriers"): muted name and box, no tint, and it can't be toggled
+   * (pass `disabled` too). Its opener still works.
+   */
+  muted?: boolean;
+  /**
+   * Opens the row's contents (a folder): a chevron button after the box, the
+   * one action a picker row may carry. ArrowRight opens the highlighted row.
+   */
+  onOpen?: () => void;
+  /** The opener's accessible name ("Open Carriers"). */
+  openLabel?: string;
+  /**
+   * Listed only in the Selected group (`selectedFirst`), when it was picked
+   * as the picker opened: a source filed in a folder, at the picker's root.
+   */
+  pinnedOnly?: boolean;
+  /**
+   * The folder the item is filed in ("Carriers › Rates"): a search matches
+   * it, and while one is typed it leads the row's line, so each match says
+   * where it is.
+   */
+  folderTrail?: string;
 };
 
 // The key of the Selected group; no caller's group key starts with a NUL.
@@ -73,6 +105,21 @@ export type MultiSelectPopoverProps = {
    */
   loneGroupHeading?: boolean;
   title?: string;
+  /**
+   * Drawn under the search, above the filters: an open folder's crumb row.
+   * Like the filters it sits outside cmdk's key handling.
+   */
+  header?: React.ReactNode;
+  /** The search text, controlled (with `onSearchChange`). */
+  search?: string;
+  onSearchChange?: (search: string) => void;
+  /**
+   * cmdk filters and sorts the rows by the search (the default when
+   * searchable). Off: the caller filters, and the rows keep their order.
+   */
+  shouldFilter?: boolean;
+  /** ArrowLeft with an empty search: back out of an open folder. */
+  onBack?: () => void;
 };
 
 function renderIcon(icon: MultiSelectPopoverItem['icon']) {
@@ -108,6 +155,11 @@ export function MultiSelectPopover({
   selectedFirst = false,
   loneGroupHeading = true,
   title,
+  header,
+  search,
+  onSearchChange,
+  shouldFilter,
+  onBack,
 }: MultiSelectPopoverProps) {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
@@ -125,11 +177,17 @@ export function MultiSelectPopover({
   const [snapshot, setSnapshot] = React.useState<Set<string> | null>(() =>
     isOpen ? new Set(selectedIds) : null,
   );
+  // The search when the caller doesn't own it: rows read it to name their
+  // folder while one is typed. Each open starts empty.
+  const [ownSearch, setOwnSearch] = React.useState('');
   const [snapshotOpen, setSnapshotOpen] = React.useState(isOpen);
   if (snapshotOpen !== isOpen) {
     setSnapshotOpen(isOpen);
     setSnapshot(isOpen ? new Set(selectedIds) : null);
+    if (isOpen) setOwnSearch('');
   }
+  const searchText = onSearchChange ? (search ?? '') : ownSearch;
+  const searching = searchText.trim() !== '';
   const pinned = selectedFirst ? snapshot : null;
 
   const grouped = React.useMemo(() => {
@@ -152,7 +210,9 @@ export function MultiSelectPopover({
       if (item.groupHeading !== undefined && !headings.has(key)) {
         headings.set(key, item.groupHeading);
       }
-      add(pinned?.has(item.id) ? SELECTED_GROUP : key, item);
+      const isPinned = pinned?.has(item.id) ?? false;
+      if (item.pinnedOnly && !isPinned) return;
+      add(isPinned ? SELECTED_GROUP : key, item);
     });
     return { groupOrder, map, headings };
   }, [items, pinned]);
@@ -169,51 +229,100 @@ export function MultiSelectPopover({
       : (grouped.headings.get(key) ?? (key || undefined));
   const effectivePlaceholder =
     searchPlaceholder || t('settings.tools.searchPlaceholder', 'Search...');
+  // With any opener in the list, every row keeps its slot, so the boxes
+  // line up in one column.
+  const hasOpeners = items.some((item) => item.onOpen);
 
   const renderItem = (item: MultiSelectPopoverItem) => {
     const isSelected = selectedSet.has(item.id);
+    const boxChecked = item.checked ?? isSelected;
+    const trail = searching ? item.folderTrail : undefined;
+    const description =
+      trail && !item.descriptionNode
+        ? [trail, item.description].filter(Boolean).join(' · ')
+        : item.description;
     return (
       <CommandItem
         key={item.id}
         value={`${item.label} ${item.id}`}
-        // The row's line is searched too (a host, an account, a sharer).
+        // The row's line is searched too (a host, an account, a sharer),
+        // and its folder.
         keywords={[
           ...(item.description ? [item.description] : []),
           ...(item.keywords ?? []),
+          ...(item.folderTrail ? [item.folderTrail] : []),
         ]}
-        disabled={item.disabled}
+        // A row with an opener (a folder inside a picked one) stays
+        // reachable by the arrows, so ArrowRight can open it; its own
+        // `disabled` still keeps it from toggling.
+        disabled={item.disabled && !item.onOpen}
         onSelect={() => {
           if (!item.disabled) onToggle(item.id);
         }}
-        checked={isSelected}
+        checked={isSelected && !item.muted}
+        muted={item.muted}
         className="justify-between"
       >
         <div className="mr-3 flex grow items-center gap-3 overflow-hidden">
           {renderIcon(item.icon)}
           <div className="overflow-hidden">
             <p
-              className="text-foreground overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap"
+              className={cn(
+                'overflow-hidden text-sm font-medium text-ellipsis whitespace-nowrap',
+                item.muted ? 'text-muted-foreground' : 'text-foreground',
+              )}
               title={item.label}
             >
               {item.label}
             </p>
             {item.descriptionNode ? (
-              <div className="overflow-hidden">{item.descriptionNode}</div>
-            ) : item.description ? (
+              <div className="overflow-hidden">
+                {trail ? (
+                  <p className="text-muted-foreground overflow-hidden text-xs text-ellipsis whitespace-nowrap">
+                    {trail}
+                  </p>
+                ) : null}
+                {item.descriptionNode}
+              </div>
+            ) : description ? (
               <p className="text-muted-foreground overflow-hidden text-xs text-ellipsis whitespace-nowrap">
-                {item.description}
+                {description}
               </p>
             ) : null}
           </div>
         </div>
-        {/* Visual only: the row is the control (cmdk handles the click and
-            Enter), so the box takes no focus or events. */}
-        <Checkbox
-          checked={isSelected}
-          tabIndex={-1}
-          aria-hidden
-          className="pointer-events-none"
-        />
+        <span className="flex shrink-0 items-center gap-2">
+          {/* Visual only: the row is the control (cmdk handles the click and
+              Enter), so the box takes no focus or events. */}
+          <Checkbox
+            checked={boxChecked}
+            // An included row's box can't change: the disabled box is faded.
+            disabled={item.muted}
+            tabIndex={-1}
+            aria-hidden
+            className="pointer-events-none"
+          />
+          {item.onOpen ? (
+            // Off the tab order like the box: ArrowRight opens the
+            // highlighted row, so Tab still runs search → footer.
+            <IconButton
+              variant="ghost-muted"
+              size="icon-xs"
+              tabIndex={-1}
+              data-slot="row-opener"
+              label={item.openLabel ?? ''}
+              icon={ChevronRight}
+              className="pointer-events-auto -my-1 -mr-1"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                item.onOpen?.();
+              }}
+            />
+          ) : hasOpeners ? (
+            <span className="-my-1 -mr-1 size-7" aria-hidden />
+          ) : null}
+        </span>
       </CommandItem>
     );
   };
@@ -228,7 +337,24 @@ export function MultiSelectPopover({
   );
 
   const commandBody = (
-    <Command shouldFilter={searchable} className="min-h-0 flex-1">
+    <Command
+      shouldFilter={shouldFilter ?? searchable}
+      className="min-h-0 flex-1"
+      onKeyDown={(event) => {
+        if (event.key === 'ArrowRight') {
+          const opener = event.currentTarget.querySelector<HTMLElement>(
+            '[cmdk-item][data-selected="true"] [data-slot="row-opener"]',
+          );
+          if (opener) {
+            event.preventDefault();
+            opener.click();
+          }
+        } else if (event.key === 'ArrowLeft' && onBack && search === '') {
+          event.preventDefault();
+          onBack();
+        }
+      }}
+    >
       {title && (
         <div className="shrink-0 px-4 pt-4">
           <SectionHeader as="h3" size="xs" title={title} />
@@ -236,9 +362,23 @@ export function MultiSelectPopover({
       )}
       {searchable && (
         <div className={cn('shrink-0', title && 'mt-3')}>
-          <CommandInput placeholder={effectivePlaceholder} />
+          <CommandInput
+            placeholder={effectivePlaceholder}
+            {...(onSearchChange
+              ? { value: search ?? '', onValueChange: onSearchChange }
+              : { value: ownSearch, onValueChange: setOwnSearch })}
+          />
         </div>
       )}
+      {header ? (
+        <div
+          data-slot="multi-select-header"
+          className="shrink-0"
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          {header}
+        </div>
+      ) : null}
       {filters ? (
         // cmdk's root turns Enter into "toggle the highlighted row" and
         // takes the arrows; a filter's keys stop here.

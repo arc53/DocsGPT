@@ -81,6 +81,8 @@ from docsgpt.storage.db.repositories.wiki_pages import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.storage.storage_creator import StorageCreator
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
@@ -238,29 +240,34 @@ def _reset_graph_for_source(source_id) -> None:
     GraphStore().delete_by_source(str(source_id))
 
 
-def _publish_graph_event(user, source_id, event_type, payload) -> None:
-    """Publish a graph-extraction SSE event, scoped to the source. Never raises."""
+def _publish_graph_event(user, source_id, event_type, payload, actor_id=None) -> None:
+    """Publish a graph-extraction SSE event, scoped to the source. Never raises.
+
+    It reaches the source's owner and whoever started the build; for a team's
+    source, that person only (``_source_event_recipients``).
+    """
     if not user:
         return
     try:
-        publish_user_event(
-            user,
-            event_type,
-            payload,
-            scope={"kind": "source", "id": str(source_id)},
-        )
+        _publish_source_event(user, actor_id, event_type, payload, scope={"kind": "source", "id": str(source_id)})
     except Exception as e:
         logging.debug(f"Failed to publish graph event {event_type}: {e}")
 
 
-def _maybe_enqueue_graph_extraction(cfg, source_id, user):
+def _actor_kwargs(actor_id: Optional[str]) -> Dict[str, str]:
+    """``{"actor_id": id}`` for a task queued on someone's behalf, else ``{}`` (the call shape stays as it was)."""
+    return {"actor_id": str(actor_id)} if actor_id else {}
+
+
+def _maybe_enqueue_graph_extraction(cfg, source_id, user, actor_id=None):
     """Reset and re-enqueue graph extraction after embed for a graphrag source.
 
     The graph lights up asynchronously once chunks are embedded, so ClassicRAG
     works immediately. A no-op for non-graphrag sources or when GraphRAG is
     unavailable. The prior graph is cleared first so a re-ingest rebuilds rather
     than accumulating stale nodes. The work is isolated so a broker hiccup can
-    never fail an otherwise-successful ingest.
+    never fail an otherwise-successful ingest. ``actor_id`` (who added the
+    knowledge) pays for the extraction and hears its events.
     """
     if cfg.kind != "graphrag":
         return
@@ -277,7 +284,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
             source = SourcesRepository(conn).get_any(source_id, user)
         _reset_graph_for_source(source_id)
         key = graph_extraction_key(source_id, _source_updated_at(source))
-        extract_graph.delay(source_id, user, idempotency_key=key)
+        extract_graph.delay(source_id, user, idempotency_key=key, **_actor_kwargs(actor_id))
     except Exception as e:
         logging.warning(
             f"Failed to enqueue graph extraction for {source_id}: {e}",
@@ -285,7 +292,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
         )
 
 
-def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
+def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None, actor_id=None):
     """Queue the graph's catch-up after a sync re-embedded a graphrag source.
 
     A sync stores every chunk again under a new id. Rather than reset and
@@ -306,7 +313,7 @@ def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
         from docsgpt.api.user.tasks import extract_graph
 
         key = f"extract-graph:{source_id}:sync:{task_id or uuid.uuid4().hex}"
-        extract_graph.delay(source_id, user, idempotency_key=key, sync=True)
+        extract_graph.delay(source_id, user, idempotency_key=key, sync=True, **_actor_kwargs(actor_id))
     except Exception as e:
         logging.warning(f"Failed to enqueue the graph sync for {source_id}: {e}", exc_info=True)
 
@@ -413,10 +420,11 @@ def _stop_ingest_heartbeat(thread, stop_event):
         thread.join(timeout=5)
 
 
-def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
+def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct, actor_id=None):
     """Build a ``load_data`` callback mapping parse progress to
     ``[start_pct, end_pct]`` via ``update_state`` + a throttled
-    ``stage='parsing'`` SSE event.
+    ``stage='parsing'`` SSE event (to the owner, or for a team's source to
+    the person who started the ingest).
     """
     span = end_pct - start_pct
     source_id_str = str(source_id)
@@ -431,8 +439,9 @@ def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
             meta={"current": pct, "status": "Parsing files"},
         )
         if user and pct > state["last_pct"]:
-            publish_user_event(
+            _publish_source_event(
                 user,
+                actor_id,
                 "source.ingest.progress",
                 {
                     "current": pct,
@@ -834,6 +843,8 @@ def ingest_worker(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
+    actor_id=None,
 ):
     """
     Ingest and process documents.
@@ -862,6 +873,10 @@ def ingest_worker(
             first, ``{"from": storage path, "to": storage path}`` each (a
             Knowledge source made from chat attachments). The copy runs here
             rather than in the request; a retry copies again, harmlessly.
+        folder_id (str|None): One of the uploader's source folders to file
+            the new source in; the API files it in the write that stores it.
+        actor_id (str|None): The uploader, when ``user`` is a team's principal:
+            the new source names them as its creator, and its events reach them.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -898,15 +913,17 @@ def ingest_worker(
         "operation": "upload",
     }
     if self.request.retries == 0:
-        publish_user_event(
+        _publish_source_event(
             user,
+            actor_id,
             "source.ingest.queued",
             queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
+    progress_user, progress_actor = _progress_recipients(user, actor_id)
 
     # Wrap the entire body in try/except so a failure between the
     # ``queued`` publish above and the inner work (e.g. tempdir
@@ -983,7 +1000,7 @@ def ingest_worker(
             # Parsing/OCR owns 1-50% of the bar; embedding takes 50-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
-                    self, user, source_uuid, start_pct=1, end_pct=50,
+                    self, user, source_uuid, start_pct=1, end_pct=50, actor_id=actor_id,
                 )
             )
 
@@ -1029,7 +1046,8 @@ def ingest_worker(
                 embed_and_store_documents(
                     docs, vector_store_path, source_uuid, self,
                     attempt_id=getattr(self.request, "id", None),
-                    user_id=user,
+                    user_id=progress_user,
+                    **_actor_kwargs(progress_actor),
                     progress_start=50, progress_end=100,
                 )
             finally:
@@ -1054,15 +1072,19 @@ def ingest_worker(
                 "type": "local",
                 "file_path": file_path,
                 "directory_structure": json.dumps(directory_structure),
+                **_creator_field(user, actor_id),
             }
             if file_name_map:
                 file_data["file_name_map"] = json.dumps(file_name_map)
             if config:
                 file_data["config"] = json.dumps(config)
 
+            if folder_id:
+                file_data["folder_id"] = folder_id
             upload_index(vector_store_path, file_data)
-            publish_user_event(
+            _publish_source_event(
                 user,
+                actor_id,
                 "source.ingest.completed",
                 {
                     "source_id": source_id_for_events,
@@ -1077,12 +1099,13 @@ def ingest_worker(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
-        publish_user_event(
+        _publish_source_event(
             user,
+            actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,
@@ -1216,7 +1239,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             )
         else:
             # The failed attempt before cleared the Activity marker.
-            mark_ingest_running(user, queued)
+            _mark_ingest_running(user, actor_id, queued)
 
         try:
             held.enter_context(source_index_lock(source_id))
@@ -1540,7 +1563,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
                 )
-                _maybe_enqueue_graph_extraction(cfg, source_id, user)
+                _maybe_enqueue_graph_extraction(cfg, source_id, user, actor_id)
 
                 return {
                     "source_id": source_id,
@@ -1591,6 +1614,190 @@ def _task_id_field(task: Any) -> Dict[str, str]:
     return {"task_id": task_id} if isinstance(task_id, str) and task_id else {}
 
 
+def _person(user_id: Optional[str]) -> Optional[str]:
+    """``user_id`` as a string when it names a person, ``None`` for nobody or a team's principal."""
+    return str(user_id) if user_id and not is_principal_id(user_id) else None
+
+
+def _source_event_recipients(user: str, actor_id: Optional[str]) -> List[str]:
+    """Who hears an event about a person's source.
+
+    The owner, and whoever asked for the change when that is someone else (a
+    team editor of a shared source). A team's source is not handled here: its
+    events go through the publisher's routing (``_publish_source_event``).
+
+    Args:
+        user: The source's owner, a person.
+        actor_id: The person who asked for the change, if any.
+
+    Returns:
+        The person ids to publish to, owner first.
+    """
+    actor = _person(actor_id)
+    return ([user] if user else []) + ([actor] if actor and actor != str(user) else [])
+
+
+def _progress_recipients(user: str, actor_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """``(user_id, actor_id)`` for the embedding pipeline's progress events.
+
+    The pipeline sends to its ``user_id`` and to a different ``actor_id``. A
+    team's source with someone who started the ingest is published once to its
+    principal, naming them: the publisher sends it on to them only while they
+    are still in the team. With nobody, progress goes nowhere.
+    """
+    if not is_principal_id(user):
+        return user, actor_id
+    actor = _person(actor_id)
+    return (user, actor) if actor else (None, None)
+
+
+def _mark_ingest_running(user: str, actor_id: Optional[str], queued: Dict[str, Any]) -> None:
+    """Mark a retried ingest running in Activity: for the owner, or for a team's source, the person who started it."""
+    queued = _with_workspace(user, queued)
+    for recipient in (_person(actor_id),) if is_principal_id(user) else (user,):
+        if recipient:
+            mark_ingest_running(recipient, queued)
+
+
+def _with_workspace(user: str, queued: Dict[str, Any]) -> Dict[str, Any]:
+    """A ``source.ingest.queued`` payload with the workspace the ingest runs in.
+
+    A new upload has no source row until it ends, so Activity › Now places its
+    marker by this field: ``team_id`` is the team whose principal owns the
+    source, None for a person's own.
+
+    Args:
+        user: The source's owner.
+        queued: The payload.
+
+    Returns:
+        A copy of ``queued`` with ``team_id``.
+    """
+    return {**queued, "team_id": team_of_principal(user)}
+
+
+def _creator_field(user: str, actor_id: Optional[str]) -> Dict[str, str]:
+    """``{"created_by": person}`` for a team's new source (``fill_created_by`` names nobody for a principal).
+
+    A person's source is left to the trigger, which names its owner.
+    """
+    actor = _person(actor_id)
+    return {"created_by": actor} if is_principal_id(user) and actor else {}
+
+
+def _team_payer(conn: Any, owner: str, created_by: Optional[str], checks: Optional[Any] = None) -> Optional[str]:
+    """The person who added a team's source, while they may still add knowledge there (Editor or above).
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner (a team's principal).
+        created_by: ``sources.created_by``.
+        checks: A sync pass's ``PayerChecks``, so each person's role is read once per pass.
+
+    Returns:
+        Their id, or ``None`` when they are gone, demoted to Viewer, or unknown.
+    """
+    team_id = team_of_principal(owner)
+    person = _person(created_by)
+    if team_id is None or person is None:
+        return None
+    role = checks.team_role(conn, person, team_id) if checks is not None else team_role_for(conn, person, team_id)
+    return person if role_at_least(role, "editor") else None
+
+
+def _team_connection(
+    conn: Any, owner: str, connection_id: Optional[str], rows: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """The team connection a team's source reads through, or None when it reads through none.
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner.
+        connection_id: ``sources.connection_id``.
+        rows: A sync pass's connection rows by id (missing ones read and kept), so
+            sources that share a connection read it once per pass.
+
+    Returns:
+        The ``connector_sessions`` row when ``owner`` is a team's principal and the
+        connection is that team's own; else None (no connection, a personal one, or
+        another owner's, which the source's own rule then refuses).
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    if not connection_id or not is_principal_id(owner):
+        return None
+    key = str(connection_id)
+    if rows is not None and key in rows:
+        row = rows[key]
+    else:
+        row = ConnectorSessionsRepository(conn).get(key)
+        if rows is not None:
+            rows[key] = row
+    if row is None or str(row.get("user_id")) != str(owner):
+        return None
+    return row
+
+
+def _scheduled_connection_payer(
+    conn: Any, connection: Dict[str, Any], *, checks: Optional[Any] = None,
+) -> Optional[str]:
+    """Who a scheduled sync through a team's connection bills: the person who connected it, read now.
+
+    Nobody while its account is paused or that person is out of allowance
+    (``connection_pause(..., allowance=True)``): the sync waits for the next
+    schedule. Nothing is written either way; the pause is derived on every read.
+
+    Args:
+        conn: Open connection.
+        connection: The team's ``connector_sessions`` row.
+        checks: The tick's ``PayerChecks``, so each person is looked up once.
+
+    Returns:
+        The payer, or None to skip the sync.
+    """
+    from docsgpt.quotas.pause import PayerChecks, connection_pause
+    from docsgpt.quotas.payer import connection_payer
+
+    checks = checks or PayerChecks()
+    if connection_pause(conn, connection, checks=checks, allowance=True) is not None:
+        return None
+    return connection_payer(conn, connection, checks=checks)
+
+
+def _knowledge_payer(
+    conn: Any, owner: str, actor_id: Optional[str], created_by: Optional[str], connection_id: Optional[str] = None,
+) -> Optional[str]:
+    """Who pays for model use a source's knowledge needs (graph extraction): a person, never a team.
+
+    The person who started it; with nobody (a scheduled sync, a task queued
+    before ``actor_id`` existed), a person's source bills its owner. A team's
+    source that reads through the team's connection bills the person who
+    connected it, while its account isn't paused; any other team source bills
+    the person who added it, while still an Editor there.
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner.
+        actor_id: The person who started the work, if any.
+        created_by: ``sources.created_by``.
+        connection_id: ``sources.connection_id``.
+
+    Returns:
+        The payer, or ``None`` for a team's source nobody can pay for (never the principal).
+    """
+    from docsgpt.quotas.payer import connection_payer
+
+    actor = _person(actor_id)
+    if actor:
+        return actor
+    if not is_principal_id(owner):
+        return owner
+    connection = _team_connection(conn, owner, connection_id)
+    if connection is not None:
+        return connection_payer(conn, connection)
+    return _team_payer(conn, owner, created_by)
+
+
 def _publish_source_event(
     user: str, actor_id: Optional[str], event_type: str, payload: Dict[str, Any], **kwargs: Any,
 ) -> None:
@@ -1598,6 +1805,11 @@ def _publish_source_event(
 
     A team editor changes a source they don't own: the job runs as the owner,
     and without a copy of its events the editor's view would never see it end.
+    A team's source is published once to its principal, naming the person who
+    asked: the publisher sends it to them while they are still in the team
+    (someone removed mid-ingest hears nothing more; a failure then reaches the
+    team's admins), and wakes the ingest monitors once under the principal.
+    They match a team's source by its owner, and a person's copy wakes none.
 
     Args:
         user: The source's owner.
@@ -1606,9 +1818,15 @@ def _publish_source_event(
         payload: Its payload.
         **kwargs: Passed to ``publish_user_event`` (``scope``).
     """
-    publish_user_event(user, event_type, payload, **kwargs)
-    if actor_id and str(actor_id) != str(user):
-        publish_user_event(str(actor_id), event_type, payload, **kwargs)
+    if event_type == "source.ingest.queued":
+        payload = _with_workspace(user, payload)
+    if is_principal_id(user):
+        # The publisher wakes the monitors once under the principal (even when nobody is told, as for a
+        # scheduled sync's success) and checks, event by event, that whoever started the work is still in the team.
+        publish_user_event(user, event_type, payload, actor_id=_person(actor_id), **kwargs)
+        return
+    for recipient in _source_event_recipients(user, actor_id):
+        publish_user_event(recipient, event_type, payload, **kwargs)
 
 
 def _loaded_file_count(docs: Iterable[Any]) -> int:
@@ -1648,6 +1866,7 @@ def remote_worker(
     source_id=None,
     connection_id=None,
     actor_id=None,
+    folder_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1690,7 +1909,8 @@ def remote_worker(
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
+    progress_user, progress_actor = _progress_recipients(user, actor_id)
 
     # Wrap ``update_state`` plus the entire body so any pre-loader
     # failure (Celery backend down, OS resource issue) still emits a
@@ -1701,7 +1921,7 @@ def remote_worker(
         remote_loader = RemoteCreator.create_loader(loader)
         loader_input = source_data
         if connection_id:
-            loader_input = _with_connection_credentials(source_data, connection_id)
+            loader_input = _with_connection_credentials(source_data, connection_id, owner=user)
             if loader_input is None:
                 from docsgpt.connectors.service import ConnectionUnavailable
 
@@ -1713,7 +1933,7 @@ def remote_worker(
                 with connection_fetch_lock(str(connection_id)):
                     # Read the credentials again: the connection may have been
                     # removed or its token replaced while this waited.
-                    loader_input = _with_connection_credentials(source_data, connection_id)
+                    loader_input = _with_connection_credentials(source_data, connection_id, owner=user)
                     if loader_input is None:
                         from docsgpt.connectors.service import ConnectionUnavailable
 
@@ -1833,8 +2053,8 @@ def remote_worker(
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
-                user_id=user,
-                actor_id=actor_id,
+                user_id=progress_user,
+                actor_id=progress_actor,
             )
             assert_index_complete(source_uuid)
         elif operation_mode == "sync":
@@ -1844,8 +2064,8 @@ def remote_worker(
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
-                user_id=user,
-                actor_id=actor_id,
+                user_id=progress_user,
+                actor_id=progress_actor,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -1864,6 +2084,7 @@ def remote_worker(
             "remote_data": remote_data_serialized,
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
+            **_creator_field(user, actor_id),
         }
         if operation_mode == "sync":
             # The API keeps the row's own name, type, remote_data, schedule
@@ -1887,6 +2108,8 @@ def remote_worker(
                 logging.warning(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
+        if folder_id and operation_mode != "sync":
+            file_data["folder_id"] = folder_id
         refused = _upload_refusal(upload_index(full_path, file_data))
         if refused:
             # No website report either: nothing was stored.
@@ -1915,9 +2138,9 @@ def remote_worker(
             scope={"kind": "source", "id": source_id_for_events},
         )
         if operation_mode == "sync":
-            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None), actor_id)
         else:
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
@@ -2261,20 +2484,91 @@ def _release_scheduled_sync_claim(key: str, task_id: str) -> None:
         logging.exception("Could not release the claim of scheduled sync %s", key)
 
 
+#: ``sources.metadata`` key of a team source's scheduled sync paused for want of a payer (step 3 shows it).
+SYNC_PAUSED_KEY = "sync_paused"
+SYNC_NO_PAYER = "sync_no_payer"
+
+
+def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any, checks: Optional[Any] = None) -> Optional[str]:
+    """Who a team source's scheduled sync bills, flagging the source when nobody can.
+
+    The person who added the source pays while they are still an Editor or
+    above in the team. Otherwise the sync is skipped and the source carries
+    ``metadata.sync_paused = {"reason": "sync_no_payer", "since"}``, written
+    once and cleared when someone can pay again.
+
+    Args:
+        doc: The source row (``id``, ``user_id``, ``created_by``).
+        metadata: Its parsed ``metadata``.
+        checks: The pass's ``PayerChecks``, so each person's role is read once.
+
+    Returns:
+        The payer, or ``None`` to skip the sync.
+    """
+    owner = doc.get("user_id")
+    source_id = str(doc.get("id"))
+    flagged = isinstance(metadata, dict) and SYNC_PAUSED_KEY in metadata
+    with db_session() as conn:
+        payer = _team_payer(conn, owner, doc.get("created_by"), checks=checks)
+        repo = SourcesRepository(conn)
+        if payer is None and not flagged:
+            repo.set_metadata_key(
+                source_id, owner, SYNC_PAUSED_KEY,
+                {"reason": SYNC_NO_PAYER, "since": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+            )
+        elif payer is not None and flagged:
+            repo.remove_metadata_key(source_id, owner, SYNC_PAUSED_KEY)
+    return payer
+
+
+def _connection_sync_actor(
+    doc: Dict[str, Any], checks: Any, connections: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Whether a team's source syncs through the team's connection, and who its scheduled sync bills.
+
+    Never raises: a failed lookup reads as nobody to bill, so the source waits
+    for the next schedule instead of stopping the tick.
+
+    Args:
+        doc: The source row (``id``, ``user_id``, ``connection_id``).
+        checks: The tick's ``PayerChecks``.
+        connections: The tick's connection rows by id (``_team_connection``).
+
+    Returns:
+        ``(False, None)`` when it reads through no connection of its team (the
+        source's own payer rule applies); ``(True, person)`` when the person who
+        connected the account pays; ``(True, None)`` while nobody can.
+    """
+    try:
+        with db_readonly() as conn:
+            connection = _team_connection(conn, doc.get("user_id"), doc.get("connection_id"), rows=connections)
+            if connection is None:
+                return False, None
+            return True, _scheduled_connection_payer(conn, connection, checks=checks)
+    except Exception:  # noqa: BLE001 - one source must not stop the tick
+        logging.exception("Could not find who pays for the sync of source %s", doc.get("id"))
+        return True, None
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
+
+    from docsgpt.quotas.pause import PayerChecks
 
     sync_counts = Counter()
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config "
-                "FROM sources WHERE sync_frequency = :freq"
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config, "
+                "created_by FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
         )
         rows = result.fetchall()
 
+    # One tick asks about each person (role, account, allowance) and reads each team connection once.
+    checks = PayerChecks()
+    connections: Dict[str, Any] = {}
     for row in rows:
         doc = dict(row._mapping)
         name = doc.get("name")
@@ -2292,15 +2586,21 @@ def sync_worker(self, frequency):
 
         # Connector sources sync from their connection, whose token the
         # worker can refresh. Legacy ones with no connection still need the
-        # browser, so they are skipped as before.
+        # browser, so they are skipped as before. A team's source waits while
+        # the person who connected the team's account can't pay for it.
         if source_type and source_type.startswith("connector"):
-            if doc.get("connection_id"):
+            through_connection, payer = (
+                _connection_sync_actor(doc, checks, connections) if is_principal_id(user) else (False, user)
+            )
+            if not doc.get("connection_id") or payer is None:
+                sync_counts["sync_skipped"] += 1
+                if through_connection:
+                    sync_counts[SYNC_NO_PAYER] += 1
+            else:
                 from docsgpt.api.user.tasks import sync_connector_source as sync_task
 
                 sync_task.delay(doc_id)
                 sync_counts["sync_dispatched"] += 1
-            else:
-                sync_counts["sync_skipped"] += 1
             continue
 
         metadata = doc.get("metadata")
@@ -2332,6 +2632,23 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
+        # A team's source runs as its principal, which never pays: the sync bills
+        # (and tells) the person who connected the team's account it reads
+        # through, else the person who added it, or doesn't run.
+        actor = None
+        if is_principal_id(user):
+            try:
+                through_connection, actor = _connection_sync_actor(doc, checks, connections)
+                if not through_connection:
+                    actor = _scheduled_sync_payer(doc, metadata, checks)
+            except Exception:  # noqa: BLE001 - one source must not stop the tick
+                actor = None
+                logging.exception("Could not find who pays for the sync of source %s", doc_id)
+            if actor is None:
+                sync_counts["sync_skipped"] += 1
+                sync_counts[SYNC_NO_PAYER] += 1
+                continue
+
         outcome = _dispatch_scheduled_sync(
             _scheduled_sync_key(self, doc_id),
             source_data=source_data,
@@ -2342,6 +2659,7 @@ def sync_worker(self, frequency):
             retriever=retriever,
             doc_id=doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+            **_actor_kwargs(actor),
         )
         sync_counts[
             {"dispatched": "sync_dispatched", "already_queued": "sync_skipped"}.get(outcome, "sync_failure")
@@ -2349,7 +2667,7 @@ def sync_worker(self, frequency):
     return {
         key: sync_counts[key]
         for key in [
-            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched",
+            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched", SYNC_NO_PAYER,
         ]
     }
 
@@ -4200,7 +4518,10 @@ def agent_webhook_worker(self, agent_id, payload):
 
     Raises on failure so the task ends ``FAILURE``: Celery treats a
     returned dict as success. A quota refusal and a run past
-    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``.
+    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``; a run a
+    limit stopped mid-way returns the same status, with what it did. The
+    payer's allowance is ``agent_paused`` with only the paused message (the
+    caller reads it by task id), the agent's own limit ``quota_exceeded``.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -4219,8 +4540,16 @@ def agent_webhook_worker(self, agent_id, payload):
                 agent_config = agent_row_to_dict(result.fetchone())
             if agent_config is None:
                 agent_config = repo.get_by_legacy_id(str(agent_id))
+            from docsgpt.api.owner_pause import outside_access_refusal
+
+            # Queued before the owner or payer was deactivated (or before a
+            # team agent lost its payer): it is refused like key traffic.
+            refusal = outside_access_refusal(conn, agent_config) if agent_config else None
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
+        if refusal is not None:
+            logging.info("Webhook skipped for agent %s: %s", agent_id, refusal.code)
+            return {"status": refusal.code, "error": refusal.message}
         # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
         input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:
@@ -4241,7 +4570,11 @@ def agent_webhook_worker(self, agent_id, payload):
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
-        from docsgpt.quotas.service import QuotaExceededError
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+        from docsgpt.quotas.pause import PAYER_OUT_OF_ALLOWANCE
+        from docsgpt.quotas.payer import published_access_payer
+        from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
 
         outcome = run_agent_headless(
             agent_config,
@@ -4250,6 +4583,8 @@ def agent_webhook_worker(self, agent_id, payload):
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
             request_id=run_id,
+            payer=published_access_payer(agent_config),
+            run_kind="published",
         )
         result = {
             "answer": outcome.get("answer", ""),
@@ -4257,11 +4592,24 @@ def agent_webhook_worker(self, agent_id, payload):
             "tool_calls": outcome.get("tool_calls", []),
             "thought": outcome.get("thought", ""),
         }
+        if outcome.get("error_type") in RUN_LIMIT_ERROR_TYPES:
+            # Stopped mid-run by the payer's allowance or the agent's limit: what it did is kept.
+            logging.warning(
+                f"Webhook run for agent {agent_id} stopped by a limit", extra={"agent_id": agent_id}
+            )
+            # The payer's allowance reads as a pause, as before the run.
+            status = PAUSED_CODE if outcome.get("error_type") == PAYER_OUT_OF_ALLOWANCE else "quota_exceeded"
+            return {"status": status, "error": outcome.get("error"), "result": result}
     except QuotaExceededError as e:
         # Returned, not raised: retrying cannot succeed before the quota resets.
         logging.warning(
             f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
         )
+        if isinstance(getattr(e, "exceeded", None), QuotaExceeded):
+            # The payer's allowance: the caller reads this by task id, so it
+            # learns only that the agent is paused, never whose numbers.
+            return {"status": PAUSED_CODE, "error": PAUSED_MESSAGE}
+        # The agent's own limit, whose message is about the agent.
         return {"status": "quota_exceeded", "error": str(e)}
     except SoftTimeLimitExceeded:
         logging.warning(
@@ -4387,7 +4735,7 @@ def _webhook_tool_allowlist(agent_config):
     return []
 
 
-def _with_connection_credentials(source_data, connection_id: str):
+def _with_connection_credentials(source_data, connection_id: str, owner: Optional[str] = None):
     """Loader input with the connection's stored keys merged in, or None.
 
     S3, Reddit and GitHub sources made from a connection keep their keys on
@@ -4396,7 +4744,13 @@ def _with_connection_credentials(source_data, connection_id: str):
     repository URL) becomes ``{"url": ...}`` next to the keys. An MCP
     sign-in (Linear) gets its ``connection_id`` instead: its tokens stay
     with the MCP client, which renews them. Returns None when the
-    connection is gone, needs reconnecting, or its connector is turned off.
+    connection is gone, needs reconnecting, its connector is turned off, or
+    it belongs to someone other than ``owner`` (a source only ever reads
+    through its own owner's connection).
+
+    Raises:
+        ConnectionUnavailable: ``status="paused"`` for a team's account the
+            person who connected it can't use now.
     """
     from docsgpt.connectors import service
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -4406,14 +4760,19 @@ def _with_connection_credentials(source_data, connection_id: str):
         enabled = row is not None and service.connector_enabled(conn, row)
     if row is None or not enabled:
         return None
+    if owner is not None and str(row.get("user_id")) != str(owner):
+        return None
     if (row.get("auth_kind") or "") == "mcp_oauth":
         if service.normalize_status(row) != service.STATUS_CONNECTED:
             return None
+        service.ensure_account_usable(None, row)
         credentials = {"connection_id": str(row["id"])}
     else:
         try:
             credentials = service.access_credentials(row)
-        except service.ConnectionUnavailable:
+        except service.ConnectionUnavailable as err:
+            if err.status == service.STATUS_PAUSED:
+                raise
             return None
     if isinstance(source_data, str):
         try:
@@ -4424,6 +4783,28 @@ def _with_connection_credentials(source_data, connection_id: str):
             return json.dumps({**parsed, **credentials})
         return {"url": source_data, **credentials}
     return {**dict(source_data or {}), **credentials}
+
+
+def _require_own_connection(connection_id: Any, owner: str) -> None:
+    """Refuse to read a source's files through a connection its owner doesn't own.
+
+    A team's source reads only through the team's own connection and a
+    person's only through their own; a task queued with any other (a personal
+    connection for a team's source, say) stops before the account is touched.
+
+    Args:
+        connection_id: The connection the ingest was asked to read through.
+        owner: The source's owner.
+
+    Raises:
+        ValueError: The connection is gone or belongs to someone else.
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get(str(connection_id)) if connection_id else None
+    if row is None or str(row.get("user_id")) != str(owner):
+        raise ValueError("This source can't read through that connection")
 
 
 def _link_source_to_connection(source_id: str, connection_id: str) -> None:
@@ -4578,7 +4959,17 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             if source and source.get("connection_id")
             else None
         )
+        if connection is not None and str(connection.get("user_id")) != str(source.get("user_id")):
+            # A source only ever reads through its own owner's connection.
+            connection = None
         enabled = connection is not None and connector_enabled(conn, connection)
+        # A team's source bills the person who connected the team's account,
+        # read now: a Reconnect by another Admin moves the bill to them.
+        payer = (
+            _scheduled_connection_payer(conn, connection)
+            if connection is not None and is_principal_id(source.get("user_id"))
+            else None
+        )
     if not source or not connection:
         return {"status": "skipped"}
     if _is_wiki_config(source.get("config")):
@@ -4587,6 +4978,9 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
     if not enabled:
         return {"status": "disabled"}
     if normalize_status(connection) != "connected":
+        return {"status": "paused"}
+    if is_principal_id(source.get("user_id")) and payer is None:
+        # Its account is paused, or whoever connected it is out of allowance.
         return {"status": "paused"}
     remote_data = source.get("remote_data") or {}
     if isinstance(remote_data, str):
@@ -4612,6 +5006,8 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             config=source.get("config") or None,
             # A scheduled run: nobody waits on it, so a skip goes unannounced.
             notify_skip=False,
+            # The payer of a team's sync hears its events and pays for its graph.
+            **_actor_kwargs(payer),
         )
     except ConnectionUnavailable:
         return {"status": "paused"}
@@ -4640,6 +5036,7 @@ def ingest_connector(
     connection_id=None,
     notify_skip: bool = True,
     actor_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -4677,6 +5074,7 @@ def ingest_connector(
             ``reason``) when a sync is skipped. Off for scheduled syncs.
         actor_id: The user who asked for the ingest or sync (a team editor),
             who gets its ``source.ingest.*`` events too; ``None`` for the owner.
+        folder_id: One of the uploader's source folders to file a new source in.
 
     Returns:
         The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
@@ -4691,7 +5089,7 @@ def ingest_connector(
         return _ingest_connector(
             self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
             operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
-            actor_id=actor_id,
+            actor_id=actor_id, folder_id=folder_id,
         )
 
     def _run(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -4735,6 +5133,7 @@ def _ingest_connector(
     source_id: Optional[str],
     connection_id: Optional[str],
     actor_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """The body of ``ingest_connector`` (same arguments); a sync runs it holding the source's index lock."""
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
@@ -4771,7 +5170,7 @@ def _ingest_connector(
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -4785,6 +5184,8 @@ def _ingest_connector(
 
             if not session_token and not connection_id:
                 raise ValueError(f"{source_type} connector requires a connection")
+            if connection_id:
+                _require_own_connection(connection_id, user)
 
             if not ConnectorCreator.is_supported(source_type):
                 raise ValueError(
@@ -4794,6 +5195,9 @@ def _ingest_connector(
             remote_loader = ConnectorCreator.create_connector(
                 source_type, session_token, connection_id=connection_id
             )
+            if remote_loader.connection_id and str(remote_loader.connection_id) != str(connection_id or ""):
+                # Named by a legacy session token: checked once it is known.
+                _require_own_connection(remote_loader.connection_id, user)
             connection_id = remote_loader.connection_id
 
             # Create a clean config for storage
@@ -5032,6 +5436,8 @@ def _ingest_connector(
                         upd_err,
                     )
 
+            if folder_id and operation_mode != "sync":
+                file_data["folder_id"] = folder_id
             refused = _upload_refusal(upload_index(vector_store_path, file_data))
             if refused:
                 return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
@@ -5061,9 +5467,11 @@ def _ingest_connector(
                 scope={"kind": "source", "id": source_id_for_events},
             )
             if operation_mode == "sync":
-                _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+                _maybe_enqueue_graph_sync(
+                    cfg, source_id_for_events, user, getattr(self.request, "id", None), actor_id,
+                )
             else:
-                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
 
             return {
                 "user": user,
@@ -5098,7 +5506,9 @@ def _ingest_connector(
         raise
 
 
-def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
+def mcp_oauth(
+    self, config: Dict[str, Any], user_id: str = None, actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Worker to handle MCP OAuth flow asynchronously.
 
     Publishes SSE events at each phase boundary so the frontend can
@@ -5106,6 +5516,21 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     ``mcp.oauth.awaiting_redirect`` envelope carries the
     ``authorization_url`` once the upstream OAuth client surfaces it,
     eliminating the prior polling-only path for that URL.
+
+    A team's sign-in is owned by the team (``user_id`` is its principal)
+    and run for the Admin signing in (``actor_id``): its events go to that
+    Admin's stream only, its tokens are written naming them, and the
+    ``completed`` event names the team's connection the save picks up.
+    A team's sign-in without an Admin never runs.
+
+    Args:
+        self: The bound Celery task.
+        config: The MCP server config.
+        user_id: Who owns the sign-in: the person, or a team's principal.
+        actor_id: For a team's sign-in, the Admin signing in.
+
+    Returns:
+        ``{success, tools, tools_count}`` or ``{success: False, error}``.
     """
 
     # Bind ``task_id`` and the publish helpers OUTSIDE the outer try so
@@ -5113,16 +5538,23 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     # early statement raises. Without this, ``publish_oauth`` would
     # UnboundLocalError on top of the original failure.
     task_id = self.request.id if getattr(self, "request", None) else None
+    team = is_principal_id(user_id)
+    actor_id = actor_id if team and actor_id and not is_principal_id(actor_id) else None
+    if team and actor_id is None:
+        logging.error("MCP OAuth for a team without the person signing in; not started")
+        return {"success": False, "error": "OAuth init failed: nobody is signing in for the team"}
+    # Events go to whoever is signing in, never to a team's own stream.
+    recipient = actor_id or user_id
 
     def publish_oauth(event_type: str, payload: Dict[str, Any]) -> None:
         # MCP OAuth can be invoked without a route-bound user_id by
         # legacy paths. Skip the SSE publish in that case \u2014 the caller
         # has no per-user channel to subscribe to, and the status is
         # surfaced via the task's return value.
-        if not user_id or task_id is None:
+        if not recipient or task_id is None:
             return
         publish_user_event(
-            user_id,
+            recipient,
             event_type,
             {"task_id": task_id, **payload},
             scope={"kind": "mcp_oauth", "id": task_id},
@@ -5158,6 +5590,11 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         # the publish fires synchronously from inside
         # ``redirect_handler`` \u2014 the only point where the URL is known.
         tool_config["oauth_redirect_publish"] = publish_awaiting_redirect
+        # Who connected a team's account comes from the route, never the client's config.
+        tool_config.pop("oauth_connected_by", None)
+        previous_connected_by = tool_config.pop("oauth_previous_connected_by", None)
+        if actor_id:
+            tool_config["oauth_connected_by"] = actor_id
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
@@ -5171,10 +5608,14 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         try:
             loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
+            # A team's save finds the connection its sign-in wrote here.
+            written = {
+                "connection_id": mcp_tool.oauth_connection_id, "previous_connected_by": previous_connected_by,
+            } if actor_id else {}
 
             publish_oauth(
                 "mcp.oauth.completed",
-                {"tools": tools, "tools_count": len(tools)},
+                {"tools": tools, "tools_count": len(tools), **written},
             )
 
             return {"success": True, "tools": tools, "tools_count": len(tools)}
@@ -5512,7 +5953,7 @@ def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]]
 
 def _update_page_graph(
     cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str],
-    new_chunk_ids: Iterable[str] = (),
+    new_chunk_ids: Iterable[str] = (), actor_id: Optional[str] = None,
 ) -> None:
     """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
 
@@ -5531,6 +5972,7 @@ def _update_page_graph(
         task_id: The page task's id, for the extraction's idempotency key.
         old_chunk_ids: Ids of the chunks the change deleted.
         new_chunk_ids: Ids of the chunks the change stored, to extract.
+        actor_id: Who asked for the change; the extraction bills them.
     """
     if cfg.kind != "graphrag":
         return
@@ -5548,7 +5990,7 @@ def _update_page_graph(
             from docsgpt.api.user.tasks import extract_graph
 
             key = f"extract-graph:{source_id}:pages:{task_id or uuid.uuid4().hex}"
-            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids)
+            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids, **_actor_kwargs(actor_id))
     except Exception as e:  # noqa: BLE001 - the page change is done; the graph catches up at the next build
         logging.warning(f"Could not update the graph of {source_id} after a page change: {e}", exc_info=True)
 
@@ -5857,6 +6299,7 @@ def _not_listed_again(
 
 def _remove_web_pages(
     source: Dict[str, Any], user: str, task_id: Optional[str], pages: Optional[List[Dict[str, str]]],
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Delete pages from a Website source: their chunks first, then their tree entries.
 
@@ -5926,9 +6369,9 @@ def _remove_web_pages(
         if still is not None:
             gone = [chunk_id for chunk_id in chunk_ids if str(chunk_id) not in still]
             if gone:
-                _update_page_graph(cfg, source_id, user, task_id, gone)
+                _update_page_graph(cfg, source_id, user, task_id, gone, actor_id=actor_id)
         raise
-    _update_page_graph(cfg, source_id, user, task_id, chunk_ids)
+    _update_page_graph(cfg, source_id, user, task_id, chunk_ids, actor_id=actor_id)
 
     removed_keys = {_web_page_key(url) for url in urls}
     with db_session() as conn:
@@ -6098,7 +6541,7 @@ def website_pages_worker(
         with source_index_lock(source_id):
             source = _website_to_change(source_id, user)
             if operation == "remove":
-                outcome = _remove_web_pages(source, user, task_id, pages)
+                outcome = _remove_web_pages(source, user, task_id, pages, actor_id)
             else:
                 outcome = _run_website_pages(source, user, operation, urls, file_path, task_id, url, actor_id)
     except Exception as e:
@@ -6252,7 +6695,9 @@ def _run_website_pages(
         ):
             # The next sync drops a crawled page that now leads out of scope,
             # so the refresh does too rather than store it.
-            _remove_web_pages(source, user, task_id, [{"path": target["path"], "url": target["old_url"]}])
+            _remove_web_pages(
+                source, user, task_id, [{"path": target["path"], "url": target["old_url"]}], actor_id,
+            )
             moved = f"{target['old_url']} now leads to {doc_url}, which is" if doc_url != target["old_url"] else (
                 f"{doc_url} is"
             )
@@ -6270,7 +6715,7 @@ def _run_website_pages(
         # Every replaced copy's chunks were deleted, kept or not; only kept pages add any.
         old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
         new_ids = [chunk_id for change in kept for chunk_id in change["new_ids"]]
-        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
+        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids, actor_id=actor_id)
     if failure is not None:
         raise failure
     return {"pages": len(kept), "paths": paths, **({"failed_pages": failed_pages} if failed_pages else {})}
@@ -6369,7 +6814,7 @@ def _join_chunk_texts(texts: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-def convert_source_to_wiki_worker(self, source_id, user):
+def convert_source_to_wiki_worker(self, source_id, user, actor_id=None):
     """Convert an ingested source into a wiki by reassembling pages from chunks.
 
     Groups the source's existing vector-store chunks by their page path
@@ -6384,7 +6829,10 @@ def convert_source_to_wiki_worker(self, source_id, user):
     Args:
         self: Celery task instance.
         source_id: ID of the source to convert.
-        user: Owner identifier used to load the source row and author pages.
+        user: Owner identifier used to load the source row.
+        actor_id: The person who asked for the conversion. A team's source is
+            owned by the team's principal, which is never a person, so its
+            pages name this person (or, with none, whoever added the source).
 
     Returns:
         A summary dict ``{"status": "converted", "pages_created", "skipped"}``,
@@ -6394,10 +6842,12 @@ def convert_source_to_wiki_worker(self, source_id, user):
     # It reads every chunk and deletes them: a sync or a Website page change
     # on the source meanwhile would be lost or half-converted.
     with source_index_lock(str(source_id)):
-        return _convert_source_to_wiki(self, source_id, user)
+        return _convert_source_to_wiki(self, source_id, user, actor_id)
 
 
-def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, Any]:
+def _convert_source_to_wiki(
+    self: Any, source_id: str, user: str, actor_id: Optional[str] = None
+) -> Dict[str, Any]:
     """The body of ``convert_source_to_wiki_worker``, run holding the source's index lock."""
     from docsgpt.api.user.tasks import reembed_wiki_page
     from docsgpt.vectorstore.vector_creator import VectorCreator
@@ -6409,6 +6859,8 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+    # A page names a person: a team's principal never edits anything itself.
+    author = (_person(actor_id) or _person(source.get("created_by"))) if is_principal_id(user) else user
 
     cfg = SourceConfig.parse(source.get("config"))
     if cfg.kind == "wiki":
@@ -6468,7 +6920,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
                 page_path,
                 content,
                 title=title,
-                updated_by=user,
+                updated_by=author,
                 updated_via="agent",
             )
             created_pages.append((page_path, _content_hash(content)))
@@ -6518,7 +6970,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     }
 
 
-def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
+def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False, actor_id=None):
     """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
@@ -6543,10 +6995,15 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
         sync: After a sync re-embedded the source: the graph is carried over
             to the new chunk ids by content first (``sync_graph_to_chunks``)
             and only new text is extracted.
+        actor_id: Who added the knowledge; the extraction's model calls bill
+            them and its events reach them; a team never pays.
 
     Returns:
-        ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
-        extraction summary ``{nodes, edges, chunks_processed, ...}``.
+        ``{"status": "unavailable"}`` when GraphRAG is off;
+        ``{"status": "skipped", "reason": "sync_no_payer"}`` for a team's
+        source nobody can pay for (nobody asked, and whoever added it is no
+        longer an Editor there); otherwise the extraction summary
+        ``{nodes, edges, chunks_processed, ...}``.
 
     Raises:
         celery.exceptions.Retry: Another extraction held the source; this
@@ -6563,25 +7020,44 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
 
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
+        payer = (
+            _knowledge_payer(conn, user, actor_id, source.get("created_by"), source.get("connection_id"))
+            if source else None
+        )
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+    if payer is None:
+        # Never the team's principal: nobody asked, and whoever added it can't add knowledge there now.
+        logging.info("Not extracting the graph of team source %s: nobody to bill", source_id)
+        _publish_graph_event(
+            user, source_id, "graph.extract.failed",
+            {"source_id": source_id, "error": "Nobody in the team can pay for this build", "reason": "sync_no_payer"},
+            actor_id=actor_id,
+        )
+        return {"status": "skipped", "reason": "sync_no_payer"}
 
     def _out_of_retries(error: SourceBusy) -> None:
         _publish_graph_event(
             user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
+            actor_id=actor_id,
         )
 
     return _locked_or_retry(
-        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids, sync),
+        self, graph_extract_lock, source_id,
+        lambda: _extract_graph(self, source, user, chunk_ids, sync, actor_id=actor_id, payer=payer),
         _out_of_retries,
     )
 
 
 def _extract_graph(
-    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False
+    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False,
+    actor_id: Optional[str] = None, payer: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock."""
+    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock.
+
+    ``payer`` is billed for every model call (``extract_graph_for_source``); ``actor_id`` hears the events.
+    """
     from docsgpt.graphrag.extraction import extract_graph_for_source, sync_graph_to_chunks
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
@@ -6620,6 +7096,7 @@ def _extract_graph(
                 "nodes": int(info.get("nodes", 0)),
                 "edges": int(info.get("edges", 0)),
             },
+            actor_id=actor_id,
         )
 
     _publish_graph_event(
@@ -6633,6 +7110,7 @@ def _extract_graph(
             "nodes": 0,
             "edges": 0,
         },
+        actor_id=actor_id,
     )
 
     trace = tracing.start_trace(
@@ -6655,6 +7133,7 @@ def _extract_graph(
                 request_id=getattr(self.request, "id", None),
                 progress_cb=_progress,
                 chunk_ids=chunk_ids,
+                payer=payer,
             )
             if isinstance(summary, dict):
                 span.set(
@@ -6671,6 +7150,7 @@ def _extract_graph(
             source_id,
             "graph.extract.failed",
             {"source_id": source_id, "error": str(e)[:1024]},
+            actor_id=actor_id,
         )
         raise
 
@@ -6680,5 +7160,6 @@ def _extract_graph(
         source_id,
         "graph.extract.completed",
         {"source_id": source_id, **summary},
+        actor_id=actor_id,
     )
     return summary

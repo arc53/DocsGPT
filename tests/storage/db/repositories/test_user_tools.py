@@ -58,6 +58,28 @@ class TestCreate:
         assert doc["config_requirements"] == requirements
         assert doc["status"] is False
 
+    def test_create_writes_created_by_and_connector_key(self, pg_conn):
+        """A member-mode tool records who added it and which service it signs in to."""
+        repo = _repo(pg_conn)
+        doc = repo.create(
+            "user-1", "mcp_tool", credential_mode="member",
+            created_by="user-2", connector_key="github",
+        )
+        assert doc["created_by"] == "user-2"
+        assert doc["connector_key"] == "github"
+        assert doc["connection_id"] is None
+
+    def test_create_leaves_connector_key_empty_by_default(self, pg_conn):
+        doc = _repo(pg_conn).create("user-1", "t")
+        assert doc["connector_key"] is None
+
+    def test_update_never_writes_connector_key(self, pg_conn):
+        """Only server code that creates a tool sets its service; update ignores the field."""
+        repo = _repo(pg_conn)
+        doc = repo.create("user-1", "t", connector_key="github")
+        repo.update(doc["id"], "user-1", {"connector_key": "linear"})
+        assert repo.get(doc["id"], "user-1")["connector_key"] == "github"
+
 
 class TestGet:
     def test_get_existing(self, pg_conn):

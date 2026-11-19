@@ -112,7 +112,9 @@ def _chat_check(request, resource_filter: dict, user_id: Optional[str]) -> Optio
 
     Chat executes tools: an agent's own, or the user's defaults when there is
     no agent. Neither can be held to a tools allowlist from here, so a token
-    restricted on tools cannot chat at all.
+    restricted on tools cannot chat at all. Knowledge folders
+    (``active_folders``) read sources no allowlist names, so a token
+    restricted on sources cannot name any.
     """
     body = _json_body(request)
     if "tools" in resource_filter:
@@ -131,6 +133,9 @@ def _chat_check(request, resource_filter: dict, user_id: Optional[str]) -> Optio
         return "Restrict this token to specific agents to use chat endpoints"
     elif agent_ids:
         return "This token is restricted to specific sources and cannot run agents"
+    if "sources" in resource_filter and _as_ids(body.get("active_folders")):
+        # A folder reads every source filed in it, which no allowlist names.
+        return "A token restricted to specific sources cannot chat with knowledge folders"
     conversation_id = body.get("conversation_id")
     if conversation_id:
         found, conversation_agent = _conversation_agent_id(conversation_id, user_id)
@@ -146,13 +151,17 @@ def _agent_body_check(request, resource_filter: dict, user_id: Optional[str]) ->
     A token restricted on any of those may attach a workflow to an agent only
     when it is also restricted on workflows, so the workflow is one its owner
     chose (``refs`` then verifies the id). An inline ``workflow_graph`` is
-    refused to a token restricted on any of them or on workflows.
+    refused to a token restricted on any of them or on workflows. Knowledge
+    folders (``folders``) read sources no allowlist names, so a token
+    restricted on sources may only clear them.
     """
     graph = _json_body(request).get("workflow_graph") if request.is_json else request.form.get("workflow_graph")
     if graph not in (None, "") and set(resource_filter) & {*_WORKFLOW_CONTENT_FAMILIES, "workflows"}:
         # An inline graph can name any source, tool or prompt and creates or rewrites a workflow
         # no allowlist can prove; like POST /api/workflows, closed to tokens restricted on those.
         return "A token restricted to specific sources, tools, prompts or workflows cannot save a workflow graph"
+    if "sources" in resource_filter and _read(request, (BODY, "folders")):
+        return "A token restricted to specific sources cannot attach knowledge folders"
     if "workflows" in resource_filter or not set(resource_filter) & {"sources", "tools", "prompts"}:
         return None
     if _read(request, (BODY, "workflow")):
@@ -182,6 +191,40 @@ def _chat_prompt_check(request, resource_filter: dict, user_id: Optional[str]) -
         return "Token is not allowed to access this resource (prompts)"
     return None
 
+
+#: The token family of each kind a folder holds (``/api/folders``).
+_FOLDER_FAMILY = {"agent": "agents", "source": "sources", "tool": "tools", "prompt": "prompts"}
+_FOLDER_FAMILIES = tuple(_FOLDER_FAMILY.values())
+
+
+def _filing_check(request, resource_filter: dict, user_id: Optional[str]) -> Optional[str]:
+    """Hold a restricted token's filing (``POST /api/folders/items``) to its allowlist.
+
+    The kind comes from the JSON body's ``type`` only, the one the route
+    files; a query string can't name another. A token restricted on that
+    kind's family may file only ids on its allowlist. The route checks the
+    family's write scope.
+    """
+    family = _FOLDER_FAMILY.get(str(_json_body(request).get("type") or "").strip().lower())
+    if family is None or family not in resource_filter:
+        return None
+    ids = _as_ids(_json_body(request).get("ids"))
+    if not ids:
+        return f"This token is restricted to specific {family} and cannot use this endpoint"
+    if not _all_allowed(ids, resource_filter[family]):
+        return f"Token is not allowed to access this resource ({family})"
+    return None
+
+
+# A folder holds every kind and is on no allowlist: a token restricted on any
+# kind may list folders and file its allowed items, but not create, rename,
+# move or delete a folder (``blocked_by``, so the agent tool leaves those out
+# too). Any of the four families' scopes reaches the tree; the route also
+# checks the family's own scope where a kind is named (a list's ``type``, a
+# filing's ``type``).
+_FOLDER_READ = _rule(any_of=tuple(f"{family}:read" for family in _FOLDER_FAMILIES))
+_FOLDER_WRITE = _rule(any_of=tuple(f"{family}:write" for family in _FOLDER_FAMILIES), blocked_by=_FOLDER_FAMILIES)
+_FOLDER_FILE = _rule(any_of=tuple(f"{family}:write" for family in _FOLDER_FAMILIES), check=_filing_check)
 
 _CHAT = dict(
     family=None,
@@ -220,6 +263,13 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/analytics/topics", "GET"): _rule(
         "analytics:read", (QUERY, "agent_id"), family="agents", blocked_by=_NON_AGENT_FAMILIES
     ),
+    # One folder tree of all four kinds; the route also checks a named kind's own scope.
+    ("/api/folders", "GET"): _FOLDER_READ,
+    ("/api/folders", "POST"): _FOLDER_WRITE,
+    ("/api/folders/<string:folder_id>", "PUT"): _FOLDER_WRITE,
+    ("/api/folders/<string:folder_id>", "DELETE"): _FOLDER_WRITE,
+    ("/api/folders/items", "POST"): _FOLDER_FILE,
+    # Agent folders: aliases of /api/folders with type=agent.
     ("/api/agents/folders/", "GET"): _rule("agents:read", open=True),
     ("/api/agents/folders/<string:folder_id>", "GET"): _rule("agents:read"),
     ("/api/create_agent", "POST"): _rule("agents:write", refs=_AGENT_BODY_REFS, check=_agent_body_check),
@@ -233,9 +283,10 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/share_agent", "PUT"): _rule("agents:write", (JSON, "id")),
     ("/api/import_agent/plan", "POST"): _rule("agents:write", in_route=True),
     ("/api/import_agent", "POST"): _rule("agents:write", in_route=True),
-    ("/api/agents/folders/", "POST"): _rule("agents:write"),
-    ("/api/agents/folders/<string:folder_id>", "PUT"): _rule("agents:write"),
-    ("/api/agents/folders/<string:folder_id>", "DELETE"): _rule("agents:write"),
+    # The same folders as /api/folders: closed to a token restricted on any kind.
+    ("/api/agents/folders/", "POST"): _rule("agents:write", blocked_by=_FOLDER_FAMILIES),
+    ("/api/agents/folders/<string:folder_id>", "PUT"): _rule("agents:write", blocked_by=_FOLDER_FAMILIES),
+    ("/api/agents/folders/<string:folder_id>", "DELETE"): _rule("agents:write", blocked_by=_FOLDER_FAMILIES),
     ("/api/agents/folders/move_agent", "POST"): _rule("agents:write", (JSON, "agent_id")),
     ("/api/agents/folders/bulk_move", "POST"): _rule("agents:write", (JSON, "agent_ids")),
     ("/api/regenerate_agent_key/<string:agent_id>", "POST"): _rule("agents:keys", (VIEW, "agent_id")),
@@ -274,6 +325,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/get_chunks", "GET"): _rule("sources:read", (QUERY, "id")),
     # The chunk behind a citation; scoped to its source like get_chunks.
     ("/api/sources/<string:source_id>/chunk", "GET"): _rule("sources:read", (VIEW, "source_id")),
+    ("/api/sources/<string:source_id>/workspace", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/pages", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/page", "GET"): _rule("sources:read", (VIEW, "source_id")),
     ("/api/sources/<string:source_id>/wiki/settings", "GET"): _rule("sources:read", (VIEW, "source_id")),
@@ -333,6 +385,7 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/available_tools", "GET"): _rule("tools:read", open=True),
     ("/api/get_tools", "GET"): _rule("tools:read", listing=True),
     ("/api/create_tool", "POST"): _rule("tools:write"),
+    ("/api/tools/member", "POST"): _rule("tools:write"),
     ("/api/parse_spec", "POST"): _rule("tools:write", open=True),
     ("/api/update_tool", "POST"): _rule("tools:write", (JSON, "id")),
     ("/api/update_tool_config", "POST"): _rule("tools:write", (JSON, "id")),
@@ -343,15 +396,18 @@ RULES: dict[tuple[str, str], Rule] = {
     # Cancels a sign-in the caller started; the route checks it is theirs.
     ("/api/mcp_server/oauth_cancel", "POST"): _rule("tools:write", open=True),
     ("/api/mcp_server/save", "POST"): _rule("tools:write", (JSON, "id")),
-    # Models
+    # Models. A token reads a team's models (``owner=team`` with the workspace) but never adds, changes,
+    # tests or deletes one: the routes refuse it (``not_available_to_tokens``), as connections are closed.
     ("/api/models", "GET"): _rule(any_of=("models:read", "chat:run"), open=True),
     ("/api/user/models", "GET"): _rule("models:read"),
     ("/api/user/models/<string:model_id>", "GET"): _rule("models:read"),
+    ("/api/user/models/<string:model_id>/usage", "GET"): _rule("models:read"),
     ("/api/user/models", "POST"): _rule("models:write"),
     ("/api/user/models/<string:model_id>", "PATCH"): _rule("models:write"),
     ("/api/user/models/<string:model_id>", "DELETE"): _rule("models:write"),
     ("/api/user/models/test", "POST"): _rule("models:write"),
     ("/api/user/models/<string:model_id>/test", "POST"): _rule("models:write"),
+    ("/api/user/models/<string:model_id>/copy", "POST"): _rule("models:write"),
     # Workflows
     # A workflow graph names sources, tools and prompts inside its nodes, out of reach of ``refs``.
     ("/api/workflows", "POST"): _rule("workflows:write", blocked_by=_WORKFLOW_CONTENT_FAMILIES),
@@ -423,8 +479,10 @@ RULES: dict[tuple[str, str], Rule] = {
     ("/api/teams/<string:team_id>", "GET"): _rule("teams:read"),
     ("/api/teams/<string:team_id>/members", "GET"): _rule("teams:read"),
     ("/api/teams/<string:team_id>/grants", "GET"): _rule("teams:read"),
+    ("/api/teams/<string:team_id>/outside", "GET"): _rule("teams:read"),
     ("/api/resource_shares", "GET"): _rule("teams:read"),
     ("/api/resource_settings", "GET"): _rule("teams:read"),
+    ("/api/workspaces", "GET"): _rule("teams:read"),
     # Chat
     ("/api/answer", "POST"): _rule("chat:run", **_CHAT),
     ("/stream", "POST"): _rule("chat:run", **_CHAT),
@@ -462,6 +520,9 @@ DENIED: dict[str, tuple[str, ...]] = {
     # Draft with DocsGPT reads the whole workspace for the signed-in user and runs the model on it.
     "/api/drafter/config": ("*",),
     "/api/drafter/stream": ("*",),
+    # Moving re-owns items and their credentials between Personal and a team.
+    "/api/workspace_moves/plan": ("*",),
+    "/api/workspace_moves": ("*",),
     "/api/drafter/topics/status": ("*",),
     "/api/drafter/agent_gaps": ("*",),
     "/api/drafter/turns/<string:turn_id>/cancel": ("*",),
@@ -494,6 +555,8 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/teams/<string:team_id>/members/<string:member_id>": ("*",),
     "/api/teams/<string:team_id>/grants": ("POST", "DELETE"),
     "/api/teams/<string:team_id>/transfer_owner": ("*",),
+    # Who may take a team's items outside it is changed by its Admins or Owner in a session, like moving.
+    "/api/teams/<string:team_id>/outside_policy": ("*",),
     "/api/resource_settings": ("PUT",),
     # Who may edit a wiki from outside the app is the owner's call in a session.
     "/api/sources/<string:source_id>/wiki/settings": ("PUT",),
@@ -504,6 +567,12 @@ DENIED: dict[str, tuple[str, ...]] = {
     "/api/push/public_key": ("*",),
     "/api/push/subscriptions": ("*",),
     "/api/conversations/<string:conversation_id>/read": ("*",),
+    # Taking over makes the caller pay for a teammate's schedule: a session only, like moving.
+    "/api/schedules/<string:schedule_id>/take_over": ("*",),
+    "/api/agents/<string:agent_id>/outside_access/take_over": ("*",),
+    # A team's spend by person and every chat of the team are for its admins in a session.
+    "/api/teams/<string:team_id>/usage": ("*",),
+    "/api/teams/<string:team_id>/chats/export": ("*",),
 }
 DENIED_PREFIXES = (
     "/api/admin/",

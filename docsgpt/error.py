@@ -128,13 +128,49 @@ def _rejected_image_error(image_names: Sequence[str]) -> UserFacingError:
     return UserFacingError(IMAGE_UNREADABLE, message, {"files": names} if names else {})
 
 
+#: Keys of a quota refusal's body that are about the refusal itself, not values a client words it from.
+_QUOTA_BODY_KEYS = frozenset({"success", "error_code", "message", "limit_scope", "source"})
+
+
+def run_limit_error(stop: Any) -> UserFacingError:
+    """The curated error for a run a limit stopped mid-way (a ``RunLimitReached``).
+
+    Outside traffic (key, widget, public link, ``/v1``) is told only that the
+    agent is paused: never the payer's numbers, and the quota provider is not
+    asked to decorate a refusal of someone else's allowance. The agent's own
+    limit is about the agent, so it keeps its message for everyone. The person
+    chatting gets their allowance's numbers, decorated by the provider as the
+    pre-run refusal is.
+
+    Args:
+        stop: The ``RunLimitReached``.
+
+    Returns:
+        ``quota-exceeded`` with ``{dimension, unit, usage, limit, bucket,
+        resets_at}`` and whatever the provider adds, ``agent-limit-exceeded``
+        with ``{dimension, usage, limit, window_hours}``, or ``agent_paused``.
+    """
+    if stop.agent_limit:
+        body = stop.exceeded.to_payload()
+        params = {key: body[key] for key in ("dimension", "usage", "limit", "window_hours")}
+        return UserFacingError(body["error_code"], body["message"], params)
+    if stop.outside:
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+
+        return UserFacingError(PAUSED_CODE, PAUSED_MESSAGE)
+    body = stop.exceeded.to_payload()
+    params = {key: value for key, value in body.items() if key not in _QUOTA_BODY_KEYS}
+    return UserFacingError(body.get("error_code") or "quota-exceeded", body.get("message") or str(stop), params)
+
+
 def user_facing_error(
     error: BaseException, *, surface: str = "chat", image_names: Optional[Sequence[str]] = None
 ) -> UserFacingError:
     """The curated error a failed turn reports for ``error``.
 
-    Only a turn that did not fit the model's window says more than the
-    generic message: how big it was, when that is known, and what to do. The
+    A turn that did not fit the model's window says how big it was, when that
+    is known, and what to do; a turn a limit stopped says which limit
+    (:func:`run_limit_error`). Others get the generic message. The
     exception's own text is never used, since provider errors can echo the
     request (a rejected file part comes back as its base64 payload).
 
@@ -152,7 +188,11 @@ def user_facing_error(
     from docsgpt.core.run_budget import is_budget_exhausted
 
     from docsgpt.llm.deadlines import StreamNoAnswerError
+    from docsgpt.quotas.run_limits import RunLimitReached
 
+    # Ahead of the time limit: a stop by a limit also escapes recovery, but says why.
+    if isinstance(error, RunLimitReached):
+        return run_limit_error(error)
     if is_budget_exhausted(error):
         return UserFacingError("time_limit", "Stopped: time limit.")
     if isinstance(error, StreamNoAnswerError):

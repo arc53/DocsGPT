@@ -5,14 +5,14 @@ import { useDispatch, useSelector, useStore } from 'react-redux';
 
 import userService from '../api/services/userService';
 import type { Doc } from '../models/misc';
-import { getDocs } from '../preferences/preferenceApi';
 import {
   selectSelectedDocs,
   selectToken,
   setSelectedDocs,
-  setSourceDocs,
 } from '../preferences/preferenceSlice';
-import type { RootState } from '../store';
+import { reloadSourceDocs } from '../preferences/reloadSourceDocs';
+import type { AppDispatch, RootState } from '../store';
+import { captureWorkspace } from '../workspace/requestWorkspace';
 import {
   addUploadTask,
   removeUploadTask,
@@ -147,7 +147,7 @@ export function waitForSourceIngest(
  */
 export function useAddToKnowledge() {
   const { t } = useTranslation();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const store = useStore<RootState>();
   const token = useSelector(selectToken);
   const [pending, setPending] = useState(false);
@@ -155,11 +155,14 @@ export function useAddToKnowledge() {
 
   const selectWhenReady = useCallback(
     async (clientTaskId: string, sourceId: string) => {
+      // The source joins the selection of the workspace it was made in; a
+      // switch while it ingests (minutes) or while the list is out leaves
+      // the new workspace's selection alone.
+      const workspace = captureWorkspace();
       const outcome = await waitForSourceIngest(store, clientTaskId, sourceId);
       if (outcome !== 'completed') return;
-      const docs = await getDocs(token);
-      if (!Array.isArray(docs)) return;
-      dispatch(setSourceDocs(docs));
+      const docs = await dispatch(reloadSourceDocs(token));
+      if (!Array.isArray(docs) || !workspace.isCurrent()) return;
       const created = docs.find((doc: Doc) => doc.id === sourceId);
       if (!created) return;
       // Read the selection as it is now, not as it was when the job started.

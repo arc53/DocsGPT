@@ -37,6 +37,7 @@ import {
   TERMINATED_RESPONSE_PLACEHOLDER,
 } from './conversationModels';
 import { curatedErrorText } from './curatedError';
+import WorkspaceMismatchAction from './WorkspaceMismatchAction';
 import StreamingStatusLine from './StreamingStatusLine';
 import { pendingQuestionCall, type QuestionAction } from './questionCall';
 import { cn } from '@/lib/utils';
@@ -470,6 +471,8 @@ export default function ConversationMessages({
                   files={knowledgeFiles}
                   onAdded={() => onKnowledgeAdded?.(index)}
                 />
+              ) : query.errorCode === 'workspace_mismatch' ? (
+                <WorkspaceMismatchAction agentId={agentId} />
               ) : undefined
             }
           />

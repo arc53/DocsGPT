@@ -32,11 +32,11 @@ Open **Manage Agents** to see your agents in tabs:
 | --- | --- |
 | **All** | Every tab's agents on one page. |
 | **Templates** | Agents provided by DocsGPT, seeded by your operator (see [Seeding premade agents](/Agents/basics#seeding-premade-agents-from-yaml)). |
-| **My agents** | Agents you created, published or imported, in your folders. |
+| **My agents** | Agents you created, published or imported, and your folders. |
 | **Team** | Agents your teammates shared with you (see [Teams and sharing](/Using/teams-and-sharing)). |
 | **Discovered** | Public agents you opened through a link. **Remove** takes one off the list. |
 
-**Search...** filters the agents by name and description. Each agent card has a menu with the actions your access allows: **Logs**, **Edit** (or **View**), **Export as YAML**, **Share with team**, **Pin agent**, **Move to folder** and **Delete**.
+**Search...** filters the agents by name and description. Each agent card has a menu with the actions your access allows: **Logs**, **Edit** (or **View**), **Export as YAML**, **Share**, **Pin agent**, **Move to folder** and **Delete**.
 
 ### Use a template
 
@@ -44,13 +44,18 @@ A template can't be edited directly. Choose **Duplicate** from its menu to get y
 
 ### Organize agents in folders
 
-Folders are in **My agents** only, and can be nested.
+Agent folders look and work like [Knowledge folders](/Sources/adding-knowledge#organize-knowledge-in-folders). They show as tiles at the top of **My agents**, each with how many agents and folders it holds, above the agents in no folder.
 
-1. Choose **New Folder**, type a name and press Enter.
-2. To file an agent, choose **Move to folder** from its menu, then pick a folder, or **No folder (root)** to take it out. You can create a folder from the same dialog.
-3. Open a folder by clicking it; the breadcrumb above the list takes you back up. A folder's menu has **Rename** and **Delete**. Deleting a folder moves the agents in it out of the folder; it doesn't delete them.
+1. Choose **New folder**, type a **Folder name** and choose **Create**. Folders nest up to three levels deep; inside a third-level folder, **New folder** is unavailable.
+2. To file an agent, choose **Move to folder** from its menu. In the **Move "…"** dialog, type in **Search folders…** to find a folder at any level, or click a folder's arrow to see the folders inside it. The agent's current folder is marked **Current**. Pick **My agents** (no folder) to take it out of its folder, or **New folder** to create one from the dialog, then choose **Move**.
+3. Click a folder to open it. The trail, such as **My agents › Customer-facing**, takes you back up, and a line under it counts what the folder holds. Inside, you see only that folder's folders and agents; **Team** and **Discovered** are hidden. **New agent** there files the new agent in the folder, and an empty folder offers **New agent**.
+4. The folder's **⋯** menu, on its tile or at the end of the trail, has **Rename**, **Move to folder** and **Delete**. Deleting a folder moves its agents and folders up to the folder it was in, or out to **My agents**; it doesn't delete them.
 
-Moving many agents at once is API-only: `POST /api/agents/folders/bulk_move` with a list of `agent_ids`. See the [REST API reference](/API/reference).
+Searching from the top lists folders whose name matches first, then every matching agent with the folder it's in. Inside a folder, **Search in …** covers that folder and the folders in it.
+
+In Personal, your folders are your own. You can file an agent a teammate shared with you in them, and filing it changes nothing for the owner or anyone else. In a team workspace, the folders are the team's, the same for everyone in it, and they can hold agents, knowledge, tools and prompts together; see [Team workspaces](/Using/team-workspaces#folders).
+
+Through the API, agent folders are `/api/folders` with `type=agent`, and `POST /api/folders/items` files many agents at once; see [Folders through the API](/Sources/adding-knowledge#folders-through-the-api). The older `/api/agents/folders` routes, including `move_agent` and `bulk_move`, still work. An agent's `folder_id` in `GET /api/get_agents` and `GET /api/get_agent` is your own filing.
 
 ### Pin agents
 
@@ -62,7 +67,7 @@ To bring in an agent exported from another instance (**Export as YAML**):
 
 1. In **Manage Agents**, choose **Import**.
 2. Drop a `.yaml` or `.yml` file on the dialog, or click to choose one, then choose **Review**.
-3. The dialog shows whether the file creates a new agent or updates one you already have, and how it will match **Sources**, **Tools** and **Models** to your account. For a source that isn't found, pick one of yours or **Leave unattached**. For a tool or custom model that needs a secret, enter it, or leave it blank to skip that item.
+3. The dialog shows whether the file creates a new agent or updates one you already have, and how it will match **Sources**, **Tools** and **Models** to your account. For a source that isn't found, pick one of yours or **Leave unattached**. A Knowledge folder the agent used is listed under **Sources** and matched to one of your own folders by its path, then by its name (a file exported by someone other than the folder's owner has only its name): it reads, for example, **Carriers: using your folder**, or **Carriers: you have no folder with this name**. For a folder with no match, pick one of your folders or **Leave unattached**; the problems the import would leave are listed first, under **Check before you import:**. For a tool or custom model that needs a secret, enter it, or leave it blank to skip that item.
 4. Choose **Import**.
 
 A new agent is imported as a draft. Re-importing a file updates the matching agent and keeps its current status, so a published agent stays live. If something was skipped, the dialog lists it before **Continue to agent** opens the agent.

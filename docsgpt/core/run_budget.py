@@ -46,8 +46,14 @@ _current: ContextVar[RunBudget | None] = ContextVar("run_budget", default=None)
 
 
 def is_budget_exhausted(exc: BaseException) -> bool:
-    """Whether an error must escape provider fallback and tool error recovery."""
-    return isinstance(exc, (SoftTimeLimitExceeded, RunDeadlineExceeded))
+    """Whether an error must escape provider fallback and tool error recovery.
+
+    The run is out of time, or out of allowance: an error that says
+    ``stops_run = True`` (a run stopped by its payer's or its agent's limit)
+    ends the run like a time limit does, and its own wording is kept by the
+    places that word an error.
+    """
+    return isinstance(exc, (SoftTimeLimitExceeded, RunDeadlineExceeded)) or getattr(exc, "stops_run", False) is True
 
 
 def remaining_seconds() -> float | None:

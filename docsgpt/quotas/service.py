@@ -5,15 +5,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from docsgpt.core.settings import settings
+from docsgpt.quotas.payer import NO_PAYER_CODE, NO_PAYER_MESSAGE
 from docsgpt.quotas.providers import default_rows, get_defaults_provider
 from docsgpt.quotas.resolver import ResolvedLimit, ResolvedLimits, resolve_limits
 from docsgpt.quotas.windows import window_bounds
 from docsgpt.storage.db.repositories.quota_policies import QuotaPoliciesRepository
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +108,76 @@ class QuotaExceeded:
 
 
 class QuotaExceededError(Exception):
-    """Raised where a refused request has no HTTP response to carry the refusal."""
+    """Raised where a refused request has no HTTP response to carry the refusal.
 
-    def __init__(self, exceeded: QuotaExceeded) -> None:
+    Attributes:
+        exceeded: The used-up budget.
+        outside: The refused run is outside traffic on a published agent.
+    """
+
+    def __init__(self, exceeded: QuotaExceeded, *, outside: bool = False) -> None:
+        """Build the refusal.
+
+        Args:
+            exceeded: The used-up budget.
+            outside: The run is outside traffic on a published agent, whose
+                caller is told only that the agent is paused: the message
+                carries none of the payer's numbers, and the provider hook is
+                not asked about the payer.
+        """
         self.exceeded = exceeded
+        self.outside = outside
+        if outside:
+            from docsgpt.api.owner_pause import PAUSED_MESSAGE
+
+            super().__init__(PAUSED_MESSAGE)
+            return
         super().__init__(exceeded.to_payload()["message"])
+
+
+class NoPayerError(QuotaExceededError):
+    """A run whose payer would be a team principal: nobody can be billed, so it never starts.
+
+    A :class:`QuotaExceededError`, so every headless caller stops the run the
+    way it stops one over the payer's allowance. ``exceeded`` is None; the
+    refusal carries :data:`~docsgpt.quotas.payer.NO_PAYER_CODE` instead.
+
+    Attributes:
+        user_id: The principal that was offered as the payer, if any.
+    """
+
+    code = NO_PAYER_CODE
+    message = NO_PAYER_MESSAGE
+
+    def __init__(self, user_id: Optional[str] = None) -> None:
+        self.user_id = user_id
+        self.exceeded = None
+        Exception.__init__(self, NO_PAYER_MESSAGE)
+
+    def to_payload(self) -> dict:
+        """Return the client-facing error body."""
+        return {"success": False, "error_code": NO_PAYER_CODE, "code": NO_PAYER_CODE, "message": NO_PAYER_MESSAGE}
+
+
+def policy_rows(conn: Any, user_id: str, memo: Optional[dict[str, list[dict]]] = None) -> list[dict]:
+    """The policy rows that apply to ``user_id``: the stored ones and the defaults provider's.
+
+    Args:
+        conn: Open connection.
+        user_id: The payer.
+        memo: Rows already read in this request, by payer; filled on a read.
+            A turn's pre-run check and its run limits read the same payer's
+            rows, so they share one read.
+
+    Returns:
+        The rows :func:`~docsgpt.quotas.resolver.resolve_limits` takes.
+    """
+    if memo is not None and user_id in memo:
+        return memo[user_id]
+    rows = QuotaPoliciesRepository(conn).policies_for_user(user_id) + default_rows(user_id)
+    if memo is not None:
+        memo[user_id] = rows
+    return rows
 
 
 class QuotaService:
@@ -121,16 +188,30 @@ class QuotaService:
         user_id: str,
         buckets: tuple[str, ...] = ("all",),
         now: Optional[datetime] = None,
+        *,
+        policy_memo: Optional[dict[str, list[dict]]] = None,
     ) -> list[BucketStatus]:
         """Return the user's status for each of ``buckets``.
 
         Usage is only summed for buckets that carry a limit, so a user with no
         applicable policy costs one policy lookup and no usage query.
+
+        Args:
+            user_id: The user.
+            buckets: The buckets to report.
+            now: Reference instant, for tests.
+            policy_memo: Policy rows already read in this request (:func:`policy_rows`).
+
+        Raises:
+            NoPayerError: ``user_id`` is a team principal, which has no allowance
+                (the defaults provider never sees one).
         """
+        if is_principal_id(user_id):
+            raise NoPayerError(user_id)
         start, resets_at = window_bounds(settings.QUOTA_PERIOD, now)
         statuses: list[BucketStatus] = []
         with db_readonly() as conn:
-            rows = QuotaPoliciesRepository(conn).policies_for_user(user_id) + default_rows(user_id)
+            rows = policy_rows(conn, user_id, policy_memo)
             usage_repo = TokenUsageRepository(conn)
             for bucket in buckets:
                 limits = resolve_limits(rows, bucket)
@@ -142,7 +223,12 @@ class QuotaService:
 
     @classmethod
     def check(
-        cls, user_id: Optional[str], bucket: str = "direct", now: Optional[datetime] = None
+        cls,
+        user_id: Optional[str],
+        bucket: str = "direct",
+        now: Optional[datetime] = None,
+        *,
+        policy_memo: Optional[dict[str, list[dict]]] = None,
     ) -> Optional[QuotaExceeded]:
         """Return why ``user_id`` may not start a request, or ``None`` if they may.
 
@@ -155,13 +241,22 @@ class QuotaService:
             user_id: The billable user. Requests with no user are not limited.
             bucket: ``direct`` for chat without an agent, ``agent`` for traffic through one.
             now: Reference instant, for tests.
+            policy_memo: Policy rows already read in this request, filled on a
+                read (:func:`policy_rows`), so the run's limits reuse them.
+
+        Raises:
+            NoPayerError: ``user_id`` is a team principal. This fails closed,
+                before any lookup and outside the "an outage allows" rule: a
+                principal is never a payer.
         """
         if not user_id:
             return None
+        if is_principal_id(user_id):
+            raise NoPayerError(user_id)
         if bucket not in REQUEST_BUCKETS:
             raise ValueError(f"unknown request bucket: {bucket!r}")
         try:
-            statuses = cls.status(user_id, ("all", bucket), now)
+            statuses = cls.status(user_id, ("all", bucket), now, policy_memo=policy_memo)
         except Exception:
             logger.exception("quota check failed; allowing the request", extra={"user_id": user_id})
             return None

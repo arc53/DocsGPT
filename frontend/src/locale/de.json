@@ -193,7 +193,11 @@
         "empty_output": "es kam nichts heraus",
         "internal": "ein interner Fehler",
         "missed": "Zeitpunkt verpasst",
+        "no_payer": "pausiert: niemand bezahlt dafür",
         "overlap": "die vorherige Ausführung lief noch",
+        "owner_inactive": "pausiert: das Konto des Eigentümers ist deaktiviert",
+        "payer_left": "pausiert: der Zahlende hat das Team verlassen oder die Rolle verloren",
+        "payer_out_of_allowance": "der Zahlende hatte das Kontingent aufgebraucht",
         "stream_error": "der Antwortstrom brach ab",
         "timeout": "Zeitüberschreitung",
         "tool_not_allowed": "ein Werkzeug war nicht erlaubt"
@@ -309,29 +313,10 @@
       "all": "Alle",
       "byDocsGPT": "Von DocsGPT",
       "byMe": "Von mir",
-      "shared": "Mit mir geteilt",
-      "team": "Team"
+      "shared": "Mit mir geteilt"
     },
     "folders": {
-      "backToRoot": "Zurück",
-      "createFolder": "Ordner erstellen",
-      "currentFolder": "Dieser Ordner",
-      "delete": "Löschen",
-      "deleteConfirm": "\"{{name}}\" löschen?",
-      "deleteConsequence": "Die Agenten darin werden aus dem Ordner verschoben, nicht gelöscht.",
-      "empty": "Dieser Ordner ist leer",
-      "folderName": "Ordnername",
-      "menuAriaLabel": "Aktionen für {{folderName}}",
-      "move": "Verschieben",
-      "moveTitle": "„{{name}}“ verschieben nach",
-      "moveTo": "Verschieben",
-      "moveToFolder": "In Ordner verschieben",
-      "newFolder": "Neuer Ordner",
-      "noFolder": "Kein Ordner (Stammverzeichnis)",
-      "noFolders": "Noch keine Ordner",
-      "noSubfolders": "Keine Unterordner",
-      "openFolder": "Ordner öffnen",
-      "rename": "Umbenennen"
+      "emptyHint": "Erstelle hier einen Agenten oder verschiebe einen über sein ⋯-Menü hierher."
     },
     "form": {
       "advanced": {
@@ -476,7 +461,8 @@
       "errors": {
         "publishFailed": "Der Agent konnte nicht veröffentlicht werden. Bitte erneut versuchen.",
         "saveDraftFailed": "Der Entwurf konnte nicht gespeichert werden. Bitte erneut versuchen.",
-        "staleWrite": "Jemand anderes hat diesen Agenten gespeichert, nachdem du ihn geöffnet hast. Deine Änderungen sind noch da: Kopiere, was du brauchst, lade die Seite neu und übernimm sie erneut."
+        "staleWrite": "Jemand anderes hat diesen Agenten gespeichert, nachdem du ihn geöffnet hast. Deine Änderungen sind noch da: Kopiere, was du brauchst, lade die Seite neu und übernimm sie erneut.",
+        "teamConnectionAdded": "{{tools}} kann nicht hinzugefügt werden: Dieser Agent erreicht Personen außerhalb des Teams (ein API-Schlüssel, ein öffentlicher Link, ein Webhook oder ein anderes Team), und Werkzeuge auf einem für das Team verbundenen Konto funktionieren nur für seine Mitglieder in der App."
       },
       "externalKb": "Externe KB",
       "guardrails": {
@@ -579,6 +565,13 @@
         "savedVersion": "gespeicherte Version",
         "unsavedChanges": "Sie haben ungespeicherte Änderungen. Die Vorschau nutzt die gespeicherte Version, bis Sie speichern."
       },
+      "refusedModels": {
+        "line": "Dieser Agent kann {{names}} nicht nutzen.",
+        "remove": "Aus dem Agenten entfernen",
+        "separator": ", ",
+        "unlisted_one": "{{count}} Modell, das hier nicht angeboten wird",
+        "unlisted_other": "{{count}} Modelle, die hier nicht angeboten werden"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Bitte einen Admin, es wieder zu aktivieren.",
@@ -594,6 +587,8 @@
         "reason": {
           "connectionNeedsReconnect": "Für {{name}} muss das {{service}}-Konto erneut angemeldet werden.",
           "connectionNeedsReconnectNoService": "Für {{name}} ist eine erneute Anmeldung nötig.",
+          "connectionPaused": "{{name}} nutzt das {{service}}-Konto des Teams, das pausiert ist. Ein Team-Admin kann es auf der Seite „Konnektoren“ neu verbinden.",
+          "connectionPausedNoService": "{{name}} nutzt ein Team-Konto, das pausiert ist. Ein Team-Admin kann es auf der Seite „Konnektoren“ neu verbinden.",
           "connectionRemoved": "Das {{service}}-Konto, das {{name}} verwendet hat, wurde entfernt.",
           "connectionRemovedNoService": "Das Konto, das {{name}} verwendet hat, wurde entfernt.",
           "connectorDisabled": "Ein Admin hat {{service}} deaktiviert, daher kann {{name}} nicht laufen.",
@@ -606,6 +601,8 @@
           "sponsorCannotEditItem": "{{name}} lief mit dem Zugriff von {{person}}, und diese Person kann es nicht mehr bearbeiten.",
           "sponsorCannotEditItemOther": "{{name}} lief mit dem Zugriff einer anderen Person, und diese Person kann es nicht mehr bearbeiten.",
           "sponsorCannotEditItemYou": "{{name}} lief mit deinem Zugriff, und du kannst es nicht mehr bearbeiten.",
+          "teamLocked": "{{name}} gehört einem anderen Team, das gesperrt ist. Bis dieses Team es entsperrt, lässt es sich hier nicht verwenden.",
+          "teamShareEnded": "{{name}} gehört einem anderen Team, das es hier nicht mehr teilt. Bitte dieses Team, es erneut zu teilen.",
           "unknown": "{{name}} läuft nicht."
         },
         "reconnectLabel": "{{name}} neu verbinden",
@@ -647,6 +644,8 @@
         "confirm": "Mit meinem Zugriff hinzufügen",
         "description_one": "Der Eigentümer des Agenten kann dies nicht nutzen. Wenn du es hinzufügst, läuft es für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
         "description_other": "Der Eigentümer des Agenten kann diese nicht nutzen. Wenn du sie hinzufügst, laufen sie für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
+        "folderLive_one": "Auch Quellen, die du später in diesem Ordner ablegst, laufen mit deinem Zugriff.",
+        "folderLive_other": "Auch Quellen, die du später in diesen Ordnern ablegst, laufen mit deinem Zugriff.",
         "stopNote_one": "Es läuft nicht mehr, wenn du den Bearbeitungszugriff verlierst.",
         "stopNote_other": "Sie laufen nicht mehr, wenn du den Bearbeitungszugriff verlierst.",
         "takeOverConfirm": "Mit meinem Zugriff ausführen",
@@ -654,6 +653,7 @@
         "takeOverDescription_other": "Der Eigentümer des Agenten kann diese nicht nutzen. Sie laufen dann für alle, die diesen Agenten nutzen, mit deinem Zugriff.",
         "title": "Mit deinem Zugriff ausführen?",
         "types": {
+          "folder": "Ordner",
           "prompt": "Prompt",
           "source": "Quelle",
           "tool": "Tool"
@@ -878,6 +878,7 @@
         "openConversation": "Gespräch öffnen",
         "output": "Ausgabe",
         "scheduledFor": "Geplant für",
+        "skippedWithType": "Übersprungen ({{type}})",
         "started": "Gestartet",
         "status": "Status",
         "title": "Ausführungsdetails",
@@ -891,6 +892,7 @@
         "duration": "Dauer",
         "empty": "Für diesen Zeitplan wurden noch keine Läufe aufgezeichnet.",
         "loadFailed": "Die Ausführungen konnten nicht geladen werden.",
+        "pausedStreak": "Spätere Läufe wurden aus demselben Grund übersprungen, bis zur nächsten Zeile.",
         "when": "Wann"
       },
       "runNow": "Jetzt ausführen",
@@ -940,10 +942,18 @@
         "emptyState": "Keine geteilten Agenten gefunden.",
         "title": "Mit mir geteilt"
       },
+      "sharedWithYou": {
+        "description": "Agenten, die andere mit dir geteilt haben",
+        "emptyState": "Noch hat niemand einen Agenten mit dir geteilt."
+      },
       "team": {
-        "description": "Agenten, die deine Teamkollegen mit dir geteilt haben",
-        "emptyState": "Mit deinem Team wurden noch keine Agenten geteilt.",
-        "title": "Team"
+        "description": "Agenten, die dem Team gehören. Alle im Team können sie nutzen.",
+        "emptyState": "Dieses Team hat noch keine Agenten.",
+        "title": "Agenten"
+      },
+      "teamShared": {
+        "description": "Agenten, die andere Teams mit diesem Team geteilt haben. Alle im Team können mit ihnen chatten.",
+        "emptyState": "Noch hat kein anderes Team einen Agenten mit diesem Team geteilt."
       },
       "template": {
         "description": "Von DocsGPT bereitgestellte Agenten",
@@ -956,7 +966,7 @@
         "title": "Von mir"
       }
     },
-    "shareWithTeam": "Mit Team teilen",
+    "shareWithTeam": "Teilen",
     "shared": {
       "connectedTools": "Verbundene Tools",
       "loadError": "Dieser Agent konnte nicht geladen werden.",
@@ -1323,6 +1333,7 @@
         "monitor": "Monitor hat angeschlagen",
         "monitor_expired": "Monitor abgelaufen",
         "monitor_paused": "Monitor pausiert",
+        "payer_left": "Pausiert, bis jemand übernimmt",
         "schedule": "Geplante Aufgabe fertig",
         "schedule_failed": "Geplante Aufgabe fehlgeschlagen",
         "schedule_paused": "Geplante Aufgabe pausiert",
@@ -1421,6 +1432,10 @@
     "share": "Teilen"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "Dieser Agent hat sein Limit erreicht: {{used}} von {{limit}} Anfragen in den letzten {{hours}} Stunden. Bitte versuche es später erneut.",
+      "tokens": "Dieser Agent hat sein Limit erreicht: {{used}} von {{limit}} Tokens in den letzten {{hours}} Stunden. Bitte versuche es später erneut."
+    },
     "answer": "Antwort",
     "artifacts": {
       "backToList": "Zurück zu den Dateien",
@@ -1537,6 +1552,7 @@
     },
     "quotaExceeded": {
       "cost": "Sie haben {{used}} von Ihrem Nutzungsbudget von {{limit}} verbraucht. Es wird am {{resetsAt}} zurückgesetzt.",
+      "reached": "Sie haben Ihr Nutzungskontingent erreicht, deshalb wurde diese Antwort gestoppt.",
       "tokens": "Sie haben {{used}} von Ihrem Kontingent von {{limit}} Tokens verbraucht. Es wird am {{resetsAt}} zurückgesetzt."
     },
     "reasoning": "Begründung",
@@ -2157,6 +2173,98 @@
     "spaces": "Bereiche",
     "updated": "Aktualisiert am {{date}}"
   },
+  "folders": {
+    "and": "{{first}} und {{second}}",
+    "counts": {
+      "agent_one": "{{formatted}} Agent",
+      "agent_other": "{{formatted}} Agenten",
+      "also": "außerdem {{list}}",
+      "empty": "Leer",
+      "folder_one": "{{formatted}} Ordner",
+      "folder_other": "{{formatted}} Ordner",
+      "prompt_one": "{{formatted}} Prompt",
+      "prompt_other": "{{formatted}} Prompts",
+      "source_one": "{{formatted}} Quelle",
+      "source_other": "{{formatted}} Quellen",
+      "tool_one": "{{formatted}} Werkzeug",
+      "tool_other": "{{formatted}} Werkzeuge"
+    },
+    "create": "Erstellen",
+    "current": "Aktuell",
+    "delete": "Löschen",
+    "deleteConfirm": "\"{{name}}\" löschen?",
+    "deleteEmpty": "Der Ordner ist leer. Sonst wird nichts gelöscht.",
+    "deleteFolder": "Ordner löschen",
+    "deleteMoves_one": "{{what}} wird nach {{parent}} verschoben. Es wird nichts gelöscht.",
+    "deleteMoves_other": "{{what}} werden nach {{parent}} verschoben. Es wird nichts gelöscht.",
+    "deletedRenamed_one": "Ordner gelöscht. {{formatted}} Ordner wurde umbenannt, damit die Namen eindeutig bleiben: {{list}}.",
+    "deletedRenamed_other": "Ordner gelöscht. {{formatted}} Ordner wurden umbenannt, damit die Namen eindeutig bleiben: {{list}}.",
+    "depthLimit": "Ordner sind höchstens 3 Ebenen tief",
+    "emptyTitle": "Dieser Ordner ist leer",
+    "errors": {
+      "cantFile": "Dieses Element kann nicht abgelegt werden.",
+      "cycle": "Ein Ordner kann nicht in sich selbst oder einen seiner Unterordner verschoben werden.",
+      "deleteFailed": "Der Ordner konnte nicht gelöscht werden. Bitte versuche es erneut.",
+      "invalidName": "Verwende 1 bis 80 Zeichen ohne Zeilenumbrüche.",
+      "itemNotInTeam": "Die Ordner eines Teams enthalten nur die Elemente des Teams. Verschiebe das Element zuerst in das Team.",
+      "loadFailed": "Deine Ordner konnten nicht geladen werden.",
+      "moveFailed": "Verschieben fehlgeschlagen. Bitte versuche es erneut.",
+      "nameTaken": "Ein Ordner mit diesem Namen existiert bereits.",
+      "notFound": "Diesen Ordner gibt es nicht mehr.",
+      "openFailed": "Diesen Ordner gibt es nicht mehr.",
+      "saveFailed": "Der Ordner konnte nicht gespeichert werden. Bitte versuche es erneut.",
+      "teamItemNotFileable": "Elemente eines Teams können nicht in einem persönlichen Ordner abgelegt werden.",
+      "tooDeep": "Ordner sind höchstens 3 Ebenen tief."
+    },
+    "inParent": "In {{name}}",
+    "listSeparator": ", ",
+    "menuLabel": "Aktionen für {{name}}",
+    "move": "Verschieben",
+    "moveTitle": "„{{name}}“ verschieben",
+    "moveToFolder": "In Ordner verschieben",
+    "name": "Ordnername",
+    "newFolder": "Neuer Ordner",
+    "noFolder": "kein Ordner",
+    "noMatches": "Keine passenden Ordner",
+    "noSubfolders": "Keine Ordner darin",
+    "openFolder": "{{name}} öffnen",
+    "picker": {
+      "allOf": "Ganz {{name}}",
+      "back": "Zurück",
+      "deletedFolder": "Gelöschter Ordner",
+      "deletedLine": "Existiert nicht mehr. Entferne ihn.",
+      "deleted_one": "Ein ausgewählter Ordner wurde gelöscht. Entferne ihn in der Liste.",
+      "deleted_other": "{{formatted}} ausgewählte Ordner wurden gelöscht. Entferne sie in der Liste.",
+      "hintMany_one": "{{names}} sind Ordner: heute {{formatted}} Quelle und alle, die später hinzukommen.",
+      "hintMany_other": "{{names}} sind Ordner: heute {{formatted}} Quellen und alle, die später hinzukommen.",
+      "hintOne_one": "{{name}} ist ein Ordner: heute {{formatted}} Quelle und alle, die später hinzukommen.",
+      "hintOne_other": "{{name}} ist ein Ordner: heute {{formatted}} Quellen und alle, die später hinzukommen.",
+      "inFolder": "In diesem Ordner",
+      "includedWith": "Enthalten in {{name}}",
+      "live": "{{what}} · neue Quellen inklusive",
+      "ownersFolder": "Ordner von {{person}}",
+      "partial": "{{picked}} von {{total}} ausgewählt",
+      "stopped": "{{name}} ist gestoppt: Der Ordner gehört {{person}}, und diese Person kann den Agenten nicht mehr bearbeiten.",
+      "stoppedOther": "{{name}} ist gestoppt: Der Besitzer kann den Agenten nicht mehr bearbeiten.",
+      "stoppedShort": "Gestoppt"
+    },
+    "rename": "Umbenennen",
+    "renameTitle": "Ordner umbenennen",
+    "root": {
+      "agent": "Meine Agenten",
+      "prompt": "Prompts",
+      "source": "Wissen",
+      "teamAgent": "Agenten",
+      "tool": "Werkzeuge"
+    },
+    "searchFolders": "Ordner suchen…",
+    "searchIn": "In {{name}} suchen…",
+    "tooDeep": "Zu tief",
+    "usedByWarningNoNames_one": "{{formatted}} Agent nutzt diesen Ordner und verliert seine Quellen.",
+    "usedByWarningNoNames_other": "{{formatted}} Agenten nutzen diesen Ordner und verlieren seine Quellen.",
+    "usedByWarning_one": "{{formatted}} Agent nutzt diesen Ordner und verliert seine Quellen: {{names}}.",
+    "usedByWarning_other": "{{formatted}} Agenten nutzen diesen Ordner und verlieren seine Quellen: {{names}}."
+  },
   "help": "Hilfe",
   "hero": {
     "suggestions": {
@@ -2227,6 +2335,8 @@
       "resetKey": "Schlüssel zurücksetzen",
       "resetKeyConfirm": "API-Schlüssel für \"{{name}}\" zurücksetzen?",
       "resetKeyConsequence": "Der aktuelle Schlüssel funktioniert sofort nicht mehr, alles, was ihn verwendet, muss aktualisiert werden. Dies kann nicht rückgängig gemacht werden.",
+      "teamLocked": "{{team}} ist gesperrt, daher kann dieser Agent keinen öffentlichen Link, API-Schlüssel oder Webhook haben. Nur der Eigentümer des Teams kann es entsperren.",
+      "teamLockedNoTeam": "Dieses Team ist gesperrt, daher kann dieser Agent keinen öffentlichen Link, API-Schlüssel oder Webhook haben. Nur der Eigentümer des Teams kann es entsperren.",
       "test": "Testen",
       "title": "Zugriffsdetails",
       "webhookUrl": "Webhook-URL"
@@ -2264,8 +2374,6 @@
       "sourceDoc": "Quelldokument"
     },
     "deleteConv": {
-      "confirm": "Alle Unterhaltungen löschen?",
-      "consequence": "Alle Unterhaltungen in deinem Konto werden mitsamt ihren Nachrichten gelöscht. Dies kann nicht rückgängig gemacht werden.",
       "delete": "Löschen"
     },
     "importAgent": {
@@ -2274,15 +2382,21 @@
       "continueToAgent": "Weiter zum Agenten",
       "description": "Lade eine YAML-Datei eines Agenten hoch. Quellen und Werkzeuge werden deinem Konto zugeordnet; Fehlendes kannst du im nächsten Schritt zuordnen oder neu anlegen. Ein neuer Agent wird als Entwurf importiert; ein erneuter Import aktualisiert den passenden Agenten und behält seinen aktuellen Status bei.",
       "dropzoneText": "Zum Hochladen klicken oder eine .yaml-Datei per Drag & Drop ablegen",
+      "folderFor": "Ordner für {{name}}",
+      "folderMatched": "{{name}}: dein Ordner wird verwendet",
+      "folderMissing": "{{name}}: du hast keinen Ordner mit diesem Namen",
       "import": "Importieren",
       "importError": "Import fehlgeschlagen",
       "invalidFileType": "Nur .yaml- oder .yml-Dateien werden unterstützt",
       "leaveUnattached": "Nicht verknüpfen",
       "modelCustom": "{{name}}: eigenes Modell",
+      "modelLeftOff": "{{name}}: noch kein Modell des Teams, wird weggelassen",
       "models": "Modelle",
+      "planWarningsTitle": "Vor dem Import prüfen:",
       "readError": "Diese Agentendatei konnte nicht gelesen werden",
       "review": "Prüfen",
       "secretPlaceholder": "{{field}} (leer lassen, um dieses Werkzeug zu überspringen)",
+      "sourceFor": "Quelle für {{name}}",
       "sourceMatched": "{{name}}: deine vorhandene Quelle wird verwendet",
       "sourceMissing": "{{name}}: nicht gefunden",
       "sources": "Quellen",
@@ -2653,6 +2767,198 @@
     "perPage": "Pro Seite",
     "previousPage": "Vorherige Seite",
     "range": "{{from}}–{{to}} von {{total}}"
+  },
+  "payer": {
+    "access": {
+      "notice": "Der Zugriff von außen ist pausiert. {{reason}}",
+      "noticeUnknown": "Der Zugriff von außen ist pausiert.",
+      "paused": "Pausiert",
+      "pausedBecause": "Pausiert · {{reason}}",
+      "takenOver": "Sie bezahlen jetzt die Nutzung dieses Agenten von außen."
+    },
+    "common": {
+      "access": {
+        "apiKey": "API-Schlüssel",
+        "publicLink": "öffentlichen Link",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "Sie haben bereits so viele Zeitpläne wie möglich. Löschen Sie einen und versuchen Sie es erneut.",
+        "noOutsideAccess": "Für diesen Agenten ist kein Zugriff von außen eingeschaltet, es gibt also nichts zu übernehmen.",
+        "notAvailableToTokens": "Mit einem Zugriffstoken lässt sich nichts übernehmen. Melden Sie sich dafür in der App an.",
+        "notFound": "Das gibt es nicht mehr, oder Sie können es nicht mehr öffnen.",
+        "roleRequired": "Ihre Rolle in diesem Team erlaubt es nicht, das zu übernehmen.",
+        "teamLocked": "Dieses Team ist gesperrt, daher ist nichts davon von außen erreichbar.",
+        "teamOnly": "Übernehmen lässt sich nur, was einem Team gehört."
+      },
+      "paidBy": "Bezahlt von {{name}}",
+      "paidByYou": "Bezahlt von Ihnen",
+      "pause": {
+        "noPayer": "Niemand bezahlt dafür.",
+        "outOfAllowance": "{{name}} hat das Kontingent bis {{date}} aufgebraucht.",
+        "outOfAllowanceUndated": "Wer dafür bezahlt, hat das Kontingent aufgebraucht.",
+        "outOfAllowanceUnnamed": "Wer dafür bezahlt, hat das Kontingent bis {{date}} aufgebraucht.",
+        "outOfAllowanceYou": "Sie haben Ihr Kontingent bis {{date}} aufgebraucht.",
+        "ownerInactive": "Das Konto, unter dem es läuft, ist deaktiviert.",
+        "payerLeft": "{{name}} hat {{team}} verlassen oder die Rolle verloren, mit der dafür bezahlt wird.",
+        "payerLeftNoTeam": "{{name}} hat das Team verlassen oder die Rolle verloren, mit der dafür bezahlt wird.",
+        "payerLeftTeam": "{{name}} hat {{team}} verlassen.",
+        "payerLeftTeamNoTeam": "{{name}} hat das Team verlassen.",
+        "payerLeftTeamUnnamed": "Wer dafür bezahlt, hat das Team verlassen.",
+        "payerLeftUnnamed": "Wer dafür bezahlt, hat das Team verlassen oder die Rolle verloren.",
+        "payerLostRole": "{{name}} hat in {{team}} nicht mehr die Rolle, mit der dafür bezahlt wird.",
+        "payerLostRoleNoTeam": "{{name}} hat nicht mehr die Rolle, mit der dafür bezahlt wird.",
+        "payerLostRoleUnnamed": "Wer dafür bezahlt, hat nicht mehr die nötige Rolle.",
+        "teamLocked": "{{team}} ist gesperrt, daher ist nichts davon von außen erreichbar.",
+        "teamLockedNoTeam": "Das Team ist gesperrt, daher ist nichts davon von außen erreichbar.",
+        "withSince": "{{reason}} Pausiert seit {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "Ab jetzt bezahlen Sie die Nutzung von außen",
+          "youPayDetail": "Anfragen über API-Schlüssel und Webhook sowie von nicht angemeldeten Besuchern über den öffentlichen Link zählen gegen Ihr Kontingent, nicht gegen das von {{name}}. Angemeldete Besucher des Links zahlen ihre Chats selbst. Was bisher verbraucht wurde, bleibt bei {{name}}.",
+          "youPayUnnamed": "Anfragen über API-Schlüssel und Webhook sowie von nicht angemeldeten Besuchern über den öffentlichen Link zählen gegen Ihr Kontingent. Angemeldete Besucher des Links zahlen ihre Chats selbst."
+        },
+        "failed": "Die Übernahme ist fehlgeschlagen. Bitte versuchen Sie es erneut.",
+        "limitApplies": "Das Limit des Agenten gilt weiterhin",
+        "limitDetail": "Egal wer bezahlt: Der Agent stoppt an seinem eigenen Limit.",
+        "schedule": {
+          "youPay": "Ab jetzt bezahlen Sie seine Ausführungen",
+          "youPayDetail": "Sie zählen gegen Ihr Kontingent, nicht gegen das von {{name}}. Bisherige Ausführungen bleiben bei {{name}}.",
+          "youPayUnnamed": "Sie zählen gegen Ihr Kontingent."
+        },
+        "submit": "Übernehmen",
+        "title": "\"{{name}}\" übernehmen?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "Dieser Agent ist pausiert und kann gerade nicht antworten.",
+        "noPayer": "Für diesen Agenten bezahlt gerade niemand, deshalb kann er nicht antworten."
+      },
+      "near": {
+        "day": "Sie haben {{percent}} % Ihres Kontingents für heute verbraucht. Es wird um {{time}} zurückgesetzt.",
+        "month": "Sie haben {{percent}} % Ihres Kontingents für {{month}} verbraucht. Es wird am {{date}} zurückgesetzt.",
+        "week": "Sie haben {{percent}} % Ihres Kontingents für diese Woche verbraucht. Es wird am {{date}} zurückgesetzt."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "Es umfasst Ihre Chats mit Agenten, die Zeitpläne, die Sie angelegt haben, und die Agenten, die Sie veröffentlicht haben.",
+          "all": "Es umfasst Ihre Chats in jedem Arbeitsbereich, die Zeitpläne, die Sie angelegt haben, und die Agenten, die Sie veröffentlicht haben.",
+          "direct": "Es umfasst Ihre Chats ohne Agent, in jedem Arbeitsbereich."
+        },
+        "publicLinkSignedOut": "öffentlichen Link (für nicht angemeldete Besucher)",
+        "published": "{{name}} antwortet nicht mehr über {{access}}.",
+        "schedules_one": "{{count}} Zeitplan, den Sie angelegt haben, ist pausiert.",
+        "schedules_other": "{{count}} Zeitpläne, die Sie angelegt haben, sind pausiert.",
+        "seeUsage": "Nutzung ansehen",
+        "title": {
+          "day": "Sie haben Ihr Kontingent für heute erreicht",
+          "month": "Sie haben Ihr Kontingent für {{month}} erreicht",
+          "week": "Sie haben Ihr Kontingent für diese Woche erreicht"
+        }
+      },
+      "resets": {
+        "date": "Es wird am {{date}} zurückgesetzt.",
+        "time": "Es wird um {{time}} zurückgesetzt."
+      }
+    },
+    "schedules": {
+      "takenOver": "Sie bezahlen jetzt die Ausführungen dieses Zeitplans."
+    },
+    "team": {
+      "byAgent": {
+        "deleted": "Gelöschter Agent",
+        "empty": "In diesem Zeitraum wurde kein Agent genutzt.",
+        "limitOn": "Agent-Limit an",
+        "movedOut": "Aus dem Team verschoben",
+        "noLimit": "Kein Agent-Limit",
+        "outsideNoPayer": "Zugriff von außen, den niemand bezahlt",
+        "outsidePaidBy": "Zugriff von außen bezahlt von {{name}}",
+        "outsidePaidByYou": "Zugriff von außen bezahlt von Ihnen",
+        "people_one": "{{formatted}} Person",
+        "people_other": "{{formatted}} Personen",
+        "requests_one": "{{formatted}} Anfrage",
+        "requests_other": "{{formatted}} Anfragen",
+        "title": "Nach Agent",
+        "totalsOnly": "Chats ohne Agent und inzwischen gelöschte Agenten zählen nur in den Summen."
+      },
+      "byPerson": {
+        "left": "Hat das Team verlassen",
+        "title": "Nach Person",
+        "you": "Sie"
+      },
+      "demote": {
+        "description": "Mit der neuen Rolle kann {{name}} das in {{team}} nicht mehr bezahlen.",
+        "submit": "Rolle ändern",
+        "title": "\"{{name}}\" zu {{role}} ändern?"
+      },
+      "empty": "In diesem Zeitraum wurde hier nichts genutzt.",
+      "export": {
+        "action": "Exportieren",
+        "description": "Eine Datei mit jedem Chat in diesem Arbeitsbereich: wer, wann, welcher Agent. Persönliche Chats sind nie enthalten. Jeder Export wird im Audit-Log festgehalten.",
+        "failed": "Die Chats konnten nicht exportiert werden. Bitte versuchen Sie es erneut.",
+        "title": "Chats exportieren"
+      },
+      "loadError": "Der Nutzungsbericht konnte nicht geladen werden.",
+      "notALimit": "Was eine Person hier nutzt, zählt zu ihrem eigenen Kontingent, zusammen mit ihrer Arbeit anderswo. Nichts auf dieser Seite ist ein Limit.",
+      "paused": {
+        "access": "Zugriff von außen über {{access}}",
+        "accessAll": "Zugriff von außen",
+        "description": "Sie bleiben pausiert, bis jemand sie übernimmt oder das Kontingent der zahlenden Person zurückgesetzt wird.",
+        "openConnection": "Öffnen",
+        "openConnectionLabel": "\"{{name}}\" auf der Seite „Konnektoren“ öffnen",
+        "schedule": "Zeitplan von {{agent}}",
+        "scheduleNoAgent": "Zeitplan",
+        "sync": "Geplante Synchronisierung",
+        "syncNoPayer": "Niemand im Team kann dafür bezahlen.",
+        "takeOverLabel": "\"{{name}}\" übernehmen",
+        "title": "Pausiert",
+        "unnamed": "Ohne Titel"
+      },
+      "period": {
+        "current": {
+          "day": "Heute",
+          "month": "Dieser Monat",
+          "week": "Diese Woche"
+        },
+        "label": "Zeitraum",
+        "previous": {
+          "day": "Gestern",
+          "month": "Letzter Monat",
+          "week": "Letzte Woche"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} bezahlt dafür. Ein Admin kann ihn auf der Seite des Agenten übernehmen.",
+        "access_one": "Zugriff von außen auf {{count}} Agenten wird pausiert",
+        "access_other": "Zugriff von außen auf {{count}} Agenten wird pausiert",
+        "connectionsDetail": "Das Team kann sie weder für Synchronisierungen noch für Werkzeuge nutzen, bis ein anderer Team-Admin sie auf der Seite „Konnektoren“ mit dem eigenen Konto neu verbindet.",
+        "connections_one": "{{count}} Team-Konto, das {{name}} verbunden hat, wird pausiert",
+        "connections_other": "{{count}} Team-Konten, die {{name}} verbunden hat, werden pausiert",
+        "customModelsDetail": "Die Schlüssel bleiben in Gebrauch. Ersetze einen Schlüssel auf der Seite „Eigene Modelle“ des Teams, wenn er {{name}} persönlich gehörte.",
+        "customModels_one": "{{name}} hat {{count}} eigenes Modell zum Team hinzugefügt",
+        "customModels_other": "{{name}} hat {{count}} eigene Modelle zum Team hinzugefügt",
+        "schedulesDetail": "{{name}} bezahlt dafür. Ein Bearbeiter oder Admin kann sie auf der Zeitplan-Seite des Agenten übernehmen.",
+        "schedules_one": "{{count}} Zeitplan, den {{name}} für Team-Agenten angelegt hat, wird pausiert",
+        "schedules_other": "{{count}} Zeitpläne, die {{name}} für Team-Agenten angelegt hat, werden pausiert"
+      },
+      "showAll": "Alle {{formatted}} anzeigen",
+      "showFewer": "Weniger anzeigen",
+      "stats": {
+        "chats": "Chats",
+        "chatsDetail": "Bezahlt von den Personen, die chatten",
+        "people_one": "Von {{formatted}} Person",
+        "people_other": "Von {{formatted}} Personen",
+        "runs": "Ausführungen ohne Person",
+        "runsDetail": "Zeitpläne, API-Schlüssel, Widget und Webhooks, bezahlt von der Person, die sie eingerichtet hat",
+        "used": "Genutzt in {{team}}"
+      },
+      "tokens_one": "{{formatted}} Token",
+      "tokens_other": "{{formatted}} Tokens"
+    }
   },
   "prompts": {
     "checks": {
@@ -3025,14 +3331,27 @@
       "positiveFeedback": "Positives Feedback",
       "promptTokens": "Prompt-Tokens",
       "quota": {
-        "cost": "Kosten",
-        "resets": "Wird zurückgesetzt: {{resetsAt}}",
-        "scope": {
-          "agent": "Über Agenten",
-          "direct": "Chat ohne Agent"
+        "allowance": "Ihr Kontingent",
+        "parts": {
+          "chat": "Ihre Chats",
+          "chatDetail": "In Persönlich und in Ihren Teams",
+          "other": "Sonstiges",
+          "otherDetail": "Wissensaufbau und Nutzung aus der Zeit, bevor sie aufgeteilt wurde",
+          "published": "Von Ihnen veröffentlichte Agenten",
+          "publishedDetail": "Ihre API-Schlüssel, öffentlichen Links und Webhooks",
+          "schedule": "Von Ihnen angelegte Zeitpläne",
+          "scheduleDetail": "Ihre Ausführungen und die Monitore, die Sie angelegt haben"
         },
-        "title": "Ihr Nutzungskontingent",
-        "tokens": "Tokens",
+        "resetsAt": "Zurückgesetzt um {{time}}",
+        "resetsOn": "Zurückgesetzt am {{date}}",
+        "scope": {
+          "agent": "Ihre Chats mit Agenten, Ihre Zeitpläne und die Agenten, die Sie veröffentlicht haben",
+          "all": "Alles, wofür Sie bezahlen",
+          "direct": "Ihre Chats ohne Agent"
+        },
+        "titleDay": "Ihre Nutzung heute",
+        "titleMonth": "Ihre Nutzung, {{month}}",
+        "titleWeek": "Ihre Nutzung diese Woche",
         "usedOf": "{{used}} von {{limit}}"
       },
       "scheduledRuns": "Geplante Ausführungen",
@@ -3081,6 +3400,7 @@
       "connectionStatus": {
         "connected": "Verbunden",
         "disconnected": "Getrennt",
+        "paused": "Pausiert",
         "pending": "Wartet auf Anmeldung"
       },
       "createFailed": "Der Konnektor konnte nicht hinzugefügt werden. Versuche es erneut.",
@@ -3340,6 +3660,7 @@
         "custom": "Eigener",
         "disabledByAdmin": "Vom Admin deaktiviert",
         "needsAdminSetup": "Admin-Einrichtung nötig",
+        "paused": "Pausiert",
         "reconnect": "Neu verbinden"
       },
       "statusFilterLabel": "Nach Status filtern",
@@ -3351,6 +3672,44 @@
       },
       "subtitle": "Verbinde DocsGPT mit den Diensten, die dein Team nutzt. Eine Verbindung kann Inhalte ins Wissen synchronisieren und Agenten Werkzeuge geben.",
       "syncContent": "Inhalte synchronisieren",
+      "team": {
+        "adminOnly": "Nur Team-Admins können die Konten des Teams verbinden oder ändern.",
+        "connectForTeam": "Für das Team verbinden",
+        "connectedBy": "Verbunden von {{name}}",
+        "connectedByYou": "Von dir verbunden",
+        "emptyAdmin": "Für das Team ist noch kein Konto verbunden. Verbinde eins, dann kann es jeder im Team nutzen.",
+        "emptyMember": "Für das Team ist noch kein Konto verbunden. Ein Team-Admin kann eins verbinden.",
+        "errors": {
+          "accountAlreadyConnected": "Dieses Konto ist für das Team bereits verbunden. Nutze diese Verbindung.",
+          "adminRequired": "Nur Team-Admins können das mit den Konten des Teams tun.",
+          "connectPersonalFirst": "Verbinde zuerst unter Persönlich dein eigenes Konto für diesen Dienst. Dann meldet sich jede Person mit ihrem eigenen an.",
+          "invalidOwner": "Es war nicht klar, ob das Konto dir oder dem Team gehören soll. Lade die Seite neu und versuche es noch einmal.",
+          "memberModeNotAllowed": "Ein Admin hat festgelegt, dass dieser Dienst ein gemeinsames Konto nutzt. Darum kann sich nicht jede Person mit ihrem eigenen anmelden.",
+          "notFound": "Diese Verbindung gibt es nicht mehr, oder du kannst sie nicht sehen.",
+          "paused": "Dieses Team-Konto ist pausiert. Ein Team-Admin kann es neu verbinden.",
+          "personalOnly": "Eine Quelle des Teams kann nur über ein Konto lesen, das für das Team verbunden ist. Ein Team-Admin kann eins unter Konnektoren verbinden.",
+          "pickerOwnerOnly": "Nur wer dieses Konto verbunden hat, kann auswählen, was daraus synchronisiert wird.",
+          "teamConnectionOutside": "Es nutzt ein Werkzeug auf einem Konto, das für das Team verbunden ist. Solche Werkzeuge funktionieren nur für Mitglieder des Teams in der App.",
+          "teamConnectionOutsideNamed": "Es nutzt {{tools}} auf einem Konto, das für das Team verbunden ist. Solche Werkzeuge funktionieren nur für Mitglieder des Teams in der App.",
+          "teamWorkspaceRequired": "Wechsle zum Team, um ein Konto dafür zu verbinden."
+        },
+        "notice": "Diese Konten gehören dem Team. Deine eigenen Konten findest du unter Persönlich.",
+        "paused": "Pausiert: {{reason}}",
+        "pausedHintAdmin": "Verbinde es mit deinem Konto neu oder trenne es.",
+        "pausedHintMember": "Ein Team-Admin kann es neu verbinden.",
+        "pausedUnknown": "Pausiert",
+        "pickerOwnerOnly": "Nur {{name}} hat dieses Konto verbunden und kann auswählen, was daraus synchronisiert wird.",
+        "reconnect": {
+          "body": "{{name}} hat dieses Konto verbunden. Wenn du neu verbindest, nutzt das Team ab jetzt dein Konto, und du bezahlst seine Synchronisierungen.",
+          "bodyUnnamed": "Wenn du neu verbindest, nutzt das Team ab jetzt dein Konto, und du bezahlst seine Synchronisierungen.",
+          "confirm": "Mit meinem Konto neu verbinden",
+          "dropNote": "Dateien, die dein Konto nicht öffnen kann, fallen bei der nächsten Synchronisierung weg. Du kannst sie in der Quelle erneut auswählen.",
+          "sources_one": "{{formatted}} Quelle synchronisiert daraus:",
+          "sources_other": "{{formatted}} Quellen synchronisieren daraus:",
+          "title": "Mit deinem Konto neu verbinden?"
+        },
+        "teamAccount": "Team-Konto"
+      },
       "unverified": "Dieser Server wurde nicht von DocsGPT geprüft. Verbinde nur Server, denen du vertraust.",
       "wizard": {
         "account": "Konto",
@@ -3442,6 +3801,7 @@
       "editTitle": "Eigenes Modell bearbeiten",
       "empty": "Keine Modelle gefunden",
       "errors": {
+        "apiKeyNewHost": "Gib den API-Schlüssel für den neuen Host ein. Der gespeicherte Schlüssel wird nur an den Host gesendet, für den er gespeichert wurde.",
         "apiKeyRequired": "API-Schlüssel ist erforderlich",
         "baseUrlInvalid": "Bitte gib eine gültige URL ein",
         "baseUrlRequired": "Basis-URL ist erforderlich",
@@ -3460,7 +3820,8 @@
         "modelId": "Modell-ID"
       },
       "hints": {
-        "apiKeyEdit": "Leer lassen, um den vorhandenen Schlüssel beizubehalten."
+        "apiKeyEdit": "Leer lassen, um den gespeicherten Schlüssel zu behalten, solange die Adresse auf demselben Host bleibt.",
+        "apiKeyNewHost": "Die Adresse liegt auf einem neuen Host: Gib seinen API-Schlüssel ein. Der gespeicherte Schlüssel wird nur an den Host gesendet, für den er gespeichert wurde."
       },
       "label": "Eigene Modelle",
       "loadError": "Deine Modelle konnten nicht geladen werden.",
@@ -3483,6 +3844,48 @@
       "save": "Speichern",
       "searchPlaceholder": "Modelle suchen...",
       "subtitle": "Verbinde dein eigenes OpenAI-kompatibles Modell.",
+      "team": {
+        "actions": {
+          "disable": "Deaktivieren",
+          "enable": "Aktivieren"
+        },
+        "addedBy": "Hinzugefügt von {{name}}",
+        "addedByYou": "Von dir hinzugefügt",
+        "copy": {
+          "action": "In ein Team kopieren",
+          "body": "Das Team bekommt eine eigene Kopie von {{name}} mit deinem API-Schlüssel. Dein Modell bleibt, wie es ist.",
+          "bodyTo": "{{team}} bekommt eine eigene Kopie von {{name}} mit deinem API-Schlüssel. Dein Modell bleibt, wie es ist.",
+          "confirm": "Kopieren",
+          "done": "{{name}} wurde nach {{team}} kopiert.",
+          "team": "Team",
+          "title": "In ein Team kopieren"
+        },
+        "delete": {
+          "fellBack": "Prüfe das Modell in: {{names}}",
+          "mayBeUsed": "Agenten des Teams, die es verwenden, laufen stattdessen mit dem Standardmodell, und Workflow-Schritte, die darauf eingestellt sind, halten an, bis jemand ein anderes Modell auswählt. Dies kann nicht rückgängig gemacht werden.",
+          "usedBy": "Verwendet von {{names}}. Agenten laufen stattdessen mit dem Standardmodell; Workflow-Schritte, die darauf eingestellt sind, halten an, bis jemand ein anderes Modell auswählt. Dies kann nicht rückgängig gemacht werden."
+        },
+        "emptyAdmin": "Für das Team ist noch kein Modell hinzugefügt. Füge eins hinzu, dann kann es jeder im Team nutzen.",
+        "emptyMember": "Für das Team ist noch kein Modell hinzugefügt. Ein Team-Admin kann eins hinzufügen.",
+        "errors": {
+          "adminRequired": "Nur ein Team-Admin kann dem Team ein eigenes Modell hinzufügen. Bitte einen Admin darum und importiere dann erneut.",
+          "alreadyInTeam": "Das Team hat dieses Modell bereits.",
+          "chatPersonalOnly": "Deine eigenen Modelle lassen sich in einem Team-Chat nicht nutzen. Wähle ein Modell des Teams oder eines, das die ganze Instanz anbietet.",
+          "credentialsUnreadable": "Der API-Schlüssel dieses Modells kann nicht gelesen werden. Ersetze den Schlüssel und kopiere das Modell dann.",
+          "modelAdminRequired": "Nur Team-Admins können die Modelle des Teams ändern.",
+          "notAvailableToTokens": "Die eigenen Modelle eines Teams lassen sich nur in der App ändern, nicht mit einem Zugriffstoken.",
+          "notFound": "Dieses Modell gibt es nicht mehr, oder du kannst es nicht sehen.",
+          "personalOnly": "Agenten und Workflows eines Teams können nur die eigenen Modelle des Teams nutzen. Wähle ein Modell des Teams oder eines, das die ganze Instanz anbietet.",
+          "roleRequired": "Nur die Admins des Teams können Modelle dafür hinzufügen.",
+          "teamIdRequired": "Wähle das Team, in das das Modell kopiert werden soll.",
+          "teamNotFound": "Dieses Team gibt es nicht mehr, oder du bist nicht darin.",
+          "teamOnly": "Ein eigenes Modell eines Teams können nur die Agenten und Workflows dieses Teams nutzen. Wähle eines deiner eigenen Modelle oder eines, das die ganze Instanz anbietet.",
+          "teamWorkspaceRequired": "Wechsle zum Team, um ein Modell dafür hinzuzufügen."
+        },
+        "notice": "Diese Modelle gehören dem Team. Deine eigenen Modelle findest du unter Persönlich.",
+        "pickerGroup": "Team-Modelle",
+        "teamModel": "Team-Modell"
+      },
       "testConnection": "Verbindung testen",
       "testHintNew": "Fülle Basis-URL, Modell-ID und API-Schlüssel aus, um Verbindungstests zu aktivieren.",
       "testSuccess": "Verbindung erfolgreich."
@@ -3551,7 +3954,7 @@
       "convHistory": "Konversationsverlauf",
       "dark": "Dunkel",
       "default": "Standard",
-      "deleteAllDescription": "Löscht alle Unterhaltungen in Ihrem Konto dauerhaft. Dies kann nicht rückgängig gemacht werden.",
+      "deleteAllInWorkspace": "Löscht dauerhaft alle Chats, die Sie in {{name}} begonnen haben. Dies kann nicht rückgängig gemacht werden.",
       "deleteAllLabel": "Alle Konversationen löschen",
       "high": "Hoch",
       "label": "Allgemein",
@@ -3799,6 +4202,9 @@
       "filters": {
         "all": "Alle"
       },
+      "folders": {
+        "emptyHint": "Füge hier einen Prompt hinzu oder verschiebe einen über sein ⋯-Menü hierher."
+      },
       "kindFilterLabel": "Nach Art filtern",
       "kinds": {
         "shared": "Geteilt"
@@ -3825,12 +4231,14 @@
       "saveFailed": "Dieser Prompt konnte nicht gespeichert werden.",
       "searchPlaceholder": "Prompts suchen…",
       "sections": {
+        "folders": "Ordner",
         "included": "Enthalten",
-        "shared": "Mit dem Team geteilt",
+        "shared": "Mit dir geteilt",
+        "team": "Prompts",
         "yours": "Deine"
       },
       "select": "Prompt auswählen",
-      "shareWithTeam": "Mit Team teilen",
+      "shareWithTeam": "Teilen",
       "subtitle": "System-Prompts legen fest, wie das Modell antwortet. Der ausgewählte gilt für Chats ohne Agent; Agenten wählen ihren eigenen.",
       "unsavedChanges": "Du hast ungespeicherte Änderungen, die verloren gehen, wenn du ohne Speichern verlässt.",
       "useInChats": "{{name}} in Chats verwenden",
@@ -3919,6 +4327,11 @@
       "filesLoadError": "Die Dateien konnten nicht geladen werden",
       "filterFiles": "Dateien filtern",
       "folderAlt": "Ordner",
+      "folders": {
+        "emptyHint": "Füge hier Wissen hinzu oder verschiebe Quellen über ihr ⋯-Menü hierher.",
+        "noMatchIn": "Nichts in {{name}} passt zu „{{query}}“.",
+        "searchAll": "Gesamtes Wissen durchsuchen"
+      },
       "goToSources": "Zum Wissen",
       "graphrag": {
         "badge": "GraphRAG",
@@ -4023,7 +4436,6 @@
       "kinds": {
         "all": "Alle",
         "files": "Dateien",
-        "shared": "Geteilt",
         "synced": "Synchronisiert",
         "websites": "Websites",
         "wikis": "Wikis"
@@ -4157,7 +4569,11 @@
       "searchAlt": "Suchen",
       "searchChunks": "Chunks durchsuchen",
       "searchPlaceholder": "Wissen durchsuchen…",
-      "shareWithTeam": "Mit Team teilen",
+      "sections": {
+        "folders": "Ordner",
+        "sources": "Quellen"
+      },
+      "shareWithTeam": "Teilen",
       "size": "Größe",
       "subtitle": "Inhalte, die DocsGPT durchsuchen und zitieren kann: Uploads, Websites, Wikis und aus deinen Verbindungen synchronisierte Inhalte.",
       "syncConfirmation": "\"{{sourceName}}\" synchronisieren?",
@@ -4170,6 +4586,14 @@
         "weekly": "Wöchentlich"
       },
       "syncNow": "Jetzt synchronisieren",
+      "syncPaused": {
+        "account": "Synchronisierung pausiert: {{reason}}",
+        "noPayer": "Geplante Synchronisierung pausiert: Niemand im Team kann dafür bezahlen.",
+        "noPayerSince": "Geplante Synchronisierung seit {{date}} pausiert: Niemand im Team kann dafür bezahlen.",
+        "other": "Geplante Synchronisierung pausiert.",
+        "otherSince": "Geplante Synchronisierung seit {{date}} pausiert.",
+        "scheduled": "Geplante Synchronisierung pausiert: {{reason}}"
+      },
       "syncStarted": "{{name}} wird synchronisiert…",
       "syncing": "Synchronisiere...",
       "testRetrieval": {
@@ -4510,6 +4934,11 @@
       "deleteTeamError": "Team konnte nicht gelöscht werden.",
       "descriptionLabel": "Beschreibung",
       "descriptionPlaceholder": "Wofür ist dieses Team? (optional)",
+      "detail": {
+        "backToTeams": "Zurück zu den Teams",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "Dieses Team gibt es nicht, oder du bist nicht Mitglied."
+      },
       "drawer": {
         "accessIn": "Zugriff in {{team}}",
         "capabilitiesHint": "Aus den Zugriffseinstellungen des Eigentümers. Hier nur lesend.",
@@ -4519,6 +4948,7 @@
         "open": "{{type}} öffnen",
         "otherTeamsHint": "Auch mit anderen Teams geteilt? Diese Freigaben verwaltest du unter „Freigabe verwalten“.",
         "owner": "Eigentümer",
+        "paused": "Die Freigabe ist pausiert, solange {{name}} nicht im Team ist. Sie gilt wieder, wenn die Person erneut hinzugefügt wird.",
         "removeGrant": "Zugriff entfernen",
         "shared": "Geteilt",
         "sharedOnBy": "{{date}} von {{name}}",
@@ -4533,7 +4963,6 @@
           "viewer": "Betrachter"
         }
       },
-      "editTeam": "Bearbeiten",
       "editorHint": {
         "agent": "Bearbeiter können ihn ändern, einschließlich Protokollen, Zeitplänen und Zugriffsdetails.",
         "agentNoAccessDetails": "Bearbeiter können ihn ändern, einschließlich Protokollen und Zeitplänen, aber nicht die Zugriffsdetails.",
@@ -4548,7 +4977,31 @@
         "tool": "Bearbeiter können Aktionen ändern und Anmeldedaten ersetzen, aber keine Geheimnisse lesen.",
         "toolNoCredentials": "Bearbeiter können Aktionen ändern, aber keine Anmeldedaten."
       },
+      "errors": {
+        "borrowedResource": "Dieser Agent nutzt Quellen, Werkzeuge oder Prompts, die ihm nicht gehören. Er kann daher weder mit einem anderen Team geteilt noch von außen erreicht werden. Entferne sie zuerst aus dem Agenten.",
+        "invalidPolicy": "Wähle aus, wer die Elemente dieses Teams nach außen geben darf.",
+        "lastAdmin": "Ein Team braucht mindestens einen Admin. Mach zuerst jemand anderen zum Admin.",
+        "ownerMustTransfer": "Dir gehört dieses Team. Übertrage es zuerst an ein anderes Mitglied.",
+        "ownerProtected": "Der Eigentümer des Teams kann weder herabgestuft noch entfernt werden.",
+        "policyOwnerOnly": "Nur der Eigentümer des Teams kann es entsperren.",
+        "roleRequired": "Deine Rolle in diesem Team erlaubt das nicht.",
+        "shareNotMember": "Du kannst nur mit einem Team teilen, in dem du Mitglied bist.",
+        "shareSameTeam": "Das gehört bereits diesem Team.",
+        "shareViewerOnly": "Ein anderes Team kann ein Element des Teams nutzen, aber nicht bearbeiten.",
+        "shareWholeTeamOnly": "Ein Element des Teams wird mit einem ganzen Team geteilt, nicht mit einer einzelnen Person.",
+        "teamItemSharedOutside": "Dieser Agent ist mit Personen geteilt, die dieses Element des Teams nicht nutzen können. Verwende es in einem Agenten, der nicht außerhalb des Teams geteilt ist, oder beende diese Freigabe zuerst.",
+        "teamLocked": "Dieses Team ist gesperrt, daher kann nichts davon nach außen gegeben werden. Nur sein Eigentümer kann es entsperren.",
+        "teamNotEmpty": "Dem Team gehören noch Elemente. Verschiebe oder lösche sie zuerst.",
+        "usesTeamItems": "Dieser Agent nutzt Elemente eines Teams und kann daher nur mit Personen geteilt werden, die sie nutzen können."
+      },
       "label": "Teams",
+      "leave": {
+        "action": "Team verlassen",
+        "description": "Du verlierst den Zugriff auf die Agenten, das Wissen, die Tools, Prompts und Chats von {{team}}. Zeitpläne, die du für seine Agenten eingerichtet hast, und Zugriffe von außen, die du bezahlst, pausieren, bis jemand sie übernimmt, und persönliche Elemente, die du mit dem Team teilst, werden nicht mehr geteilt. Ein Admin kann dich wieder hinzufügen.",
+        "done": "Du hast {{team}} verlassen.",
+        "error": "Team konnte nicht verlassen werden.",
+        "title": "{{team}} verlassen?"
+      },
       "loadError": "Teams konnten nicht geladen werden.",
       "memberCount_one": "{{formatted}} Mitglied",
       "memberCount_other": "{{formatted}} Mitglieder",
@@ -4563,13 +5016,136 @@
       "newTeam": "Neues Team",
       "noMembers": "Noch keine Mitglieder. Nutze „Mitglied hinzufügen“, um jemanden per E-Mail einzuladen.",
       "noTeams": "Noch keine Teams.",
-      "nothingShared": "Noch nichts geteilt. Teile einen Agenten, eine Quelle, einen Prompt oder ein Werkzeug über dessen Menü.",
+      "notEmpty": {
+        "connectionsHint": "Verbindungen lassen sich nicht verschieben. Ein Team-Admin entfernt sie auf der Seite „Konnektoren“ des Teams.",
+        "counts": {
+          "agent_one": "{{count}} Agent",
+          "agent_other": "{{count}} Agenten",
+          "connection_one": "{{count}} Verbindung",
+          "connection_other": "{{count}} Verbindungen",
+          "custom_model_one": "{{count}} eigenes Modell",
+          "custom_model_other": "{{count}} eigene Modelle",
+          "folder_one": "{{count}} Ordner",
+          "folder_other": "{{count}} Ordner",
+          "other_one": "{{count}} weiterer Eintrag",
+          "other_other": "{{count}} weitere Einträge",
+          "prompt_one": "{{count}} Prompt",
+          "prompt_other": "{{count}} Prompts",
+          "source_one": "{{count}} Quelle",
+          "source_other": "{{count}} Quellen",
+          "tool_one": "{{count}} Werkzeug",
+          "tool_other": "{{count}} Werkzeuge",
+          "workflow_one": "{{count}} Workflow",
+          "workflow_other": "{{count}} Workflows"
+        },
+        "customModelsHint": "Eigene Modelle lassen sich nicht verschieben. Ein Team-Admin entfernt sie auf der Seite „Eigene Modelle“ des Teams.",
+        "hint": "Verschiebe sie nach „Persönlich“ oder lösche sie, dann lösche das Team.",
+        "open": "{{name}} öffnen",
+        "openConnectors": "Konnektoren öffnen",
+        "openCustomModels": "Eigene Modelle öffnen",
+        "title": "{{name}} gehören noch Elemente"
+      },
       "openTeamError": "Team-Details konnten nicht geladen werden.",
+      "outside": {
+        "confirm": {
+          "changeTitle": "Ändern, wer Elemente nach außen geben darf?",
+          "kept": "Nichts wird gelöscht: Beim Entsperren kommt alles zurück.",
+          "lockIntro": "Solange es gesperrt ist:",
+          "lockStops": "Niemand kann seine Elemente mit anderen Teams teilen, seine Agenten nach außen veröffentlichen, Elemente hinausverschieben oder seine Agenten exportieren.",
+          "lockTitle": "{{team}} sperren?",
+          "ownerUnlocks": "Nur der Eigentümer kann es wieder entsperren.",
+          "pauses": {
+            "chatLinks": "Die geteilten Chat-Links des Teams öffnen sich nicht mehr",
+            "publishedAny": "Agenten antworten nicht mehr über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_one": "{{formatted}} Agent antwortet nicht mehr über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_other": "{{formatted}} Agenten antworten nicht mehr über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "sharesAny": "Freigaben für andere Teams pausieren",
+            "shares_one": "{{formatted}} Freigabe für ein anderes Team pausiert",
+            "shares_other": "{{formatted}} Freigaben für andere Teams pausieren"
+          },
+          "returns": {
+            "chatLinks": "Die geteilten Chat-Links des Teams öffnen sich wieder",
+            "publishedAny": "Agenten antworten wieder über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_one": "{{formatted}} Agent antwortet wieder über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "published_other": "{{formatted}} Agenten antworten wieder über API-Schlüssel, Widget, öffentlichen Link oder Webhook",
+            "sharesAny": "Freigaben für andere Teams gelten wieder",
+            "shares_one": "{{formatted}} Freigabe für ein anderes Team gilt wieder",
+            "shares_other": "{{formatted}} Freigaben für andere Teams gelten wieder"
+          },
+          "submit": {
+            "change": "Ändern",
+            "lock": "Sperren",
+            "unlock": "Entsperren"
+          },
+          "toAdmins": "Bearbeiter können keine Elemente mehr nach außen geben. Zugriff von außen, den ein Bearbeiter bezahlt, pausiert, bis ein Admin ihn übernimmt. Freigaben von Bearbeitern bleiben.",
+          "toEditors": "Bearbeiter können dann die Elemente dieses Teams mit anderen Teams teilen und für einen Agenten API-Schlüssel, Widget, öffentlichen Link oder Webhook einschalten.",
+          "unlockIntro": "Das kommt so zurück, wie es war:",
+          "unlockTitle": "{{team}} entsperren?"
+        },
+        "description": "Außerhalb heißt: ein anderes Team oder der API-Schlüssel, das Widget, der öffentliche Link oder der Webhook eines Agenten.",
+        "fromAnotherTeam": "Von einem anderen Team",
+        "fromTeams": {
+          "intro": "Elemente anderer Teams, die dieses Team nutzen kann. Sie bleiben deren Elemente: Niemand hier kann sie ändern oder weiter teilen.",
+          "remove": "Aus diesem Team entfernen",
+          "removeAgain": "Nur {{from}} kann es wieder teilen.",
+          "removeError": "Konnte es nicht aus diesem Team entfernen.",
+          "removeLabel": "{{name}} aus diesem Team entfernen",
+          "removeTitle": "{{name}} aus {{team}} entfernen?",
+          "title": "Von anderen Teams geteilt"
+        },
+        "hint": {
+          "admins": "Admins und der Eigentümer können die Elemente dieses Teams mit anderen Teams teilen und für einen Agenten API-Schlüssel, Widget, öffentlichen Link oder Webhook einschalten.",
+          "editors": "Bearbeiter können das auch. Betrachter nie.",
+          "locked": "Niemand. Was schon draußen ist, pausiert, und Elemente lassen sich weder hinausverschieben noch exportieren, bis der Eigentümer das Team entsperrt."
+        },
+        "label": "Wer die Elemente dieses Teams nach außen geben darf",
+        "ownerOnly": "Nur der Eigentümer des Teams kann es entsperren.",
+        "paused": "Pausiert, solange {{team}} gesperrt ist",
+        "policy": {
+          "admins": "Admins und Eigentümer",
+          "editors": "Auch Bearbeiter",
+          "locked": "Niemand (gesperrt)"
+        },
+        "policyError": "Konnte nicht ändern, wer Elemente nach außen geben darf.",
+        "published": {
+          "open": "Öffnen",
+          "openLabel": "{{name}} öffnen",
+          "title": "Von außen erreichbar"
+        },
+        "shares": {
+          "by": "Geteilt von {{name}}",
+          "empty": "Nichts aus diesem Team wird nach außen geteilt.",
+          "intro": "Elemente dieses Teams, die andere Teams nutzen können, und seine Agenten, die man von außen erreicht.",
+          "loadError": "Konnte nicht laden, was dieses Team nach außen teilt.",
+          "locked": "{{team}} ist gesperrt: Das hier pausiert, bis sein Eigentümer es entsperrt.",
+          "policy": "Wer Elemente nach außen geben darf: {{policy}}",
+          "revoke": "Nicht mehr teilen",
+          "revokeError": "Konnte das Teilen nicht beenden.",
+          "revokeLabel": "{{name}} nicht mehr mit {{team}} teilen",
+          "revokeTitle": "{{name}} nicht mehr mit {{team}} teilen?",
+          "title": "Außerhalb des Teams geteilt",
+          "with": "Geteilt mit {{team}}"
+        },
+        "stops": {
+          "agent": "Mitglieder von {{team}} können nicht mehr damit chatten. Ihre Chats bleiben lesbar.",
+          "agents": "Diese Agenten in {{team}} laufen dann ohne es: {{names}}.",
+          "none": "In {{team}} nutzt es noch nichts.",
+          "unknown": "Alles in {{team}}, was es nutzt, läuft dann ohne es.",
+          "usedBy_one": "{{formatted}} Agent in {{team}} nutzt es und läuft dann ohne es.",
+          "usedBy_other": "{{formatted}} Agenten in {{team}} nutzen es und laufen dann ohne es."
+        },
+        "title": "Außerhalb des Teams"
+      },
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Team",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Teams",
       "remove": "Entfernen",
+      "removeMember": {
+        "personalItemsPaused": "Sie werden nicht mehr mit {{team}} geteilt, solange {{name}} nicht im Team ist, und kommen zurück, wenn {{name}} wieder hinzugefügt wird. Damit das Team behält, worauf es angewiesen ist, bitte {{name}}, diese Elemente vorher ins Team zu verschieben.",
+        "personalItems_one": "{{count}} persönliches Element, das {{name}} mit {{team}} teilt",
+        "personalItems_other": "{{count}} persönliche Elemente, die {{name}} mit {{team}} teilt",
+        "teamItemsStay": "Team-Elemente, die {{name}} hinzugefügt hat, bleiben bei {{team}}. {{name}} verliert den Zugriff darauf; du kannst die Person jederzeit wieder hinzufügen."
+      },
       "removeMemberConfirmation": "\"{{name}}\" aus {{team}} entfernen?",
-      "removeMemberConsequence": "Die Person verliert den Zugriff auf alles, was mit {{team}} geteilt wurde. Du kannst sie jederzeit wieder hinzufügen.",
       "removeMemberError": "Mitglied konnte nicht entfernt werden.",
       "resourceType": {
         "agent": "Agent",
@@ -4579,11 +5155,20 @@
       },
       "roleAdmin": "Admin",
       "roleChangeError": "Rolle konnte nicht geändert werden (der letzte Admin ist geschützt).",
+      "roleHints": {
+        "admin": "Löscht außerdem Elemente, verwaltet Mitglieder und Rollen und schaltet Zugriff von außen ein.",
+        "editor": "Fügt außerdem Elemente hinzu, bearbeitet, verschiebt und ordnet sie ein und sieht Logs.",
+        "viewer": "Nutzt die Agenten, das Wissen, die Werkzeuge und Prompts des Teams."
+      },
       "roleMember": "Mitglied",
       "save": "Speichern",
       "searchMembers": "Mitglieder suchen…",
       "selectTeamHint": "Wähle ein Team aus, um seine Mitglieder und geteilten Ressourcen zu verwalten.",
       "selectTeamTitle": "Kein Team ausgewählt",
+      "settingsTab": {
+        "deleteHint": "Nur ein leeres Team kann gelöscht werden. Verschiebe oder lösche zuerst seine Agenten, Wissensquellen, Werkzeuge, Prompts und Ordner.",
+        "details": "Details"
+      },
       "share": {
         "access": "Zugriff",
         "accessLevel": {
@@ -4591,6 +5176,7 @@
           "viewer": "Betrachter"
         },
         "addPlaceholder": "Personen oder Teams hinzufügen…",
+        "addedByYou": "Von dir hinzugefügt",
         "allSummary": "{{name}} · Teams: {{teams}} · Personen: {{people}}",
         "andMore_one": "und {{formatted}} weitere",
         "andMore_other": "und {{formatted}} weitere",
@@ -4605,6 +5191,9 @@
         "loadError": "Aktuelle Freigaben konnten nicht geladen werden.",
         "noMatches": "Keine Personen oder Teams gefunden.",
         "noTeams": "Du bist noch kein Mitglied eines Teams. Erstelle eins unter Einstellungen → Teams.",
+        "notOwnedByTeam": "Geteilt, nicht im Besitz des Teams",
+        "ownOfferBody": "Es bliebe beim Team, wenn du gehst.",
+        "ownOfferTitle": "Soll {{team}} das besitzen?",
         "owner": "Eigentümer",
         "peopleGroup": "Personen",
         "peopleWithAccess": "Personen mit Zugriff",
@@ -4617,7 +5206,6 @@
         "shareError": "Konnte nicht mit dem Team geteilt werden.",
         "showAll": "Alle {{formatted}} anzeigen",
         "subtitle": "Teammitglieder können es verwenden; Bearbeiter können es auch ändern. Du bleibst Eigentümer.",
-        "teamLabel": "Team",
         "teamsGroup": "Teams",
         "titleGeneric": "{{type}} teilen",
         "titleNamed": "\"{{name}}\" teilen",
@@ -4637,6 +5225,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "Von {{service}} abgemeldet",
             "connectionNeedsReconnectNoService": "Abgemeldet",
+            "connectionPaused": "{{service}}-Konto des Teams pausiert",
+            "connectionPausedNoService": "Team-Konto pausiert",
             "connectionRemoved": "{{service}}-Konto entfernt",
             "connectionRemovedNoService": "Konto entfernt",
             "connectorDisabled": "{{service}} von einem Admin deaktiviert",
@@ -4649,6 +5239,8 @@
             "sponsorCannotEditItem": "{{person}} kann es nicht mehr bearbeiten",
             "sponsorCannotEditItemOther": "Wer es hinzugefügt hat, kann es nicht mehr bearbeiten",
             "sponsorCannotEditItemYou": "Du kannst es nicht mehr bearbeiten",
+            "teamLocked": "Sein Team ist gesperrt",
+            "teamShareEnded": "Von seinem Team nicht mehr geteilt",
             "unknown": "Läuft nicht"
           },
           "stopped": "Gestoppt",
@@ -4663,6 +5255,11 @@
       },
       "sharedCount_one": "{{formatted}} geteilt",
       "sharedCount_other": "{{formatted}} geteilt",
+      "sharedItems": {
+        "empty": "Niemand hat ein persönliches Element mit diesem Team geteilt.",
+        "intro": "Sie gehören den Personen, die sie geteilt haben, nicht dem Team. Bitte die Eigentümer, die Elemente, auf die das Team angewiesen ist, ins Team zu verschieben.",
+        "title": "Mit dem Team geteilte persönliche Elemente"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} Bearbeiter",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} Bearbeiter",
@@ -4678,18 +5275,36 @@
         "noMatches": "Keine Treffer.",
         "pageRange_one": "{{from}}–{{to}} von {{formatted}} Ressource",
         "pageRange_other": "{{from}}–{{to}} von {{formatted}} Ressourcen",
+        "paused": "Pausiert: {{name}} hat das Team verlassen",
         "search": "Geteilte suchen…"
       },
-      "sharedResources": "Geteilte Ressourcen",
       "sharedWithTeam": "Mit diesem Team geteilt ({{count}})",
       "sourceManual": "Manuell hinzugefügt",
       "sourceScim": "über SCIM",
       "sourceSso": "über SSO",
       "subtitle": "Verwalte deine Teams, Mitglieder und geteilten Ressourcen.",
-      "teamActions": "Team-Aktionen",
+      "tabs": {
+        "label": "Team-Seiten",
+        "members": "Mitglieder",
+        "settings": "Einstellungen",
+        "shared": "Geteilte persönliche Elemente",
+        "usage": "Nutzung"
+      },
       "teamNamePlaceholder": "Teamname",
       "teamSubtitle": "Verwalte Mitglieder und die mit diesem Team geteilten Ressourcen.",
       "teamsHeading": "Deine Teams",
+      "transfer": {
+        "action": "Übertragen",
+        "confirm": "{{team}} an {{name}} übertragen?",
+        "consequence": "Die Person wird Eigentümer und Admin. Nur der neue Eigentümer kann es zurückübertragen.",
+        "description": "Nur der Eigentümer kann das Team löschen oder übertragen.",
+        "error": "Das Team konnte nicht übertragen werden.",
+        "memberLabel": "Neuer Eigentümer",
+        "noMatches": "Kein anderes Mitglied passt.",
+        "placeholder": "Mitglied auswählen",
+        "submit": "Übertragen",
+        "title": "Eigentum übertragen"
+      },
       "unshare": "Freigabe aufheben",
       "unshareError": "Freigabe der Ressource konnte nicht aufgehoben werden.",
       "updateFailed": "Aktualisierung fehlgeschlagen"
@@ -4737,9 +5352,13 @@
       "fieldDescription": "Feldbeschreibung",
       "fieldName": "Feldname",
       "fieldType": "Feldtyp",
+      "fileFailed": "Das Werkzeug wurde hinzugefügt, konnte aber nicht in diesen Ordner gelegt werden.",
       "filledBy": "Ausgefüllt von",
       "filters": {
         "all": "Alle"
+      },
+      "folders": {
+        "emptyHint": "Füge hier ein Werkzeug hinzu oder verschiebe eines über sein ⋯-Menü hierher."
       },
       "groupAdded": "Hinzugefügt",
       "groupBuiltIn": "Integriert",
@@ -4812,6 +5431,15 @@
         "sharedByEditor": "Geteilt von {{owner}} · du bist Bearbeiter",
         "sharedCredentialsNotice": "Gespeicherte Zugangsdaten bleiben verborgen. Was du eingibst, ersetzt sie für alle, die dieses Tool nutzen.",
         "sharedOAuthOwnerOnly": "Nur der Eigentümer kann die Verbindung dieses Servers ändern oder die Anmeldung neu verbinden. Du kannst ihn weiterhin umbenennen und seine Aktionen bearbeiten.",
+        "team": {
+          "eachPerson": "Jede Person meldet sich mit ihrem eigenen Konto an",
+          "eachPersonHint": "Alle, die diesen Server nutzen, melden sich mit ihrem eigenen Konto an. Du brauchst zuerst unter Persönlich eine eigene Anmeldung dafür.",
+          "oauthNewServerOnly": "Um in einem Team einen Server mit Anmeldung (OAuth) zu nutzen, füge ihn als neuen Server hinzu.",
+          "signInInPersonal": "Unter Persönlich anmelden",
+          "teamOnce": "Das Team meldet sich einmal an, mit deinem Konto",
+          "teamOnceHint": "Alle im Team nutzen das Konto, mit dem du dich anmeldest. Es wird die Verbindung des Teams, von dir verbunden.",
+          "whoSignsIn": "Wer meldet sich an"
+        },
         "testBeforeSave": "Teste die Verbindung, bevor du speicherst.",
         "testConnection": "Verbindung testen",
         "timeout": "Timeout (Sekunden)",
@@ -4835,12 +5463,28 @@
       "savedSecretPlaceholder": "Gespeichert · neuen Wert eingeben zum Ersetzen",
       "searchActions": "Aktionen suchen...",
       "searchPlaceholder": "Werkzeuge suchen…",
+      "sections": {
+        "folders": "Ordner"
+      },
       "selectToolSetup": "Werkzeug hinzufügen",
       "settingsIconAlt": "Einstellungssymbol",
-      "shareWithTeam": "Mit Team teilen",
+      "shareWithTeam": "Teilen",
       "sharedBy": "Geteilt von {{team}}",
       "statusUpdateFailed": "Konnte nicht ändern, ob dieses Tool in deinen Chats ist.",
       "subtitle": "Aktionen, die deine Agenten ausführen können. Enthaltene Werkzeuge gehören zu DocsGPT. Werkzeuge eines verbundenen Dienstes sind unter diesem Dienst gruppiert.",
+      "team": {
+        "addFailed": "Das Werkzeug konnte nicht hinzugefügt werden. Versuche es erneut.",
+        "connectForTeam": "Ein Konto für das Team verbinden",
+        "connectForTeamHint": "Verbinde auf der Seite Konnektoren ein {{name}}-Konto für das ganze Team. Seine Werkzeuge laufen dann für alle im Team über dieses Konto.",
+        "connectInPersonal": "Eigenes Konto unter Persönlich verbinden",
+        "eachPerson": "Jede Person meldet sich mit ihrem eigenen Konto an",
+        "eachPersonHint": "Alle, die dieses Werkzeug nutzen, melden sich mit ihrem eigenen Konto bei {{name}} an. Kein Konto wird geteilt.",
+        "eachPersonMeta": "Eigenes Konto jeder Person",
+        "serviceDescription": "Wähle, über wessen {{name}}-Konto das Werkzeug des Teams läuft.",
+        "serviceTitle": "{{name}} zum Team hinzufügen",
+        "teamAccount": "Das Konto des Teams verwenden",
+        "teamAccountHint": "Das {{name}}-Konto des Teams und seine Werkzeuge werden auf der Seite Konnektoren verwaltet. Sie laufen für alle im Team über dieses Konto."
+      },
       "toolActions": "Tool-Aktionen",
       "toolIconTitle": "{{name}}-Symbol",
       "triggerLabel_one": "Werkzeuge, {{formatted}} ausgewählt",
@@ -4890,14 +5534,292 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Team wechseln",
+      "ariaLabel": "Arbeitsbereich wechseln",
       "createTeam": "Team erstellen",
       "logoAlt": "DocsGPT-Logo",
-      "manageTeams": "Teams verwalten",
-      "personal": "Persönliches Konto",
-      "personalSubtitle": "Persönlicher Workspace",
-      "roleAdmin": "Admin",
-      "roleMember": "Mitglied"
+      "manageTeams": "Teams verwalten"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "deleteAll": {
+        "confirm": "Alle deine Chats in {{name}} löschen?",
+        "consequence": "Jeder Chat, den du in {{name}} begonnen hast, wird mitsamt seinen Nachrichten gelöscht. Chats in deinen anderen Arbeitsbereichen bleiben. Das kann nicht rückgängig gemacht werden."
+      },
+      "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
+      "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
+      "onlyYou": "Nur du siehst diesen Chat",
+      "switchTo": "Zu {{name}} wechseln",
+      "thisTeam": "diesem Team"
+    },
+    "common": {
+      "personal": "Persönlich",
+      "roles": {
+        "admin": "Admin",
+        "editor": "Bearbeiter",
+        "owner": "Eigentümer",
+        "viewer": "Betrachter"
+      },
+      "you": "Du"
+    },
+    "folders": {
+      "alsoInFolder": "Auch in diesem Ordner"
+    },
+    "line": {
+      "people_one": "{{count}} Person",
+      "people_other": "{{count}} Personen",
+      "personal": "Persönlich",
+      "personalScope": "Nur du, außer du teilst ein Element",
+      "teamScope": "Alle im Team können nutzen, was hier liegt"
+    },
+    "menu": {
+      "moveToPersonal": "Nach Persönlich verschieben…",
+      "moveToTeam": "In ein Team verschieben…"
+    },
+    "move": {
+      "access": {
+        "gainsDetail": "Bearbeiter und Admins in {{team}} können es ändern. Betrachter können es nutzen.",
+        "gainsNone": "Niemand sonst erhält Zugriff",
+        "gains_one": "{{count}} Person erhält Zugriff",
+        "gains_other": "{{count}} Personen erhalten Zugriff",
+        "loseTeamNone": "Sonst verliert niemand den Zugriff",
+        "loseTeam_one": "{{count}} Person in {{team}} verliert den Zugriff",
+        "loseTeam_other": "{{count}} Personen in {{team}} verlieren den Zugriff",
+        "losesShared_one": "{{count}} Person, mit der du es außerhalb von {{team}} geteilt hast, verliert den Zugriff: {{names}}.",
+        "losesShared_other": "{{count}} Personen, mit denen du es außerhalb von {{team}} geteilt hast, verlieren den Zugriff: {{names}}.",
+        "onlyYou": "Nur du hast es, bis du es teilst."
+      },
+      "anotherTeam": "einem anderen Team",
+      "borrow": {
+        "in_one": "{{names}} ist von außerhalb des Teams erreichbar und nutzt, was dieser Umzug ins Team bringt, und das darf Zugriff von außen nicht bedienen. Verschiebe ihn mit, schalte seinen Zugriff von außen aus oder entferne diese Elemente zuerst daraus.",
+        "in_other": "{{names}} sind von außerhalb des Teams erreichbar und nutzen, was dieser Umzug ins Team bringt, und das darf Zugriff von außen nicht bedienen. Verschiebe sie mit, schalte ihren Zugriff von außen aus oder entferne diese Elemente zuerst daraus.",
+        "keeps_one": "Dein Agent {{names}} nutzt, was verschoben wird. Er kann es weiter aus dem Team nutzen, aber solange nicht veröffentlicht werden.",
+        "keeps_other": "Deine Agenten {{names}} nutzen, was verschoben wird. Sie können es weiter aus dem Team nutzen, aber solange nicht veröffentlicht werden.",
+        "out_one": "{{names}} bleibt in {{team}} und nutzt, was dieser Umzug herausnimmt. Verschiebe ihn mit oder entferne diese Elemente zuerst daraus.",
+        "out_other": "{{names}} bleiben in {{team}} und nutzen, was dieser Umzug herausnimmt. Verschiebe sie mit oder entferne diese Elemente zuerst daraus."
+      },
+      "cannotTitle": "Kann nicht verschoben werden",
+      "chats": {
+        "in_one": "{{count}} deiner Chats damit wandert zu {{team}}.",
+        "in_other": "{{count}} deiner Chats damit wandern zu {{team}}.",
+        "out_one": "{{count}} deiner Chats damit wandert nach Persönlich.",
+        "out_other": "{{count}} deiner Chats damit wandern nach Persönlich."
+      },
+      "comesAlong": "Kommt mit",
+      "comesWith": "Kommt mit \"{{name}}\" mit",
+      "customModelHint": "Um es zu behalten, füge es zuerst unter „Eigene Modelle“ zum Team hinzu.",
+      "done": {
+        "personal": "\"{{name}}\" liegt jetzt in deinem persönlichen Bereich.",
+        "team": "\"{{name}}\" gehört jetzt {{team}}."
+      },
+      "doneButton": "Fertig",
+      "droppedShares": {
+        "description": "Was sie in diesen Teams nutzt, hört auf zu funktionieren.",
+        "title": "Das Teilen mit anderen Teams endet",
+        "with": "Geteilt mit {{team}}"
+      },
+      "effects": {
+        "removed_from_holder": "Es wird aus dem entfernt, was es nutzt.",
+        "stays": "Es bleibt, wo es ist."
+      },
+      "errors": {
+        "already_in_workspace": "Es liegt bereits dort.",
+        "credentials_unavailable": "Ein gespeicherter Schlüssel kann gerade nicht verschoben werden. Versuche es später erneut.",
+        "credentials_unreadable_one": "Das gespeicherte Geheimnis von {{names}} ist nicht lesbar, daher kann es nicht verschoben werden. Gib es zuerst neu ein.",
+        "credentials_unreadable_other": "Die gespeicherten Geheimnisse von {{names}} sind nicht lesbar, daher können sie nicht verschoben werden. Gib sie zuerst neu ein.",
+        "fingerprint_required": "Prüfe den Plan erneut und verschiebe dann.",
+        "folder_not_found": "Dieser Ordner ist nicht mehr da.",
+        "folder_too_deep": "Dieser Ordner liegt dafür zu tief: Ordner lassen sich höchstens 3 Ebenen tief verschachteln.",
+        "invalid_request": "Dieser Umzug ist nicht möglich.",
+        "move_failed": "Das Verschieben ist fehlgeschlagen; nichts wurde geändert.",
+        "move_needs_admin": "Nur ein Team-Admin kann einen Agenten hereinbringen, der von außerhalb des Teams erreichbar ist.",
+        "move_plan_changed": "Etwas hat sich geändert; bitte erneut prüfen",
+        "move_would_borrow": "Ein Agent, der von außerhalb des Teams erreichbar ist, nutzt, was dieser Umzug mitnimmt.",
+        "not_a_person": "Nur eine Person kann Elemente verschieben.",
+        "not_found": "Es ist nicht mehr da.",
+        "nothing_to_move": "Keines dieser Elemente kann verschoben werden.",
+        "team_locked": "{{team}} ist gesperrt, daher wird nichts daraus verschoben. Nur sein Eigentümer kann es entsperren.",
+        "workspace_not_found": "Dieses Team ist nicht mehr verfügbar.",
+        "workspace_role_required": "Deine Rolle dort erlaubt diesen Umzug nicht."
+      },
+      "folderLabel": "Ordner",
+      "foldersFailed": "Die Ordner dort konnten nicht geladen werden, daher landet es auf oberster Ebene.",
+      "kinds": {
+        "agent": "Agent",
+        "folder": "Ordner",
+        "model": "Modell",
+        "prompt": "Prompt",
+        "source": "Quelle",
+        "tool": "Werkzeug"
+      },
+      "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "\"{{from}}\" → \"{{to}}\" des Teams",
+        "out": "\"{{from}}\" → dein Modell \"{{to}}\"",
+        "title": "Wechselt zu einem passenden eigenen Modell"
+      },
+      "needsAdmin_one": "{{names}} ist von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und nur ein Admin von {{team}} darf das hereinbringen. Schalte den Zugriff von außen zuerst aus oder frage einen Admin.",
+      "needsAdmin_other": "{{names}} sind von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und nur ein Admin von {{team}} darf sie hereinbringen. Schalte ihren Zugriff von außen zuerst aus oder frage einen Admin.",
+      "noFolder": "Kein Ordner",
+      "openIn": "{{name}} öffnen",
+      "othersYouCantOpen_one": "{{count}} Agent, den du nicht öffnen kannst",
+      "othersYouCantOpen_other": "{{count}} Agenten, die du nicht öffnen kannst",
+      "outside": {
+        "apiKey": "API-Schlüssel und Widget",
+        "publicLink": "öffentlicher Link",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} wird Eigentümer",
+        "teamDetail": "Es bleibt beim Team, wenn du gehst. Du bleibst als die Person genannt, die es hinzugefügt hat.",
+        "you": "Du wirst Eigentümer",
+        "youDetail": "Es verlässt {{team}} und kommt in deinen persönlichen Bereich."
+      },
+      "payerYou": "dir",
+      "pays": {
+        "chats": "Jede Person zahlt für ihre eigenen Chats.",
+        "outside": "Der Zugriff von außen ({{list}}) läuft weiter, bezahlt von {{name}}.",
+        "schedules_one": "{{count}} Zeitplan läuft weiter, bezahlt von {{names}}.",
+        "schedules_other": "{{count}} Zeitpläne laufen weiter, bezahlt von {{names}}.",
+        "title": "An der Bezahlung ändert sich nichts"
+      },
+      "planChanged": "Etwas hat sich geändert; bitte erneut prüfen",
+      "quoted": "\"{{name}}\"",
+      "reasons": {
+        "connection_account": "Mit einem Konto angemeldet, das in diesem Arbeitsbereich bleibt.",
+        "connector_synced": "Aus einem Konto synchronisiert, das in diesem Arbeitsbereich bleibt.",
+        "credentials_unreadable": "Sein gespeichertes Geheimnis ist nicht mehr lesbar.",
+        "custom_model": "Ein persönliches eigenes Modell, das das Team nicht hat.",
+        "custom_model_out": "Ein eigenes Modell des Teams, das du nicht hast.",
+        "in_knowledge_folder": "Liegt in einem Ordner, den der Agent liest; nur dessen Quellen kommen mit.",
+        "not_yours": "Gehört jemand anderem, daher kannst du es nicht verschieben.",
+        "remote_device": "Läuft auf einem gekoppelten Gerät."
+      },
+      "renames": {
+        "folder": "Ordner \"{{from}}\" wird zu \"{{to}}\"",
+        "other": "\"{{from}}\" wird zu \"{{to}}\"",
+        "slug": "Die Adresse des Agenten \"{{from}}\" wird zu \"{{to}}\"",
+        "title": "Umbenannt, um gleiche Namen zu vermeiden"
+      },
+      "sharedRefs": {
+        "from": "Genutzt über die Freigabe von {{team}}",
+        "title": "Bleibt über die Freigabe eines anderen Teams"
+      },
+      "someone": "jemandem",
+      "submit": "Nach {{name}} verschieben",
+      "teamLabel": "Team",
+      "teamLocked_one": "{{names}} ist von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und {{team}} ist gesperrt, daher kann er nicht hinein. Schalte zuerst seinen Zugriff von außen ab.",
+      "teamLocked_other": "{{names}} sind von außerhalb des Teams erreichbar (Schlüssel, öffentlicher Link oder Webhook), und {{team}} ist gesperrt, daher können sie nicht hinein. Schalte zuerst ihren Zugriff von außen ab.",
+      "titleToPersonal": "\"{{name}}\" nach Persönlich verschieben",
+      "titleToTeam": "\"{{name}}\" in ein Team verschieben",
+      "unnamed": "Ein Element, das du nicht öffnen kannst",
+      "withReasons": {
+        "in_folder": "Im Ordner",
+        "same_workflow": "Im selben Workflow",
+        "used_by_agent": "Vom Agenten genutzt"
+      }
+    },
+    "notices": {
+      "lost": "Du bist nicht mehr in {{name}}; zu Persönlich gewechselt",
+      "lostUnnamed": "Du bist nicht mehr in diesem Team; zu Persönlich gewechselt",
+      "ownerInactive": "Der Zugriff von außen ist pausiert: Das Konto des Eigentümers ist deaktiviert.",
+      "ownerInactiveShort": "Zugriff von außen pausiert",
+      "roleChanged": "Deine Rolle in {{name}} hat sich geändert. Die Seite zeigt jetzt, was du tun kannst.",
+      "switched": "Zu {{name}} gewechselt"
+    },
+    "page": {
+      "sharedFromTeams": {
+        "from": "Von {{team}}",
+        "title": "Mit diesem Team geteilt"
+      },
+      "sharedWithYou": "Mit dir geteilt"
+    },
+    "pickers": {
+      "inAgentFolder": "In {{folder}}, dem Ordner dieses Agenten",
+      "inWorkflowFolder": "In {{folder}}, dem Ordner dieses Workflows",
+      "otherFolders": "In anderen Ordnern",
+      "thisTeam": "Dieses Team"
+    },
+    "share": {
+      "access": "Zugriff",
+      "adminsOnly": "Nur Admins ändern das, auf der Seite des Agenten.",
+      "apiKey": "API-Schlüssel und Widget",
+      "belongsTo": "Es gehört {{team}}. Der Zugriff folgt der Team-Mitgliedschaft.",
+      "everyoneInTeam": "Alle in {{team}}",
+      "fromTeam": "Über das Team",
+      "manageMembers": "Mitglieder verwalten",
+      "members_one": "{{count}} Person, nach ihrer Team-Rolle",
+      "members_other": "{{count}} Personen, nach ihrer Team-Rolle",
+      "off": "Aus",
+      "on": "An",
+      "onPaidBy": "An · bezahlt von {{name}}",
+      "outside": {
+        "again": "Du kannst es jederzeit wieder teilen.",
+        "locked": "{{team}} ist gesperrt, daher kann nichts davon mit einem anderen Team geteilt werden. Nur der Eigentümer kann es entsperren.",
+        "noMatches": "Keine Teams gefunden.",
+        "noTargets": "Du bist in keinem anderen Team, mit dem du es teilen kannst.",
+        "pausedLocked": "Pausiert, solange {{owner}} gesperrt ist",
+        "picker": "Team, mit dem geteilt wird",
+        "pickerPlaceholder": "Team auswählen…",
+        "pickerSearch": "Teams suchen…",
+        "received": {
+          "body": "{{owner}} teilt es mit allen in {{team}}.",
+          "bodyNoOwner": "Ein anderes Team teilt es mit allen in {{team}}.",
+          "note": "Du kannst es nutzen, aber nicht ändern oder mit anderen teilen."
+        },
+        "revoke": "Teilen beenden",
+        "revokeAgent": "Mitglieder von {{team}} können nicht mehr damit chatten. Ihre bisherigen Chats bleiben lesbar.",
+        "revokeConfirm": "Teilen mit {{team}} beenden?",
+        "revokeUnused": "Mitglieder von {{team}} können es nicht mehr nutzen.",
+        "revokeUsed_one": "{{formatted}} Agent in {{team}} nutzt es und läuft dann ohne.",
+        "revokeUsed_other": "{{formatted}} Agenten in {{team}} nutzen es und laufen dann ohne.",
+        "share": "Teilen",
+        "shareError": "Konnte nicht mit diesem Team geteilt werden.",
+        "sharedBy": "Geteilt von {{name}}",
+        "sharedByYou": "Von dir geteilt",
+        "teamsTitle": "Mit anderen Teams geteilt",
+        "title": "Außerhalb des Teams",
+        "unknownTeam": "Ein Team, in dem du nicht bist",
+        "unshareError": "Teilen konnte nicht beendet werden.",
+        "usedBy_one": "Von {{formatted}} Agenten genutzt",
+        "usedBy_other": "Von {{formatted}} Agenten genutzt",
+        "uses": {
+          "fromTeam": "Von {{team}}: {{items}}.",
+          "hidden_one": "{{count}} Element, das du nicht sehen kannst",
+          "hidden_other": "{{count}} Elemente, die du nicht sehen kannst",
+          "moveTo": "Nach {{team}} verschieben",
+          "note": "Dieser Agent nutzt Elemente eines Teams, daher werden nur Personen vorgeschlagen, die sie nutzen können.",
+          "remove": "Entferne sie aus dem Agenten, um ihn mit anderen zu teilen.",
+          "someTeam": "einem anderen Team"
+        },
+        "warning": {
+          "agent": "Mitglieder von {{team}} können damit chatten. Er läuft mit dem Wissen und den Werkzeugen von {{owner}}. Wer in {{owner}} seine Protokolle und Einblicke sieht, sieht ihre Fragen.",
+          "always": "Sie können es nicht ändern, nicht weiter teilen und keine Agenten veröffentlichen, die es nutzen. Du kannst das Teilen jederzeit beenden; alles, was es in {{team}} nutzt, hört dann auf.",
+          "prompt": "Mitglieder von {{team}} können ihn lesen und in ihren Agenten nutzen.",
+          "source": "Mitglieder von {{team}} können jede Datei darin lesen und die Quelle in ihren Agenten nutzen.",
+          "teamModels_one": "Mitglieder von {{team}} nutzen diesen Agenten mit dem Modell {{names}} von {{owner}}.",
+          "teamModels_other": "Mitglieder von {{team}} nutzen diesen Agenten mit den Modellen {{names}} von {{owner}}.",
+          "toolMember": "Jedes Mitglied nutzt sein eigenes Konto.",
+          "toolStored": "Mitglieder von {{team}} nutzen dieses Werkzeug mit dem gespeicherten Konto von {{owner}}. Was sie damit tun, geschieht im Namen von {{owner}}."
+        }
+      },
+      "payerYou": "dir",
+      "publicLink": "Öffentlicher Link",
+      "teamTitle": "Wer \"{{name}}\" nutzen kann",
+      "teamTitleGeneric": "Wer dieses Element ({{type}}) nutzen kann",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} in {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Nur du",
+      "personal": "Persönlich",
+      "teamMeta_one": "{{count}} Person · {{role}}",
+      "teamMeta_other": "{{count}} Personen · {{role}}",
+      "teamRole": "Team · {{role}}",
+      "teams": "Teams"
+    },
+    "team": {
+      "navEntry": "Team"
     }
   }
 }

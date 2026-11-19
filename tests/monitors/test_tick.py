@@ -976,6 +976,40 @@ class TestConversationNoLongerResumable:
         assert page["calls"] == 0 and wakes == []
         assert reload(mon_db, monitor["id"])["status"] == "cancelled"
 
+    def _share(self, mon_db, conversation_id):
+        with mon_db.begin() as conn:
+            conn.execute(
+                text("UPDATE conversations SET is_shared_usage = true WHERE id = CAST(:id AS uuid)"),
+                {"id": conversation_id},
+            )
+
+    def test_a_webhook_delivery_ends_its_monitor_without_the_judge(
+        self, mon_db, conversation_id, no_judge, wakes, events
+    ):
+        monitor, link = _webhook(mon_db, conversation_id, check=None, condition="the build passed", state={})
+        self._share(mon_db, conversation_id)
+        hit_id = _hit(mon_db, link, "a", {"status": "success"})
+
+        assert tick.process_hit(hit_id) == {"state": "cancelled"}
+        assert wakes == []
+        assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+        with mon_db.connect() as conn:
+            assert TriggerHitsRepository(conn).get(hit_id)["status"] == "ignored"
+            assert TriggerLinksRepository(conn).get_live(link["token_hash"], "webhook") is None
+
+    def test_an_ingest_event_ends_its_monitor_without_the_judge(
+        self, mon_db, conversation_id, no_judge, wakes, events
+    ):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None,
+            condition="the ingest failed", state={},
+        )
+        self._share(mon_db, conversation_id)
+
+        assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "cancelled"}
+        assert wakes == []
+        assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+
 
 class TestPausedNoticeReachesTheQueue:
     def test_monitor_paused_is_a_wake_source_the_queue_takes(self, mon_db, conversation_id, page, events, monkeypatch):

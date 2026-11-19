@@ -11,6 +11,7 @@ import {
 
 import ConnectionHealthDot from '../connectors/ConnectionHealthDot';
 import { selectConnectorsEnabled } from '../connectors/connectorsSlice';
+import { selectInTeam } from '../settings/workspaceAccess';
 import { getVisibleGroups } from './sections';
 import { useSectionContext } from './useSectionContext';
 
@@ -31,11 +32,13 @@ export default function SectionPills({ className }: { className?: string }) {
   const isAdmin = useSelector(selectIsAdmin);
   const connectorsEnabled = useSelector(selectConnectorsEnabled);
   const analyticsEnabled = useSelector(selectAnalyticsEnabled);
+  const inTeam = useSelector(selectInTeam);
 
   if (!section) return null;
   const items = getVisibleGroups(section, {
     isAdmin,
     features: { connectors: connectorsEnabled, analytics: analyticsEnabled },
+    inTeam,
   }).flatMap((group) => group.items);
   if (items.length < 2) return null;
 

@@ -11,7 +11,21 @@ Authorization model (two planes, see ``team_authz.py``):
   ``resource_access.py``) and membership of the target team. Unsharing needs
   ``share`` (no membership required) or ``team_admin`` of the team. Sharing is
   additive visibility — the resource's owner is never changed.
-- The team owner can't be demoted or removed; they transfer ownership first.
+- The team owner can't be demoted or removed, and a team keeps at least one
+  admin, whichever route changes the membership (add/re-add, role change,
+  removal, leave): all go through ``TeamMembersRepository.change_membership``.
+  The owner transfers ownership first; only that flow changes the Owner.
+- Roles are Owner (``teams.owner_id``), Admin, Editor and Viewer; writes take
+  ``role: admin|editor|viewer`` (new members join as viewer). Until the UI
+  moves to them (step 2), today's names stay readable and writable:
+  ``team_member`` is accepted as a viewer, team payloads keep ``member_role``
+  (``team_admin``/``team_member``) beside the new ``role``, the grants list
+  keeps ``team_role`` in the old names beside ``role``, and member rows keep
+  ``role`` in the old names beside the new ``team_role``.
+- A team's own items have no per-item grants and go to another team whole:
+  the grants routes share a team item with every member of another team at
+  Viewer level, by its outside policy (``teams/outside.py``). A team that
+  still owns items can't be deleted (409 ``team_not_empty``).
 
 ``team_id`` always comes from the URL path (never the body) — enforced by
 ``require_team_role`` and by reading ``team_id`` as a route kwarg here.
@@ -23,7 +37,7 @@ import logging
 import re
 import uuid
 
-from flask import jsonify, make_response, request
+from flask import Response, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from sqlalchemy import text
 
@@ -35,8 +49,11 @@ from docsgpt.api.user.resource_access import (
     build,
     public_settings,
     require,
+    resolve,
+    resource_owner,
     set_settings,
     settings_many,
+    workspace_minimum,
 )
 from docsgpt.api.user.team_authz import (
     has_team_role,
@@ -45,30 +62,44 @@ from docsgpt.api.user.team_authz import (
 )
 from docsgpt.api.user.team_sharing import is_valid_resource_type
 from docsgpt.events.publisher import publish_user_event
+from docsgpt.notifications.notify import notify_user
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
 from docsgpt.storage.db.repositories.auth_events import AuthEventsRepository
+from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
-    ROLE_TEAM_MEMBER,
+    ROLE_TEAM_VIEWER,
+    MembershipChangeRefused,
     TeamMembersRepository,
 )
 from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
 from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
-from docsgpt.storage.db.repositories.teams import TeamsRepository
+from docsgpt.storage.db.repositories.teams import TeamNotEmpty, TeamsRepository
+from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.locks import lock_owner_items
+from docsgpt.workspaces.outside import team_policy
+from docsgpt.workspaces.principal import is_principal_id, principal_id
+from docsgpt.workspaces.roles import (
+    from_stored_role,
+    legacy_member_role,
+    role_at_least,
+    team_role_for,
+    to_stored_role,
+)
 
 logger = logging.getLogger(__name__)
 
 teams_ns = Namespace("teams", description="Team management and resource sharing", path="/api")
 
-_VALID_TEAM_ROLES = (ROLE_TEAM_ADMIN, ROLE_TEAM_MEMBER)
 _VALID_ACCESS_LEVELS = ("viewer", "editor")
 _TEAM_SEARCH_LIMIT = 20
 _TEAM_SEARCH_MAX = 100
@@ -112,10 +143,92 @@ def _denied(err: AccessDenied):
     return make_response(jsonify({"success": False, "message": err.message}), err.status)
 
 
-def _team_payload(team: dict, user: str | None) -> dict:
-    """Add ``is_owner`` so the UI can gate owner-only actions (delete, transfer)."""
-    team["is_owner"] = bool(user) and team.get("owner_id") == user
+def _refusal(refused: MembershipChangeRefused):
+    """JSON response for a membership change the team's invariants refuse.
+
+    The owner changing themselves gets 400 telling them to transfer ownership
+    first; anyone else touching the owner gets 403; demoting or removing the
+    last admin is 409. Each carries a stable ``error`` code the UI maps to its
+    own text: ``last_admin``, ``owner_must_transfer`` or ``owner_protected``.
+
+    Args:
+        refused: The refusal raised by ``change_membership``.
+
+    Returns:
+        The ``{"success": False, "error": code, "message": ...}`` response.
+    """
+    remove = refused.change == "remove"
+    if refused.reason == MembershipChangeRefused.LAST_ADMIN:
+        message = f"Cannot {'remove' if remove else 'demote'} the last team admin"
+        status, code = 409, "last_admin"
+    elif refused.self_change:
+        message = (
+            "Transfer team ownership to another member before you leave the team"
+            if remove
+            else "Transfer team ownership to another member before you step down as admin"
+        )
+        status, code = 400, "owner_must_transfer"
+    else:
+        message = f"The team owner can't be {'removed' if remove else 'demoted'}"
+        status, code = 403, "owner_protected"
+    return make_response(jsonify({"success": False, "error": code, "message": message}), status)
+
+
+def _team_payload(team: dict, user: str | None, stored_role: str | None = None) -> dict:
+    """Add the caller's ``role``, ``member_role``, ``is_owner`` and the outside policy fields to a team row.
+
+    Args:
+        team: The team row.
+        user: The caller.
+        stored_role: The caller's strongest stored role in the team, if any.
+
+    Returns:
+        dict: The row, with ``role`` (``owner|admin|editor|viewer``, None for a
+        non-member such as an instance admin), ``member_role`` (today's
+        ``team_admin|team_member``), ``is_owner`` (gates delete and transfer),
+        ``outside_policy`` and ``can_set_outside_policy`` (the Owner, or an
+        Admin while the team isn't locked).
+    """
+    # Lazy: the outside module registers its routes on this module's namespace.
+    from docsgpt.api.user.teams.outside import policy_fields
+
+    is_owner = bool(user) and team.get("owner_id") == user
+    role = "owner" if is_owner else from_stored_role(stored_role)
+    team["role"] = role
+    team["member_role"] = legacy_member_role(role)
+    team["is_owner"] = is_owner
+    team.update(policy_fields(team, role))
     return team
+
+
+def _member_rows(members: list[dict], owner_id: str | None) -> list[dict]:
+    """Member rows with ``team_role`` (``owner|admin|editor|viewer``) and ``role`` in today's names.
+
+    Args:
+        members: ``TeamMembersRepository.list_members`` rows (stored roles).
+        owner_id: ``teams.owner_id``; their rows say ``owner``.
+
+    Returns:
+        list[dict]: The same rows, changed in place.
+    """
+    for member in members:
+        team_role = "owner" if owner_id and member.get("user_id") == owner_id else from_stored_role(member.get("role"))
+        member["team_role"] = team_role
+        member["role"] = legacy_member_role(team_role)
+    return members
+
+
+def _requested_role(data: dict, default: str | None) -> str | None:
+    """The stored role a member write asks for, or None when it names no assignable role.
+
+    Accepts ``admin|editor|viewer``, the stored names and today's ``team_member``;
+    ``owner`` is never assignable (ownership is transferred).
+    """
+    raw = data.get("role", default)
+    try:
+        return to_stored_role(raw)
+    except ValueError:
+        return None
 
 
 # Name + owner of each shareable resource, looked up unscoped by id (the grant
@@ -175,6 +288,47 @@ def _caller_access(
     return out
 
 
+# Why a grant on the team's grants list gives no access right now.
+PAUSED_OWNER_LEFT = "owner_left"
+
+
+def _members_among(conn, team_id: str, user_ids: set[str]) -> set[str]:
+    """The ids in ``user_ids`` that are in the team now, in one query.
+
+    Read as ``team_role_for`` reads it: any membership row, or the team's owner.
+
+    Args:
+        conn: Open connection.
+        team_id: Team UUID.
+        user_ids: Candidate ids.
+
+    Returns:
+        set[str]: Those in the team.
+    """
+    ids = sorted(u for u in user_ids if u)
+    if not ids:
+        return set()
+    rows = conn.execute(
+        text(
+            "SELECT user_id FROM team_members "
+            "WHERE team_id = CAST(:team_id AS uuid) AND user_id = ANY(:ids) "
+            "UNION SELECT owner_id FROM teams WHERE id = CAST(:team_id AS uuid) AND owner_id = ANY(:ids)"
+        ),
+        {"team_id": team_id, "ids": ids},
+    ).fetchall()
+    return {row[0] for row in rows}
+
+
+def _paused_reason(owner_id: str | None, members: set[str]) -> str | None:
+    """Why a grant is paused: its owner, a person, is no longer in the team; None while it works.
+
+    The grant gives access again once the owner is re-added.
+    """
+    if owner_id and not is_principal_id(owner_id) and owner_id not in members:
+        return PAUSED_OWNER_LEFT
+    return None
+
+
 def _user_labels(conn, user_ids: set[str]) -> dict[str, str]:
     """``user_id -> email`` for the users on file with an email."""
     ids = [u for u in user_ids if u]
@@ -188,6 +342,251 @@ def _user_labels(conn, user_ids: set[str]) -> dict[str, str]:
         {"ids": ids},
     ).fetchall()
     return {uid: email for uid, email in rows}
+
+
+def person_ref(user_id: str | None, labels: dict[str, str]) -> dict | None:
+    """``{user_id, label}`` naming a person (their email when on file, else their id), or None for nobody.
+
+    Args:
+        user_id: The person, or None.
+        labels: ``_user_labels`` for the ids in play.
+
+    Returns:
+        dict | None: The reference the payloads carry as ``paid_by`` and similar.
+    """
+    if not user_id:
+        return None
+    return {"user_id": user_id, "label": labels.get(user_id) or user_id}
+
+
+def team_admin_refusal(conn, user: str | None, team_id: str) -> Response | None:
+    """Refuse anyone but the team's Owner and Admins, for the team's reports.
+
+    The instance admin gets nothing here: the reports show what members did
+    in the team, which only the team's own admins may read.
+
+    Args:
+        conn: Open connection.
+        user: The caller.
+        team_id: The team, from the URL.
+
+    Returns:
+        A response to return (401 no caller, 404 not in the team, 403
+        ``workspace_role_required`` below Admin), or None to go on.
+    """
+    if not user:
+        return make_response(jsonify({"success": False, "message": "Authentication required"}), 401)
+    role = team_role_for(conn, user, team_id)
+    if role is None:
+        return make_response(jsonify({"success": False, "error": "team_not_found", "message": "Not found"}), 404)
+    if not role_at_least(role, "admin"):
+        return make_response(
+            jsonify(
+                {"success": False, "error": "workspace_role_required", "message": "This needs the admin role"}
+            ),
+            403,
+        )
+    return None
+
+
+#: An agent row (aliased ``a``) with some way in from outside switched on (``has_outside_access``).
+OUTSIDE_ACCESS_ON_SQL = (
+    "(COALESCE(a.key, '') <> '' OR (a.shared AND COALESCE(a.shared_token, '') <> '') "
+    "OR COALESCE(a.incoming_webhook_token, '') <> '')"
+)
+
+
+#: ``pays_for`` of someone who pays for nothing in the team.
+NO_PAYS_FOR = {"schedules": 0, "outside_access": 0, "connections": 0}
+
+
+def pays_for(conn, team_id: str, user_ids: list[str]) -> dict[str, dict[str, int]]:
+    """What each person pays for in the team.
+
+    Args:
+        conn: Open connection.
+        team_id: The team.
+        user_ids: The people.
+
+    Returns:
+        ``{user_id: {"schedules": n, "outside_access": n, "connections": n}}``
+        for every id: the running schedules they set on the team's agents,
+        the team agents with outside access on that they are the payer of, and
+        the team's connections they connected (whose syncs they pay for).
+    """
+    ids = sorted({u for u in user_ids if u})
+    out = {u: dict(NO_PAYS_FOR) for u in ids}
+    if not ids or not looks_like_uuid(str(team_id)):
+        return out
+    params = {"principal": principal_id(team_id), "ids": ids}
+    schedules = conn.execute(
+        text(
+            "SELECT s.user_id, count(*) FROM schedules s JOIN agents a ON a.id = s.agent_id "
+            "WHERE a.user_id = :principal AND s.user_id = ANY(:ids) AND s.status = 'active' GROUP BY s.user_id"
+        ),
+        params,
+    ).fetchall()
+    access = conn.execute(
+        text(
+            "SELECT a.access_payer_id, count(*) FROM agents a WHERE a.user_id = :principal "
+            f"AND a.access_payer_id = ANY(:ids) AND {OUTSIDE_ACCESS_ON_SQL} GROUP BY a.access_payer_id"
+        ),
+        params,
+    ).fetchall()
+    for user_id, count in schedules:
+        out[user_id]["schedules"] = int(count)
+    for user_id, count in access:
+        out[user_id]["outside_access"] = int(count)
+    for user_id, count in ConnectorSessionsRepository(conn).connected_by_counts(params["principal"], ids).items():
+        out[user_id]["connections"] = count
+    return out
+
+
+def _paused_by_change(conn, team_id: str, member: str, before: str | None, after: str | None) -> dict[str, int]:
+    """What a membership change pauses of what ``member`` pays for in the team.
+
+    A schedule pauses when its setter drops below the role that manages
+    schedules, outside access when its payer drops below the role the team's
+    outside policy gives access details to, and a team connection when whoever
+    connected it drops below Admin or leaves; whatever was paused already (all
+    outside access of a locked team) is not counted again.
+
+    Args:
+        conn: Open connection.
+        team_id: The team.
+        member: The person whose membership changed.
+        before: Their team role before (API name), or None.
+        after: Their team role after, or None when they left.
+
+    Returns:
+        ``{"schedules": n, "outside_access": n, "connections": n}``.
+    """
+    counts = pays_for(conn, team_id, [member])[member]
+    policy = team_policy(conn, team_id)
+    paused = {}
+    for key, action in (("schedules", "manage_schedules"), ("outside_access", "manage_access_details")):
+        needed = workspace_minimum("agent", action, policy=policy)
+        lost = needed is not None and role_at_least(before, needed) and not role_at_least(after, needed)
+        paused[key] = counts[key] if lost else 0
+    # A team connection's account is used only while whoever connected it is an Admin (or the Owner).
+    lost_admin = role_at_least(before, "admin") and not role_at_least(after, "admin")
+    paused["connections"] = counts["connections"] if lost_admin else 0
+    return paused
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def payer_left_text(member_label: str, team_name: str, new_role: str | None, paused: dict[str, int]) -> str:
+    """The notice the team's admins get: who changed, and what of theirs is paused.
+
+    Args:
+        member_label: The member, as people read them.
+        team_name: The team's name.
+        new_role: Their role now, or None when they left.
+        paused: ``_paused_by_change`` counts (at least one non-zero).
+
+    Returns:
+        One sentence, e.g. "dana@x.io left Operations: 2 schedules and outside
+        access on 1 agent are paused until someone takes over."
+    """
+    if new_role is None:
+        lead = f"{member_label} left {team_name}"
+    else:
+        article = "an" if new_role[:1] in "aeiou" else "a"
+        lead = f"{member_label} is now {article} {new_role.capitalize()} in {team_name}"
+    parts = []
+    if paused["schedules"]:
+        parts.append(_plural(paused["schedules"], "schedule"))
+    if paused["outside_access"]:
+        parts.append(f"outside access on {_plural(paused['outside_access'], 'agent')}")
+    if paused.get("connections"):
+        parts.append(_plural(paused["connections"], "connection"))
+    verb = "are" if len(parts) > 1 or paused["schedules"] > 1 or paused.get("connections", 0) > 1 else "is"
+    listed = parts[0] if len(parts) == 1 else f"{', '.join(parts[:-1])} and {parts[-1]}"
+    return f"{lead}: {listed} {verb} paused until someone takes over."
+
+
+def _payer_left_notice(
+    conn, team_id: str, member: str, before: str | None, after: str | None, actor: str | None
+) -> dict | None:
+    """Work out, inside the change's transaction, the notice a removal or demotion owes the team's admins.
+
+    Args:
+        conn: Open connection, after the change.
+        team_id: The team.
+        member: Whose membership changed.
+        before: Their stored role before.
+        after: Their stored role after, or None when they left.
+        actor: Who made the change; they saw what it pauses before confirming, so they aren't told again.
+
+    Returns:
+        ``{recipients, title, body, url}``, or None when the change pauses nothing, or when working it
+        out fails: the notice is best-effort and never fails the change (its reads run in a savepoint).
+    """
+    new_role = from_stored_role(after) if after else None
+    try:
+        with conn.begin_nested():
+            paused = _paused_by_change(conn, team_id, member, from_stored_role(before), new_role)
+            if not any(paused.values()):
+                return None
+            team = TeamsRepository(conn).get(team_id) or {}
+            label = _user_labels(conn, {member}).get(member) or member
+            recipients = [u for u in TeamsRepository(conn).admin_ids(team_id) if u != actor and u != member]
+    except Exception:
+        logger.warning("payer_left notice failed for team=%s", team_id, exc_info=True)
+        return None
+    team_name = team.get("name") or "the team"
+    return {
+        "recipients": recipients,
+        "title": f"Paused in {team_name}",
+        "body": payer_left_text(label, team_name, new_role, paused),
+        "url": f"/teams/{team_id}/usage",
+    }
+
+
+def _send_payer_left(notice: dict | None) -> None:
+    """Send a ``_payer_left_notice`` after the change committed; never raises."""
+    if not notice:
+        return
+    for recipient in notice["recipients"]:
+        notify_user(
+            user_id=recipient,
+            conversation_id=None,
+            kind="payer_left",
+            title=notice["title"],
+            body=notice["body"],
+            url=notice["url"],
+        )
+
+
+def _team_items_refusal(conn, ra: ResourceAccess, team_id: str, target_user_id: str | None, user: str):
+    """The 409 that keeps a personal agent using a team's items from people who can't reach them.
+
+    Holds the agent owner's items lock first, so a save adding a team's item to
+    the agent runs wholly before or after this share.
+
+    Args:
+        conn: Open connection in the share's transaction.
+        ra: The caller's access to the agent.
+        team_id: The team it is shared with.
+        target_user_id: The one member, or None for the whole team.
+        user: The caller.
+
+    Returns:
+        The refusal response, or None when the share may go ahead.
+    """
+    # Lazy: graph_checks imports the workflow routes, which import most of the user API.
+    from docsgpt.api.user.agents.graph_checks import team_confinement_refusal
+
+    lock_owner_items(conn, ra.owner_id)
+    agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
+    refused = team_confinement_refusal(conn, agent, team_id, target_user_id, user)
+    if refused is None:
+        return None
+    body, status = refused
+    return make_response(jsonify(body), status)
 
 
 def _valid_resource(resource_type, resource_id) -> bool:
@@ -282,7 +681,11 @@ def _resource_display_name(conn, resource_type: str, resource_id: str) -> str | 
 def _notify_member_added(
     team_id: str, new_user: str | None, role: str, actor: str | None
 ) -> None:
-    """Toast the new member that they were added to a team."""
+    """Toast the new member that they were added to a team.
+
+    ``role`` is the stored role; the event carries ``role`` in the API names
+    and ``member_role`` in today's.
+    """
     if not new_user or new_user == actor:
         return
     try:
@@ -294,7 +697,8 @@ def _notify_member_added(
             {
                 "team_id": str(team_id),
                 "team_name": team.get("name") if team else None,
-                "role": role,
+                "role": from_stored_role(role),
+                "member_role": legacy_member_role(from_stored_role(role)),
                 "added_by": actor,
             },
             scope={"kind": "team", "id": str(team_id)},
@@ -356,7 +760,8 @@ class Teams(Resource):
         try:
             with db_readonly() as conn:
                 teams = TeamsRepository(conn).list_for_user(user)
-            teams = [_team_payload(t, user) for t in teams]
+                roles = TeamMembersRepository(conn).roles_by_team(user)
+            teams = [_team_payload(t, user, roles.get(str(t["id"]))) for t in teams]
             return make_response(jsonify({"success": True, "teams": teams}), 200)
         except Exception as err:
             logger.error("List teams failed: %s", err, exc_info=True)
@@ -381,8 +786,7 @@ class Teams(Resource):
                     team["id"], user, role=ROLE_TEAM_ADMIN, source="manual", granted_by=user
                 )
                 _audit(conn, user, "team.create", team_id=team["id"], name=name)
-            team["member_role"] = ROLE_TEAM_ADMIN
-            _team_payload(team, user)
+            _team_payload(team, user, ROLE_TEAM_ADMIN)
             return make_response(jsonify({"success": True, "team": team}), 201)
         except Exception as err:
             logger.error("Create team failed: %s", err, exc_info=True)
@@ -401,9 +805,9 @@ class Team(Resource):
                 if not team:
                     return {"success": False, "message": "Not found"}, 404
                 members = TeamMembersRepository(conn)
-                team["members"] = members.list_members(team_id)
-                team["member_role"] = members.role_for(user, team_id)
-            _team_payload(team, user)
+                team["members"] = _member_rows(members.list_members(team_id), team.get("owner_id"))
+                stored_role = members.role_for(user, team_id)
+            _team_payload(team, user, stored_role)
             return make_response(jsonify({"success": True, "team": team}), 200)
         except Exception as err:
             logger.error("Get team failed: %s", err, exc_info=True)
@@ -429,6 +833,7 @@ class Team(Resource):
         user = _current_user()
         if not user:
             return {"success": False}, 401
+        artifact_paths: list[str] = []
         try:
             with db_session() as conn:
                 team = TeamsRepository(conn).get(team_id)
@@ -437,8 +842,34 @@ class Team(Resource):
                 token = getattr(request, "decoded_token", None)
                 if team["owner_id"] != user and not has_role(token, ROLE_ADMIN):
                     return {"success": False, "message": "Only the team owner can delete"}, 403
-                TeamsRepository(conn).delete(team_id)
+                try:
+                    TeamsRepository(conn).delete(team_id, artifact_paths=artifact_paths)
+                except TeamNotEmpty as not_empty:
+                    # Connections and custom models don't move; they are removed instead.
+                    removed = [
+                        noun for kind, noun in (("connection", "connections"), ("custom_model", "custom models"))
+                        if not_empty.counts.get(kind)
+                    ]
+                    message = "Move or delete the team's items before deleting the team"
+                    if removed:
+                        message = (
+                            f"Move or delete the team's items and remove its {' and '.join(removed)} "
+                            "before deleting the team"
+                        )
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "team_not_empty",
+                                "message": message,
+                                "counts": not_empty.counts,
+                            }
+                        ),
+                        409,
+                    )
                 _audit(conn, user, "team.delete", team_id=team_id)
+            # Only once the rows are gone for good: a rolled-back delete keeps its artifacts' bytes.
+            ArtifactsRepository.reap_storage(artifact_paths)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Delete team failed: %s", err, exc_info=True)
@@ -454,13 +885,30 @@ class TeamMembers(Resource):
         Optional query args: ``q`` (case-insensitive substring over email and
         user id), ``page`` (1-based) and ``page_size`` (1..100; paginates only
         when given). ``total`` is the row count after the ``q`` filter.
+
+        For the team's Owner and Admins each row also has ``pays_for``
+        (``{schedules, outside_access}``): the running schedules the member set
+        on the team's agents and the team agents whose outside access they pay
+        for, which pause when they leave or lose the role; and
+        ``custom_models``: how many of the team's custom models they added,
+        whose keys stay in use after they leave.
         """
         q, limit, offset = _members_query()
         try:
             with db_readonly() as conn:
                 repo = TeamMembersRepository(conn)
-                members = repo.list_members(team_id, q=q, limit=limit, offset=offset)
+                team = TeamsRepository(conn).get(team_id)
+                members = _member_rows(
+                    repo.list_members(team_id, q=q, limit=limit, offset=offset), (team or {}).get("owner_id")
+                )
                 total = repo.count_members(team_id, q=q)
+                if role_at_least(team_role_for(conn, _current_user(), team_id), "admin"):
+                    ids = [m.get("user_id") for m in members]
+                    counts = pays_for(conn, team_id, ids)
+                    added = UserCustomModelsRepository(conn).added_by_counts(principal_id(team_id), ids)
+                    for member in members:
+                        member["pays_for"] = counts.get(member.get("user_id"), dict(NO_PAYS_FOR))
+                        member["custom_models"] = added.get(member.get("user_id"), 0)
             return make_response(
                 jsonify({"success": True, "members": members, "total": total}), 200
             )
@@ -470,15 +918,28 @@ class TeamMembers(Resource):
 
     @team_admin_required
     def post(self, team_id):
-        """Add a member by email (preferred) or raw user_id. Requires team_admin."""
+        """Add a member by email (preferred) or raw user_id. Requires an Admin or the Owner.
+
+        Body: ``email`` or ``user_id``, and ``role``: ``viewer`` (the default),
+        ``editor`` or ``admin`` (``team_member`` / ``team_admin`` still work).
+        The member must be a person who has signed in: anyone else, a team
+        principal included, is 404. Re-adding an existing member sets their
+        role, under the same owner and last-admin guard as the role change.
+        """
         data = request.get_json(silent=True) or {}
         new_user = (data.get("user_id") or "").strip()
         email = (data.get("email") or "").strip()
-        role = data.get("role", ROLE_TEAM_MEMBER)
-        if role not in _VALID_TEAM_ROLES:
+        role = _requested_role(data, "viewer")
+        if role is None:
             return {"success": False, "message": "invalid role"}, 400
         if not new_user and not email:
             return {"success": False, "message": "email or user_id required"}, 400
+        not_found = {
+            "success": False,
+            "message": "No user found with that email (they must sign in once first)",
+        }
+        actor = _current_user()
+        notice = None
         try:
             with db_session() as conn:
                 # Resolve an email to its sub (the user must have logged in at
@@ -486,62 +947,86 @@ class TeamMembers(Resource):
                 if not new_user and email:
                     user_row = UsersRepository(conn).find_by_email(email)
                     if not user_row:
-                        return {
-                            "success": False,
-                            "message": "No user found with that email (they must sign in once first)",
-                        }, 404
+                        return not_found, 404
                     new_user = user_row["user_id"]
-                TeamMembersRepository(conn).set_manual_role(
-                    team_id, new_user, role, granted_by=_current_user()
-                )
-                _audit(
-                    conn,
-                    _current_user(),
-                    "team.member_add",
-                    team_id=team_id,
-                    target_user=new_user,
-                    role=role,
-                )
+                if is_principal_id(new_user):
+                    return not_found, 404
+                members = TeamMembersRepository(conn)
+                before = members.role_for(new_user, team_id)
+                # Re-adding an existing member is a role change: same guard.
+                try:
+                    members.change_membership(team_id, new_user, role, actor=actor)
+                except MembershipChangeRefused as refused:
+                    if refused.reason == MembershipChangeRefused.NOT_A_PERSON:
+                        return not_found, 404
+                    return _refusal(refused)
+                if before is None:
+                    _audit(
+                        conn,
+                        actor,
+                        "team.member_add",
+                        team_id=team_id,
+                        target_user=new_user,
+                        role=from_stored_role(role),
+                    )
+                elif before != role:
+                    _audit_role_change(conn, actor, team_id, new_user, before, role)
+                    notice = _payer_left_notice(conn, team_id, new_user, before, role, actor)
             # Post-commit, best-effort: tell the new member they were added.
-            _notify_member_added(team_id, new_user, role, _current_user())
+            if before is None:
+                _notify_member_added(team_id, new_user, role, actor)
+            _send_payer_left(notice)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Add member failed: %s", err, exc_info=True)
             return {"success": False}, 400
 
 
+def _audit_role_change(conn, actor: str | None, team_id: str, member: str, before: str | None, after: str) -> None:
+    """Record ``team.member_role_changed`` with the old and new roles (API names)."""
+    _audit(
+        conn,
+        actor,
+        "team.member_role_changed",
+        team_id=team_id,
+        target_user=member,
+        from_role=from_stored_role(before),
+        role=from_stored_role(after),
+    )
+
+
 @teams_ns.route("/teams/<string:team_id>/members/<string:member_id>")
 class TeamMember(Resource):
     @team_admin_required
     def put(self, team_id, member_id):
-        """Change a member's role. Requires team_admin. Guards the last admin."""
+        """Change a member's role. Requires an Admin or the Owner.
+
+        Body: ``role``: ``viewer``, ``editor`` or ``admin`` (``team_member`` /
+        ``team_admin`` still work). ``owner`` is 400: only the ownership
+        transfer changes the Owner. The owner can't be demoted and the last
+        admin can't step down (``change_membership``).
+        """
         data = request.get_json(silent=True) or {}
-        role = data.get("role")
-        if role not in _VALID_TEAM_ROLES:
+        role = _requested_role(data, None)
+        if role is None:
             return {"success": False, "message": "invalid role"}, 400
+        actor = _current_user()
+        notice = None
         try:
             with db_session() as conn:
-                if role == ROLE_TEAM_MEMBER:
-                    blocked = self._owner_guard(conn, team_id, member_id, "demote")
-                    if blocked is not None:
-                        return blocked
                 members = TeamMembersRepository(conn)
-                if role == ROLE_TEAM_MEMBER and self._would_orphan_admins(
-                    members, team_id, member_id
-                ):
-                    return {
-                        "success": False,
-                        "message": "Cannot demote the last team admin",
-                    }, 409
-                members.set_manual_role(team_id, member_id, role, granted_by=_current_user())
-                _audit(
-                    conn,
-                    _current_user(),
-                    "team.member_role",
-                    team_id=team_id,
-                    target_user=member_id,
-                    role=role,
-                )
+                before = members.role_for(member_id, team_id)
+                if before is None:
+                    # A role change is for members; adding someone is the add route's job.
+                    return {"success": False, "message": "Not a member"}, 404
+                try:
+                    members.change_membership(team_id, member_id, role, actor=actor)
+                except MembershipChangeRefused as refused:
+                    return _refusal(refused)
+                if before != role:
+                    _audit_role_change(conn, actor, team_id, member_id, before, role)
+                    notice = _payer_left_notice(conn, team_id, member_id, before, role, actor)
+            _send_payer_left(notice)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Update member role failed: %s", err, exc_info=True)
@@ -558,16 +1043,12 @@ class TeamMember(Resource):
             return {"success": False, "message": "Forbidden"}, 403
         try:
             with db_session() as conn:
-                blocked = self._owner_guard(conn, team_id, member_id, "remove")
-                if blocked is not None:
-                    return blocked
                 members = TeamMembersRepository(conn)
-                if self._would_orphan_admins(members, team_id, member_id):
-                    return {
-                        "success": False,
-                        "message": "Cannot remove the last team admin",
-                    }, 409
-                members.remove_member(team_id, member_id)
+                before = members.role_for(member_id, team_id)
+                try:
+                    members.change_membership(team_id, member_id, None, actor=user)
+                except MembershipChangeRefused as refused:
+                    return _refusal(refused)
                 _audit(
                     conn,
                     user,
@@ -576,57 +1057,12 @@ class TeamMember(Resource):
                     target_user=member_id,
                     self_leave=is_self,
                 )
+                notice = _payer_left_notice(conn, team_id, member_id, before, None, user) if before else None
+            _send_payer_left(notice)
             return make_response(jsonify({"success": True}), 200)
         except Exception as err:
             logger.error("Remove member failed: %s", err, exc_info=True)
             return {"success": False}, 400
-
-    @staticmethod
-    def _owner_guard(conn, team_id: str, member_id: str, change: str):
-        """Refuse to demote or remove the team owner.
-
-        Another admin gets 403; the owner themselves gets 400 telling them to
-        transfer ownership first (the team would otherwise have an owner who
-        isn't an admin, or isn't a member at all).
-
-        Args:
-            conn: Open connection.
-            team_id: Team from the URL path.
-            member_id: The member being changed.
-            change: ``"demote"`` or ``"remove"`` (for the message).
-
-        Returns:
-            A response to return, or None when the change may proceed.
-        """
-        team = TeamsRepository(conn).get(team_id)
-        if not team or team.get("owner_id") != member_id:
-            return None
-        if member_id == _current_user():
-            message = (
-                "Transfer team ownership to another member before you leave the team"
-                if change == "remove"
-                else "Transfer team ownership to another member before you step down as admin"
-            )
-            return make_response(jsonify({"success": False, "message": message}), 400)
-        verb = "removed" if change == "remove" else "demoted"
-        return make_response(
-            jsonify({"success": False, "message": f"The team owner can't be {verb}"}), 403
-        )
-
-    @staticmethod
-    def _would_orphan_admins(
-        members: TeamMembersRepository, team_id: str, member_id: str
-    ) -> bool:
-        """True if removing/demoting ``member_id`` leaves the team with no admin.
-
-        Locks the admin rows (FOR UPDATE) so concurrent demote/remove calls
-        serialize — preventing two simultaneous removals of distinct admins from
-        both passing the guard and orphaning the team.
-        """
-        admins = members.lock_admins(team_id)
-        if member_id not in admins:
-            return False
-        return len(admins) <= 1
 
 
 @teams_ns.route("/teams/<string:team_id>/grants")
@@ -636,11 +1072,22 @@ class TeamGrants(Resource):
         """List resources shared with this team. Requires membership.
 
         Each row carries the resource's name, owner and people labels (email
-        when on file, else null) and ``caller`` — the caller's own live
-        ``{access, allowed_actions}`` on that resource (null if none). A plain
-        member sees whole-team grants and grants aimed at them; a team_admin,
+        when on file, else null), ``caller`` — the caller's own live access
+        fields on that resource (null if none) — and ``origin``
+        (``personal_shared`` on a member's personal item). A Viewer or Editor
+        sees whole-team grants and grants aimed at them; an Admin, the Owner,
         or someone with ``share`` on the resource, sees every grant.
+        ``paused_reason`` is ``owner_left`` on a grant whose item's owner is no
+        longer in the team (it gives no access until they are re-added), else
+        null. Items other teams share with this team follow, every member
+        seeing them, with ``origin`` ``team_shared``, ``shared_from``,
+        ``paused_reason`` ``team_locked`` and ``can_revoke`` (see
+        ``outside.incoming_share_rows``). The envelope gives the caller's
+        ``role`` (``owner|admin|editor|viewer``) and ``team_role`` in today's
+        names.
         """
+        from docsgpt.api.user.teams.outside import incoming_share_rows
+
         user = _current_user()
         token = getattr(request, "decoded_token", None)
         resource_type = request.args.get("resource_type")
@@ -649,8 +1096,8 @@ class TeamGrants(Resource):
                 grants = TeamResourceGrantsRepository(conn).list_for_team(
                     team_id, resource_type
                 )
-                team_role = TeamMembersRepository(conn).role_for(user, team_id)
-                sees_all = team_role == ROLE_TEAM_ADMIN or has_role(token, ROLE_ADMIN)
+                role = team_role_for(conn, user, team_id)
+                sees_all = role in ("owner", "admin") or has_role(token, ROLE_ADMIN)
                 rows = _resource_rows(conn, grants)
                 access = _caller_access(conn, user, grants, rows)
                 visible = []
@@ -664,7 +1111,12 @@ class TeamGrants(Resource):
                     g["resource_name"] = row.get("name")
                     g["owner_id"] = row.get("user_id") or g.get("owner_id")
                     g["caller"] = ra.payload() if ra else None
+                    # Every grant is on a member's personal item ("Personal, shared by members").
+                    g["origin"] = "personal_shared"
                     visible.append(g)
+                present = _members_among(conn, team_id, {g.get("owner_id") for g in visible})
+                for g in visible:
+                    g["paused_reason"] = _paused_reason(g.get("owner_id"), present)
                 labels = _user_labels(
                     conn,
                     {
@@ -674,26 +1126,45 @@ class TeamGrants(Resource):
                         if u
                     },
                 )
+                incoming = incoming_share_rows(conn, user, team_id, resource_type)
             for g in visible:
                 g["owner_label"] = labels.get(g.get("owner_id"))
                 g["target_user_label"] = labels.get(g.get("target_user_id"))
                 g["granted_by_label"] = labels.get(g.get("granted_by"))
+            visible.extend(incoming)
             return make_response(
-                jsonify({"success": True, "grants": visible, "team_role": team_role}), 200
+                jsonify(
+                    {
+                        "success": True,
+                        "grants": visible,
+                        "role": role,
+                        "team_role": legacy_member_role(role),
+                    }
+                ),
+                200,
             )
         except Exception as err:
             logger.error("List grants failed: %s", err, exc_info=True)
             return {"success": False}, 400
 
-    @team_member_required
     def post(self, team_id):
         """Share a resource with this team, or change an existing grant's level.
 
-        Needs ``share`` on the resource (the owner, or an editor when the owner
-        turned on ``editors_can_share``) and membership of the team. The grant
-        records the real owner as ``owner_id`` and the caller as ``granted_by``.
+        A person's item needs ``share`` on it (the owner, or an editor when the
+        owner turned on ``editors_can_share``) and membership of the team. The
+        grant records the real owner as ``owner_id`` and the caller as
+        ``granted_by``. A personal agent that uses a team's items goes only to
+        people who reach them (409 ``uses_team_items``).
+
+        A team's item goes to the whole team at Viewer level, from someone its
+        outside policy lets share (``share_outside``) who is in this team too
+        (``outside.share_team_item``): 201 with ``share``, 200 when this team
+        has it already.
         """
         user = _current_user()
+        token = getattr(request, "decoded_token", None)
+        if not user or not token:
+            return make_response(jsonify({"success": False, "message": "Authentication required"}), 401)
         data = request.get_json(silent=True) or {}
         resource_type = data.get("resource_type")
         resource_id = data.get("resource_id")
@@ -704,8 +1175,25 @@ class TeamGrants(Resource):
             return {"success": False, "message": "invalid resource"}, 400
         if access_level not in _VALID_ACCESS_LEVELS:
             return {"success": False, "message": "invalid access_level"}, 400
+        from docsgpt.api.user.teams import outside
+
         try:
             with db_session() as conn:
+                share = None
+                if is_principal_id(resource_owner(conn, resource_type, resource_id)):
+                    refusal, share = outside.share_team_item(
+                        conn, user, team_id, resource_type, resource_id, access_level, target_user_id
+                    )
+                    if refusal is not None:
+                        return refusal
+            if share is not None:
+                # Post-commit, best-effort: tell the receiving team, once.
+                if share.get("created"):
+                    _notify_resource_shared(user, team_id, resource_type, resource_id, "viewer", None)
+                return make_response(jsonify({"success": True, "share": share}), 201 if share.get("created") else 200)
+            with db_session() as conn:
+                if not has_team_role(token, team_id, ROLE_TEAM_VIEWER):
+                    return make_response(jsonify({"success": False, "message": "Forbidden"}), 403)
                 # ``require`` dispatches by resource_type, so a mismatched
                 # type/id can't register a bogus grant (the table has no FK).
                 try:
@@ -717,6 +1205,10 @@ class TeamGrants(Resource):
                     target_user_id, team_id
                 ):
                     return {"success": False, "message": "Target is not a team member"}, 400
+                if resource_type == "agent":
+                    refusal = _team_items_refusal(conn, ra, team_id, target_user_id, user)
+                    if refusal is not None:
+                        return refusal
                 grant = TeamResourceGrantsRepository(conn).grant(
                     team_id,
                     resource_type,
@@ -753,6 +1245,11 @@ class TeamGrants(Resource):
         team_admin of this team. ``target_user_id`` picks one member's grant
         (absent → the whole-team grant). Identifiers come from query params
         (some proxies strip DELETE bodies), with a JSON-body fallback.
+
+        A team's item shared with this team is stopped from either side
+        (``outside.revoke_team_item``): in the owning team by whoever may take
+        its items outside and by its Admins and Owner (locked too), in this
+        team by its Admins and Owner.
         """
         user = _current_user()
         token = getattr(request, "decoded_token", None)
@@ -769,8 +1266,12 @@ class TeamGrants(Resource):
         ).strip() or None
         if not _valid_resource(resource_type, resource_id):
             return {"success": False, "message": "invalid resource"}, 400
+        from docsgpt.api.user.teams import outside
+
         try:
             with db_session() as conn:
+                if is_principal_id(resource_owner(conn, resource_type, resource_id)):
+                    return outside.revoke_team_item(conn, user, team_id, resource_type, resource_id)
                 try:
                     require(conn, resource_type, resource_id, user, "share")
                 except AccessDenied:
@@ -843,7 +1344,12 @@ class ResourceShares(Resource):
 
         Powers the share dialog (current shares + unshare), so only someone who
         may change the sharing can enumerate it: 404 when the resource isn't
-        visible, 403 when the caller's role can't share.
+        visible, 403 when the caller's role can't share. A personal agent adds
+        ``uses_team_items`` (``[{team_id, name, items}]``, the teams' items it
+        uses, which keep its shares to people who reach them). A team's own
+        item has no per-person shares: whoever reaches it gets where its
+        access comes from and its shares with other teams instead
+        (:func:`_team_item_shares`).
         """
         user = _current_user()
         if not user:
@@ -854,6 +1360,9 @@ class ResourceShares(Resource):
             return {"success": False, "message": "invalid resource"}, 400
         try:
             with db_readonly() as conn:
+                ra = resolve(conn, resource_type, resource_id, user)
+                if ra is not None and ra.is_team_item:
+                    return make_response(jsonify(_team_item_shares(conn, ra, user)), 200)
                 try:
                     require(conn, resource_type, resource_id, user, "share")
                 except AccessDenied as denied:
@@ -861,10 +1370,68 @@ class ResourceShares(Resource):
                 shares = TeamResourceGrantsRepository(conn).list_for_resource(
                     resource_type, resource_id
                 )
-            return make_response(jsonify({"success": True, "shares": shares}), 200)
+                body = {"success": True, "shares": shares}
+                if resource_type == "agent":
+                    body["uses_team_items"] = _uses_team_items(conn, resource_id, user)
+            return make_response(jsonify(body), 200)
         except Exception as err:
             logger.error("List resource shares failed: %s", err, exc_info=True)
             return {"success": False}, 400
+
+
+def _uses_team_items(conn, agent_id: str, user: str) -> list[dict]:
+    """``[{team_id, name, items}]``: the teams' items a personal agent uses, as its share dialog reads them."""
+    # Lazy: graph_checks imports the workflow routes, which import most of the user API.
+    from docsgpt.api.user.agents.graph_checks import agent_team_refs, uses_team_items_payload
+
+    agent = AgentsRepository(conn).get_by_id(agent_id) or {}
+    refs = agent_team_refs(conn, agent) if agent else {}
+    return uses_team_items_payload(conn, refs, user) if refs else []
+
+
+def _team_item_shares(conn, ra: ResourceAccess, user: str) -> dict:
+    """The share dialog of a team's item: the workspace, its size, the agent's outside access, its team shares.
+
+    Args:
+        conn: Open connection.
+        ra: The caller's access to the item (a team item).
+        user: The caller.
+
+    Returns:
+        dict: ``success``, ``shares`` (always empty), ``workspace`` (``{kind, team_id, name}``),
+        ``members_count``, and for an agent ``outside_access``, the agent payload's own block
+        (``outside_access_state``: ``{api_key, public_link, webhook, paid_by, paused_for,
+        can_take_over}``), so the dialog and the agent page never disagree. Every member reads
+        what is on; only those who manage it read who pays and why it is paused. Then
+        ``outside_policy``, ``outside_shares``, ``share_targets`` and ``warning_kind``
+        (``outside.owner_dialog_fields``). A team that received the item through a share reads
+        only where it lives for them and where it comes from (``outside.receiver_dialog``).
+    """
+    # Imported here: the agents package pulls in most of the API, which would
+    # make importing the teams routes order-dependent.
+    from docsgpt.api.user.agents import sharing as agent_sharing
+    from docsgpt.api.user.teams import outside
+
+    if ra.via_team_id:
+        return outside.receiver_dialog(conn, ra)
+    team = TeamsRepository(conn).get(ra.team_id) or {}
+    members_count = conn.execute(
+        text("SELECT count(DISTINCT user_id) FROM team_members WHERE team_id = CAST(:t AS uuid)"),
+        {"t": ra.team_id},
+    ).scalar()
+    body = {
+        # First, so the named ``workspace`` below replaces the payload's unnamed one.
+        **ra.payload(),
+        "success": True,
+        "shares": [],
+        "workspace": {"kind": "team", "team_id": ra.team_id, "name": team.get("name")},
+        "members_count": int(members_count or 0),
+    }
+    if ra.resource_type == "agent":
+        agent = AgentsRepository(conn).get_by_id(ra.resource_id) or {}
+        body["outside_access"] = agent_sharing.outside_access_state(conn, agent, ra, user)
+    body.update(outside.owner_dialog_fields(conn, ra, user))
+    return body
 
 
 def _settings_response(ra: ResourceAccess):

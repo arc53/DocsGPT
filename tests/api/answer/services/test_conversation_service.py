@@ -433,6 +433,35 @@ class TestSaveUserQuestion:
 
 
 class TestFinalizeMessage:
+    def test_the_async_title_call_keeps_the_runs_billing(self, pg_conn, monkeypatch):
+        """The title is part of the run: its call bills the run's payer, kind and workspace, and meets its limits."""
+        import threading
+
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from docsgpt.quotas.payer import billed_to, current_run_billing
+
+        seen, done = {}, threading.Event()
+
+        def _title(self, message_id, title_inputs):
+            seen["billing"] = current_run_billing()
+            done.set()
+
+        monkeypatch.setattr(ConversationService, "_generate_title_safely", _title)
+        with _patch_db(pg_conn):
+            svc = ConversationService()
+            res = svc.save_user_question(conversation_id=None, question="q", decoded_token={"sub": "u-title"})
+            with billed_to("lena", "req-1", kind="published", team_id="team-1", limits="limits"):
+                svc.finalize_message(
+                    res["message_id"], "answer", title_inputs={"question": "q"}, async_title_generation=True
+                )
+        assert done.wait(5)
+        billing = seen["billing"]
+        assert (billing.payer, billing.kind, billing.team_id, billing.limits) == (
+            "lena", "published", "team-1", "limits"
+        )
+
     def test_finalizes_complete(self, pg_conn):
         from docsgpt.api.answer.services.conversation_service import (
             ConversationService,

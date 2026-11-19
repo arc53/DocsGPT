@@ -14,9 +14,15 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import connectorsService from '../api/services/connectorsService';
 import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
+import {
   loadConnectors,
   selectConnections,
+  selectPickableConnections,
 } from '../connectors/connectorsSlice';
+import { selectInTeam } from '../settings/workspaceAccess';
 import type { AppDispatch } from '../store';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import { formatCount } from '../utils/dateTimeUtils';
@@ -103,8 +109,12 @@ const sharedDrivesView = (
   return [mimeTypes ? view.setMimeTypes(mimeTypes) : view];
 };
 
-/** Why the last attempt to open the picker failed. */
-type PickerError = 'expired' | 'validateFailed' | 'pickerFailed' | null;
+/**
+ * Why the last attempt to open the picker failed. `refused`: a team's
+ * account the caller may not browse, or one paused.
+ */
+type PickerError =
+  'expired' | 'refused' | 'validateFailed' | 'pickerFailed' | null;
 
 /**
  * How the server reads a picked folder, sent with the picker token: with
@@ -154,7 +164,12 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 }) => {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
-  const connections = useSelector(selectConnections);
+  const ownConnections = useSelector(selectConnections);
+  const pickable = useSelector(selectPickableConnections);
+  // In a team, only the team's accounts the caller may pick from, and no
+  // sign-in here (it would connect the caller's own account).
+  const inTeam = useSelector(selectInTeam);
+  const connections = inTeam ? pickable : ownConnections;
   const supplied = suppliedConnectionId !== undefined;
   const [signedInId, setSignedInId] = useState<string | null>(null);
   const accounts = connections.filter(
@@ -169,6 +184,8 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
   const [selectedFolders, setSelectedFolders] = useState<PickerFile[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<PickerError>(null);
+  // A team's account's refusal (its body), worded when shown.
+  const [refusal, setRefusal] = useState<unknown>(null);
   const [authError, setAuthError] = useState('');
   const [folderAccess, setFolderAccess] = useState<FolderAccess>({});
 
@@ -189,6 +206,11 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
         activeConnectionId,
         token,
       );
+      if (connectionErrorCode(data)) {
+        setRefusal(data);
+        setError('refused');
+        return null;
+      }
       if (!data?.success || !data.access_token) {
         setError('expired');
         dispatch(loadConnectors({ token }));
@@ -358,7 +380,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
   return (
     <div className="flex flex-col gap-3">
-      {!supplied && (
+      {!supplied && !inTeam && (
         <ConnectorAuth
           provider="google_drive"
           label={t('modals.uploadDoc.connectors.googleDrive.connect')}
@@ -383,7 +405,9 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
           <AlertDescription>
             {error === 'expired'
               ? t('settings.connectors.detail.expired')
-              : t(`modals.uploadDoc.connectors.googleDrive.${error}`)}
+              : error === 'refused'
+                ? connectionErrorMessage(t, refusal)
+                : t(`modals.uploadDoc.connectors.googleDrive.${error}`)}
             {error === 'expired' && onReconnect ? (
               <>
                 {' '}

@@ -3,8 +3,8 @@ import { createRoot, type Root } from 'react-dom/client';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string, opts?: { names?: string }) =>
-      opts?.names ? `${key}:${opts.names}` : key,
+    t: (key: string, opts?: { names?: string; tools?: string }) =>
+      opts?.names || opts?.tools ? `${key}:${opts.names ?? opts.tools}` : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -215,6 +215,70 @@ describe('useSponsoredSave', () => {
     expect(result).toMatchObject({
       status: 'failed',
       message: 'agents.form.errors.staleWrite',
+    });
+  });
+
+  it("names the tools on a team's account a save would take outside the team", async () => {
+    let result: unknown;
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(409, {
+            success: false,
+            error: 'team_connection_outside',
+            code: 'team_connection_outside',
+            message: 'server words',
+            tools: [
+              { id: 'tl1', name: 'Create issue', connector_name: 'GitHub' },
+              { id: 'tl2', name: 'Search', connector_name: 'GitHub' },
+            ],
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'agents.form.errors.teamConnectionAdded:Create issue, Search',
+    });
+  });
+
+  it("words a save refused for a custom model its owner can't run", async () => {
+    let result: unknown;
+    // An agent save puts the code in `error`.
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(400, {
+            success: false,
+            error: 'custom_model_personal_only',
+            message: 'server words',
+            models: ['m1'],
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'settings.customModels.team.errors.personalOnly',
+    });
+    // A workflow save keeps a sentence in `error` and the code in `code`.
+    await act(async () => {
+      result = await hook.save(
+        async () =>
+          json(400, {
+            success: false,
+            error: 'server words',
+            code: 'custom_model_team_only',
+            message: 'server words',
+            errors: ['server words'],
+            models: ['m2'],
+          }),
+        'failed',
+      );
+    });
+    expect(result).toMatchObject({
+      status: 'failed',
+      message: 'settings.customModels.team.errors.teamOnly',
     });
   });
 

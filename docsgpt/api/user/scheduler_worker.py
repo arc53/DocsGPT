@@ -8,7 +8,7 @@ are terminal and recorded; only the pre-start load is retry-safe.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -17,7 +17,9 @@ from sqlalchemy import text as sql_text
 from docsgpt.agents.headless_runner import run_agent_headless
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.quotas.service import QuotaExceededError
+from docsgpt.quotas.agent_limits import AgentLimitExceeded
+from docsgpt.quotas.pause import NO_PAYER, PAYER_OUT_OF_ALLOWANCE, PAUSE_REASONS, Pause, schedule_pause
+from docsgpt.quotas.service import NoPayerError, QuotaExceededError
 from docsgpt.storage.db.engine import get_engine
 from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.conversations import (
@@ -27,6 +29,8 @@ from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -225,9 +229,21 @@ def _notify_failing(schedule: Dict[str, Any], kind: str, error_type: Optional[st
     )
 
 
-def _counts_toward_autopause(run: Dict[str, Any]) -> bool:
-    """Whether a failed run bumps the failure count; a Run now is watched by whoever started it, so it doesn't."""
-    return run.get("trigger_source") != "manual"
+def _counts_toward_autopause(run: Dict[str, Any], error_type: Optional[str] = None) -> bool:
+    """Whether a failed run bumps the failure count.
+
+    A Run now is watched by whoever started it, so it doesn't. Nor does a run
+    stopped for its payer (out of allowance mid-run): that clears by itself,
+    and auto-pause would leave the schedule off after it had.
+
+    Args:
+        run: The run.
+        error_type: Why it failed, when known.
+
+    Returns:
+        True when the failure counts.
+    """
+    return run.get("trigger_source") != "manual" and error_type not in PAUSE_REASONS
 
 
 def _autopause_if_due(schedules_repo: SchedulesRepository, schedule: Dict[str, Any], failures: int) -> bool:
@@ -314,8 +330,16 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
 
     The run always executes as the agent's owner. A schedule stored under
     someone else (set from chat on a shared agent) needs that user to still
-    see the agent — a live team grant, or a public link that is still on —
-    so revoking a grant stops their schedules on the next tick.
+    see the agent — a live team grant, or a public link that is still on and
+    that they opened — so revoking a grant stops their schedules on the next
+    tick.
+
+    On a team's agent the schedule's user is the person who set it and pays
+    for it: it runs only while they still hold ``manage_schedules`` there
+    (Editor and up). Leaving the team or a demotion to Viewer is reported
+    before this, as a pause (``payer_left``); so is a schedule stored under a
+    team's principal (``no_payer``), which never runs: a principal pays for
+    nothing. This stays as the last word for both.
 
     Args:
         schedule: The schedule row.
@@ -326,14 +350,148 @@ def _scheduler_still_allowed(schedule: Dict[str, Any], agent_config: Dict[str, A
     """
     user_id = schedule.get("user_id")
     agent_id = agent_config.get("id")
+    if is_principal_id(user_id):
+        return False
     if not agent_id or not user_id or agent_config.get("user_id") == user_id:
-        return True
-    if agent_config.get("shared"):
         return True
     from docsgpt.api.user.resource_access import resolve
 
+    if is_principal_id(agent_config.get("user_id")):
+        with get_engine().connect() as conn:
+            ra = resolve(conn, "agent", str(agent_id), user_id)
+        return ra is not None and ra.can("manage_schedules")
     with get_engine().connect() as conn:
+        # A link user needs the link on and the record that they opened it;
+        # the agent being link-shared is not enough on its own.
+        if (
+            agent_config.get("shared")
+            and agent_config.get("shared_token")
+            and UsersRepository(conn).has_shared(user_id, str(agent_id))
+        ):
+            return True
         return resolve(conn, "agent", str(agent_id), user_id) is not None
+
+
+def _out_of_allowance_line(pause: Pause) -> str:
+    """The notice body for an allowance pause: until when, when the window's reset is known."""
+    if pause.until is None:
+        return "Paused: you're out of allowance"
+    return f"Paused: you're out of allowance until {pause.until.day} {pause.until:%b}"
+
+
+def _skip_paused(
+    run: Dict[str, Any], schedule: Dict[str, Any], pause: Pause, *, collapse: bool = True,
+) -> Dict[str, Any]:
+    """Record a run skipped while the schedule is paused for its payer.
+
+    A pause, not a failure: it neither counts toward auto-pause nor sends a
+    failure notice, and the schedule keeps its cadence, so runs carry on by
+    themselves once the reason clears (a reactivated account, the setter back
+    in the role, someone taking over, a new allowance window). ``error_type``
+    names the reason (the UI reads it); ``error`` repeats it for the run log.
+
+    One row stands for a whole streak: when the schedule's latest finished run
+    is already skipped for the same reason and billed to the same payer, a
+    scheduled run is deleted instead of stored, so a paused schedule doesn't
+    fill its log. A Run now keeps its row, since whoever started it is
+    watching it. The payer hears of an allowance pause once, on the streak's
+    first skip; nobody else is told from here. Someone who takes over while
+    out of allowance themselves starts a streak of their own.
+
+    A one-time task has no next run to carry on with, so it gets one: when the
+    payer's allowance resets, when that is known, else after the shortest
+    recurring interval. Take over brings it forward to now. A take over that
+    lands after the pause was found, before this records it, did not see a
+    next run to bring forward: the task is re-armed for now instead, and the
+    old payer is not told, since the pause is no longer theirs.
+
+    Args:
+        run: The pending run.
+        schedule: Its schedule.
+        pause: Why it is paused.
+        collapse: Whether a run inside a streak may be deleted; False once the
+            run has started.
+
+    Returns:
+        The task's result dict.
+    """
+    reason = pause.reason
+    with get_engine().begin() as conn:
+        # Under the row lock Take over takes too: who pays now, against whom the pause was found for.
+        current = SchedulesRepository(conn).lock_internal(str(schedule["id"]))
+        taken_over = current is not None and current.get("user_id") != schedule.get("user_id")
+        runs = ScheduleRunsRepository(conn)
+        latest = runs.latest_finished([str(schedule["id"])]).get(str(schedule["id"]))
+        in_streak = (
+            not taken_over
+            and latest is not None
+            and latest.get("status") == "skipped"
+            and latest.get("error_type") == reason
+            and latest.get("user_id") == run.get("user_id")
+        )
+        if schedule.get("trigger_type") == "once" and run.get("trigger_source") != "manual":
+            if taken_over:
+                retry_at = datetime.now(timezone.utc)
+            else:
+                retry_at = pause.until or datetime.now(timezone.utc) + timedelta(
+                    seconds=settings.SCHEDULE_MIN_INTERVAL
+                )
+            SchedulesRepository(conn).rearm_once(str(schedule["id"]), retry_at)
+        if in_streak and collapse and run.get("trigger_source") != "manual":
+            if runs.delete_pending(str(run["id"])):
+                return {"status": "skipped", "reason": reason, "collapsed": True}
+        runs.update(
+            str(run["id"]),
+            {
+                "status": "skipped",
+                "finished_at": datetime.now(timezone.utc),
+                "error_type": reason,
+                "error": reason,
+            },
+        )
+    if reason == PAYER_OUT_OF_ALLOWANCE and pause.payer and not in_streak and not taken_over:
+        from docsgpt.notifications.notify import notify_user
+
+        schedule_id = str(schedule["id"])
+        notify_user(
+            user_id=pause.payer,
+            conversation_id=None,
+            kind="schedule_paused",
+            title=_schedule_title(schedule)[:200],
+            body=_out_of_allowance_line(pause),
+            url=f"/activity/schedules?schedule={schedule_id}",
+            schedule_id=schedule_id,
+        )
+    return {"status": "skipped", "reason": reason}
+
+
+def _pause_from_refusal(exc: QuotaExceededError, payer: Optional[str]) -> Optional[Pause]:
+    """The payer pause a refusal from the run's own pre-check stands for, or None for a failure.
+
+    The schedule's pause check ran just before, so this only catches what
+    changed in between. The agent's own limit is not a payer pause; nor is a
+    stop that came mid-run (``stops_run``), which is a failed run.
+
+    Args:
+        exc: The refusal ``run_agent_headless`` raised.
+        payer: The schedule's payer.
+
+    Returns:
+        The pause to record, or None when the run is a failure.
+    """
+    if isinstance(exc, NoPayerError):
+        return Pause(NO_PAYER, None)
+    exceeded = getattr(exc, "exceeded", None)
+    if getattr(exc, "stops_run", False) or exceeded is None or isinstance(exceeded, AgentLimitExceeded):
+        return None
+    return Pause(PAYER_OUT_OF_ALLOWANCE, payer, getattr(exceeded, "resets_at", None))
+
+
+def _quota_failure_type(exc: QuotaExceededError) -> str:
+    """A refusal recorded as a failed run: the payer's allowance mid-run, else the agent's limit."""
+    if getattr(exc, "stops_run", False) and not isinstance(getattr(exc, "exceeded", None), AgentLimitExceeded):
+        return PAYER_OUT_OF_ALLOWANCE
+    return "budget_exceeded"
 
 
 def _schedule_caller_rules(schedule: Dict[str, Any], agent_config: Dict[str, Any]) -> Dict[str, bool]:
@@ -403,10 +561,27 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
     # Refuse non-runnable terminal states; manual run-now bypasses.
     if run.get("status") != "pending":
         return {"status": "skipped", "reason": f"run status={run.get('status')}"}
-    if schedule.get("status") in {"cancelled", "completed"} and run.get(
-        "trigger_source"
-    ) != "manual":
-        with engine.begin() as conn:
+
+    # Take over never changes the agent, so its row can be loaded before the claim.
+    agent_config = _agent_config_for_schedule(schedule)
+
+    # The claim, under the schedule's row lock (Take over takes it too), with
+    # the schedule and run read afresh: the payer, the chat it was set from and
+    # its history all come from what holds at the claim. A take over committed
+    # before it has moved this run to the taker; one after it leaves the
+    # started run with the payer it started under.
+    pause: Optional[Pause] = None
+    refusal: Optional[str] = None
+    with engine.begin() as conn:
+        schedule = SchedulesRepository(conn).lock_internal(str(run["schedule_id"]))
+        run = ScheduleRunsRepository(conn).get_internal(run_id)
+        if schedule is None or run is None:
+            return {"status": "skipped", "reason": "schedule not found"}
+        if run.get("status") != "pending":
+            return {"status": "skipped", "reason": f"run status={run.get('status')}"}
+        if schedule.get("status") in {"cancelled", "completed"} and run.get(
+            "trigger_source"
+        ) != "manual":
             ScheduleRunsRepository(conn).update(
                 run_id,
                 {
@@ -416,18 +591,22 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
                     "error": "schedule no longer active",
                 },
             )
-        return {"status": "skipped", "reason": "schedule terminal"}
-
-    agent_config = _agent_config_for_schedule(schedule)
-    if agent_config is None:
-        return _fail_before_start(run, schedule, "agent missing")
-
-    if not _scheduler_still_allowed(schedule, agent_config):
-        return _fail_before_start(run, schedule, "agent access revoked")
-
-    with engine.begin() as conn:
-        if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
-            return {"status": "skipped", "reason": "lost race to mark_running"}
+            return {"status": "skipped", "reason": "schedule terminal"}
+        if agent_config is None:
+            refusal = "agent missing"
+        else:
+            # Paused for its payer: a deactivated account, a setter no longer in
+            # the role on a team agent, nobody to bill, or the payer out of allowance.
+            pause = schedule_pause(conn, schedule, agent_config)
+            if pause is None and not _scheduler_still_allowed(schedule, agent_config):
+                refusal = "agent access revoked"
+        if pause is None and refusal is None:
+            if not ScheduleRunsRepository(conn).mark_running(run_id, celery_task_id):
+                return {"status": "skipped", "reason": "lost race to mark_running"}
+    if refusal is not None:
+        return _fail_before_start(run, schedule, refusal)
+    if pause is not None:
+        return _skip_paused(run, schedule, pause)
     _publish_run_event("schedule.run.started", {**run, "status": "running"}, schedule)
 
     started = datetime.now(timezone.utc)
@@ -451,6 +630,9 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
             # to the user who scheduled it (not always the agent's owner).
             request_id=str(run_id),
             trace_user_id=run.get("user_id") or schedule.get("user_id"),
+            # The person who set the schedule pays; the run still executes as the agent's owner.
+            payer=schedule.get("user_id") or run.get("user_id"),
+            run_kind="schedule",
             **_schedule_caller_rules(schedule, agent_config),
         )
     except SoftTimeLimitExceeded:
@@ -459,9 +641,23 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         error_type = "timeout"
         error_text = "run exceeded soft time limit"
     except QuotaExceededError as exc:
-        # The owner's usage quota is spent; the run never started.
+        payer_pause = _pause_from_refusal(exc, schedule.get("user_id") or run.get("user_id"))
+        if payer_pause is not None:
+            # Refused before it started, for its payer: a pause like the check
+            # above, not a failure. The run already shows as started, so it
+            # keeps its row, and the UI is told it ended or it stays "running".
+            result = _skip_paused(run, schedule, payer_pause, collapse=False)
+            _publish_run_event(
+                "schedule.run.skipped",
+                {**run, "status": "skipped"},
+                schedule,
+                error_type=payer_pause.reason,
+                error=payer_pause.reason,
+            )
+            return result
+        # The agent's own limit, before the run started or mid-run.
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
-        error_type = "budget_exceeded"
+        error_type = _quota_failure_type(exc)
         error_text = str(exc)
     except Exception as exc:
         outcome = {"answer": "", "tool_calls": [], "sources": [], "thought": ""}
@@ -550,7 +746,7 @@ def execute_scheduled_run_body(run_id: str, celery_task_id: Optional[str]) -> Di
         count = 0
         if new_status == "success":
             schedules_repo.reset_failure_count(str(schedule["id"]))
-        elif new_status in ("failed", "timeout") and _counts_toward_autopause(run):
+        elif new_status in ("failed", "timeout") and _counts_toward_autopause(run, error_type):
             count = schedules_repo.bump_failure_count(str(schedule["id"]))
             autopaused = _autopause_if_due(schedules_repo, schedule, count)
         # Once: terminal-flip on cron-fired runs only; manual runs on a

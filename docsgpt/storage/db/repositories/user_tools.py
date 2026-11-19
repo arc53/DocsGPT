@@ -65,8 +65,20 @@ class UserToolsRepository:
         legacy_mongo_id: Optional[str] = None,
         connection_id: Optional[str] = None,
         credential_mode: str = "owner",
+        created_by: Optional[str] = None,
+        connector_key: Optional[str] = None,
     ) -> dict:
-        """Insert a new tool row. ``extra`` is merged into the config JSONB."""
+        """Insert a new tool row. ``extra`` is merged into the config JSONB.
+
+        ``created_by`` is the person who added it. Leave it None for a personal
+        tool (the ``fill_created_by`` trigger takes the owner); a team's tool
+        (owned by its principal) must pass it, since the trigger leaves it empty
+        for a principal owner.
+
+        ``connector_key`` names the service of a member-mode tool that has no
+        connection of its own (each person signs in with their own account).
+        Server code sets it; never pass it from a request body.
+        """
         cfg = config or {}
         if extra:
             cfg.update(extra)
@@ -76,7 +88,7 @@ class UserToolsRepository:
                 INSERT INTO user_tools (
                     user_id, name, custom_name, display_name, description,
                     config, config_requirements, actions, status, legacy_mongo_id,
-                    connection_id, credential_mode
+                    connection_id, credential_mode, created_by, connector_key
                 )
                 VALUES (
                     :user_id, :name, :custom_name, :display_name, :description,
@@ -84,7 +96,7 @@ class UserToolsRepository:
                     CAST(:config_requirements AS jsonb),
                     CAST(:actions AS jsonb),
                     :status, :legacy_mongo_id,
-                    CAST(:connection_id AS uuid), :credential_mode
+                    CAST(:connection_id AS uuid), :credential_mode, :created_by, :connector_key
                 )
                 RETURNING *
                 """
@@ -102,6 +114,8 @@ class UserToolsRepository:
                 "legacy_mongo_id": legacy_mongo_id,
                 "connection_id": str(connection_id) if connection_id else None,
                 "credential_mode": credential_mode,
+                "created_by": created_by,
+                "connector_key": connector_key,
             },
         )
         return row_to_dict(result.fetchone())

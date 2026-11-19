@@ -4,8 +4,14 @@ import endpoints from '../endpoints';
 import type { AvailableModel, Model } from '../../models/types';
 
 const modelService = {
-  getModels: (token: string | null): Promise<Response> =>
-    apiClient.get(endpoints.USER.MODELS, token, {}),
+  /**
+   * The models the workspace offers (the request's workspace by default);
+   * `headers` can name another one.
+   */
+  getModels: (
+    token: string | null,
+    headers: Record<string, string> = {},
+  ): Promise<Response> => apiClient.get(endpoints.USER.MODELS, token, headers),
 
   transformModels: (models: AvailableModel[]): Model[] =>
     models.map((model) => ({

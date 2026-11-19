@@ -13,8 +13,9 @@ import { SectionHeader } from '../components/ui/section-header';
 import { useLoaderState } from '../hooks';
 import type { LeaveTo } from '../hooks/useLeaveGuard';
 import {
-  loadConnectors,
+  reloadConnectors,
   selectConnectorCatalog,
+  selectCurrentTeamConnectors,
 } from '../connectors/connectorsSlice';
 import ConnectionDrawer from '../connectors/ConnectionDrawer';
 import ConnectorCard from '../connectors/ConnectorCard';
@@ -25,11 +26,24 @@ import { connectorDescription, connectorName } from '../connectors/i18n';
 import type { ConnectorDefinition } from '../connectors/types';
 import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import PairDeviceModal from '../settings/PairDeviceModal';
+import { selectCanCreateHere, selectInTeam } from '../settings/workspaceAccess';
 import type { AppDispatch } from '../store';
 import { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
+import {
+  roleAtLeast,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
 import ConfigToolModal from './ConfigToolModal';
+import TeamServiceToolDialog from './TeamServiceToolDialog';
 import { AvailableToolType } from './types';
+
+// A connector whose tools can be added: not a custom kind, turned on, and
+// one that reads or acts (a sync-only one adds knowledge, not tools).
+const isToolService = (connector: ConnectorDefinition) =>
+  connector.publisher !== 'custom' &&
+  connector.available &&
+  connector.capabilities.some((c) => c === 'read' || c === 'write');
 
 /**
  * Add a tool: a service to connect, a built-in tool, a custom MCP server or
@@ -66,6 +80,16 @@ export default function AddToolModal({
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
   const catalog = useSelector(selectConnectorCatalog);
+  const inTeam = useSelector(selectInTeam);
+  const canCreate = useSelector(selectCanCreateHere);
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  const isTeamAdmin = inTeam && roleAtLeast(role, 'admin');
+  // The team's catalog says which services the team holds an account for.
+  const teamCatalog = useSelector(selectCurrentTeamConnectors)?.catalog;
+  // A service a team adds a tool for: each person's own account, or the
+  // team's (see TeamServiceToolDialog).
+  const [teamService, setTeamService] =
+    React.useState<ConnectorDefinition | null>(null);
   const { launch, modals: connectModals } = useConnectorLauncher({
     onConnected: onToolsCreated,
     onNavigate,
@@ -103,13 +127,25 @@ export default function AddToolModal({
   };
 
   // Services come from the connector catalog (tool connectors and MCP
-  // presets): they are added by connecting the service, first in the list.
-  const services = catalog.filter(
-    (connector) =>
-      connector.publisher !== 'custom' &&
-      connector.available &&
-      connector.capabilities.some((c) => c === 'read' || c === 'write'),
-  );
+  // presets), first in the list. In Personal they are added by connecting
+  // the service; in a team (Editors and up) by choosing whose account the
+  // tool runs on, from the team's catalog.
+  const services = inTeam
+    ? canCreate
+      ? (teamCatalog ?? []).filter(isToolService)
+      : []
+    : catalog.filter(isToolService);
+  // The team holds an account for a service: the server's `member_only`
+  // on its tool says so; an MCP preset (no tool there) by its card.
+  const teamHasAccount = (connector: ConnectorDefinition) => {
+    const tool = availableTools.find(
+      (item) =>
+        item.group === 'service' && item.connector_key === connector.key,
+    );
+    return typeof tool?.member_only === 'boolean'
+      ? !tool.member_only
+      : connector.connection_count > 0;
+  };
   const builtIn = availableTools.filter(
     (tool) => (tool.group ?? 'built_in') === 'built_in',
   );
@@ -129,6 +165,12 @@ export default function AddToolModal({
 
   const openService = (connector: ConnectorDefinition) => {
     setModalState('INACTIVE');
+    // A team's tool never connects an account here: a personal one would
+    // not reach the team, and the team's is connected on Connectors.
+    if (inTeam) {
+      setTeamService(connector);
+      return;
+    }
     // Already connected: its tools exist; open its drawer to manage them.
     if (connector.connection_count > 0) {
       setDrawerKey(connector.key);
@@ -220,7 +262,8 @@ export default function AddToolModal({
   React.useEffect(() => {
     if (modalState === 'ACTIVE') {
       getAvailableTools();
-      dispatch(loadConnectors({ token }));
+      // The caller's own connections and, in a team, the team's.
+      dispatch(reloadConnectors({ token }));
     }
   }, [modalState]);
 
@@ -324,28 +367,32 @@ export default function AddToolModal({
               )}
             </>
           )}
-          <Button variant="link" size="inline" className="self-start" asChild>
-            <Link
-              to="/settings/connectors"
-              onClick={(event) => {
-                close();
-                // A new tab leaves the opener where it is.
-                if (
-                  !onNavigate ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.button !== 0
-                )
-                  return;
-                event.preventDefault();
-                onNavigate('/settings/connectors');
-              }}
-            >
-              {t('settings.connectors.browseAll')}
-              <ArrowRight />
-            </Link>
-          </Button>
+          {/* In a team the Connectors page holds the team's accounts,
+              which only Admins connect. */}
+          {inTeam && !isTeamAdmin ? null : (
+            <Button variant="link" size="inline" className="self-start" asChild>
+              <Link
+                to="/settings/connectors"
+                onClick={(event) => {
+                  close();
+                  // A new tab leaves the opener where it is.
+                  if (
+                    !onNavigate ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.button !== 0
+                  )
+                    return;
+                  event.preventDefault();
+                  onNavigate('/settings/connectors');
+                }}
+              >
+                {t('settings.connectors.browseAll')}
+                <ArrowRight />
+              </Link>
+            </Button>
+          )}
         </div>
       </Modal>
       <ConnectionDrawer
@@ -384,6 +431,13 @@ export default function AddToolModal({
         onCreated={(toolId) => onToolsCreated([toolId])}
       />
       {connectModals}
+      <TeamServiceToolDialog
+        connector={teamService}
+        teamHasAccount={teamService ? teamHasAccount(teamService) : false}
+        onClose={() => setTeamService(null)}
+        onCreated={(toolId) => onToolsCreated([toolId])}
+        onNavigate={onNavigate}
+      />
       <PairDeviceModal
         modalState={pairModalState}
         setModalState={setPairModalState}

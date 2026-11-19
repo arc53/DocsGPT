@@ -30,6 +30,13 @@ import {
 import { wakeFromMetadata } from '../backgroundJobs/kinds';
 import { newIdempotencyKey } from '../utils/idempotency';
 import {
+  captureWorkspace,
+  PERSONAL_WORKSPACE,
+  requestWorkspace,
+} from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
+import { switchWorkspace } from '../workspace/workspaceSlice';
+import {
   appendAnswerText,
   appendThoughtText,
   hydrateSegments,
@@ -314,22 +321,41 @@ export type LoadConversationArgs = {
 
 let loadSeq = 0;
 
+/** The workspace a loaded chat lives in, or null when it doesn't say. */
+function chatWorkspaceId(data: {
+  workspace?: ItemWorkspace | null;
+}): string | null {
+  const item = data.workspace;
+  if (!item) return null;
+  return item.kind === 'personal' ? PERSONAL_WORKSPACE : (item.team_id ?? null);
+}
+
 export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
 >('loadConversation', async (args, { dispatch, getState }) => {
   const { id, force, resolveAgent, unlessStreaming } = args;
   const seq = ++loadSeq;
+  const workspace = captureWorkspace();
   const state = getState() as RootState;
   const token = state.preference.token;
   if (!force && state.conversation.conversationId === id) {
     return { data: null, stale: true };
   }
   const response = await conversationService.getConversation(id, token);
+  // A switch while the chat was out (or a newer load) leaves this one
+  // behind: following the chat into its workspace would undo the switch,
+  // and a refusal must not send the new workspace's page to a new chat.
+  if (seq !== loadSeq || !workspace.isCurrent()) {
+    return { data: null, stale: true };
+  }
   if (!response.ok) {
     return { data: null, stale: false };
   }
   const data = await response.json();
+  if (seq !== loadSeq || !workspace.isCurrent()) {
+    return { data: null, stale: true };
+  }
   if (!data) return { data: null, stale: false };
   let agent: Agent | null | undefined;
   try {
@@ -344,6 +370,12 @@ export const loadConversation = createAsyncThunk<
   // A later loadConversation has been issued; drop our writes so its
   // result wins, and tell the caller not to navigate off our return.
   if (seq !== loadSeq) {
+    return { data: null, stale: true };
+  }
+  // A switch while the agent resolved (a switch to another workspace's new
+  // chat issues no load) must not bring this chat into that workspace. The
+  // one switch that stands is the resolver's follow into the chat's own.
+  if (!workspace.isCurrent() && requestWorkspace() !== chatWorkspaceId(data)) {
     return { data: null, stale: true };
   }
   if (
@@ -770,6 +802,7 @@ async function answerQuestion(
         true,
         modelId,
         idempotencyKey,
+        (state.preference.selectedFolders ?? []).map((folder) => folder.id),
       );
     } else {
       const answer = await handleFetchAnswer(
@@ -785,6 +818,7 @@ async function answerQuestion(
         true,
         modelId,
         idempotencyKey,
+        (state.preference.selectedFolders ?? []).map((folder) => folder.id),
       );
       if (answer) {
         const sourcesPrepped = answer.sources.map(
@@ -1556,6 +1590,11 @@ export const conversationSlice = createSlice({
   },
   extraReducers(builder) {
     builder
+      // The open chat belongs to the old workspace: close it, as New chat
+      // does. Its answer keeps being written on the server.
+      .addCase(switchWorkspace, (state) => {
+        conversationSlice.caseReducers.resetConversation(state);
+      })
       .addCase(fetchAnswer.pending, (state) => {
         state.status = 'loading';
         // Sending a new message moves past a turn still waiting on an
@@ -1644,7 +1683,8 @@ let listRefreshAgain = false;
  * fetch, so a burst of events (a replayed backlog, several chats finishing)
  * costs two requests and an older list never lands over a newer one; a
  * `conversation.renamed` that arrives meanwhile gets a list read after the
- * title. A failed fetch keeps the list on screen.
+ * title. A failed fetch keeps the list on screen, and a list that answers
+ * after a workspace switch is dropped.
  *
  * Args:
  *   getState: The store's state getter; the token is read at each fetch.
@@ -1666,9 +1706,12 @@ function refreshConversationList(
       do {
         listRefreshAgain = false;
         const { token } = (getState() as RootState).preference;
+        // A list read before a switch is the old workspace's.
+        const workspace = captureWorkspace();
         try {
           const fetched = await getConversations(token);
-          if (fetched.data) dispatch(receiveConversations(fetched));
+          if (fetched.data && workspace.isCurrent())
+            dispatch(receiveConversations(fetched));
         } catch (error) {
           console.error('conversations refresh failed', error);
         }

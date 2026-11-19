@@ -16,7 +16,7 @@ import copy
 import hashlib
 import json
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -189,13 +189,16 @@ class TestPausedTurnState:
 
 
 @pytest.fixture
-def resume(monkeypatch):
+def resume(monkeypatch, pg_conn):
     """Resume a saved state; returns (agent kwargs, create_llm kwargs, agent, processor)."""
     from docsgpt.agents import agent_creator as ac_mod
     from docsgpt.api.answer.services import continuation_service as cont_mod
     from docsgpt.api.answer.services import stream_processor as sp_mod
     from docsgpt.llm import llm_creator as llm_creator_mod
     from docsgpt.llm.handlers import handler_creator as handler_mod
+
+    # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+    monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
     def _run(state: dict, *, rows: dict | None = None, extra_ids: list | None = None, data: dict | None = None):
         rows = rows or {}

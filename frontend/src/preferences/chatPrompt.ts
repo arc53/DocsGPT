@@ -4,6 +4,10 @@ import userService from '../api/services/userService';
 import type { Prompt } from '../models/misc';
 import type { RootState } from '../store';
 import { readerIdFromToken } from '../utils/personLabel';
+import {
+  PERSONAL_WORKSPACE,
+  requestWorkspace,
+} from '../workspace/requestWorkspace';
 import { getPrompts } from './preferenceApi';
 import { setPrompt, setPrompts } from './preferenceSlice';
 
@@ -44,6 +48,43 @@ function forgetLegacyPrompt(): void {
     localStorage.removeItem(LEGACY_PROMPT_KEY);
   } catch {
     // Storage blocked: nothing was kept there either.
+  }
+}
+
+/**
+ * Where this browser keeps a team's chat prompt. The server keeps one chat
+ * prompt per person, Personal's; a team's prompt would mean nothing in
+ * Personal chats, so a team's pick stays in the browser.
+ *
+ * Args:
+ *   teamId: The team.
+ */
+export const teamChatPromptKey = (teamId: string): string =>
+  `DocsGPTChatPrompt:${teamId}`;
+
+/** The team the app is in, or null in Personal. */
+function currentTeam(): string | null {
+  const workspace = requestWorkspace();
+  return workspace === PERSONAL_WORKSPACE ? null : workspace;
+}
+
+function readTeamPrompt(teamId: string): Prompt | null {
+  try {
+    const raw = localStorage.getItem(teamChatPromptKey(teamId));
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed.id === 'string' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeTeamPrompt(teamId: string, prompt: Prompt | null): void {
+  try {
+    if (prompt)
+      localStorage.setItem(teamChatPromptKey(teamId), JSON.stringify(prompt));
+    else localStorage.removeItem(teamChatPromptKey(teamId));
+  } catch {
+    // Storage blocked: the pick lasts for this visit.
   }
 }
 
@@ -173,6 +214,8 @@ type ChatPromptSession = {
   pickSaved: boolean;
   next: PendingPick | null;
   saving: boolean;
+  /** The pick being saved now. */
+  sending: Prompt | null;
   timer: ReturnType<typeof setTimeout> | undefined;
 };
 
@@ -208,6 +251,7 @@ function sessionOf(
     pickSaved: false,
     next: null,
     saving: false,
+    sending: null,
     timer: undefined,
   };
   sessions.set(getState, fresh);
@@ -241,6 +285,16 @@ const pickStands = (session: ChatPromptSession): boolean =>
   (session.pickSaved || session.saving || session.next !== null);
 
 /**
+ * What Personal's chats show by this session's account: the pick waiting or
+ * being saved, else what the server last confirmed. A team shows its own
+ * prompt meanwhile, so this is what comes back with Personal.
+ */
+const personalPrompt = (session: ChatPromptSession): Prompt | null =>
+  (session.next?.user ? session.next.prompt : null) ??
+  session.sending ??
+  session.confirmed;
+
+/**
  * The prompt for an id: the listed one, else a stand-in a later list names.
  */
 function promptFor(id: string, prompts: Prompt[]): Prompt {
@@ -271,6 +325,8 @@ function promptFor(id: string, prompts: Prompt[]): Prompt {
  * An answer read after this session's last save becomes the confirmed value
  * (another device may have saved since); one read before a save landed is
  * older than what that save confirmed and is set aside like no answer.
+ * When a pick of this session stands, chats show it again (a team's prompt
+ * may have shown meanwhile).
  *
  * Args:
  *   server: The server's chat prompt, or null when there was no answer.
@@ -291,7 +347,13 @@ export const loadChatPrompt =
     const stamp = readAt === undefined ? stampOf(session) : readAt;
     const current = server !== null && stamp === session.writes;
     if (current) session.confirmed = promptFor(server.id, prompts);
-    if (pickStands(session)) return;
+    if (pickStands(session)) {
+      // Back from a team, whose prompt was showing: the pick comes back.
+      const own = personalPrompt(session);
+      if (own && getState().preference.prompt.id !== own.id)
+        dispatch(setPrompt(promptFor(own.id, prompts)));
+      return;
+    }
     const legacy = readLegacyPrompt();
     const listed = (id: string) => prompts.find((prompt) => prompt.id === id);
     const legacyListed = legacy ? listed(legacy.id) : undefined;
@@ -350,10 +412,40 @@ const showServerChatPrompt =
   };
 
 /**
+ * A team's chat prompt at start: the one this browser keeps for the team
+ * (default when none) shows at once, then the team's prompt list confirms it
+ * is still there; a deleted one falls back to default. The server, which
+ * keeps Personal's, is not asked.
+ */
+const initTeamChatPrompt =
+  (teamId: string, token: string | null, cancelled: () => boolean) =>
+  async (dispatch: Dispatch, getState: GetState): Promise<void> => {
+    const kept = readTeamPrompt(teamId);
+    const shown = kept ? asChatPrompt(kept) : DEFAULT_CHAT_PROMPT;
+    if (getState().preference.prompt.id !== shown.id)
+      dispatch(setPrompt(shown));
+    const prompts = await getPrompts(token);
+    if (cancelled()) return;
+    dispatch(setPrompts(prompts));
+    // Without the list there is no telling; the kept one stays.
+    if (!kept || prompts.length === 0) return;
+    const listed = prompts.find((prompt) => prompt.id === kept.id);
+    if (listed) {
+      if (getState().preference.prompt.id === kept.id)
+        dispatch(setPrompt(asChatPrompt(listed)));
+      return;
+    }
+    storeTeamPrompt(teamId, null);
+    if (getState().preference.prompt.id === kept.id)
+      dispatch(setPrompt(DEFAULT_CHAT_PROMPT));
+  };
+
+/**
  * Loads the prompt list and the chat prompt at start. The server's chat
  * prompt applies as soon as it answers; the list then names it, and
  * `loadChatPrompt` settles it (and moves an old browser choice) once both
- * are in.
+ * are in. In a team the server isn't asked: the team's prompt is the one
+ * this browser keeps for it.
  *
  * Args:
  *   token: The session token.
@@ -370,6 +462,15 @@ export const initChatPrompt =
     dispatch: (action: unknown) => unknown,
     getState: GetState,
   ): Promise<void> => {
+    const team = currentTeam();
+    if (team !== null) {
+      await initTeamChatPrompt(
+        team,
+        token,
+        cancelled,
+      )(dispatch as Dispatch, getState);
+      return;
+    }
     const list = getPrompts(token).then((prompts) => {
       if (!cancelled()) dispatch(setPrompts(prompts));
       return prompts;
@@ -419,12 +520,14 @@ async function drainPicks(
     if (!saved) {
       session.writes += 1;
       session.writing = true;
+      session.sending = prompt;
       ({ saved, held } = await saveChatPromptId(
         prompt.id,
         session.token,
         !user,
       ));
       session.writing = false;
+      session.sending = null;
     }
     if (saved) {
       session.confirmed = asChatPrompt(prompt);
@@ -497,6 +600,7 @@ function queueSave(
  * The prompt `deletedId` was deleted. The server reads a deleted chat
  * prompt back as default, so default becomes the confirmed value (what a
  * failed pick switches back to), and chats showing it switch to default.
+ * A team that kept it as its chat prompt forgets it.
  *
  * Args:
  *   deletedId: The deleted prompt's id.
@@ -505,6 +609,9 @@ function queueSave(
 export const chatPromptDeleted =
   (deletedId: string, token: string | null) =>
   (dispatch: Dispatch, getState: GetState): void => {
+    const team = currentTeam();
+    if (team !== null && readTeamPrompt(team)?.id === deletedId)
+      storeTeamPrompt(team, null);
     const session = sessionOf(getState, token);
     if (session.confirmed?.id === deletedId)
       session.confirmed = DEFAULT_CHAT_PROMPT;
@@ -517,7 +624,8 @@ export const chatPromptDeleted =
 /**
  * Makes `prompt` the chat prompt: it switches at once and switches back
  * when the server refuses (the caller reports that). Saves go one at a time
- * and the latest pick wins.
+ * and the latest pick wins. In a team the pick is kept for that team in
+ * this browser and never sent: the server's chat prompt is Personal's.
  *
  * Args:
  *   prompt: The prompt to use in chats.
@@ -532,6 +640,14 @@ export const chatPromptDeleted =
 export const chooseChatPrompt =
   (prompt: Prompt, token: string | null, delayMs = 0) =>
   (dispatch: Dispatch, getState: GetState): Promise<boolean> => {
+    const team = currentTeam();
+    if (team !== null) {
+      // A team's pick is kept for that team in this browser; the server's
+      // chat prompt is Personal's.
+      dispatch(setPrompt(asChatPrompt(prompt)));
+      storeTeamPrompt(team, asChatPrompt(prompt));
+      return Promise.resolve(true);
+    }
     const session = sessionOf(getState, token);
     if (!session.picked) {
       session.picked = true;

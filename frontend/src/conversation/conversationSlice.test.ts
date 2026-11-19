@@ -21,6 +21,7 @@ import preferenceReducer, {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import uploadReducer, { addAttachment } from '../upload/uploadSlice';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import {
   handleFetchAnswer,
   handleSubmitToolActions,
@@ -324,6 +325,24 @@ describe('fetchAnswer — attachment ids on the wire', () => {
     // Explicit ids (e.g. a retry of an existing turn) must not consume
     // whatever the composer currently holds.
     expect(store.getState().upload.attachments).toHaveLength(1);
+  });
+
+  it("sends the composer's picked folders as the last argument", async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: () => ({
+          ...preferenceStub,
+          selectedFolders: [{ id: 'carriers', name: 'Carriers' }],
+        }),
+      },
+    });
+    store.dispatch(addQuery({ prompt: 'q' }));
+    await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][12]).toEqual([
+      'carriers',
+    ]);
   });
 
   it('falls back to completed composer uploads and clears them when no ids are passed', async () => {
@@ -849,6 +868,131 @@ describe('loadConversation with resolveAgent', () => {
         .unwrap(),
     ).rejects.toThrow('Failed to fetch');
     expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+  });
+
+  it('drops a chat that answers after a workspace switch, without following it back', async () => {
+    let answer: ((response: Response) => void) | null = null;
+    vi.spyOn(conversationService, 'getConversation').mockReturnValue(
+      new Promise<Response>((resolve) => (answer = resolve)),
+    );
+    const store = makeLoadStore();
+    const resolveAgent = vi.fn(async () => null);
+    setRequestWorkspace('t1', 1);
+    try {
+      const load = store.dispatch(
+        loadConversation({ id: 'c-2', force: true, resolveAgent }),
+      );
+      await vi.waitFor(() => expect(answer).not.toBeNull());
+      // The user switches to another workspace while the chat is out.
+      setRequestWorkspace('t2', 2);
+      answer!({
+        ok: true,
+        json: async () => ({ queries: [{ prompt: 'new chat' }] }),
+      } as Response);
+
+      await expect(load.unwrap()).resolves.toEqual({
+        data: null,
+        stale: true,
+      });
+      // The resolver is what follows a chat into its workspace.
+      expect(resolveAgent).not.toHaveBeenCalled();
+      expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
+  it('reads a refusal that answers after a switch as stale, not missing', async () => {
+    let answer: ((response: Response) => void) | null = null;
+    vi.spyOn(conversationService, 'getConversation').mockReturnValue(
+      new Promise<Response>((resolve) => (answer = resolve)),
+    );
+    const store = makeLoadStore();
+    setRequestWorkspace('t1', 1);
+    try {
+      const load = store.dispatch(loadConversation({ id: 'c-2', force: true }));
+      await vi.waitFor(() => expect(answer).not.toBeNull());
+      setRequestWorkspace('personal', 2);
+      answer!({ ok: false, status: 404 } as Response);
+      // Not missing: the caller would leave the page for a new chat.
+      await expect(load.unwrap()).resolves.toEqual({
+        data: null,
+        stale: true,
+      });
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
+  it('drops a chat whose agent resolves after a switch to another workspace', async () => {
+    vi.spyOn(conversationService, 'getConversation').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [{ prompt: 'new chat' }],
+        agent_id: 'agent-b',
+        workspace: { kind: 'team', team_id: 't1' },
+      }),
+    } as Response);
+    const store = makeLoadStore();
+    let release: ((agent: Agent) => void) | null = null;
+    setRequestWorkspace('t1', 1);
+    try {
+      const load = store.dispatch(
+        loadConversation({
+          id: 'c-2',
+          force: true,
+          resolveAgent: () => new Promise<Agent>((r) => (release = r)),
+        }),
+      );
+      await vi.waitFor(() => expect(release).not.toBeNull());
+      // The user switches to another workspace's new chat while the agent
+      // is out; nothing bumps the load counter.
+      setRequestWorkspace('t2', 2);
+      release!(agentB);
+
+      await expect(load.unwrap()).resolves.toEqual({
+        data: null,
+        stale: true,
+      });
+      expect(shown(store)).toEqual({ prompt: 'old chat', agent: 'agent-a' });
+      expect(store.getState().conversation.conversationId).toBeNull();
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
+  it('applies a chat its resolver followed into the chat own workspace', async () => {
+    vi.spyOn(conversationService, 'getConversation').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [{ prompt: 'new chat' }],
+        agent_id: 'agent-b',
+        workspace: { kind: 'team', team_id: 't2' },
+      }),
+    } as Response);
+    const store = makeLoadStore();
+    setRequestWorkspace('personal', 1);
+    try {
+      const result = await store
+        .dispatch(
+          loadConversation({
+            id: 'c-2',
+            force: true,
+            resolveAgent: async () => {
+              // The follow: the app switches to the chat's team.
+              setRequestWorkspace('t2', 2);
+              return agentB;
+            },
+          }),
+        )
+        .unwrap();
+
+      expect(result.stale).toBe(false);
+      expect(shown(store)).toEqual({ prompt: 'new chat', agent: 'agent-b' });
+      expect(store.getState().conversation.conversationId).toBe('c-2');
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
   });
 
   it('applies nothing when a newer load superseded it', async () => {

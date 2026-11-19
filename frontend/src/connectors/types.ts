@@ -1,3 +1,5 @@
+import type { PausedFor } from '../payer/types';
+
 export type ConnectorCategory =
   | 'files'
   | 'knowledge'
@@ -14,8 +16,17 @@ export type Capability = 'sync' | 'read' | 'write';
 export type ConnectorAuthKind =
   'oauth' | 'mcp_oauth' | 'api_key' | 'none' | 'mcp';
 
+/**
+ * `paused`: a team's account the team can't use now (whoever connected it
+ * left, lost the Admin role or was deactivated); `paused_for` says why.
+ */
 export type ConnectionStatus =
-  'connected' | 'reconnect_needed' | 'disconnected' | 'error' | 'pending';
+  | 'connected'
+  | 'reconnect_needed'
+  | 'disconnected'
+  | 'error'
+  | 'pending'
+  | 'paused';
 
 /** What a catalog card shows, worked out on the server. */
 export type ConnectorCardState =
@@ -24,7 +35,8 @@ export type ConnectorCardState =
   | 'reconnect'
   | 'needs_setup'
   | 'disabled'
-  | 'custom';
+  | 'custom'
+  | 'paused';
 
 export type CredentialMode = 'owner' | 'member';
 
@@ -93,7 +105,44 @@ export type ConnectorDefinition = {
   url_parameters?: CredentialField[];
 };
 
-export type Connection = {
+/** Whose a connection is: the caller's own, or a team's (`owner=team`). */
+export type ConnectionOwner = 'personal' | 'team';
+
+/**
+ * What the caller may do with a connection. On a team's: `view` any member,
+ * `sync` Editors, `manage` Admins, `pick` (browse the account to choose what
+ * to sync) only whoever connected it, while they are an Admin.
+ */
+export type ConnectionAction = 'view' | 'sync' | 'manage' | 'pick';
+
+/** Who connected a team's account; `label` is their email, else their id. */
+export type ConnectedBy = { user_id: string; label: string };
+
+/** Why a team's account is paused (`Pause.payload()` on the server). */
+export type ConnectionPausedFor = Pick<
+  PausedFor,
+  'reason' | 'until' | 'left_team'
+>;
+
+/**
+ * The team fields every connection payload carries. Optional for servers
+ * from before team connections: read them through `teamConnections.ts`,
+ * which treats a row without them as the caller's own.
+ */
+export type ConnectionTeamFields = {
+  owner?: ConnectionOwner;
+  /** The team that owns it; null on a personal connection. */
+  team_id?: string | null;
+  /** Null on a personal connection (and on a broken team row). */
+  connected_by?: ConnectedBy | null;
+  /** Set while a team's account is paused; then `status` is `paused`. */
+  paused_for?: ConnectionPausedFor | null;
+  allowed_actions?: ConnectionAction[];
+  /** May browse the account now: `pick` allowed and not paused. */
+  can_pick?: boolean;
+};
+
+export type Connection = ConnectionTeamFields & {
   id: string;
   connector_key: string;
   name: string;
@@ -202,3 +251,28 @@ export type ConnectionDetail = Connection & {
    */
   writes?: boolean | null;
 };
+
+/**
+ * `POST /api/connections/<id>/reconnect`. An OAuth answer's `replace` is true
+ * when the caller is a team Admin other than whoever connected it: their own
+ * account takes the connection over in place (same id, sources and tools).
+ */
+export type ReconnectResult =
+  | {
+      success: true;
+      kind: 'oauth';
+      replace: boolean;
+      authorization_url: string;
+      state: string;
+    }
+  | { success: true; kind: 'mcp_oauth'; server_url: string | null }
+  | { success: true; kind: 'api_key'; connection: Connection }
+  | {
+      success: false;
+      error?: string;
+      code?: string;
+      message?: string;
+      /** `account_already_connected`: the team's row for that account. */
+      connection_id?: string;
+      paused_for?: ConnectionPausedFor | null;
+    };

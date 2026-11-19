@@ -363,8 +363,8 @@ def load_workspace(user_id: str, context: dict) -> TopicsWorkspace:
     return ws
 
 
-def _load(user_id: str, context: dict) -> Workspace:
-    """The recipe's ``load_workspace`` hook: :func:`load_workspace`."""
+def _load(user_id: str, context: dict, *, team_id: Optional[str] = None) -> Workspace:
+    """The recipe's ``load_workspace`` hook: :func:`load_workspace` (the agent decides the workspace, not ``team_id``)."""
     return load_workspace(user_id, context)
 
 

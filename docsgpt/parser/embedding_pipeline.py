@@ -13,6 +13,7 @@ from docsgpt.storage.db.repositories.ingest_chunk_progress import (
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore.vector_creator import VectorCreator
+from docsgpt.workspaces.principal import is_principal_id
 
 
 class EmbeddingPipelineError(Exception):
@@ -286,7 +287,9 @@ def embed_and_store_documents(
             ``None`` is the safe default — workers without a user
             context (e.g. background syncs) skip the publish.
         actor_id: The team editor who asked for the job, also sent the
-            progress events when it isn't ``user_id``.
+            progress events when it isn't ``user_id``. When ``user_id`` is a
+            team's principal, the publisher sends them to this person while
+            they are still in the team, and to nobody else.
         progress_start: Percent the reported progress maps to at chunk 0.
             Lets a caller reserve the lower band for an earlier stage
             (e.g. parsing). Defaults to ``0`` (embed owns the whole bar).
@@ -397,7 +400,12 @@ def embed_and_store_documents(
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
-    recipients = [user_id] + ([str(actor_id)] if actor_id and str(actor_id) != str(user_id) else [])
+    if is_principal_id(user_id):
+        # A team's source: one event to its principal, which the publisher sends on to whoever started the
+        # ingest only while they are still in the team.
+        recipients = [user_id]
+    else:
+        recipients = [user_id] + ([str(actor_id)] if actor_id and str(actor_id) != str(user_id) else [])
     progress_span = progress_end - progress_start
     batch_size = _resolve_batch_size()
     batch_starts = list(range(loop_start, total_docs, batch_size))
@@ -433,6 +441,7 @@ def embed_and_store_documents(
                             "stage": "embedding",
                         },
                         scope={"kind": "source", "id": source_id_str},
+                        actor_id=actor_id,
                     )
                 last_published_pct = progress
 
