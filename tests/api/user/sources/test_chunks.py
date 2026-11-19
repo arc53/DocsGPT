@@ -101,6 +101,44 @@ class TestChunkMatchesPath:
         assert not _chunk_matches_path(metadata, path)
 
 
+def test_parent_text_is_cleared_from_siblings_after_chunk_change_or_delete():
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    parent = "parent with public SECRET-4242 and sibling"
+    chunks = [
+        {"doc_id": "changed", "text": "public", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent, "x": 1}},
+        {"doc_id": "other", "text": "other", "metadata": {"parent_text": "other parent"}},
+    ]
+    store = MagicMock()
+
+    _drop_sibling_parent_text(store, chunks, chunks[0], exclude_id="changed")
+
+    store.update_chunk.assert_called_once_with("sibling", "sibling", {"x": 1})
+
+
+def test_text_edit_drops_parent_text_from_edited_chunk_and_siblings(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    parent = "public SECRET-4242 and sibling text"
+    chunks = [
+        {"doc_id": "edited", "text": "public SECRET-4242", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling text", "metadata": {"parent_text": parent}},
+    ]
+    store = MagicMock()
+    store.get_chunks.return_value = chunks
+    store.update_chunk.return_value = "edited"
+    with app.app_context(), patch(
+        "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+    ):
+        response = _update_chunk({"id": "source"}, "edited", "public", None)
+
+    assert response.status_code == 200
+    edits = {call.args[0]: call.args[2] for call in store.update_chunk.call_args_list}
+    assert "parent_text" not in edits["edited"]
+    assert "parent_text" not in edits["sibling"]
+
+
 class TestGetChunks:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.chunks import GetChunks

@@ -2,7 +2,7 @@
 
 import math
 import re
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -491,8 +491,11 @@ class DeleteChunk(Resource):
                 # Only a chunk this source lists is deleted, as an update
                 # checks: a store whose delete isn't scoped to the source
                 # would otherwise remove another source's chunk by its id.
-                listed = any(c.get("doc_id") == chunk_id for c in store.get_chunks() or [])
-                deleted = listed and store.delete_chunk(chunk_id)
+                chunks = store.get_chunks() or []
+                target = next((c for c in chunks if c.get("doc_id") == chunk_id), None)
+                deleted = target is not None and store.delete_chunk(chunk_id)
+                if deleted:
+                    _drop_sibling_parent_text(store, chunks, target)
             if deleted:
                 return make_response(
                     jsonify({"message": "Chunk deleted successfully"}), 200
@@ -597,10 +600,15 @@ def _update_chunk(doc: dict, chunk_id: str, text: Optional[str], metadata: Optio
         new_metadata = existing_chunk["metadata"].copy()
     if text is not None:
         new_metadata["token_count"] = num_tokens_from_string(new_text)
+        parent_text = new_metadata.pop("parent_text", None)
+    else:
+        parent_text = None
     try:
         # In place where the store supports it (same id, same list
         # position); the base fallback re-adds under a new id.
         new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
+        if parent_text:
+            _drop_sibling_parent_text(store, chunks, existing_chunk, exclude_id=chunk_id)
         if new_chunk_id != chunk_id:
             _remap_graph_chunk(doc, chunk_id, new_chunk_id)
         return make_response(
@@ -623,6 +631,29 @@ def _update_chunk(doc: dict, chunk_id: str, text: Optional[str], metadata: Optio
         return make_response(
             jsonify({"error": "Failed to update chunk - addition failed"}), 500
         )
+
+
+def _drop_sibling_parent_text(
+    store: Any,
+    chunks: List[Dict],
+    changed_chunk: Dict,
+    exclude_id: Optional[str] = None,
+) -> None:
+    """Clear a stale parent window from siblings after its child changes or disappears."""
+    metadata = changed_chunk.get("metadata") or {}
+    parent = metadata.get("parent_text")
+    if not isinstance(parent, str) or not parent:
+        return
+    changed_id = str(exclude_id or changed_chunk.get("doc_id"))
+    for chunk in chunks:
+        chunk_id = str(chunk.get("doc_id") or "")
+        if not chunk_id or chunk_id == changed_id:
+            continue
+        sibling_metadata = dict(chunk.get("metadata") or {})
+        if sibling_metadata.get("parent_text") != parent:
+            continue
+        sibling_metadata.pop("parent_text", None)
+        store.update_chunk(chunk_id, chunk.get("text", ""), sibling_metadata)
 
 
 @sources_chunks_ns.route("/sources/<string:source_id>/injection_review")
