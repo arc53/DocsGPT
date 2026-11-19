@@ -133,6 +133,20 @@ python -m pytest -n auto    # in parallel, as CI does
 python -m pytest tests/api  # one area while you work
 python -m pytest -n auto --cov=docsgpt --cov-report=html  # with a coverage report in htmlcov/
 ```
+### Troubleshooting: `No module named 'docsgpt.parser'` when running tests from an IDE
+If `python -c "import docsgpt; print(docsgpt.__file__)"` prints `None`, Python
+is importing an empty namespace package from `site-packages` instead of this
+repository. The usual cause is an interpreter that is not the repo's `.venv`,
+for example an IDE that created its own virtual environment in a parent
+folder.
+
+1. Deactivate and delete the stray environment.
+2. From the repository root (the folder containing `pyproject.toml`), run `uv sync`.
+3. Activate the `.venv` created there, or in your IDE select
+   `<repo>/.venv/Scripts/python.exe` (Windows) or `<repo>/.venv/bin/python`
+   as the project interpreter.
+4. Check that `python -c "import docsgpt; print(docsgpt.__file__)"` prints a
+   path inside your checkout, then run `python -m pytest` from the repo root.
 
 Coverage is off by default, because measuring it and writing the reports takes longer than many test runs; CI measures it on every push.
 
