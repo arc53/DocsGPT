@@ -182,11 +182,11 @@ class LinearLoader(BaseRemote):
         paths: set[str] = set()
         get_schema = await session.input_schema("get_document")
         for project in projects:
-            remaining = linear.MAX_DOCUMENTS - len(documents)
-            if remaining <= 0:
+            if len(documents) >= linear.MAX_DOCUMENTS:
                 break
+            # Skipped records must not consume the imported-document limit.
             async for record in linear.paged(
-                session, "list_documents", "documents", {("projectId", "project"): project["id"]}, limit=remaining,
+                session, "list_documents", "documents", {("projectId", "project"): project["id"]}, limit=None,
             ):
                 content = record.get("content")
                 if (not content or linear.is_truncated(content)) and get_schema is not None and record.get("id"):
@@ -208,6 +208,8 @@ class LinearLoader(BaseRemote):
                     document.extra_info["file_path"] = f"{path[:-3]} ({str(record.get('id') or len(paths))[:8]}).md"
                 paths.add(document.extra_info["file_path"])
                 documents.append(document)
+                if len(documents) >= linear.MAX_DOCUMENTS:
+                    break
         return documents
 
     @staticmethod
