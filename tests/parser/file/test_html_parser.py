@@ -60,7 +60,7 @@ def test_html_parser_metadata_unreadable_file(tmp_path):
 
 from bs4 import BeautifulSoup  # noqa: E402
 
-from docsgpt.parser.file.html_parser import HTMLMarkdownParser, soup_to_markdown  # noqa: E402
+from docsgpt.parser.file.html_parser import HTMLMarkdownParser, _fill_row_spans, soup_to_markdown  # noqa: E402
 
 
 def _markdown(html: str) -> str:
@@ -392,12 +392,15 @@ def test_many_rowspans_are_filled_in_linear_time():
         + "</tr><tr><td>last</td></tr></table>"
     )
 
+    soup = BeautifulSoup(html, "html.parser")
+
     started = time.perf_counter()
-    rows = _table_rows(_markdown(html))
+    _fill_row_spans(soup)
     elapsed = time.perf_counter() - started
 
     assert elapsed < 5
-    assert rows[-1] == [""] * spans + ["last"]
+    last_row = soup.find_all("tr")[-1].find_all("td")
+    assert [cell.get_text() for cell in last_row] == [""] * spans + ["last"]
 
 
 def test_a_rowspan_of_zero_covers_the_rest_of_its_row_group():
