@@ -94,6 +94,76 @@ describe('RunLog', () => {
     expect(onSelect).toHaveBeenCalledWith(runs[0]);
   });
 
+  it('names a failure by its label, with the reason when the agent could not do the task', async () => {
+    store.runs = [
+      {
+        ...runs[0],
+        id: 'cc',
+        status: 'failed',
+        error_type: 'cannot_complete',
+        error: 'Step 1 (open the site): no browser tool',
+      },
+      {
+        ...runs[0],
+        id: 'ae',
+        status: 'failed',
+        error_type: 'agent_error',
+        error: 'boom',
+      },
+    ];
+    await act(async () => root.render(<RunLog scheduleId="s1" />));
+    const [cannot, failed] = Array.from(container.querySelectorAll('tbody tr'));
+    expect(cannot.textContent).toContain(
+      '(activity.now.errorType.cannot_complete)',
+    );
+    const reason = cannot.querySelector('p')!;
+    expect(reason.textContent).toBe('Step 1 (open the site): no browser tool');
+    expect(reason.title).toBe('Step 1 (open the site): no browser tool');
+    expect(failed.textContent).toContain(
+      '(activity.now.errorType.agent_error)',
+    );
+    // Other errors keep their detail for the run's sheet.
+    expect(failed.querySelector('p')).toBeNull();
+  });
+
+  it('names a pause skip and says it stands for the runs after it', async () => {
+    store.runs = [
+      {
+        ...runs[0],
+        id: 'pl',
+        status: 'skipped',
+        error_type: 'payer_left',
+        error: 'payer_left',
+        prompt_tokens: 0,
+        generated_tokens: 0,
+      },
+      {
+        ...runs[0],
+        id: 'oa',
+        status: 'failed',
+        error_type: 'payer_out_of_allowance',
+        error: 'quota exceeded',
+      },
+    ];
+    await act(async () => root.render(<RunLog scheduleId="s1" />));
+    const [skipped, stopped] = Array.from(
+      container.querySelectorAll('tbody tr'),
+    );
+    expect(skipped.textContent).toContain(
+      '(activity.now.errorType.payer_left)',
+    );
+    expect(skipped.textContent).toContain(
+      'agents.schedules.runLog.pausedStreak',
+    );
+    // A run stopped mid-way at the allowance is one run, not a streak.
+    expect(stopped.textContent).toContain(
+      '(activity.now.errorType.payer_out_of_allowance)',
+    );
+    expect(stopped.textContent).not.toContain(
+      'agents.schedules.runLog.pausedStreak',
+    );
+  });
+
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => ({ ...runs[0], id: `r${i}` }));
   const flush = async () => {

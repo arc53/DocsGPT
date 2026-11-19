@@ -473,14 +473,19 @@ class TestPauseAndResume:
         agent = ClassicAgent(**agent_base_params, context_window_limit=LIMIT)
         assert agent.paused_turn_state()["context_window_limit"] == LIMIT
 
-    def test_the_resumed_agent_gets_it_back(self, monkeypatch):
+    def test_the_resumed_agent_gets_it_back(self, monkeypatch, pg_conn):
+        from contextlib import nullcontext
         from unittest.mock import MagicMock
 
         from docsgpt.agents import agent_creator as ac_mod
         from docsgpt.agents import tool_executor as te_mod
         from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {

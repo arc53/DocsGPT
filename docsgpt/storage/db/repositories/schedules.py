@@ -136,20 +136,121 @@ class SchedulesRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def lock_internal(self, schedule_id: str) -> Optional[dict]:
+        """Fetch a schedule whoever it is stored under and lock the row (``FOR UPDATE``) until the transaction ends.
+
+        Args:
+            schedule_id: Schedule UUID.
+
+        Returns:
+            The row, or None when it doesn't exist.
+        """
+        row = self._conn.execute(
+            text("SELECT * FROM schedules WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+            {"id": str(schedule_id)},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def take_over(self, schedule_id: str, user_id: str) -> Optional[dict]:
+        """Store a schedule under a new payer, who runs it from now on.
+
+        The failure count starts afresh, and the chat it was set from is
+        dropped: that chat stays its old setter's, and the runs would
+        otherwise read its history into output the new payer sees. The
+        status is left alone, so a schedule someone paused stays paused.
+        A one-time task whose time has passed while it waited out its old
+        payer's pause runs now rather than at its next check.
+
+        Args:
+            schedule_id: Schedule UUID.
+            user_id: The new payer.
+
+        Returns:
+            The updated row, or None when no row matched.
+        """
+        row = self._conn.execute(
+            text(
+                "UPDATE schedules SET user_id = :user_id, consecutive_failure_count = 0, "
+                "origin_conversation_id = NULL, "
+                "next_run_at = CASE WHEN trigger_type = 'once' AND next_run_at IS NOT NULL "
+                "THEN LEAST(next_run_at, GREATEST(run_at, now())) ELSE next_run_at END "
+                "WHERE id = CAST(:id AS uuid) RETURNING *"
+            ),
+            {"id": str(schedule_id), "user_id": user_id},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def rearm_once(self, schedule_id: str, at: datetime) -> bool:
+        """Give a one-time task skipped for its payer a next run, so it fires once the pause clears.
+
+        Only an active one-time task the dispatcher has already taken (no
+        next run) is re-armed: a person who paused, edited or ran it since
+        keeps what they set.
+
+        Args:
+            schedule_id: Schedule UUID.
+            at: When to check the pause again.
+
+        Returns:
+            True when the task was re-armed.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE schedules SET next_run_at = :at WHERE id = CAST(:id AS uuid) "
+                "AND trigger_type = 'once' AND status = 'active' AND next_run_at IS NULL"
+            ),
+            {"id": str(schedule_id), "at": at},
+        )
+        return (result.rowcount or 0) > 0
+
+    def get_with_context(self, schedule_id: str, viewer: str) -> Optional[dict]:
+        """One schedule with the extra keys of the lists (``list_for_owner_agents_with_context``).
+
+        ``origin_conversation_name`` is filled only when the viewer set it:
+        the chat a schedule came from stays with its setter.
+
+        Args:
+            schedule_id: Schedule UUID.
+            viewer: Who reads it.
+
+        Returns:
+            The row with ``agent_name``, ``agent_image``, ``agent_user_id`` and
+            ``origin_conversation_name``, or None when it doesn't exist.
+        """
+        row = self._conn.execute(
+            text(
+                """
+                SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                       a.user_id AS agent_user_id,
+                       CASE WHEN s.user_id = :viewer THEN c.name END AS origin_conversation_name
+                FROM schedules s
+                LEFT JOIN agents a ON a.id = s.agent_id
+                LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+                WHERE s.id = CAST(:id AS uuid)
+                """
+            ),
+            {"id": str(schedule_id), "viewer": viewer},
+        ).fetchone()
+        return row_to_dict(row) if row is not None else None
+
     def list_for_agent(
         self,
         agent_id: str,
-        user_id: str,
+        user_id: Optional[str],
         *,
         statuses: Optional[Iterable[str]] = None,
         trigger_type: Optional[str] = None,
     ) -> list[dict]:
-        """Owned schedules for an agent, newest-created first."""
-        sql = (
-            "SELECT * FROM schedules "
-            "WHERE agent_id = CAST(:agent_id AS uuid) AND user_id = :user_id"
-        )
-        params: dict[str, Any] = {"agent_id": str(agent_id), "user_id": user_id}
+        """Owned schedules for an agent, newest-created first.
+
+        ``user_id`` None lists every user's schedule on the agent: a team
+        agent's schedules are stored under the members who set them.
+        """
+        sql = "SELECT * FROM schedules WHERE agent_id = CAST(:agent_id AS uuid)"
+        params: dict[str, Any] = {"agent_id": str(agent_id)}
+        if user_id is not None:
+            sql += " AND user_id = :user_id"
+            params["user_id"] = user_id
         if statuses is not None:
             status_list = [str(s) for s in statuses]
             if not status_list:
@@ -291,6 +392,41 @@ class SchedulesRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
+    def list_for_owner_agents_with_context(
+        self, owner_id: str, viewer: str, *, setter: Optional[str] = None, limit: int = 500,
+    ) -> list[dict]:
+        """Schedules on every agent ``owner_id`` owns (a team's), shaped like ``list_owned_with_context``.
+
+        A team's agents carry schedules set by its members, each stored under
+        whoever set it. ``origin_conversation_name`` is filled only on the
+        viewer's own rows: the chat a schedule came from stays with its setter.
+
+        Args:
+            owner_id: The agents' owner (a team's principal).
+            viewer: The member reading the list.
+            setter: Only schedules this person set; None for everyone's.
+            limit: Maximum rows returned.
+
+        Returns:
+            Schedule rows with the extra keys, live ones first, then newest first.
+        """
+        sql = """
+            SELECT s.*, a.name AS agent_name, a.image AS agent_image,
+                   a.user_id AS agent_user_id,
+                   CASE WHEN s.user_id = :viewer THEN c.name END AS origin_conversation_name
+            FROM schedules s
+            JOIN agents a ON a.id = s.agent_id AND a.user_id = :owner
+            LEFT JOIN conversations c ON c.id = s.origin_conversation_id
+            WHERE s.trigger_type <> 'monitor'
+        """
+        params: dict[str, Any] = {"owner": owner_id, "viewer": viewer, "limit": int(limit)}
+        if setter is not None:
+            sql += " AND s.user_id = :setter"
+            params["setter"] = setter
+        sql += " ORDER BY s.status IN ('active', 'paused') DESC, s.created_at DESC LIMIT :limit"
+        rows = self._conn.execute(text(sql), params).fetchall()
+        return [row_to_dict(r) for r in rows]
+
     def count_active_for_user(self, user_id: str) -> int:
         """Active+paused schedules for quota enforcement (monitors have their own cap)."""
         scalar = self._conn.execute(
@@ -314,7 +450,11 @@ class SchedulesRepository:
         ).first() is not None
 
     def list_due(self, *, limit: int = 100) -> list[dict]:
-        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch)."""
+        """Lock and return schedules with ``next_run_at <= now()`` (monitors tick through their own dispatch).
+
+        A one-time task waiting for a Run now of it to end is left out, so a
+        batch of them can't hold back other due schedules.
+        """
         rows = self._conn.execute(
             text(
                 """
@@ -324,6 +464,15 @@ class SchedulesRepository:
                   AND next_run_at IS NOT NULL
                   AND next_run_at <= now()
                   AND (end_at IS NULL OR next_run_at <= end_at)
+                  AND NOT (
+                    trigger_type = 'once'
+                    AND EXISTS (
+                      SELECT 1 FROM schedule_runs r
+                      WHERE r.schedule_id = schedules.id
+                        AND r.status IN ('pending', 'running')
+                        AND r.trigger_source = 'manual'
+                    )
+                  )
                 ORDER BY next_run_at ASC
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED

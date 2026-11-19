@@ -9,22 +9,25 @@ import re
 import tempfile
 import uuid
 import zipfile
-from typing import Container, Optional
+from typing import Any, Container, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from flask import Response, current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
+from sqlalchemy import Connection
 from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.user.folders.service import FolderError, ingest_folder
 from docsgpt.api.user.idempotency import _synthesize_guard_key
 from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
-from docsgpt.api.user.resource_access import AccessDenied
+from docsgpt.api.user.resource_access import AccessDenied, workspace_mismatch_refusal, workspace_mismatches
 from docsgpt.api.user.task_owners import TaskOwnersUnavailable, get_task_owner
 from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
+from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.source_ids import derive_source_id as _derive_source_id
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS
@@ -59,6 +62,14 @@ from docsgpt.upload_limits import (
     UploadTooLargeError,
 )
 from docsgpt.utils import check_required_fields, safe_filename
+from docsgpt.workspaces.context import (
+    PERSONAL,
+    Workspace,
+    WorkspaceError,
+    current_workspace,
+    parse_workspace_ref,
+    require_workspace_role,
+)
 
 
 sources_upload_ns = Namespace(
@@ -67,6 +78,135 @@ sources_upload_ns = Namespace(
 
 
 _IDEMPOTENCY_KEY_MAX_LEN = 256
+
+#: Error code of a source that would read through a person's own connected account, asked for in a team
+#: workspace: a team's source reads only through a connection the team itself holds.
+CODE_CONNECTOR_PERSONAL_ONLY = "connector_personal_only"
+
+
+def connector_personal_only() -> Response:
+    """The 403 for a source in a team workspace that would read through a personal connection."""
+    message = (
+        "A team's source can only read through an account connected for the team. Connect it for the team, "
+        "or add the source in your Personal workspace."
+    )
+    return make_response(
+        jsonify({"success": False, "error": CODE_CONNECTOR_PERSONAL_ONLY, "code": CODE_CONNECTOR_PERSONAL_ONLY,
+                 "message": message}),
+        403,
+    )
+
+
+def connection_paused(err: Any) -> Response:
+    """The 409 for a team's account that can't be used now, saying why.
+
+    Args:
+        err: The ``ConnectionUnavailable`` (``status="paused"``) that refused it.
+
+    Returns:
+        ``{success: false, error: "connection_paused", code, message, paused_for, connection_id}``.
+    """
+    from docsgpt.connectors.team import CONNECTION_PAUSED
+
+    return make_response(
+        jsonify({
+            "success": False, "error": CONNECTION_PAUSED, "code": CONNECTION_PAUSED, "message": str(err),
+            "paused_for": getattr(err, "paused_for", None), "connection_id": getattr(err, "connection_id", None),
+        }),
+        409,
+    )
+
+
+def team_connection_for_new_source(
+    conn: Connection, user: str, owner: str, connection_id: Any, connector_key: str,
+) -> tuple[Optional[dict], Optional[Response]]:
+    """The team's connection a new team source will read through, when ``user`` may build one from it.
+
+    Only the person who connected the team's account (while an Admin) picks
+    what it shares, so only they create sources from it. Any other connection,
+    a person's own included, is refused as before.
+
+    Args:
+        conn: Open connection.
+        user: The caller.
+        owner: The team's principal (the new source's owner).
+        connection_id: The connection the request names.
+        connector_key: The kind of source asked for (``google_drive``, ``s3``, ...).
+
+    Returns:
+        ``(row, None)``, or ``(None, refusal)``: 403 ``connector_personal_only`` for a connection that isn't
+        this team's; the ``resolve_request_connection(..., action="pick")`` refusal (403 ``connection_picker_owner_only`` or
+        ``connection_admin_required``); 401 for a connection of another service; 409 ``connection_paused``.
+    """
+    from docsgpt.connectors import catalog, service
+    from docsgpt.connectors.team import ConnectionDenied
+
+    row = None
+    if connection_id and looks_like_uuid(str(connection_id)):
+        try:
+            row = service.resolve_request_connection(user, None, {"connection_id": str(connection_id)}, action="pick")
+        except ConnectionDenied as err:
+            return None, err.response()
+    if row is None or str(row.get("user_id")) != str(owner):
+        # None of the caller's teams', or a person's own (theirs, or another team's).
+        return None, connector_personal_only()
+    if catalog.connector_key_for_row(row) != connector_key:
+        return None, make_response(jsonify({"success": False, "error": "Invalid or unauthorized connection"}), 401)
+    try:
+        service.ensure_account_usable(conn, row)
+    except service.ConnectionUnavailable as err:
+        return None, connection_paused(err)
+    return row, None
+
+
+def request_workspace(user: str, conn: Optional[Connection] = None) -> Workspace:
+    """The workspace a list or create names, checked against the caller's membership.
+
+    No header (and no ``workspace`` parameter) is Personal and reads nothing,
+    so old clients, scripts and tests without a database keep working.
+
+    Args:
+        user: The caller.
+        conn: An open connection; one is opened when a team is named and none is given.
+
+    Returns:
+        Workspace: Personal, or the named team with the caller's role.
+
+    Raises:
+        WorkspaceError: 404 ``workspace_not_found`` for a team the caller isn't in.
+    """
+    if parse_workspace_ref() is None:
+        return Workspace(kind=PERSONAL, team_id=None, owner_id=user, role="owner")
+    if conn is not None:
+        return current_workspace(conn)
+    with db_readonly() as own:
+        return current_workspace(own)
+
+
+def creation_workspace(user: str) -> tuple[Optional[Workspace], Optional[Response]]:
+    """Where a new source goes: Personal, or a team where the caller is an Editor or above.
+
+    Args:
+        user: The caller.
+
+    Returns:
+        tuple: ``(workspace, None)``, or ``(None, refusal)``: 404 ``workspace_not_found``,
+        403 ``workspace_role_required``.
+    """
+    try:
+        workspace = request_workspace(user)
+        require_workspace_role(workspace, "editor")
+    except WorkspaceError as err:
+        return None, err.response()
+    return workspace, None
+
+
+def owner_task_kwargs(owner: str, user: str) -> dict:
+    """``{"actor_id": user}`` when a task runs as an owner other than the caller (a team's source), else ``{}``.
+
+    Left out otherwise so a personal task's call shape is unchanged.
+    """
+    return {"actor_id": user} if owner != user else {}
 
 
 def _website_config_error(err: ValueError) -> Response:
@@ -557,6 +697,40 @@ class _UploadStager:
                 self.pending.append((temp_file_path, rel_path))
 
 
+def _requested_folder(
+    user: str, raw: Any, owner: Optional[str] = None
+) -> tuple[Optional[str], Optional[Response]]:
+    """The source folder an ingest request asks to file its new source in.
+
+    The folder must be in the new source's owner's tree: the caller's own in
+    Personal, the team's in a team workspace.
+
+    Args:
+        user: The uploader.
+        raw: The request's ``folder_id`` (empty for none).
+        owner: The new source's owner (a team's principal); the uploader when None.
+
+    Returns:
+        tuple: ``(folder_id, None)``; ``(None, 400 workspace_mismatch)`` for a
+        folder of another workspace on a team upload; ``(None, 404 folder_not_found)``
+        when it isn't in the owner's tree.
+    """
+    if raw in (None, "", "null"):
+        return None, None
+    owner = owner or user
+    try:
+        with db_readonly() as conn:
+            raw_id = str(raw).strip()
+            if looks_like_uuid(raw_id):
+                mismatched = workspace_mismatches(conn, owner, [("folder", raw_id)])
+                if mismatched:
+                    body, status = workspace_mismatch_refusal(conn, mismatched, user)
+                    return None, make_response(jsonify(body), status)
+            return ingest_folder(conn, owner, raw), None
+    except FolderError as err:
+        return None, err.response()
+
+
 def _audit_source_created(
     *,
     source_id: str,
@@ -600,6 +774,9 @@ class UploadFile(Resource):
                 "user": fields.String(required=True, description="User ID"),
                 "name": fields.String(required=True, description="Job name"),
                 "file": fields.Raw(required=True, description="File(s) to upload"),
+                "folder_id": fields.String(
+                    required=False, description="One of the caller's source folders to file the new source in",
+                ),
             },
         )
     )
@@ -623,6 +800,14 @@ class UploadFile(Resource):
         )
         if config_error is not None:
             return config_error
+        # In a team the source is the team's (its principal owns it) and the uploader is recorded as its creator.
+        workspace, workspace_refusal = creation_workspace(user)
+        if workspace_refusal is not None:
+            return workspace_refusal
+        owner = workspace.owner_id
+        folder_id, folder_refusal = _requested_folder(user, request.form.get("folder_id"), owner)
+        if folder_refusal is not None:
+            return folder_refusal
         # User-scoped to avoid cross-user collisions; also feeds
         # ``_derive_source_id`` so uuid5 stays user-disjoint.
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
@@ -654,7 +839,8 @@ class UploadFile(Resource):
 
         # Create safe versions for filesystem operations
 
-        safe_user = safe_filename(user)
+        # Stored under the owner, like the rest of the owner's sources.
+        safe_user = safe_filename(owner)
         dir_name = safe_filename(job_name)
         base_path = f"{settings.UPLOAD_FOLDER}/{safe_user}/{dir_name}"
         file_name_map = {}
@@ -687,7 +873,7 @@ class UploadFile(Resource):
                     settings.UPLOAD_FOLDER,
                     list(SUPPORTED_SOURCE_EXTENSIONS),
                     job_name,
-                    user,
+                    owner,
                 ),
                 kwargs={
                     "file_path": base_path,
@@ -697,6 +883,9 @@ class UploadFile(Resource):
                     # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
+                    # Only when given, so the task's call shape is unchanged otherwise.
+                    **({"folder_id": folder_id} if folder_id else {}),
+                    **owner_task_kwargs(owner, user),
                 },
             )
             if predetermined_task_id is not None:
@@ -769,7 +958,7 @@ class UploadFile(Resource):
         return make_response(jsonify(response_payload), 200)
 
 
-def _remote_credentials(user, source, config):
+def _remote_credentials(user, source, config, team_owner=None):
     """Split an S3 / Reddit request into loader config and the connection holding its keys.
 
     A request naming a ``connection_id`` uses that connection's stored keys.
@@ -777,6 +966,10 @@ def _remote_credentials(user, source, config):
     connection, so they are entered once and never land in
     ``sources.remote_data``. When a multi-user install still runs on the
     public default encryption key, the keys stay with the source as before.
+
+    ``team_owner`` (a team workspace's principal): only a connection the team
+    holds may be named, by the person who connected it; pasted keys are
+    refused, since they would be stored on the caller's own connection.
 
     Returns:
         ``(source_data, connection_id, error_response)``.
@@ -787,6 +980,16 @@ def _remote_credentials(user, source, config):
     credential_keys = {f.key for f in definition.credential_fields}
     public = {k: v for k, v in config.items() if k not in credential_keys and k != "connection_id"}
     connection_id = config.get("connection_id")
+    if team_owner:
+        if any(config.get(k) not in (None, "") for k in credential_keys):
+            return None, None, connector_personal_only()
+        if not connection_id:
+            return config, None, None
+        with db_readonly() as conn:
+            row, refusal = team_connection_for_new_source(conn, user, team_owner, connection_id, source)
+        if refusal is not None:
+            return None, None, refusal
+        return public, str(row["id"]), None
     if connection_id:
         with db_readonly() as conn:
             row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), user)
@@ -831,6 +1034,9 @@ class UploadRemote(Resource):
                 "sync_frequency": fields.String(
                     description="How often to re-fetch: never (default), daily, weekly or monthly",
                 ),
+                "folder_id": fields.String(
+                    description="One of the caller's source folders to file the new source in",
+                ),
             },
         )
     )
@@ -856,6 +1062,13 @@ class UploadRemote(Resource):
             return config_error
         scoped_key = _scoped_idempotency_key(idempotency_key, user)
         data = request.form
+        workspace, workspace_refusal = creation_workspace(user)
+        if workspace_refusal is not None:
+            return workspace_refusal
+        owner = workspace.owner_id
+        folder_id, folder_refusal = _requested_folder(user, data.get("folder_id"), owner)
+        if folder_refusal is not None:
+            return folder_refusal
         required_fields = ["user", "source", "name", "data"]
         missing_fields = check_required_fields(data, required_fields)
         if missing_fields:
@@ -908,7 +1121,9 @@ class UploadRemote(Resource):
             elif data["source"] in ["crawler", "url", "sitemap"]:
                 source_data = config.get("url")
             elif data["source"] in ("reddit", "s3"):
-                source_data, connection_id, error = _remote_credentials(user, data["source"], config)
+                source_data, connection_id, error = _remote_credentials(
+                    user, data["source"], config, team_owner=owner if workspace.is_team else None,
+                )
                 if error is not None:
                     if scoped_key:
                         _release_claim(scoped_key)
@@ -928,7 +1143,21 @@ class UploadRemote(Resource):
                     )
                 from docsgpt.connectors import service as connection_service
 
-                connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                if workspace.is_team:
+                    # A team's source reads only through the team's own connection.
+                    with db_readonly() as conn:
+                        connector_session, refusal = team_connection_for_new_source(
+                            conn, user, owner, config.get("connection_id"), data["source"],
+                        )
+                    if refusal is not None:
+                        if scoped_key:
+                            _release_claim(scoped_key)
+                        return refusal
+                else:
+                    connector_session = connection_service.resolve_request_connection(user, data["source"], config)
+                    if connector_session is not None and str(connector_session.get("user_id")) != owner:
+                        # A personal source never reads through a team's connection.
+                        connector_session = None
                 if connector_session is None:
                     if scoped_key:
                         _release_claim(scoped_key)
@@ -958,7 +1187,7 @@ class UploadRemote(Resource):
                 connector_kwargs = {
                     "kwargs": {
                         "job_name": data["name"],
-                        "user": user,
+                        "user": owner,
                         "source_type": data["source"],
                         "connection_id": str(connector_session["id"]),
                         "file_ids": file_ids,
@@ -970,6 +1199,8 @@ class UploadRemote(Resource):
                         "source_id": str(source_uuid),
                         # Validated above; stored on the new source so its syncs run on schedule.
                         "sync_frequency": sync_frequency,
+                        **({"folder_id": folder_id} if folder_id else {}),
+                        **owner_task_kwargs(owner, user),
                     },
                 }
                 if predetermined_task_id is not None:
@@ -997,7 +1228,7 @@ class UploadRemote(Resource):
             # The same user submitting a source already being ingested (a
             # double click, a second tab) joins that ingest instead of
             # starting another.
-            in_flight_key = _remote_in_flight_key(user, data["source"], source_data, connection_id)
+            in_flight_key = _remote_in_flight_key(owner, data["source"], source_data, connection_id)
             if in_flight_key:
                 if claimed_key is None:
                     # Keyless: claim the guard key the worker makes from
@@ -1019,12 +1250,14 @@ class UploadRemote(Resource):
                     "source_data": source_data,
                     "connection_id": connection_id,
                     "job_name": data["name"],
-                    "user": user,
+                    "user": owner,
                     "loader": data["source"],
                     "config": source_config,
                     "idempotency_key": scoped_key or idempotency_key,
                     "source_id": str(source_uuid),
                     "sync_frequency": sync_frequency,
+                    **({"folder_id": folder_id} if folder_id else {}),
+                    **owner_task_kwargs(owner, user),
                 },
             }
             if predetermined_task_id is not None:

@@ -7,6 +7,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
+import zlib
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -15,6 +16,15 @@ from pathlib import PurePosixPath
 _COPY_CHUNK_BYTES = 64 * 1024
 _MAX_MEMBER_NAME_BYTES = 4096
 _MAX_MEMBER_DEPTH = 64
+
+# What a corrupt member's compressed stream raises while it is read: zlib and
+# lzma errors, and EOFError for a stream cut short. bz2 raises OSError.
+try:
+    import lzma
+
+    _DECOMPRESSION_ERRORS: tuple[type[BaseException], ...] = (zlib.error, EOFError, lzma.LZMAError)
+except ImportError:  # Python built without lzma; zipfile then cannot read LZMA members either.
+    _DECOMPRESSION_ERRORS = (zlib.error, EOFError)
 
 
 class ZipExtractionError(ValueError):
@@ -180,7 +190,11 @@ def validate_zip_archive(
     try:
         with zipfile.ZipFile(zip_path, "r") as archive:
             _validate_members(archive, limits, active_budget)
-    except (OSError, zipfile.BadZipFile) as exc:
+    except ZipExtractionError:
+        raise
+    # ValueError: a member name flagged UTF-8 that is not. RuntimeError covers
+    # NotImplementedError for a ZIP version or feature zipfile does not read.
+    except (OSError, RuntimeError, ValueError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
         raise ZipExtractionError(f"Invalid or corrupted ZIP file: {exc}") from exc
 
 
@@ -378,6 +392,7 @@ def extract_zip_safely(
         ValueError,
         zipfile.BadZipFile,
         zipfile.LargeZipFile,
+        *_DECOMPRESSION_ERRORS,
     ) as exc:
         raise ZipExtractionError(f"Unable to extract ZIP safely: {exc}") from exc
     finally:

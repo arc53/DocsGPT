@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from sqlalchemy import Connection
 
+from docsgpt.agents.tools.ask_user import AWAITING_ANSWER, is_awaiting_answer, question_payload
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.conversations import (
     ConversationsRepository,
@@ -33,6 +34,7 @@ __all__ = [
     "answered_call_ids",
     "ContinuationNotPendingError",
     "ContinuationService",
+    "InvalidToolActionsError",
     "NOT_PENDING_CODE",
     "NOT_PENDING_MESSAGE",
     "PENDING_STATE_TTL_SECONDS",
@@ -40,6 +42,7 @@ __all__ = [
     "RETIRED_MOVED_ON",
     "ResumeInProgressError",
     "ended_on_retired_pause",
+    "question_action_problem",
     "retire_paused_message",
 ]
 
@@ -68,6 +71,26 @@ NOT_PENDING_MESSAGE = "This request is no longer pending."
 #: The error code that goes with :data:`NOT_PENDING_MESSAGE`.
 NOT_PENDING_CODE = "tool_call_not_pending"
 
+
+class InvalidToolActionsError(ValueError):
+    """Raised when tool actions don't fit the calls their pause waits on. Nothing was run.
+
+    A question call given a decision, say, or an approval given an answer
+    (see :func:`question_action_problem`). The pause keeps waiting, so the
+    client can send the actions again, corrected.
+
+    Attributes:
+        code: The error code every route answers this refusal with.
+        message: The problem, worded for the client; routes send it as is.
+    """
+
+    code = "invalid_tool_actions"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 #: A pause retired because the user started a new turn instead of answering it.
 RETIRED_MOVED_ON = "moved_on"
 
@@ -85,8 +108,14 @@ _NOT_RUN_TEXT = {
     (True, RETIRED_EXPIRED): "Not run: the request for the app to run this call expired.",
 }
 
+#: What the model and the chat read for questions (``ask_user``) nobody answered, by why.
+_NOT_ANSWERED_TEXT = {
+    RETIRED_MOVED_ON: "Not answered: the conversation moved on before the user answered these questions.",
+    RETIRED_EXPIRED: "Not answered: the questions expired before the user answered them.",
+}
+
 #: Statuses of a call still waiting for the user or the client.
-_WAITING = frozenset({"awaiting_approval", "requires_client_execution"})
+_WAITING = frozenset({"awaiting_approval", "requires_client_execution", AWAITING_ANSWER})
 
 #: Fields of a pending call the chat keeps on a call it shows (device, service).
 _SHOWN_PENDING_KEYS = ("device_id", "connector_key", "connector_name", "access", "sent_arguments")
@@ -110,6 +139,10 @@ def answered_call_ids(tool_actions: Any) -> List[str]:
 def not_run_entry(pending: Mapping[str, Any], reason: str) -> Dict[str, Any]:
     """The message's record of a call its pause was waiting on, which never ran.
 
+    Questions nobody answered are recorded the same way, worded as not
+    answered, with their normalized questions as the arguments (as an
+    answered call keeps them), so the chat can still show what was asked.
+
     Args:
         pending: The pending call as the pause saved it.
         reason: :data:`RETIRED_MOVED_ON` or :data:`RETIRED_EXPIRED`.
@@ -118,13 +151,14 @@ def not_run_entry(pending: Mapping[str, Any], reason: str) -> Dict[str, Any]:
         A ``denied`` tool call carrying ``not_run`` (the reason) and, as its
         result, the sentence later turns replay to the model.
     """
+    asks = is_awaiting_answer(pending)
     for_client = pending.get("pause_type") == "requires_client_execution"
     entry: Dict[str, Any] = {
         "tool_name": pending.get("tool_name") or "unknown",
         "call_id": pending.get("call_id"),
         "action_name": pending.get("llm_name") or pending.get("name") or pending.get("action_name"),
-        "arguments": pending.get("arguments") or {},
-        "result": _NOT_RUN_TEXT[(for_client, reason)],
+        "arguments": question_payload(pending) if asks else pending.get("arguments") or {},
+        "result": _NOT_ANSWERED_TEXT[reason] if asks else _NOT_RUN_TEXT[(for_client, reason)],
         "status": "denied",
         "not_run": reason,
     }
@@ -132,6 +166,45 @@ def not_run_entry(pending: Mapping[str, Any], reason: str) -> Dict[str, Any]:
         if pending.get(key):
             entry[key] = pending[key]
     return entry
+
+
+def question_action_problem(pending_tool_calls: Any, tool_actions: Any) -> Optional[str]:
+    """What is wrong with the resume actions for a pause's question and other calls, if anything.
+
+    A call waiting on questions (``awaiting_answer``) takes exactly one of a
+    non-empty ``answer`` or ``skipped: true``, and never a ``decision`` or a
+    ``result``; any other call never takes ``answer`` or ``skipped``. Actions
+    naming calls the pause does not wait on are checked elsewhere.
+
+    Args:
+        pending_tool_calls: The calls the pause waits on.
+        tool_actions: The request's ``tool_actions``.
+
+    Returns:
+        The problem, addressed to the client, or None when the actions fit.
+    """
+    by_id = {
+        str(call.get("call_id")): call
+        for call in pending_tool_calls or []
+        if isinstance(call, dict)
+    }
+    for action in tool_actions or []:
+        if not isinstance(action, dict):
+            continue
+        pending = by_id.get(str(action.get("call_id") or ""))
+        if pending is None:
+            continue
+        if is_awaiting_answer(pending):
+            if "decision" in action or "result" in action:
+                return "A question call takes an answer or skipped, not a decision or a result."
+            answer = action.get("answer")
+            answered = isinstance(answer, str) and bool(answer.strip())
+            skipped = action.get("skipped") is True
+            if answered == skipped:
+                return "A question call takes either a non-empty answer or skipped: true."
+        elif "answer" in action or "skipped" in action:
+            return "Only a question call takes an answer or skipped."
+    return None
 
 
 def ended_on_retired_pause(turn: Mapping[str, Any]) -> bool:

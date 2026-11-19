@@ -15,7 +15,7 @@ from docsgpt.agents.workflows.schemas import (
     WorkflowNode,
     WorkflowRun,
 )
-from docsgpt.agents.workflows.workflow_engine import WorkflowEngine
+from docsgpt.agents.workflows.workflow_engine import WorkflowEngine, add_token_usage
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.logging import LogContext, log_activity
@@ -62,6 +62,18 @@ class WorkflowAgent(BaseAgent):
         # Set to a message when the input-document bridge fails fatally (quota), so
         # the run is finalized FAILED instead of running with missing documents.
         self._bridge_error: Optional[str] = None
+        # Set by the engine when an agent node of a scheduled run reports it cannot do its step.
+        self.cannot_complete: Optional[str] = None
+
+    @property
+    def token_usage(self) -> Dict[str, int]:
+        """The run's tokens: its own LLM's plus every agent node's."""
+        total = {"prompt_tokens": 0, "generated_tokens": 0}
+        add_token_usage(total, getattr(getattr(self, "llm", None), "token_usage", None))
+        engine = getattr(self, "_engine", None)
+        if engine is not None:
+            add_token_usage(total, engine.node_token_usage)
+        return total
 
     @log_activity()
     def gen(self, query: str, log_context: LogContext = None) -> Generator[Dict[str, str], None, None]:
@@ -364,7 +376,18 @@ class WorkflowAgent(BaseAgent):
         return getattr(self, "initial_user_id", None) or getattr(self, "user", None) or workflow_owner_id
 
     def _resolve_owned_workflow_pg_id(self, conn: Any, owner_id: Optional[str]) -> Optional[str]:
-        """Return the owned workflow's PG id, or None for an unowned/draft id."""
+        """Return the owned workflow's PG id, or None for an unowned/draft id.
+
+        An embedded (Preview) graph has no row loaded yet, so the saved row found
+        here becomes ``workflow_row``: node folders and sources check it as their holder.
+
+        Args:
+            conn: Open database connection.
+            owner_id: The workflow's owner.
+
+        Returns:
+            The workflow's id, or None when ``owner_id`` owns no such workflow.
+        """
         if not self.workflow_id or not owner_id:
             return None
         wf_repo = WorkflowsRepository(conn)
@@ -372,7 +395,11 @@ class WorkflowAgent(BaseAgent):
             workflow_row = wf_repo.get(self.workflow_id, owner_id)
         else:
             workflow_row = wf_repo.get_by_legacy_id(self.workflow_id, owner_id)
-        return str(workflow_row["id"]) if workflow_row is not None else None
+        if workflow_row is None:
+            return None
+        if getattr(self, "workflow_row", None) is None:
+            self.workflow_row = workflow_row
+        return str(workflow_row["id"])
 
     def _precreate_workflow_run(
         self,

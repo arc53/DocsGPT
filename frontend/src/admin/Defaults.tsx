@@ -14,6 +14,8 @@ import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { LoadingState } from '../components/ui/loading-state';
 import { SectionHeader } from '../components/ui/section-header';
+import { SettingRows } from '../components/ui/setting-row';
+import { resetDrafterConfigCache } from '../drafter/useDrafterConfig';
 import type { SourceRetrievalConfig } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import RetrievalOptions, {
@@ -22,6 +24,10 @@ import RetrievalOptions, {
   optionsToConfig,
   type RetrievalOptionsValue,
 } from '../settings/components/RetrievalOptions';
+import TaskModelRow, {
+  refusedModel,
+  TASK_MODEL_UNAVAILABLE,
+} from '../settings/components/TaskModelRow';
 import useRetrievalAvailability from '../settings/components/useRetrievalAvailability';
 import { LoadError } from './AdminUI';
 import { type InjectionModel, InjectionModelOff } from './injectionModel';
@@ -49,10 +55,33 @@ type AgentDefaultsBody = {
   injection_model: InjectionModel;
 };
 
-/** The form: the retrieval options and the new-agent guardrails. */
+/** A built-in model as GET /api/admin/defaults/models lists it. */
+type BuiltinModel = { id: string; display_name: string; provider: string };
+
+type ModelDefaultsBody = {
+  success: boolean;
+  /** The stored instance task model, null when unset or it can't run. */
+  task_model_id: string | null;
+  /** A model is stored that can't run (disabled or removed): the fallback runs until it is replaced. */
+  task_model_unavailable?: boolean;
+  /** What runs while it is unset: TASK_MODEL_ID or the default model. */
+  fallback_model_id: string | null;
+  /**
+   * The last refused-key failure of the model that runs ({model_id, code:
+   * "model_auth", at}); null when it last ran fine.
+   */
+  task_model_error?: { model_id: string; code: string; at: string } | null;
+  models: BuiltinModel[];
+};
+
+/** The Select value for "no instance task model". */
+export const TASK_MODEL_UNSET = '__unset__';
+
+/** The form: the retrieval options, the new-agent guardrails and the task model. */
 type Values = {
   retrieval: RetrievalOptionsValue;
   agentGuardrails: GuardrailsConfig;
+  taskModel: string;
 };
 
 const guardrailsOf = (body: AgentDefaultsBody): GuardrailsConfig => ({
@@ -60,12 +89,18 @@ const guardrailsOf = (body: AgentDefaultsBody): GuardrailsConfig => ({
   ...(body.guardrails ?? {}),
 });
 
+const taskModelOf = (body: ModelDefaultsBody): string =>
+  body.task_model_id ??
+  (body.task_model_unavailable ? TASK_MODEL_UNAVAILABLE : TASK_MODEL_UNSET);
+
 const valuesOf = (
   sources: SourceDefaultsBody,
   agents: AgentDefaultsBody,
+  models: ModelDefaultsBody,
 ): Values => ({
   retrieval: configToOptions({ retrieval: sources.retrieval }),
   agentGuardrails: guardrailsOf(agents),
+  taskModel: taskModelOf(models),
 });
 
 const fmtSeconds = (s: number) => `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
@@ -125,6 +160,7 @@ export default function Defaults() {
   const { catalog, loadError, retry } = useGuardrailCatalog(token);
   const [sources, setSources] = useState<SourceDefaultsBody | null>(null);
   const [agents, setAgents] = useState<AgentDefaultsBody | null>(null);
+  const [models, setModels] = useState<ModelDefaultsBody | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [saved, setSaved] = useState<Values | null>(null);
@@ -154,19 +190,26 @@ export default function Defaults() {
     setLoading(true);
     setFailed(false);
     try {
-      const [sourcesRes, agentsRes] = await Promise.all([
+      const [sourcesRes, agentsRes, modelsRes] = await Promise.all([
         adminService.getSourceDefaults(token),
         adminService.getAgentDefaults(token),
+        adminService.getModelDefaults(token),
       ]);
       const sourcesBody = await sourcesRes.json().catch(() => null);
       const agentsBody = await agentsRes.json().catch(() => null);
-      if (!sourcesBody?.success || !agentsBody?.success) {
+      const modelsBody = await modelsRes.json().catch(() => null);
+      if (
+        !sourcesBody?.success ||
+        !agentsBody?.success ||
+        !modelsBody?.success
+      ) {
         setFailed(true);
         return;
       }
-      const values = valuesOf(sourcesBody, agentsBody);
+      const values = valuesOf(sourcesBody, agentsBody, modelsBody);
       setSources(sourcesBody);
       setAgents(agentsBody);
+      setModels(modelsBody);
       setSaved(values);
       setValue(values);
     } catch {
@@ -181,7 +224,14 @@ export default function Defaults() {
   }, [load]);
 
   if (loading && value === null) return <LoadingState fill="block" />;
-  if (failed || !sources || !agents || value === null || saved === null)
+  if (
+    failed ||
+    !sources ||
+    !agents ||
+    !models ||
+    value === null ||
+    saved === null
+  )
     return <LoadError message="Failed to load the defaults." onRetry={load} />;
 
   const retrieval = optionsToConfig(value.retrieval).retrieval ?? {};
@@ -191,6 +241,10 @@ export default function Defaults() {
   const agentsChanged =
     JSON.stringify(value.agentGuardrails) !==
     JSON.stringify(saved.agentGuardrails);
+  const taskModelChanged = value.taskModel !== saved.taskModel;
+  const fallbackName =
+    models.models.find((m) => m.id === models.fallback_model_id)
+      ?.display_name ?? models.fallback_model_id;
   const valid =
     isPrescreenConfigValid(value.retrieval) &&
     !guardrailsIncomplete(value.agentGuardrails);
@@ -231,6 +285,26 @@ export default function Defaults() {
           (current) => JSON.stringify(current) === JSON.stringify(submitted),
         );
       }
+      if (taskModelChanged) {
+        const submitted = value.taskModel;
+        const res = await adminService.setModelDefaults(
+          submitted === TASK_MODEL_UNSET ? null : submitted,
+          token,
+        );
+        const body = await res.json().catch(() => ({ success: false }));
+        if (!body?.success) {
+          setSaveError(body?.message || failure);
+          return;
+        }
+        setModels(body);
+        // The drafter's config names the task model, and is off with no model.
+        resetDrafterConfigCache();
+        settle(
+          'taskModel',
+          taskModelOf(body),
+          (current) => current === submitted,
+        );
+      }
     } catch {
       setSaveError(failure);
     } finally {
@@ -241,15 +315,17 @@ export default function Defaults() {
   return (
     <div className="max-w-3xl">
       <PageToolbar
-        intro="The settings new sources and new agents start with."
+        intro="The settings new sources and new agents start with, and the model DocsGPT's own tasks run on."
         action={
           <Button
             size="field"
             shape="pill"
             onClick={save}
             loading={saving}
-            disabled={!(retrievalChanged || agentsChanged) || !valid}
-            className="w-full sm:w-auto"
+            disabled={
+              !(retrievalChanged || agentsChanged || taskModelChanged) || !valid
+            }
+            className="w-full @2xl:w-auto"
           >
             Save
           </Button>
@@ -310,6 +386,38 @@ export default function Defaults() {
             onRetry={retry}
             enableDescription="Run the selected checks on a new agent's runs"
           />
+        </section>
+        <section className="flex flex-col gap-5">
+          <SectionHeader
+            as="h2"
+            title="Models"
+            description="Takes effect at once: the next draft, graph build or monitor check uses it. Users can pick their own task model in Settings › General; this one is for everyone who hasn't."
+          />
+          <SettingRows>
+            <TaskModelRow
+              id="defaults-task-model"
+              label="Task model"
+              description="Drafts forms, builds knowledge graphs and checks monitors. Built-in models only. Chats use the agent's model."
+              value={value.taskModel}
+              onChange={(taskModel) => setValue({ ...value, taskModel })}
+              defaultValue={TASK_MODEL_UNSET}
+              defaultLabel={
+                fallbackName ? `Not set (${fallbackName})` : 'Not set'
+              }
+              defaultShortLabel="Not set"
+              groups={[{ models: models.models }]}
+              // A model whose provider refused its key on its last task:
+              // marked in the list, and named in a warning while it runs.
+              runningModelId={models.task_model_id ?? models.fallback_model_id}
+              refusedModelId={refusedModel(models.task_model_error)}
+              unavailableValue="Unavailable model"
+              refusedSuffix="· key refused"
+              unavailableNote="The stored task model can't run (it was disabled or removed), so the fallback runs. It runs again if it comes back: pick Not set or another model and save to replace it."
+              refusedNote={(model) =>
+                `${model} couldn't run its last task: its provider refused the API key. Check the key, or pick another model.`
+              }
+            />
+          </SettingRows>
         </section>
       </div>
     </div>

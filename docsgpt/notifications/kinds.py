@@ -4,8 +4,12 @@
 the event that woke it (``job``, ``lost``, ``monitor``, ``trigger``,
 ``approval``, and the monitor notices ``monitor_paused`` and
 ``monitor_expired``), a one-time scheduled run that answered in its
-conversation passes ``schedule``, and the weekly docs-gap digest passes
-``docs_gaps``; another caller may pass its own word. A known kind gets
+conversation passes ``schedule``, a recurring schedule that paused itself
+after repeated failures passes ``schedule_paused`` (``schedule_failed`` for
+its first failure, when that is switched on), and the weekly docs-gap digest
+passes ``docs_gaps``, and a team's admins hear ``payer_left`` when removing
+or demoting a member pauses the schedules or outside access that member paid
+for; another caller may pass its own word. A known kind gets
 a fixed heading: the web app shows its translated heading on the toast
 (``backgroundJobs.notify.title.<kind>``) and Web Push, which the server words
 in English, leads with :data:`KIND_HEADINGS`. An unknown kind reads as the
@@ -28,7 +32,10 @@ KIND_HEADINGS: Dict[str, str] = {
     "approval": "Approval received",
     "continuation": "Conversation continued",
     "schedule": "Scheduled task finished",
+    "schedule_paused": "Scheduled task paused",
+    "schedule_failed": "Scheduled task failed",
     "docs_gaps": "Weekly docs-gap summary",
+    "payer_left": "Paused until someone takes over",
 }
 
 #: The push title when there is neither a known kind nor a title.

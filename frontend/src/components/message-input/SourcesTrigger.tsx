@@ -1,12 +1,14 @@
-import { Database } from 'lucide-react';
+import { Database, Folder as FolderIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { Doc } from '../../models/misc';
+import type { SelectedFolder } from '../../preferences/preferenceApi';
 import { formatCount } from '../../utils/dateTimeUtils';
 import {
   MultiSelectPopover,
   type MultiSelectPopoverItem,
+  type MultiSelectPopoverProps,
 } from '../MultiSelectPopover';
 import SourcesPopoverFooter from '../SourcesPopoverFooter';
 import { Badge } from '../ui/badge';
@@ -22,7 +24,19 @@ type SourcesTriggerProps = {
   onUploadClick: () => void;
   /** The kind filter drawn under the search (`useSourceKindFilter`). */
   filters?: ReactNode;
-};
+  /** Whole folders picked, named on the pill when one is all there is. */
+  selectedFolders?: SelectedFolder[];
+} & Partial<
+  Pick<
+    MultiSelectPopoverProps,
+    | 'header'
+    | 'search'
+    | 'onSearchChange'
+    | 'shouldFilter'
+    | 'selectedFirst'
+    | 'onBack'
+  >
+>;
 
 export default function SourcesTrigger({
   open,
@@ -33,10 +47,19 @@ export default function SourcesTrigger({
   selectedDocs,
   onUploadClick,
   filters,
+  selectedFolders = [],
+  selectedFirst = true,
+  ...folderProps
 }: SourcesTriggerProps) {
   const { t } = useTranslation();
   const docs = selectedDocs ?? [];
-  const count = docs.length;
+  // A folder counts once, like a source.
+  const count = docs.length + selectedFolders.length;
+  const names = [
+    ...selectedFolders.map((folder) => folder.name),
+    ...docs.map((doc) => doc.name),
+  ];
+  const loneFolder = docs.length === 0 && selectedFolders.length === 1;
 
   return (
     <MultiSelectPopover
@@ -47,7 +70,8 @@ export default function SourcesTrigger({
       selectedIds={selectedIds}
       onToggle={onToggle}
       // What is chosen when it opens comes first, fixed while it is open.
-      selectedFirst
+      selectedFirst={selectedFirst}
+      {...folderProps}
       // Rows are grouped Yours / Shared with team; a lone group needs no
       // heading unless Selected sits above it.
       loneGroupHeading={false}
@@ -76,14 +100,17 @@ export default function SourcesTrigger({
               : undefined
           }
         >
-          <Database className="size-3.5 sm:size-4" />
+          {/* One folder and nothing else reads as the folder. */}
+          {loneFolder ? (
+            <FolderIcon className="size-3.5 sm:size-4" />
+          ) : (
+            <Database className="size-3.5 sm:size-4" />
+          )}
           <span
             className="text-foreground truncate overflow-hidden text-xs sm:text-sm"
-            title={
-              count > 0 ? docs.map((doc) => doc.name).join(', ') : undefined
-            }
+            title={count > 0 ? names.join(', ') : undefined}
           >
-            {count === 1 ? docs[0].name : t('conversation.sources.knowledge')}
+            {count === 1 ? names[0] : t('conversation.sources.knowledge')}
           </span>
           {/* One source is named; several are counted, like the Tools pill.
               The aria-label says it for screen readers. */}

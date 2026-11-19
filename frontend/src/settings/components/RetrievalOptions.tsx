@@ -25,6 +25,7 @@ import type {
   RetrievalExposure,
   SourceConfig,
 } from '../../models/misc';
+import { groupModels } from '../../models/modelGroups';
 import type { Model } from '../../models/types';
 
 // Defaults mirror the backend SourceConfig
@@ -624,14 +625,11 @@ export default function RetrievalOptions({
     setRetrieval({ graph: { ...value.retrieval.graph, ...patch } });
   };
 
-  const modelOptions = useMemo(() => {
-    const builtin: Model[] = [];
-    const user: Model[] = [];
-    availableModels.forEach((m) =>
-      (m.source === 'user' ? user : builtin).push(m),
-    );
-    return { builtin, user };
-  }, [availableModels]);
+  // The catalog first, then the team's custom models, then the caller's own.
+  const modelOptions = useMemo(
+    () => groupModels(availableModels),
+    [availableModels],
+  );
 
   const tr = (key: string, opts?: Record<string, unknown>) =>
     t(`settings.sources.retrievalOptions.${key}`, opts ?? {});
@@ -1137,6 +1135,11 @@ export default function RetrievalOptions({
                   </SelectItem>
                   {modelOptions.builtin.map((m) => (
                     <SelectItem key={`builtin-${m.id}`} value={m.id}>
+                      {m.display_name}
+                    </SelectItem>
+                  ))}
+                  {modelOptions.team.map((m) => (
+                    <SelectItem key={`team-${m.id}`} value={m.id}>
                       {m.display_name}
                     </SelectItem>
                   ))}

@@ -76,6 +76,8 @@ def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_de
         ),
         # Run state reads the grants live; covered in test_resource_states.
         patch("docsgpt.api.user.agents.routes.resource_states", return_value=[]),
+        # The caller has filed nothing (folder_items, covered in test_roles_access).
+        patch("docsgpt.api.user.agents.routes.FolderItemsRepository", return_value=Mock(filing=Mock(return_value=None))),
     ]
 
 

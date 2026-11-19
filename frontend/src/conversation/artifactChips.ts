@@ -40,9 +40,83 @@ export function formatToolName(toolName: string | undefined): string {
  */
 export function deriveArtifactChips(
   toolCalls: ToolCallsType[] | undefined,
+  jobArtifacts?: JobArtifact[],
 ): ArtifactChip[] {
   const chips = new Map<string, ArtifactChip>();
   for (const chip of collectArtifactChips(toolCalls)) chips.set(chip.id, chip);
+  // A file a tool call on this turn also reported keeps that call's details.
+  for (const chip of jobArtifactChips(jobArtifacts)) {
+    if (!chips.has(chip.id)) chips.set(chip.id, chip);
+  }
+  return [...chips.values()];
+}
+
+/**
+ * A file a background job wrote, listed on the reply that reports the job
+ * (``metadata.job_artifacts``); the turn that started the job keeps it too.
+ */
+export type JobArtifact = {
+  id: string;
+  filename?: string;
+  ref?: string;
+  tool_name?: string;
+  job_id?: string;
+};
+
+/** ``metadata.job_artifacts`` as stored, keeping only well-formed entries. */
+export function readJobArtifacts(value: unknown): JobArtifact[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const text = (entry: Record<string, unknown>, key: string) =>
+    typeof entry[key] === 'string' && entry[key] ? entry[key] : undefined;
+  const files = value.flatMap((raw): JobArtifact[] => {
+    if (!raw || typeof raw !== 'object') return [];
+    const entry = raw as Record<string, unknown>;
+    const id = text(entry, 'id');
+    if (!id) return [];
+    return [
+      {
+        id,
+        filename: text(entry, 'filename'),
+        ref: text(entry, 'ref'),
+        tool_name: text(entry, 'tool_name'),
+        job_id: text(entry, 'job_id'),
+      },
+    ];
+  });
+  return files.length ? files : undefined;
+}
+
+function jobArtifactChips(
+  jobArtifacts: JobArtifact[] | undefined,
+): ArtifactChip[] {
+  return (jobArtifacts ?? []).map((artifact) => ({
+    id: artifact.id,
+    ref: artifact.ref,
+    label:
+      artifact.filename || formatToolName(artifact.tool_name) || 'Artifact',
+    filename: artifact.filename,
+    toolName: artifact.tool_name ?? '',
+    callId: artifact.job_id ?? '',
+  }));
+}
+
+/**
+ * Every artifact in a conversation, once each, where it first appeared: a
+ * job's file is on both the turn that started the job and the reply that
+ * reported it.
+ */
+export function conversationArtifactChips(
+  queries: { tool_calls?: ToolCallsType[]; job_artifacts?: JobArtifact[] }[],
+): ArtifactChip[] {
+  const chips = new Map<string, ArtifactChip>();
+  for (const query of queries) {
+    for (const chip of deriveArtifactChips(
+      query.tool_calls,
+      query.job_artifacts,
+    )) {
+      if (!chips.has(chip.id)) chips.set(chip.id, chip);
+    }
+  }
   return [...chips.values()];
 }
 

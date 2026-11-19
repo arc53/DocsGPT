@@ -604,11 +604,13 @@ class AnthropicLLM(BaseLLM):
         # OpenAI clients send either spelling (``max_completion_tokens`` is the
         # newer one, and the /v1 translator drops the alias when both arrive);
         # ignoring it silently capped every such request at DEFAULT_MAX_TOKENS.
+        # The model's ``max_output_tokens`` lowers the limit but never raises the
+        # default: the SDK refuses a non-streaming call that asks for much more.
         max_tokens = kwargs.get("max_tokens") or kwargs.get("max_completion_tokens")
         params: Dict[str, Any] = {
             "model": model,
             "messages": cleaned_messages,
-            "max_tokens": int(max_tokens or DEFAULT_MAX_TOKENS),
+            "max_tokens": int(self._capped_output_tokens(max_tokens or DEFAULT_MAX_TOKENS)),
         }
         if system_prompt:
             # A ``cache_control`` breakpoint would go here — on the last

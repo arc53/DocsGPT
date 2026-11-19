@@ -7,6 +7,7 @@ import copy
 import functools
 import json
 import uuid
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -141,13 +142,16 @@ class TestTheProcessor:
 
 
 @pytest.fixture
-def resume(monkeypatch):
+def resume(monkeypatch, pg_conn):
     """Resume a saved pending state through the processor; returns the rebuilt agent and the processor."""
     from docsgpt.agents import agent_creator as ac_mod
     from docsgpt.api.answer.services import continuation_service as cont_mod
     from docsgpt.api.answer.services import stream_processor as sp_mod
     from docsgpt.llm import llm_creator as llm_creator_mod
     from docsgpt.llm.handlers import handler_creator as handler_mod
+
+    # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+    monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
     def _run(state: dict, agent: MagicMock):
         cont_service = MagicMock()
@@ -186,6 +190,8 @@ class TestPauseAndResume:
         assert processor.decision_record.round == 1
         assert len(processor.decision_record.snapshot()["entries"]) == 1
 
+    # The stream logs the turn (user_logs, users) through the app's own engine.
+    @pytest.mark.fresh_db
     def test_a_paused_and_resumed_stream_stores_both_rounds(self, flask_app, mock_mongo_db, monkeypatch, resume):
         from docsgpt.api.answer.services.continuation_service import ContinuationService
 

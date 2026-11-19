@@ -274,12 +274,13 @@ def test_yaml_deadline_overrides_global_default(tmp_path):
 
     (tmp_path / "test.yaml").write_text(
         "provider: openai\ndefaults:\n  first_token_timeout: 400\nmodels:\n"
-        "  - id: slow\n    first_token_timeout: 900\n    stall_timeout: 30\n"
+        "  - id: slow\n    first_token_timeout: 900\n    stall_timeout: 30\n    answer_timeout: 1200\n"
     )
     catalog = load_model_yamls([tmp_path])[0]
     model = catalog.models[0]
     assert model.capabilities.first_token_timeout == 900
     assert model.capabilities.stall_timeout == 30
+    assert model.capabilities.answer_timeout == 1200
 
 
 def test_loop_at_margin_saves_without_starting_another_call(monkeypatch):
@@ -375,3 +376,99 @@ def test_deferral_before_input_checks_is_a_successful_round(monkeypatch):
         events = list(BaseAgent.gen.__wrapped__(agent, "q"))
     assert events[-1] == {"metadata": {"budget_deferred": True}}
     agent.apply_input_guardrails.assert_not_called()
+
+
+def _fake_clock(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr("docsgpt.llm.deadlines.monotonic", lambda: clock[0])
+    return clock
+
+
+def _thinking(clock, seconds, *, answer_at=None):
+    """A provider that sends one chunk a second: reasoning, then the answer from ``answer_at`` on."""
+
+    def body():
+        for second in range(1, seconds + 1):
+            clock[0] = second
+            if answer_at is not None and second >= answer_at:
+                yield f"answer {second}"
+            else:
+                yield {"type": "thought", "thought": f"thinking {second}"}
+
+    return body
+
+
+def test_reasoning_that_never_answers_hits_the_answer_deadline(monkeypatch):
+    from docsgpt.llm.deadlines import StreamNoAnswerError, timed_stream
+
+    clock = _fake_clock(monkeypatch)
+    seen = []
+    with pytest.raises(StreamNoAnswerError, match="No answer within 5 seconds") as raised:
+        for chunk in timed_stream(_thinking(clock, 60), first_token=100, stall=100, answer_deadline=5):
+            seen.append(chunk)
+    assert isinstance(raised.value, StreamStalledError)
+    assert 5 <= clock[0] <= 6
+    assert seen and all(chunk["type"] == "thought" for chunk in seen)
+
+
+def test_an_answer_that_started_in_time_is_not_cut(monkeypatch):
+    from docsgpt.llm.deadlines import timed_stream
+
+    clock = _fake_clock(monkeypatch)
+    chunks = list(timed_stream(_thinking(clock, 13, answer_at=3), first_token=100, stall=100, answer_deadline=5))
+    assert [c for c in chunks if isinstance(c, str)] == [f"answer {s}" for s in range(3, 14)]
+
+
+def test_without_an_answer_deadline_reasoning_stays_open(monkeypatch):
+    from docsgpt.llm.deadlines import timed_stream
+
+    clock = _fake_clock(monkeypatch)
+    chunks = list(timed_stream(_thinking(clock, 11, answer_at=11), first_token=100, stall=100, answer_deadline=None))
+    assert len(chunks) == 11
+    assert chunks[-1] == "answer 11"
+
+
+def test_reasoning_that_never_answers_falls_back(monkeypatch, caplog):
+    clock = _fake_clock(monkeypatch)
+
+    class ThinkingBackup(StubLLM):
+        def _raw_gen_stream(self, *args, **kwargs):
+            yield {"type": "thought", "thought": "short plan"}
+            yield "backup answer"
+
+    llm = StubLLM(model_id="slow-thinker", capabilities=ModelCapabilities(answer_timeout=5))
+    llm._fallback_llm = ThinkingBackup(model_id="backup")
+    with caplog.at_level("WARNING", logger="docsgpt.llm.base"):
+        chunks = list(stream(llm, _thinking(clock, 60)))
+    assert chunks[-1] == "backup answer"
+    # The backup's reasoning starts a new paragraph after the primary's.
+    assert chunks[-2] == {"type": "thought", "thought": "\n\nshort plan"}
+    assert chunks[:-2] and all(c["type"] == "thought" for c in chunks[:-2])
+    assert llm.answered_by[-1]["fallback"] is True
+    assert llm.answered_by[-1]["reason"] == "StreamNoAnswerError"
+    assert "reason=no_answer" in caplog.text
+
+
+def test_reasoning_that_never_answers_without_a_fallback_fails(monkeypatch):
+    from docsgpt.llm.deadlines import StreamNoAnswerError
+
+    clock = _fake_clock(monkeypatch)
+    llm = StubLLM(capabilities=ModelCapabilities(answer_timeout=5))
+    with pytest.raises(StreamNoAnswerError):
+        list(stream(llm, _thinking(clock, 60)))
+
+
+def test_answer_deadline_comes_from_the_model_or_the_global_default(monkeypatch):
+    monkeypatch.setattr("docsgpt.llm.base.settings.LLM_FIRST_TOKEN_TIMEOUT", 300)
+    monkeypatch.setattr("docsgpt.llm.base.settings.LLM_STREAM_STALL_TIMEOUT", 120)
+    monkeypatch.setattr("docsgpt.llm.base.settings.LLM_ANSWER_TIMEOUT", 600)
+    assert StubLLM()._stream_deadlines().answer == 600
+    assert StubLLM(capabilities=ModelCapabilities(answer_timeout=90))._stream_deadlines().answer == 90
+    # The global default never cuts a model below its own first-token allowance.
+    slow = StubLLM(capabilities=ModelCapabilities(first_token_timeout=900))
+    assert slow._stream_deadlines().answer == 900
+    # The time-to-answer limit is not a socket read timeout.
+    assert slow._stream_transport_timeout().read == 900
+    assert StubLLM()._stream_transport_timeout().read == 300
+    monkeypatch.setattr("docsgpt.llm.base.settings.LLM_ANSWER_TIMEOUT", 0)
+    assert StubLLM()._stream_deadlines().answer is None

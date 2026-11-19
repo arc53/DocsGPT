@@ -1,7 +1,7 @@
 ---
 title: Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
-lastUpdated: 2026-11-02
+lastUpdated: 2026-11-11
 ---
 
 {/* GENERATED FILE. Do not edit by hand: run `python -m docsgpt.core.settings.reference --write`. */}
@@ -197,6 +197,12 @@ Seconds allowed for a stream's first chunk, overridden by the model YAML first_t
 Type `float`, default `120`, must be `> 0`.
 
 Maximum gap between stream chunks after the first, overridden by the model YAML stall_timeout. After a reasoning chunk the longer of this and the first-token timeout applies.
+
+### `LLM_ANSWER_TIMEOUT`
+
+Type `float`, default `600`, must be `>= 0`.
+
+Seconds from the start of a stream for the answer to begin; a model still only reasoning then hands off to the fallback model, or the turn fails. Overridden by the model YAML answer_timeout. Raised to the model's first-token timeout when that is longer. 0 turns it off.
 
 ### `API_KEY`
 
@@ -1651,6 +1657,18 @@ Type `str`, default unset.
 
 Public callback URL for MCP OAuth; unset derives it from CONNECTOR_REDIRECT_BASE_URI.
 
+### `MCP_APPS_ENABLED`
+
+Type `bool`, default `true`.
+
+Render MCP Apps (interactive views an MCP server ships with its tools, such as Excalidraw's canvas) inline in chat. Needs a sandbox origin (MCP_APPS_SANDBOX_URL); without one the chat shows the ordinary tool step and app-only tools stay offered to the model, as with this off.
+
+### `MCP_APPS_SANDBOX_URL`
+
+Type `str`, default unset.
+
+Address of the MCP Apps sandbox page, &lt;origin>/api/mcp_apps/sandbox, on an origin other than the app's, e.g. a sandbox. subdomain pointed at this API. Unset on a loopback API_URL uses the other loopback name (localhost and 127.0.0.1 are different origins); unset elsewhere turns MCP Apps off.
+
 
 ## Server
 
@@ -2188,6 +2206,12 @@ Seconds past the due time within which a missed run still fires.
 Type `int`, default `3`.
 
 Consecutive failures after which a schedule is paused automatically.
+
+### `SCHEDULE_NOTIFY_RECURRING_FAILURES`
+
+Type `bool`, default `false`.
+
+Also notify the owner of a recurring schedule on the first failed run in a row, not only when the schedule pauses itself.
 
 ### `SCHEDULE_ONCE_MAX_HORIZON`
 

@@ -2,14 +2,30 @@
 
 Agents are mostly references (sources, tools, prompt, models). Export
 translates those into portable identifiers and never emits a secret;
-import resolves them back against the importing user — matching existing
-resources or creating them from the file plus user-supplied tokens.
+import resolves them back inside the request's workspace — matching existing
+resources or creating them from the file plus user-supplied tokens. In a
+team every row an import writes is the team's (owned by its principal, with
+the importer as creator, secrets sealed to the team), and a reference
+resolves among the team's own items only; a Personal import never matches a
+team's items. A team's agent uses the team's custom models: a described
+model reuses the team's one with the same endpoint, and only a team Admin
+adds a missing one (in the app, never with a token). An export shows a
+team model's endpoint only to the team's Admins.
 
 Re-import is idempotent at every level: the agent is matched by
 ``metadata.id`` then ``metadata.slug``, tools by ``(type, name)``,
 prompts by ``(name, content)``, custom models by
-``(display_name, upstream_model_id, base_url)`` — so the same file
+``(display_name, upstream_model_id, base_url)`` (a team's by endpoint and
+upstream id alone) — so the same file
 applied twice updates rather than duplicating.
+
+Knowledge folders an agent (or a workflow agent node) reads live travel as
+``spec.sources`` entries with ``type: folder``: by name, plus the path for a
+folder of a tree the exporter sees whole (their own, or the team's for a team
+agent; another person's folder tree never leaves); import matches the
+workspace's one folder tree by path, then by name, and drops the rest with a
+warning. A folder picked by hand is keyed by the entry's ``key``, its full
+path, or its name when no other folder entry shares it.
 
 Workflow agents additionally carry their graph under ``spec.workflow``.
 The graph's agent nodes reference tools, sources and models by raw id in
@@ -23,11 +39,13 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import re
-from typing import Any, Optional
+from collections import Counter
+from typing import Any, NamedTuple, Optional
 
 import yaml
-from flask import current_app, jsonify, make_response, request
+from flask import current_app, has_request_context, jsonify, make_response, request
 from flask_restx import Namespace, Resource
 
 from docsgpt.agents.default_tools import (
@@ -38,9 +56,19 @@ from docsgpt.agents.default_tools import (
 )
 from docsgpt.api import api
 from docsgpt.api.pat.rules import allowed_ids
+from docsgpt.api.pat.tokens import is_pat
 from docsgpt.api.user.agents.starters import StartersError, normalize_starters, stored_starters
-from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    require,
+    resolve,
+    resource_owner,
+    workspace_mismatch_refusal,
+    workspace_mismatches,
+    workspace_minimum,
+)
 from docsgpt.connectors.resolve import carry_removed_connection
+from docsgpt.core.model_registry import ModelRegistry
 from docsgpt.core.model_utils import validate_model_id
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.security.safe_url import UnsafeUserUrlError, validate_user_base_url
@@ -52,12 +80,33 @@ from docsgpt.storage.db.repositories.sources import SourcesRepository
 from docsgpt.storage.db.repositories.user_custom_models import (
     UserCustomModelsRepository,
 )
+from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.repositories.workflow_edges import WorkflowEdgesRepository
 from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
 from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.context import (
+    PERSONAL,
+    Workspace,
+    WorkspaceError,
+    current_workspace,
+    require_workspace_role,
+)
+from docsgpt.workspaces.locks import lock_owner_items
+from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_EDITORS, POLICY_LOCKED, team_policy
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
+from docsgpt.workspaces.team_models import (
+    CODE_CUSTOM_MODEL_ADMIN_REQUIRED,
+    CODE_NOT_AVAILABLE_TO_TOKENS,
+    MODEL_ACTIONS,
+    matching_model,
+    unowned_custom_models,
+)
 
+
+logger = logging.getLogger(__name__)
 
 API_VERSION = "docsgpt.arc53.com/v1"
 KIND = "Agent"
@@ -76,6 +125,150 @@ class AgentImportError(Exception):
 
 class AgentExportError(Exception):
     """Raised when an agent cannot be exported as a document import would accept."""
+
+
+class ImportWorkspaceMismatch(Exception):
+    """An import would bind items from outside its workspace; nothing is written.
+
+    Attributes:
+        refs: The offending ``(type, id)`` pairs.
+        body: The 400 ``workspace_mismatch`` body to answer with.
+    """
+
+    def __init__(self, refs: list[tuple[str, str]], body: dict) -> None:
+        super().__init__(body.get("message") or "workspace_mismatch")
+        self.refs = refs
+        self.body = body
+
+
+class ImportRefused(Exception):
+    """An import over an existing agent breaks a rule its save would keep; nothing is written.
+
+    Attributes:
+        body: The JSON body to answer with, as the agent save answers it.
+        status: Its HTTP status.
+    """
+
+    def __init__(self, body: dict, status: int) -> None:
+        super().__init__(body.get("message") or body.get("error") or "import_refused")
+        self.body = body
+        self.status = status
+
+
+def _personal_workspace(user: str) -> Workspace:
+    """The caller's own workspace, for a call that names none."""
+    return Workspace(kind=PERSONAL, team_id=None, owner_id=user, role="owner")
+
+
+def _outside_workspace(conn, owner: str, refs) -> list[tuple[str, str]]:
+    """The refs an import into ``owner``'s workspace may not bind.
+
+    A team's holder takes only the team's own items (:func:`workspace_mismatches`);
+    a person's holder takes nothing a team owns. The resolvers already look
+    only inside the workspace, so this is the check that would catch one that
+    didn't.
+
+    Args:
+        conn: Open database connection.
+        owner: The imported agent's owner: the importer, or the team's principal.
+        refs: ``(type, id)`` pairs the import writes, folders as ``("folder", id)``.
+
+    Returns:
+        list[tuple[str, str]]: The offending pairs, ids lower-case.
+    """
+    if is_principal_id(owner):
+        return workspace_mismatches(conn, owner, refs)
+    out: list[tuple[str, str]] = []
+    for resource_type, resource_id in refs:
+        if not resource_id or not str(resource_id).strip():
+            continue
+        pair = (resource_type, str(resource_id).strip().lower())
+        if pair not in out and is_principal_id(resource_owner(conn, resource_type, pair[1])):
+            out.append(pair)
+    return out
+
+
+def _refuse_outside(conn, owner: str, actor: str, refs) -> None:
+    """Raise :class:`ImportWorkspaceMismatch` when the import would bind items from another workspace.
+
+    Args:
+        conn: Open database connection.
+        owner: The imported agent's owner.
+        actor: The person importing; the refusal names only what they can reach.
+        refs: ``(type, id)`` pairs the import writes.
+
+    Raises:
+        ImportWorkspaceMismatch: With the 400 ``workspace_mismatch`` body.
+    """
+    bad = _outside_workspace(conn, owner, refs)
+    if not bad:
+        return
+    logger.warning("Agent import refused: workspace mismatch (user=%s, refs=%s)", actor, bad)
+    body, _ = workspace_mismatch_refusal(conn, bad, actor)
+    if not is_principal_id(owner):
+        body["message"] = "A personal agent can't use a team's items. Pick your own, or import into the team."
+    raise ImportWorkspaceMismatch(bad, body)
+
+
+def _unowned_models(conn, owner: str, model_ids) -> set[str]:
+    """The custom models among ``model_ids`` an agent of ``owner`` can't run with: anyone else's (lower-case).
+
+    A custom model resolves in its owner's account, so a team's agent may name only the team's models and a
+    person's agent only their own.
+    """
+    return {str(m).lower() for m in unowned_custom_models(conn, owner, [str(m) for m in model_ids if m])}
+
+
+def _model_add_refusal(team: bool, role: Optional[str]) -> Optional[str]:
+    """Why this import may not add a custom model to its workspace, or None when it may.
+
+    A person adds their own models freely. A team's model carries the team's provider key, so only its
+    Admins and Owner add one, and only in the app (never with a personal access token).
+
+    Args:
+        team: Whether the import lands in a team.
+        role: The importer's role there.
+
+    Returns:
+        ``not_available_to_tokens``, ``custom_model_admin_required`` or None.
+    """
+    if not team:
+        return None
+    if has_request_context() and is_pat(getattr(request, "decoded_token", None)):
+        return CODE_NOT_AVAILABLE_TO_TOKENS
+    if not role_at_least(role, MODEL_ACTIONS["manage"]):
+        return CODE_CUSTOM_MODEL_ADMIN_REQUIRED
+    return None
+
+
+def _model_left_off(display_name: str, refusal: str) -> str:
+    """The warning for a described custom model the import may not add to the team."""
+    if refusal == CODE_NOT_AVAILABLE_TO_TOKENS:
+        return f"Custom model '{display_name}' isn't the team's yet, and a token can't add one; it will be left off"
+    return f"Custom model '{display_name}' isn't the team's yet, and only a team Admin can add it; it will be left off"
+
+
+def _team_tool_refusal(tool_type: str, config: Optional[dict]) -> Optional[str]:
+    """Why a team can't hold a tool of this kind (a ``*_personal_only`` code), or None.
+
+    The tools routes own the rule. Imported lazily, like the other route
+    helpers here, so loading the agents package never pulls in the tools routes.
+
+    Args:
+        tool_type: The tool's catalog name.
+        config: The tool's config.
+
+    Returns:
+        Optional[str]: The refusal code, or None.
+    """
+    from docsgpt.api.user.tools.routes import team_tool_refusal
+
+    return team_tool_refusal(tool_type, config)
+
+
+def _not_here(owner: str) -> str:
+    """How a warning says a hand-picked item is outside the import's workspace."""
+    return "is not the team's" if is_principal_id(owner) else "is not yours"
 
 
 class _SafeNoAliasLoader(yaml.SafeLoader):
@@ -446,6 +639,79 @@ def _serialize_sources(conn, agent: dict, user: str) -> list:
     return out
 
 
+#: The ``spec.sources`` entry type of a knowledge folder.
+FOLDER_ENTRY_TYPE = "folder"
+
+
+def _is_folder_entry(entry: Any) -> bool:
+    """Whether a ``spec.sources`` entry names a knowledge folder rather than a source."""
+    return isinstance(entry, dict) and entry.get("type") == FOLDER_ENTRY_TYPE
+
+
+def _folder_key(index: int) -> str:
+    """A folder entry's ``key``: how a workflow node names it (``folder-N``)."""
+    return f"folder-{index}"
+
+
+def _folder_entries(conn, folder_ids, exporter: Optional[str]) -> list[tuple[str, dict]]:
+    """``(folder_id, entry)`` per existing source folder, in order; see :func:`_serialize_folders`."""
+    from sqlalchemy import text as _sql_text
+
+    from docsgpt.api.user.folders.service import folder_paths
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+    ids = [str(f).lower() for f in folder_ids or [] if f and looks_like_uuid(str(f))]
+    if not ids:
+        return []
+    rows = conn.execute(
+        _sql_text(
+            "SELECT id::text, user_id, name FROM folders "
+            "WHERE id = ANY(CAST(:ids AS uuid[]))"
+        ),
+        {"ids": ids},
+    ).fetchall()
+    row_of = {r[0].lower(): (r[1], r[2]) for r in rows}
+    exporter_paths: Optional[dict] = None
+    out: list[tuple[str, dict]] = []
+    for fid in dict.fromkeys(ids):
+        if fid not in row_of:
+            continue
+        owner, name = row_of[fid]
+        entry: dict = {"name": name or "", "type": FOLDER_ENTRY_TYPE, "key": _folder_key(len(out))}
+        if exporter and owner == exporter:
+            if exporter_paths is None:
+                exporter_paths = folder_paths(FoldersRepository(conn).list_for_user(exporter, "source"))
+            path = exporter_paths.get(fid) or []
+            if path:
+                entry["path"] = [p["name"] or "" for p in path]
+            entry["ref"] = fid
+        out.append((fid, entry))
+    return out
+
+
+def _serialize_folders(conn, folder_ids, exporter: Optional[str]) -> list:
+    """Knowledge folders as ``spec.sources`` entries: ``{name, type: folder, key[, path, ref]}``.
+
+    Exported whoever owns them (a teammate may have attached theirs), and
+    import matches the workspace's folders by path, then by name. Only a
+    folder of ``exporter``'s tree carries its ``path`` (the names down to it)
+    and ``ref``; anyone else's carries its name alone, so an export never
+    shows another person's folder tree. ``key`` (``folder-N``) is how a
+    workflow node names the entry. Folders that no longer exist are left out.
+
+    Args:
+        conn: Open database connection.
+        folder_ids: The holder's folder ids, in order.
+        exporter: Whose folder tree the export may show: the person
+            exporting, or the team's principal for a team's agent (every
+            member sees the team's one tree).
+
+    Returns:
+        list: One entry per existing source folder.
+    """
+    return [entry for _, entry in _folder_entries(conn, folder_ids, exporter)]
+
+
 def _serialize_tools(conn, agent: dict, user: str) -> list:
     repo = UserToolsRepository(conn)
     out = []
@@ -491,8 +757,20 @@ def _serialize_tools(conn, agent: dict, user: str) -> list:
     return out
 
 
-def _serialize_models(conn, agent: dict, user: str) -> dict:
+def _serialize_models(conn, agent: dict, user: str, *, endpoints: bool = True) -> dict:
+    """The portable ``spec.model`` block: catalog ids as they are, custom models described.
+
+    Args:
+        conn: Open connection.
+        agent: The agent row (or the ids a workflow's nodes name).
+        user: The owner the custom models resolve as.
+        endpoints: Whether a team's model carries its base URL; only the team's Admins see it.
+
+    Returns:
+        ``{default, available}``.
+    """
     repo = UserCustomModelsRepository(conn)
+    hide_endpoint = not endpoints and is_principal_id(user)
 
     def describe(model_id: str):
         mid = str(model_id)
@@ -500,7 +778,7 @@ def _serialize_models(conn, agent: dict, user: str) -> dict:
             row = repo.get(mid, user)
             if not row:
                 return None
-            return {
+            described = {
                 "type": "custom",
                 "display_name": row.get("display_name") or "",
                 "upstream_model_id": row.get("upstream_model_id") or "",
@@ -509,6 +787,9 @@ def _serialize_models(conn, agent: dict, user: str) -> dict:
                 "requires_secrets": ["api_key"],
                 "ref": mid,
             }
+            if hide_endpoint:
+                del described["base_url"]
+            return described
         return mid
 
     available = []
@@ -541,7 +822,7 @@ def _effective_node_config(config: dict) -> dict:
 
 
 def _strip_shadowed_ref_keys(config: dict) -> None:
-    """Drop flat ``tools``/``sources``/``model_id`` shadowed by a nested config.
+    """Drop flat ``tools``/``sources``/``folders``/``model_id`` shadowed by a nested config.
 
     When a node stores its settings under ``config["config"]``, the engine
     reads only the nested dict — flat leftovers of those keys are inert, but
@@ -549,19 +830,25 @@ def _strip_shadowed_ref_keys(config: dict) -> None:
     import they would store a hand-edited file's raw ids verbatim.
     """
     if isinstance(config.get("config"), dict):
-        for key in ("tools", "sources", "model_id"):
+        for key in ("tools", "sources", "folders", "model_id"):
             config.pop(key, None)
 
 
-def _serialize_workflow(conn, agent: dict, user: str):
+def _serialize_workflow(
+    conn, agent: dict, user: str, exporter: Optional[str] = None, *, model_endpoints: bool = True
+):
     """Build the portable ``spec.workflow`` block plus its reference sections.
 
-    Agent nodes hold raw tool/source/model ids; those are collected (deduped,
-    in first-appearance order) into the same top-level ``tools`` / ``sources``
-    / ``model`` sections a classic export uses, and the node configs are
-    rewritten to portable keys: ``tool-N``, the source's name, a custom
-    model's display name. Returns ``(workflow_block, tools, sources, model)``;
-    the block is None when the agent has no resolvable workflow.
+    Agent nodes hold raw tool/source/folder/model ids; those are collected
+    (deduped, in first-appearance order) into the same top-level ``tools`` /
+    ``sources`` / ``model`` sections a classic export uses, and the node
+    configs are rewritten to portable keys: ``tool-N``, the source's name, a
+    folder entry's ``folder-N`` key (two folders may share a name), a custom
+    model's display name. ``exporter`` decides how much of each folder leaves
+    (see :func:`_serialize_folders`); it defaults to ``user``.
+    ``model_endpoints`` is as in :func:`serialize_agent`. Returns
+    ``(workflow_block, tools, sources, model)``; the block is None when the
+    agent has no resolvable workflow.
     """
     empty_model = {"default": "", "available": []}
     workflow_id = agent.get("workflow_id")
@@ -580,6 +867,7 @@ def _serialize_workflow(conn, agent: dict, user: str):
     # Pass 1: collect referenced ids across agent nodes, deduped and ordered.
     tool_ids: list[str] = []
     source_ids: list[str] = []
+    folder_ids: list[str] = []
     model_ids: list[str] = []
     for n in node_rows:
         if n.get("node_type") != "agent":
@@ -591,6 +879,10 @@ def _serialize_workflow(conn, agent: dict, user: str):
         for sid in cfg.get("sources") or []:
             if str(sid) and str(sid) not in source_ids:
                 source_ids.append(str(sid))
+        folders = cfg.get("folders") or []
+        for fid in folders if isinstance(folders, list) else [folders]:
+            if str(fid).lower() and str(fid).lower() not in folder_ids:
+                folder_ids.append(str(fid).lower())
         mid = cfg.get("model_id")
         if mid and str(mid) not in model_ids:
             model_ids.append(str(mid))
@@ -610,8 +902,14 @@ def _serialize_workflow(conn, agent: dict, user: str):
     for entry in _serialize_sources(conn, {"extra_source_ids": source_ids}, user):
         source_name_by_id[str(entry["ref"])] = entry["name"]
         sources.append(entry)
+    folder_key_by_id: dict[str, str] = {}
+    for fid, entry in _folder_entries(conn, folder_ids, exporter or user):
+        folder_key_by_id[fid] = entry["key"]
+        sources.append(entry)
 
-    model = _serialize_models(conn, {"models": model_ids, "default_model_id": ""}, user)
+    model = _serialize_models(
+        conn, {"models": model_ids, "default_model_id": ""}, user, endpoints=model_endpoints
+    )
     model_name_by_id: dict[str, str] = {}
     for entry in model["available"]:
         if isinstance(entry, dict):
@@ -650,6 +948,13 @@ def _serialize_workflow(conn, agent: dict, user: str):
                 for s in cfg.get("sources") or []
                 if str(s) in source_name_by_id
             ]
+            if "folders" in cfg:
+                folders = cfg.get("folders") or []
+                cfg["folders"] = [
+                    folder_key_by_id[str(f).lower()]
+                    for f in (folders if isinstance(folders, list) else [folders])
+                    if str(f).lower() in folder_key_by_id
+                ]
             if cfg.get("model_id"):
                 cfg["model_id"] = model_name_by_id.get(str(cfg["model_id"]))
             _strip_shadowed_ref_keys(config)
@@ -766,19 +1071,40 @@ def _import_config(spec: dict, current: Optional[dict], warnings: list) -> dict:
     return _valid_parts(kept)
 
 
-def serialize_agent(conn, agent: dict, user: str) -> dict:
-    """Build the portable export document for an agent row."""
+def serialize_agent(
+    conn, agent: dict, user: str, exporter: Optional[str] = None, *, model_endpoints: bool = True
+) -> dict:
+    """Build the portable export document for an agent row.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row.
+        user: Whom its references resolve as (the agent's owner).
+        exporter: Whose folder tree the export may show: only its knowledge
+            folders carry a path (see :func:`_serialize_folders`). Defaults
+            to ``user``.
+        model_endpoints: Whether a team's custom model carries its base URL. Only the team's Admins and
+            Owner see it, so an Editor's export leaves it out.
+
+    Returns:
+        dict: The export document.
+    """
+    exporter = exporter or user
     is_workflow = (agent.get("agent_type") or "") == "workflow"
     if is_workflow:
         # A workflow agent's behavior lives in its graph: the agent-level
         # prompt/source/tool/model slots are unused, so the top-level sections
         # instead carry the references collected from the graph's agent nodes.
-        workflow_block, tools, sources, model = _serialize_workflow(conn, agent, user)
+        workflow_block, tools, sources, model = _serialize_workflow(
+            conn, agent, user, exporter, model_endpoints=model_endpoints
+        )
         prompt = "default"
     else:
         tools = _serialize_tools(conn, agent, user)
-        sources = _serialize_sources(conn, agent, user)
-        model = _serialize_models(conn, agent, user)
+        sources = _serialize_sources(conn, agent, user) + _serialize_folders(
+            conn, agent.get("knowledge_folder_ids"), exporter
+        )
+        model = _serialize_models(conn, agent, user, endpoints=model_endpoints)
         prompt = _serialize_prompt(conn, agent, user)
     spec = {
         "name": agent.get("name") or "",
@@ -908,6 +1234,7 @@ def parse_agent_yaml(text: str) -> dict:
 
 
 def _resolve_target(conn, user: str, metadata: dict) -> dict:
+    """The agent a file updates, matched by id then slug among ``user``'s own (the workspace's owner)."""
     repo = AgentsRepository(conn)
     metadata = metadata or {}
     agent_id = metadata.get("id")
@@ -949,7 +1276,26 @@ def _find_user_tool(user_tools: list, tool_type: str, custom_name: str):
     return None
 
 
-def _find_custom_model(customs: list, spec_model: dict):
+def _find_custom_model(customs: list, spec_model: dict, *, by_endpoint: bool = False):
+    """The stored model a file's custom model entry names, or None.
+
+    Args:
+        customs: The workspace owner's models.
+        spec_model: The file's entry.
+        by_endpoint: Match on the endpoint and upstream id alone (case and trailing slash aside), so a team
+            reuses its model whatever it is called; otherwise the name must match too.
+
+    An entry without a base URL (an export by someone who may not see the team model's endpoint) is matched by
+    its ``ref`` among ``customs`` alone, so it comes back into the workspace that owns the model and nowhere else.
+
+    Returns:
+        The matching row, or None.
+    """
+    if not spec_model.get("base_url"):
+        ref = str(spec_model.get("ref") or "").strip().lower()
+        return next((dict(row) for row in customs if ref and str(row.get("id")).lower() == ref), None)
+    if by_endpoint:
+        return matching_model(customs, spec_model.get("base_url"), spec_model.get("upstream_model_id"))
     for row in customs:
         if (
             (row.get("display_name") or "") == (spec_model.get("display_name") or "")
@@ -1001,16 +1347,59 @@ def _plan_workflow_removal(conn, user: str, target: dict) -> Optional[dict]:
     }
 
 
-def plan_import(conn, user: str, doc: dict) -> dict:
-    """Resolve every reference without writing; returns a resolution report."""
+def plan_import(conn, user: str, doc: dict, *, workspace: Optional[Workspace] = None) -> dict:
+    """Resolve every reference without writing; returns a resolution report.
+
+    References resolve inside the workspace only: its owner's sources, tools,
+    prompts, custom models and folder tree (the team's principal in a team,
+    the importer in Personal). A team can't take a personal-only tool, and a
+    custom model the team lacks is added only by an Admin, so those read
+    ``unavailable`` with a ``reason`` code.
+
+    Args:
+        conn: Open database connection.
+        user: The person importing.
+        doc: The parsed document.
+        workspace: Where the import lands; Personal when None.
+
+    Returns:
+        dict: ``target``, ``sources`` (folder entries also carry ``key``,
+        ``path``, ``path_key`` and ``target_path``), ``tools``, ``prompt``,
+        ``models``, ``workflow``, ``warnings`` and ``workspace``.
+    """
+    ws = workspace or _personal_workspace(user)
+    owner = ws.owner_id
+    team = ws.is_team
     spec = doc["spec"]
-    target = _resolve_target(conn, user, doc.get("metadata") or {})
+    target = _resolve_target(conn, owner, doc.get("metadata") or {})
 
     sources_repo = SourcesRepository(conn)
     sources = []
+    warnings: list[str] = []
+    finder = _FolderFinder(conn, owner)
+    folder_handles = iter(_folder_handles(spec))
     for src in spec.get("sources") or []:
+        if _is_folder_entry(src):
+            handle = next(folder_handles)
+            name = src.get("name") or ""
+            folder_id = finder.find(src)
+            if folder_id is None:
+                warnings.append(_folder_missing(name))
+            sources.append(
+                {
+                    "name": name,
+                    "type": FOLDER_ENTRY_TYPE,
+                    "status": "matched" if folder_id else "missing",
+                    "target_id": folder_id,
+                    "key": handle.key,
+                    "path": handle.path,
+                    "path_key": handle.path_key,
+                    "target_path": finder.path_names(folder_id) if folder_id else None,
+                }
+            )
+            continue
         name = src.get("name") or ""
-        match = sources_repo.find_by_name(user, name)
+        match = sources_repo.find_by_name(owner, name)
         sources.append(
             {
                 "name": name,
@@ -1020,7 +1409,7 @@ def plan_import(conn, user: str, doc: dict) -> dict:
             }
         )
 
-    user_tools = UserToolsRepository(conn).list_for_user(user)
+    user_tools = UserToolsRepository(conn).list_for_user(owner)
     tools = []
     for index, tool in enumerate(spec.get("tools") or []):
         tool_type = tool.get("type") or ""
@@ -1050,20 +1439,23 @@ def plan_import(conn, user: str, doc: dict) -> dict:
             )
             continue
         available = _tool_instance(tool_type) is not None
-        tools.append(
-            {
-                "key": _tool_key(index),
-                "type": tool_type,
-                "name": custom_name,
-                "status": "create" if available else "unavailable",
-                "requires_secrets": tool.get("requires_secrets") or _live_requires_secrets(tool_type),
-            }
-        )
+        refusal = _team_tool_refusal(tool_type, tool.get("config")) if team and available else None
+        entry = {
+            "key": _tool_key(index),
+            "type": tool_type,
+            "name": custom_name,
+            "status": "create" if available and not refusal else "unavailable",
+            "requires_secrets": [] if refusal else tool.get("requires_secrets") or _live_requires_secrets(tool_type),
+        }
+        if refusal:
+            entry["reason"] = refusal
+            warnings.append(f"Tool '{tool_type}' can only be added in a Personal workspace; it will be left off")
+        tools.append(entry)
 
     prompt_spec = spec.get("prompt")
     if isinstance(prompt_spec, dict):
         existing = PromptsRepository(conn).find(
-            user, prompt_spec.get("name") or "", prompt_spec.get("content") or ""
+            owner, prompt_spec.get("name") or "", prompt_spec.get("content") or ""
         )
         prompt = {"status": "reuse" if existing else "create", "name": prompt_spec.get("name") or ""}
     elif prompt_spec in STORED_PROMPT_PRESETS:
@@ -1071,21 +1463,28 @@ def plan_import(conn, user: str, doc: dict) -> dict:
     else:
         prompt = {"status": "default"}
 
-    customs = UserCustomModelsRepository(conn).list_for_user(user)
+    customs = UserCustomModelsRepository(conn).list_for_user(owner)
+    available_models = (spec.get("model") or {}).get("available") or []
+    refused_models = _unowned_models(conn, owner, [m for m in available_models if isinstance(m, str)])
+    add_refusal = _model_add_refusal(team, ws.role)
     models = []
-    for entry in (spec.get("model") or {}).get("available") or []:
+    for entry in available_models:
         if isinstance(entry, str):
-            models.append(
-                {
-                    "id": entry,
-                    "status": "matched" if validate_model_id(entry, user) else "unavailable",
-                }
-            )
+            usable = entry.lower() not in refused_models and validate_model_id(entry, owner)
+            models.append({"id": entry, "status": "matched" if usable else "unavailable"})
         elif isinstance(entry, dict):
-            match = _find_custom_model(customs, entry)
+            display_name = entry.get("display_name") or ""
+            match = _find_custom_model(customs, entry, by_endpoint=team)
+            if match is None and add_refusal:
+                warnings.append(_model_left_off(display_name, add_refusal))
+                models.append(
+                    {"display_name": display_name, "status": "unavailable", "requires_secrets": [],
+                     "reason": add_refusal}
+                )
+                continue
             models.append(
                 {
-                    "display_name": entry.get("display_name") or "",
+                    "display_name": display_name,
                     "status": "reuse" if match else "create",
                     "requires_secrets": ["api_key"] if not match else [],
                 }
@@ -1097,9 +1496,9 @@ def plan_import(conn, user: str, doc: dict) -> dict:
         if isinstance(wf_spec, dict):
             action = "create"
             if target.get("action") == "update" and target.get("agent_id"):
-                agent_row = AgentsRepository(conn).get(str(target["agent_id"]), user)
+                agent_row = AgentsRepository(conn).get(str(target["agent_id"]), owner)
                 existing_wf = (agent_row or {}).get("workflow_id")
-                if existing_wf and WorkflowsRepository(conn).get(str(existing_wf), user):
+                if existing_wf and WorkflowsRepository(conn).get(str(existing_wf), owner):
                     action = "update"
             workflow_plan = {
                 "nodes": len(wf_spec.get("nodes") or []),
@@ -1111,7 +1510,7 @@ def plan_import(conn, user: str, doc: dict) -> dict:
             # nothing). Apply clears the link and reaps the row when no other
             # agent references it, destroying the graph, its run history and
             # its artifacts — the dry-run has to say so before the user commits.
-            workflow_plan = _plan_workflow_removal(conn, user, target)
+            workflow_plan = _plan_workflow_removal(conn, owner, target)
 
     return {
         "target": target,
@@ -1120,6 +1519,8 @@ def plan_import(conn, user: str, doc: dict) -> dict:
         "prompt": prompt,
         "models": models,
         "workflow": workflow_plan,
+        "warnings": warnings,
+        "workspace": ws.payload(),
     }
 
 
@@ -1128,16 +1529,17 @@ def plan_import(conn, user: str, doc: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _apply_prompt(conn, user: str, spec: dict) -> Optional[str]:
+def _apply_prompt(conn, user: str, spec: dict, created_by: Optional[str] = None) -> Optional[str]:
     """The agent's ``prompt_id`` for the file's prompt.
 
     Args:
         conn: Open database connection.
-        user: The importing user.
+        user: The workspace's owner (the importer, or the team's principal).
         spec: The document's ``spec``.
+        created_by: The person importing, recorded on a prompt made here.
 
     Returns:
-        A preset name (``creative`` / ``strict``), the id of the user's prompt
+        A preset name (``creative`` / ``strict``), the id of the owner's prompt
         with the file's name and content (made when missing), or None for the
         default and for an unknown name.
     """
@@ -1146,14 +1548,16 @@ def _apply_prompt(conn, user: str, spec: dict) -> Optional[str]:
         return prompt_spec
     if not isinstance(prompt_spec, dict):
         return None
-    row = PromptsRepository(conn).find_or_create(
-        user, prompt_spec.get("name") or "Imported prompt", prompt_spec.get("content") or ""
-    )
+    repo = PromptsRepository(conn)
+    name = prompt_spec.get("name") or "Imported prompt"
+    content = prompt_spec.get("content") or ""
+    # A team's prompt names who added it: the trigger fills that in for a person only.
+    row = repo.find(user, name, content) or repo.create(user, name, content, created_by=created_by)
     return str(row["id"])
 
 
 def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list):
-    """Resolve spec sources; returns ``(ids, id_by_name)``.
+    """Resolve spec sources among ``user``'s (the workspace's owner's); returns ``(ids, id_by_name)``.
 
     ``id_by_name`` maps each spec source name to its resolved id (or None) so
     a workflow graph's node configs — which reference sources by name — can
@@ -1165,7 +1569,7 @@ def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list
         mapping = {}
     resolved: list[str] = []
     id_by_name: dict[str, Optional[str]] = {}
-    entries = [src for src in spec.get("sources") or [] if isinstance(src, dict)]
+    entries = [src for src in spec.get("sources") or [] if isinstance(src, dict) and not _is_folder_entry(src)]
     # ``id_by_name`` (and a workflow node's source reference) keys on the name
     # alone, but names aren't unique per user — ``find_by_name`` returns the
     # oldest match, so duplicates collapse onto one source. Same hazard the
@@ -1188,7 +1592,7 @@ def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list
                 resolved.append(str(owned["id"]))
                 id_by_name[name] = str(owned["id"])
             else:
-                warnings.append(f"Source mapping for '{name}' is not yours; ignored")
+                warnings.append(f"Source mapping for '{name}' {_not_here(user)}; ignored")
             continue
         match = repo.find_by_name(user, name)
         if match:
@@ -1203,6 +1607,179 @@ def _apply_sources(conn, user: str, spec: dict, resolution: dict, warnings: list
             seen.add(sid)
             out.append(sid)
     return out, id_by_name
+
+
+def _folder_missing(name: str) -> str:
+    return f"Folder '{name}' not found; left unattached"
+
+
+class _FolderFinder:
+    """The workspace's folder tree, matched to a file's folder entries by path, then by name.
+
+    The tree is its owner's one tree: the importer's own in Personal, the
+    team's in a team. Names compare ignoring case; among several matches the
+    oldest folder wins.
+    """
+
+    def __init__(self, conn, owner: str) -> None:
+        from docsgpt.api.user.folders.service import folder_paths
+        from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+        folders = FoldersRepository(conn).list_for_user(owner)
+        self._paths = folder_paths(folders)
+        # Indexed once, oldest first, so each entry is one lookup and the first folder of a path or name wins.
+        self._by_path: dict[tuple, str] = {}
+        self._by_name: dict[str, str] = {}
+        for folder in folders:
+            fid = str(folder["id"])
+            self._by_path.setdefault(self._key(p["name"] for p in self._paths.get(fid, [])), fid)
+            self._by_name.setdefault(str(folder.get("name") or "").strip().casefold(), fid)
+
+    @staticmethod
+    def _key(names) -> tuple:
+        return tuple(str(n or "").strip().casefold() for n in names)
+
+    def path_names(self, folder_id: str) -> list[str]:
+        """The names from the top-level folder down to ``folder_id`` in this tree."""
+        return [p["name"] or "" for p in self._paths.get(str(folder_id).lower(), [])]
+
+    def find(self, entry: dict) -> Optional[str]:
+        """The id of the tree's folder an entry names, or None."""
+        path = entry.get("path")
+        if isinstance(path, list) and path:
+            match = self._by_path.get(self._key(path))
+            if match is not None:
+                return match
+        name = str(entry.get("name") or "").strip().casefold()
+        if not name:
+            return None
+        return self._by_name.get(name)
+
+
+class _FolderHandle(NamedTuple):
+    """How a client names one folder entry of a file when it picks its folder by hand.
+
+    Attributes:
+        key: The entry's ``key``, or ``folder-N`` by its place among the folder entries.
+        path: The names down to it, when the file carries them.
+        path_key: ``path`` joined with ``/``.
+        name: The folder's name.
+    """
+
+    key: str
+    path: Optional[list[str]]
+    path_key: Optional[str]
+    name: str
+
+    def labels(self) -> list[str]:
+        """The keys a hand-picked folder may come under, most exact first, each once."""
+        return list(dict.fromkeys(label for label in (self.key, self.path_key, self.name) if label))
+
+
+def _folder_handles(spec: dict) -> list[_FolderHandle]:
+    """One :class:`_FolderHandle` per folder entry of ``spec.sources``, in order."""
+    out: list[_FolderHandle] = []
+    for entry in spec.get("sources") or []:
+        if not _is_folder_entry(entry):
+            continue
+        key = entry.get("key")
+        key = key if isinstance(key, str) and key else _folder_key(len(out))
+        raw_path = entry.get("path")
+        path = [str(p or "") for p in raw_path] if isinstance(raw_path, list) and raw_path else None
+        out.append(_FolderHandle(key, path, "/".join(path) if path else None, str(entry.get("name") or "")))
+    return out
+
+
+def _hand_picked(mapping: dict, handles: list[_FolderHandle], warnings: list) -> list[Optional[str]]:
+    """The folder id a client picked for each folder entry, or None.
+
+    ``resolution["folders"]`` is keyed by an entry's ``key``, its full path
+    (``path_key``) or its name. A key that fits more than one entry of the
+    file (two folders of one name, say) can't say which it means, so it is
+    ignored with a warning; the entry falls back to matching.
+
+    Args:
+        mapping: ``resolution["folders"]``.
+        handles: The file's folder entries (:func:`_folder_handles`).
+        warnings: Gets a note per ambiguous key.
+
+    Returns:
+        list: One raw folder id (unchecked) or None per entry.
+    """
+    counts = Counter(label for handle in handles for label in handle.labels())
+    warned: set[str] = set()
+    out: list[Optional[str]] = []
+    for handle in handles:
+        picked = None
+        for label in handle.labels():
+            value = mapping.get(label)
+            if not value or not isinstance(value, str):
+                continue
+            if counts[label] > 1:
+                if label not in warned:
+                    warned.add(label)
+                    warnings.append(f"Folder mapping '{label}' names more than one folder in the file; ignored")
+                continue
+            picked = value
+            break
+        out.append(picked)
+    return out
+
+
+def _apply_folders(conn, user: str, spec: dict, resolution: dict, warnings: list):
+    """Resolve the file's knowledge folders in the workspace's tree; returns ``(ids, id_by_ref)``.
+
+    A ``resolution["folders"]`` entry picks a folder by hand (see
+    :func:`_hand_picked`); it must be a folder of the workspace's tree. An
+    entry left unmatched is dropped with a warning. ``id_by_ref`` maps each
+    entry's ``key`` (``folder-N``, how a workflow node names it) to its
+    folder, and each name to the first folder of that name, for older files
+    whose nodes name folders.
+
+    Args:
+        conn: Open database connection.
+        user: The workspace's owner (the importer, or the team's principal).
+        spec: The document's ``spec``.
+        resolution: The client's picks.
+        warnings: Gets a note per folder left off.
+    """
+    from docsgpt.api.user.folder_knowledge import owned_source_folders
+
+    mapping = resolution.get("folders")
+    if not isinstance(mapping, dict):
+        mapping = {}
+    finder = _FolderFinder(conn, user)
+    entries = [entry for entry in spec.get("sources") or [] if _is_folder_entry(entry)]
+    picks = _hand_picked(mapping, _folder_handles(spec), warnings)
+    resolved: list[str] = []
+    id_by_name: dict[str, Optional[str]] = {}
+    id_by_key: dict[str, Optional[str]] = {}
+    for entry, picked in zip(entries, picks):
+        name = entry.get("name") or ""
+        id_by_name.setdefault(name, None)
+        key = entry.get("key")
+        key = key if isinstance(key, str) and key else None
+        if key:
+            id_by_key[key] = None
+        folder_id = None
+        if picked:
+            owned = owned_source_folders(conn, [picked], user)
+            if owned:
+                folder_id = owned[0]
+            else:
+                warnings.append(f"Folder mapping for '{name}' {_not_here(user)}; ignored")
+        if folder_id is None:
+            folder_id = finder.find(entry)
+        if folder_id is None:
+            warnings.append(_folder_missing(name))
+            continue
+        folder_id = folder_id.lower()
+        id_by_name[name] = id_by_name[name] or folder_id
+        if key:
+            id_by_key[key] = folder_id
+        if folder_id not in resolved:
+            resolved.append(folder_id)
+    return resolved, {**id_by_name, **id_by_key}
 
 
 def _validate_tool_urls(tool_type: str, config: dict) -> Optional[str]:
@@ -1224,8 +1801,28 @@ def _validate_tool_urls(tool_type: str, config: dict) -> Optional[str]:
     return None
 
 
-def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings: list) -> Optional[str]:
-    from docsgpt.api.user.tools.routes import _encrypt_secret_fields, transform_actions
+def _create_tool_from_spec(
+    conn, user: str, tool: dict, secrets: dict, warnings: list, created_by: Optional[str] = None
+) -> Optional[str]:
+    """Create the file's tool for the workspace's owner, or skip it with a warning.
+
+    In a team the tool is the team's: its secrets are sealed to the team's
+    principal (every member's run opens them as the team), it names the
+    importer as its creator, and it is in the importer's chats by their own
+    preference, not by the row's ``status``. A kind a team can't hold is skipped.
+
+    Args:
+        conn: Open database connection.
+        user: The workspace's owner (the importer, or the team's principal).
+        tool: The file's tool entry.
+        secrets: The client's values for its secret fields.
+        warnings: Gets a note when it is skipped.
+        created_by: The person importing.
+
+    Returns:
+        The new tool's id, or None.
+    """
+    from docsgpt.api.user.tools.routes import _encrypt_secret_fields, _seal_api_tool_secrets, transform_actions
 
     tool_type = tool.get("type") or ""
     inst = _tool_instance(tool_type)
@@ -1236,6 +1833,10 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
     # An imported tool starts with no note that a connection was removed.
     config = carry_removed_connection(dict(tool.get("config") or {}), None)
     config.update(secrets or {})
+    team = is_principal_id(user)
+    if team and _team_tool_refusal(tool_type, config):
+        warnings.append(f"Tool '{tool_type}' can only be added in a Personal workspace; skipped")
+        return None
     if tool_type == "api_tool":
         label = tool.get("display_name") or tool.get("name") or tool_type
         config["actions"] = _sanitize_api_tool_actions(
@@ -1259,6 +1860,10 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
         return None
     provided_secrets = [k for k in _secret_field_names(config_requirements) if config.get(k)]
     storage_config = _encrypt_secret_fields(config, config_requirements, user)
+    if tool_type == "api_tool":
+        # Header and query values a file carries are sealed under the owner like
+        # the create route's, not stored as plaintext in the actions.
+        storage_config = _seal_api_tool_secrets(storage_config, {}, user)
     if provided_secrets and not storage_config.get("encrypted_credentials"):
         warnings.append(f"Tool '{tool_type}' secret encryption failed; not created")
         return None
@@ -1273,14 +1878,21 @@ def _create_tool_from_spec(conn, user: str, tool: dict, secrets: dict, warnings:
         description=tool.get("description") or "",
         config_requirements=config_requirements,
         actions=actions,
-        status=True,
+        status=not team,
+        created_by=created_by,
     )
+    if team and created_by:
+        UserToolPreferencesRepository(conn).set_in_chat(created_by, str(created["id"]), True)
     return str(created["id"])
 
 
-def _apply_tools(conn, user: str, spec: dict, resolution: dict, warnings: list):
-    """Resolve spec tools; returns ``(ids, id_by_key)``.
+def _apply_tools(
+    conn, user: str, spec: dict, resolution: dict, warnings: list, created_by: Optional[str] = None
+):
+    """Resolve spec tools among ``user``'s (the workspace's owner's); returns ``(ids, id_by_key)``.
 
+    A tool the file needs and the workspace lacks is created for its owner,
+    naming ``created_by`` (see :func:`_create_tool_from_spec`).
     ``id_by_key`` maps each spec entry's ``tool-N`` key to its resolved id
     (or None when skipped/unavailable) so a workflow graph's node configs —
     which reference tools by those keys — can be rewritten from the same
@@ -1324,7 +1936,7 @@ def _apply_tools(conn, user: str, spec: dict, resolution: dict, warnings: list):
             if is_synthesized_tool_id(tid) or repo.get_any(tid, user):
                 _resolve(key, tid)
             else:
-                warnings.append(f"Tool reuse id '{tid}' is not yours; ignored")
+                warnings.append(f"Tool reuse id '{tid}' {_not_here(user)}; ignored")
                 _resolve(key, None)
             continue
 
@@ -1334,7 +1946,9 @@ def _apply_tools(conn, user: str, spec: dict, resolution: dict, warnings: list):
             _resolve(key, str(match["id"]))
             continue
 
-        created_id = _create_tool_from_spec(conn, user, tool, decision.get("secrets") or {}, warnings)
+        created_id = _create_tool_from_spec(
+            conn, user, tool, decision.get("secrets") or {}, warnings, created_by=created_by
+        )
         _resolve(key, created_id)
         if created_id:
             # Record so a later identical spec entry reuses rather than re-creates.
@@ -1342,9 +1956,37 @@ def _apply_tools(conn, user: str, spec: dict, resolution: dict, warnings: list):
     return out, id_by_key
 
 
-def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list):
+def _apply_models(
+    conn,
+    user: str,
+    spec: dict,
+    resolution: dict,
+    warnings: list,
+    *,
+    created_by: Optional[str] = None,
+    add_refusal: Optional[str] = None,
+):
+    """Resolve the file's models for ``user`` (the workspace's owner); returns ``(models, default, name_to_id)``.
+
+    A model id that names a custom model ``user`` doesn't own is dropped. In a team a described custom model
+    reuses the team's model with the same endpoint, whatever its name; without one it is added for the team
+    (``created_by`` recorded and audited) unless ``add_refusal`` says the importer may not.
+
+    Args:
+        conn: Open connection.
+        user: The workspace's owner: the importer, or the team's principal.
+        spec: The file's ``spec``.
+        resolution: The client's picks (``models``: display name -> ``{api_key}``).
+        warnings: Collects what was left off.
+        created_by: The person importing, recorded on a model added for a team.
+        add_refusal: Why no custom model may be added (from :func:`_model_add_refusal`), or None.
+
+    Returns:
+        ``(models or None, default model id or None, display name -> id)``.
+    """
     model_spec = spec.get("model") or {}
     repo = UserCustomModelsRepository(conn)
+    team = is_principal_id(user)
     customs = repo.list_for_user(user)
     decisions = resolution.get("models")
     if not isinstance(decisions, dict):
@@ -1367,9 +2009,12 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
             "references to it resolve to the last one in the file"
         )
 
+    refused = _unowned_models(conn, user, [e for e in available if isinstance(e, str)])
     for entry in available:
         if isinstance(entry, str):
-            if validate_model_id(entry, user):
+            if entry.lower() in refused:
+                warnings.append(f"Model '{entry}' is a custom model of another workspace; skipped")
+            elif validate_model_id(entry, user):
                 models.append(entry)
                 name_to_id[entry] = entry
             else:
@@ -1378,10 +2023,13 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
         if not isinstance(entry, dict):
             continue
         display_name = entry.get("display_name") or ""
-        match = _find_custom_model(customs, entry)
+        match = _find_custom_model(customs, entry, by_endpoint=team)
         if match:
             models.append(str(match["id"]))
             name_to_id[display_name] = str(match["id"])
+            continue
+        if add_refusal:
+            warnings.append(_model_left_off(display_name, add_refusal))
             continue
         decision = decisions.get(display_name)
         api_key = decision.get("api_key") if isinstance(decision, dict) else None
@@ -1401,10 +2049,22 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
             base_url,
             api_key,
             capabilities=entry.get("capabilities") or {},
+            created_by=created_by if team else None,
         )
         if not created.get("api_key_encrypted"):
             warnings.append(f"Custom model '{display_name}' key encryption failed; skipped")
             continue
+        if team:
+            # Lazy: the models routes import much of the API. A team's model added here is audited like one
+            # added on the Custom models page.
+            from docsgpt.api.user.models.routes import _audit_team_model
+
+            _audit_team_model(
+                conn, created_by, "team.model_added", created, display_name=created["display_name"],
+                upstream_model_id=created["upstream_model_id"], copied=False,
+            )
+        # A later entry for the same model reuses this one.
+        customs.append(created)
         models.append(str(created["id"]))
         name_to_id[display_name] = str(created["id"])
 
@@ -1425,6 +2085,9 @@ def _apply_models(conn, user: str, spec: dict, resolution: dict, warnings: list)
                 default_id = str(owned["id"])
             else:
                 warnings.append(f"Default model '{raw_default}' not resolved")
+    if default_id and _unowned_models(conn, user, [default_id]):
+        warnings.append(f"Default model '{raw_default}' is a custom model of another workspace; left off")
+        default_id = ""
     return (models or None), (default_id or None), name_to_id
 
 
@@ -1445,14 +2108,17 @@ def _rewrite_node_refs(
     source_ids_by_name: dict,
     model_ids_by_name: dict,
     warnings: list,
+    folder_ids_by_name: Optional[dict] = None,
 ) -> None:
     """Resolve an agent node's portable references back to the importer's ids.
 
-    Export writes ``tool-N`` keys / source names / model display names, and a
+    Export writes ``tool-N`` keys / source names / ``folder-N`` keys (an
+    older file names its folders) / model display names, and a
     hand-edited file may also carry raw ids — those are accepted only when
-    they are a builtin synthetic id or ownership-check against the importing
-    user (IDOR guard). Anything unresolvable is dropped with a warning so the
-    graph imports degraded rather than pointing at foreign resources.
+    they are a builtin synthetic id or ownership-check against ``user``, the
+    workspace's owner (IDOR guard). Anything unresolvable is dropped with a
+    warning so the graph imports degraded rather than pointing at foreign
+    resources. A node keeps only a custom model the workspace's owner owns.
     """
     tools_repo = UserToolsRepository(conn)
     sources_repo = SourcesRepository(conn)
@@ -1491,10 +2157,33 @@ def _rewrite_node_refs(
     # dedupe rather than storing the same id twice on the node.
     cfg["sources"] = list(dict.fromkeys(resolved_sources))
 
+    if "folders" in cfg:
+        from docsgpt.api.user.folder_knowledge import owned_source_folders
+
+        folder_ids_by_name = folder_ids_by_name or {}
+        raw_folders = cfg.get("folders") or []
+        resolved_folders = []
+        for ref in raw_folders if isinstance(raw_folders, list) else [raw_folders]:
+            ref = str(ref)
+            if ref in folder_ids_by_name:
+                fid = folder_ids_by_name[ref]
+            else:
+                # A raw id must be one of the importer's own folders (only a folder's owner attaches it).
+                owned = owned_source_folders(conn, [ref], user)
+                fid = owned[0] if owned else None
+            if fid:
+                resolved_folders.append(fid)
+            else:
+                warnings.append(f"Workflow node folder '{ref}' not resolved; removed")
+        cfg["folders"] = list(dict.fromkeys(resolved_folders))
+
     raw_model = cfg.get("model_id")
     if raw_model:
         raw_model = str(raw_model)
-        if raw_model in model_ids_by_name:
+        if _unowned_models(conn, user, [raw_model]):
+            warnings.append(f"Workflow node model '{raw_model}' is a custom model of another workspace; removed")
+            cfg["model_id"] = None
+        elif raw_model in model_ids_by_name:
             cfg["model_id"] = model_ids_by_name[raw_model]
         elif validate_model_id(raw_model, user):
             cfg["model_id"] = raw_model
@@ -1512,8 +2201,10 @@ def _apply_workflow(
     source_ids_by_name: dict,
     model_ids_by_name: dict,
     warnings: list,
+    folder_ids_by_name: Optional[dict] = None,
+    created_by: Optional[str] = None,
 ):
-    """Write the imported graph; returns the workflow id, None, or the sentinel.
+    """Write the imported graph for ``user`` (the workspace's owner); returns the workflow id, None, or the sentinel.
 
     The graph goes through the same validation gate as an agent save with an
     inline graph, so a hand-edited YAML can't install a graph the write path
@@ -1524,7 +2215,9 @@ def _apply_workflow(
     runs outside its builder (``runs_outside_builder``). When the matched
     agent already owns a workflow the graph lands as a new version of it,
     read holding its row lock (mirroring ``PUT /api/workflows/<id>``);
-    otherwise a new workflow is created.
+    otherwise a new workflow is created, naming ``created_by``. A node that
+    would still name an item from outside the workspace refuses the whole
+    import (:class:`ImportWorkspaceMismatch`) before anything is written.
     """
     if "workflow" not in spec:
         return _WORKFLOW_UNCHANGED
@@ -1533,6 +2226,8 @@ def _apply_workflow(
         return None
     from docsgpt.api.user.agents.graph_checks import runs_outside_builder, workflow_runs_elsewhere
     from docsgpt.api.user.workflows.routes import (
+        _node_folder_refs,
+        _node_refs,
         _write_graph,
         get_workflow_graph_version,
         normalize_agent_node_json_schemas,
@@ -1555,6 +2250,7 @@ def _apply_workflow(
                 source_ids_by_name,
                 model_ids_by_name,
                 warnings,
+                folder_ids_by_name,
             )
             _strip_shadowed_ref_keys(config)
         position = node.get("position")
@@ -1603,6 +2299,10 @@ def _apply_workflow(
     if errors:
         raise AgentImportError("Workflow validation failed: " + "; ".join(errors[:5]))
     nodes_data = normalize_agent_node_json_schemas(nodes_data)
+    _refuse_outside(
+        conn, user, created_by or user,
+        _node_refs(nodes_data) + [("folder", f) for f in _node_folder_refs(nodes_data)],
+    )
 
     name = wf_spec.get("name") or spec.get("name") or "Imported workflow"
     description = wf_spec.get("description") or ""
@@ -1631,9 +2331,83 @@ def _apply_workflow(
         WorkflowEdgesRepository(conn).delete_other_versions(pg_workflow_id, next_version)
         return pg_workflow_id
 
-    created = wf_repo.create(user, name, description=description, retry_defaults=retry_defaults)
+    created = wf_repo.create(
+        user, name, description=description, retry_defaults=retry_defaults, created_by=created_by
+    )
     _write_graph(conn, str(created["id"]), 1, nodes_data, edges_data)
     return str(created["id"])
+
+
+def _items_before_import(conn, owner: str, target: dict) -> Optional[tuple[dict, dict, set]]:
+    """What the agent an import updates uses before it: another team's items and tools on a team's account.
+
+    Takes ``lock_owner_items`` for the owner before reading the agent, so a publish, share or move made at the
+    same time is either seen by :func:`_refuse_import_over` or sees the import. It is taken before the workflow row
+    lock the graph write takes, which a move updates too. Read before the graph is written, since the import
+    writes it into the agent's own workflow.
+
+    Args:
+        conn: Open database connection.
+        owner: The workspace's owner.
+        target: From :func:`_resolve_target`.
+
+    Returns:
+        ``(agent row, its team refs, ids of its tools on a team's account)``, or None for a new agent.
+    """
+    if target.get("action") != "update" or not target.get("agent_id"):
+        return None
+    # Lock, then read: a publish or share holding the lock commits first, and the checks see its key or share.
+    lock_owner_items(conn, owner)
+    agent = AgentsRepository(conn).get(str(target["agent_id"]), owner)
+    if agent is None:
+        return None
+    from docsgpt.api.user.agents.graph_checks import WorkflowReads, agent_team_connection_tools, agent_team_refs
+
+    reads = WorkflowReads(conn)
+    refs = agent_team_refs(conn, agent, reads=reads)
+    return agent, refs, {t["id"] for t in agent_team_connection_tools(conn, agent, reads=reads)}
+
+
+def _refuse_import_over(conn, before: Optional[tuple[dict, dict, set]], fields: dict, actor: str) -> None:
+    """Raise :class:`ImportRefused` when an import over an agent adds what its save would refuse.
+
+    The agent save's two rules for an agent that reaches outside its team: no tool on the team's account is
+    added to one with a key, public link, webhook or a share with another team, and no team's item is added to
+    one shared with a team or person who can't reach it. Items already on the agent stay.
+
+    Args:
+        conn: Open database connection, holding ``lock_owner_items`` (see :func:`_items_before_import`).
+        before: From :func:`_items_before_import`; None for a new agent, which reaches no one yet.
+        fields: The columns the import writes; the graph it wrote is read from the agent's workflow.
+        actor: The person importing.
+
+    Raises:
+        ImportRefused: With the save's 409 body.
+    """
+    if before is None:
+        return
+    from docsgpt.api.user.agents.graph_checks import (
+        WorkflowReads,
+        added_team_refs,
+        agent_team_connection_tools,
+        agent_team_refs,
+        team_connection_added_refusal,
+        team_items_shared_outside_refusal,
+    )
+
+    agent, had_refs, had_tools = before
+    after = {**agent, **fields}
+    # Read once the graph is written, so not shared with the reads made before it.
+    reads = WorkflowReads(conn)
+    added = added_team_refs(had_refs, agent_team_refs(conn, after, reads=reads))
+    refusal = team_items_shared_outside_refusal(conn, [agent], added, actor)
+    if refusal is None:
+        added_tools = [t for t in agent_team_connection_tools(conn, after, reads=reads) if t["id"] not in had_tools]
+        refusal = team_connection_added_refusal(conn, [agent], added_tools)
+    if refusal is not None:
+        body, status = refusal
+        logger.info("Agent import refused: %s (user=%s, agent=%s)", body.get("error"), actor, agent.get("id"))
+        raise ImportRefused(body, status)
 
 
 def _prune_agent_sponsors(agents_repo: AgentsRepository, agent_id: str, user: str) -> None:
@@ -1655,8 +2429,10 @@ def _prune_agent_sponsors(agents_repo: AgentsRepository, agent_id: str, user: st
         agents_repo.update(agent_id, user, {"resource_sponsors": pruned})
 
 
-def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) -> dict:
-    """Create or update an agent from a parsed YAML doc.
+def apply_import(
+    conn, user: str, doc: dict, resolution: Optional[dict] = None, *, workspace: Optional[Workspace] = None
+) -> dict:
+    """Create or update an agent from a parsed YAML doc, in ``workspace``.
 
     A newly created agent lands as a draft. An update to an existing agent
     (matched by id or slug) preserves that agent's current status, so
@@ -1667,20 +2443,56 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     when that clears a value (e.g. removing all models, dropping ``json_schema``,
     or switching ``prompt`` back to default), so re-importing an edited file is
     a true sync rather than an additive merge.
+
+    Everything resolves and lands in the workspace: in a team the agent and
+    any prompt, tool or workflow made for it are owned by the team's
+    principal with ``user`` as creator, and only the team's own items are
+    matched; in Personal nothing a team owns is. The caller has already
+    checked the importer may create there (Editor in a team). A new agent is
+    a draft with no key, so an import never publishes a team's agent.
+
+    Args:
+        conn: Open database connection.
+        user: The person importing.
+        doc: The parsed document.
+        resolution: The client's picks (sources, folders, tools, models).
+        workspace: Where the import lands; Personal when None.
+
+    Returns:
+        dict: ``agent_id``, ``action``, ``status``, ``agent_type``, ``slug``,
+        ``warnings`` and ``workspace``.
+
+    Raises:
+        AgentImportError: The document fails a write-path check.
+        ImportWorkspaceMismatch: It would bind an item from another workspace.
+        ImportRefused: An update adds what the agent's save would refuse for an agent reaching outside its team.
     """
     if not isinstance(resolution, dict):
         resolution = {}
+    ws = workspace or _personal_workspace(user)
+    owner, created_by = ws.owner_for_create(user)
     spec = doc["spec"]
     metadata = doc.get("metadata") or {}
     warnings: list[str] = []
 
-    target = _resolve_target(conn, user, metadata)
+    target = _resolve_target(conn, owner, metadata)
+    before = _items_before_import(conn, owner, target)
 
-    prompt_id = _apply_prompt(conn, user, spec)
-    source_ids, source_ids_by_name = _apply_sources(conn, user, spec, resolution, warnings)
-    tool_ids, tool_ids_by_key = _apply_tools(conn, user, spec, resolution, warnings)
+    prompt_id = _apply_prompt(conn, owner, spec, created_by)
+    source_ids, source_ids_by_name = _apply_sources(conn, owner, spec, resolution, warnings)
+    folder_ids, folder_ids_by_name = _apply_folders(conn, owner, spec, resolution, warnings)
+    tool_ids, tool_ids_by_key = _apply_tools(conn, owner, spec, resolution, warnings, created_by)
     models, default_model_id, model_ids_by_name = _apply_models(
-        conn, user, spec, resolution, warnings
+        conn, owner, spec, resolution, warnings,
+        created_by=created_by, add_refusal=_model_add_refusal(ws.is_team, ws.role),
+    )
+    # The resolvers look only inside the workspace; this would catch one that didn't.
+    _refuse_outside(
+        conn, owner, user,
+        [("source", sid) for sid in source_ids]
+        + ([("prompt", prompt_id)] if prompt_id else [])
+        + [("tool", tid) for tid in tool_ids]
+        + [("folder", fid) for fid in folder_ids],
     )
 
     is_workflow = (spec.get("agent_type") or "classic") == "workflow"
@@ -1693,7 +2505,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     # update-by-id whose file omits the slug and renames the agent rewrites the
     # slug to follow the new name (excluding the row's own slug from collision
     # checks). Intended — the slug tracks the file.
-    slug = _unique_slug(agents_repo, user, metadata.get("slug") or spec.get("name"), exclude_id=exclude_id)
+    slug = _unique_slug(agents_repo, owner, metadata.get("slug") or spec.get("name"), exclude_id=exclude_id)
 
     try:
         chunks_value = int(spec["chunks"]) if spec.get("chunks") is not None else 6
@@ -1715,11 +2527,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "models": models,
         "default_model_id": default_model_id,
         "extra_source_ids": source_ids,
+        "knowledge_folder_ids": folder_ids,
         "limited_token_mode": bool(_limit(spec, "limited_token_mode")),
         "limited_request_mode": bool(_limit(spec, "limited_request_mode")),
         "allow_system_prompt_override": bool(spec.get("allow_system_prompt_override")),
         "config": _import_config(
-            spec, (agents_repo.get(exclude_id, user) or {}).get("config") if is_update else None, warnings,
+            spec, (agents_repo.get(exclude_id, owner) or {}).get("config") if is_update else None, warnings,
         ),
         "slug": slug,
     }
@@ -1735,23 +2548,26 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 "models": None,
                 "default_model_id": None,
                 "extra_source_ids": [],
+                "knowledge_folder_ids": [],
             }
         )
         prior_workflow_id = None
         if is_update:
             prior_workflow_id = (
-                agents_repo.get(str(target["agent_id"]), user) or {}
+                agents_repo.get(str(target["agent_id"]), owner) or {}
             ).get("workflow_id")
         published = (target.get("status") or "") == "published"
         workflow_result = _apply_workflow(
             conn,
-            user,
+            owner,
             spec,
             target,
             tool_ids_by_key,
             source_ids_by_name,
             model_ids_by_name,
             warnings,
+            folder_ids_by_name,
+            created_by=created_by,
         )
         # A published workflow agent with no graph can't run — the create and
         # update routes both reject that state, so import must not install it
@@ -1793,14 +2609,15 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         # any active users are unaffected) instead of reverting it to draft.
         # Only a brand-new agent (the create path below) starts as a draft.
         fields = {**authoritative, **optional, "name": spec.get("name")}
-        if agents_repo.update(str(target["agent_id"]), user, fields):
-            _prune_agent_sponsors(agents_repo, str(target["agent_id"]), user)
+        _refuse_import_over(conn, before, fields, user)
+        if agents_repo.update(str(target["agent_id"]), owner, fields):
+            _prune_agent_sponsors(agents_repo, str(target["agent_id"]), owner)
             if orphaned_workflow_id and not agents_repo.count_by_workflow(
-                orphaned_workflow_id, user
+                orphaned_workflow_id, owner
             ):
                 # Nothing references it anymore; delete (cascades nodes/edges
                 # and reaps run artifacts) rather than stranding the row.
-                WorkflowsRepository(conn).delete(orphaned_workflow_id, user)
+                WorkflowsRepository(conn).delete(orphaned_workflow_id, owner)
                 # Destructive and irreversible — the graph, its run history and
                 # its artifacts (rows and stored bytes) all go. Say so.
                 warnings.append(
@@ -1814,6 +2631,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
                 "agent_type": authoritative["agent_type"],
                 "slug": slug,
                 "warnings": warnings,
+                "workspace": ws.payload(),
             }
         # Row vanished between resolve and write — fall through to create.
 
@@ -1824,8 +2642,10 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
     if not _config_valid(file_config):
         file_config = authoritative["config"]
     created_config = _import_config({"config": agent_defaults.seed(conn, file_config)}, None, [])
+    # A team's agent names who added it: the trigger fills that in for a person only.
     row = agents_repo.create(
-        user, spec.get("name"), "draft", **{**authoritative, **optional, "config": created_config}
+        owner, spec.get("name"), "draft",
+        **{**authoritative, **optional, "config": created_config, "created_by": created_by},
     )
     return {
         "agent_id": str(row["id"]),
@@ -1834,6 +2654,7 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
         "agent_type": authoritative["agent_type"],
         "slug": slug,
         "warnings": warnings,
+        "workspace": ws.payload(),
     }
 
 
@@ -1844,6 +2665,12 @@ def apply_import(conn, user: str, doc: dict, resolution: Optional[dict] = None) 
 agents_portability_ns = Namespace(
     "agents", description="Agent import/export operations", path="/api"
 )
+
+
+def _describes_custom_models(doc: dict) -> bool:
+    """Whether the file describes any custom model (one an import may add)."""
+    available = ((doc.get("spec") or {}).get("model") or {}).get("available") or []
+    return any(isinstance(entry, dict) for entry in available)
 
 
 def _read_import_payload(req):
@@ -1878,13 +2705,14 @@ def _read_import_payload(req):
     return raw.decode("utf-8", "replace"), {}
 
 
-def _restricted_token_denial(conn, user: str, doc: dict) -> Optional[str]:
+def _restricted_token_denial(conn, user: str, doc: dict, owner: Optional[str] = None) -> Optional[str]:
     """Why a resource-restricted personal access token may not import ``doc``, if it may not.
 
     An import resolves sources, prompts and tools by name and may create them,
     so a token restricted on any of those families cannot be held to its
     allowlist here. A token restricted to specific agents may update exactly
-    those; it can never create one.
+    those; it can never create one. ``owner`` is the workspace's owner, whose
+    agent the file would update (``user`` when None).
     """
     for family in ("sources", "prompts", "tools", "workflows"):
         if allowed_ids(request, family) is not None:
@@ -1892,7 +2720,7 @@ def _restricted_token_denial(conn, user: str, doc: dict) -> Optional[str]:
     allowed_agents = allowed_ids(request, "agents")
     if allowed_agents is None:
         return None
-    target = _resolve_target(conn, user, doc.get("metadata") or {})
+    target = _resolve_target(conn, owner or user, doc.get("metadata") or {})
     if target["action"] != "update" or target["agent_id"] not in allowed_agents:
         return "This token is restricted to specific agents and may only update those"
     return None
@@ -1902,6 +2730,41 @@ def _token_denied_response(reason: str):
     return make_response(
         jsonify({"success": False, "error": "resource_not_allowed", "message": reason}), 403
     )
+
+
+def _export_refusal(conn, agent_id: str, user: str, denied: AccessDenied):
+    """The response for an export :func:`require` refused.
+
+    A team member whose role exports under an open policy is refused only
+    because the team is locked (an export takes the agent outside the
+    team), and is told so with ``team_locked``.
+
+    Args:
+        conn: Open connection.
+        agent_id: The agent asked for.
+        user: The caller.
+        denied: What :func:`require` raised.
+
+    Returns:
+        A Flask response with ``denied``'s status.
+    """
+    if denied.status == 403:
+        ra = resolve(conn, "agent", agent_id, user)
+        if (
+            ra is not None
+            and ra.team_role is not None
+            and role_at_least(ra.team_role, workspace_minimum("agent", "export", policy=POLICY_EDITORS) or "owner")
+            and team_policy(conn, ra.team_id) == POLICY_LOCKED
+        ):
+            return make_response(
+                jsonify({
+                    "success": False,
+                    "error": CODE_TEAM_LOCKED,
+                    "message": "This team is locked: its agents can't be exported.",
+                }),
+                403,
+            )
+    return make_response(jsonify({"success": False, "message": denied.message}), denied.status)
 
 
 @agents_portability_ns.route("/export_agent")
@@ -1919,20 +2782,29 @@ class ExportAgent(Resource):
             try:
                 ra = require(conn, "agent", agent_id, user, "export")
             except AccessDenied as denied:
-                return make_response(
-                    jsonify({"success": False, "message": denied.message}), denied.status
-                )
+                return _export_refusal(conn, agent_id, user, denied)
             agent = repo.get_by_id(ra.resource_id)
             if not agent:
                 return make_response(
                     jsonify({"success": False, "message": "Agent not found"}), 404
                 )
             # Serialized as the owner: the agent's prompt, sources, tools and
-            # workflow are the owner's (secrets are never exported).
+            # workflow are the owner's (secrets are never exported). A folder
+            # carries its path only from a tree the exporter sees whole: the
+            # team's one tree for a team agent, else their own; anyone else's
+            # goes by its name alone.
             owner_id = ra.owner_id
+            tree_owner = owner_id if ra.is_team_item else user
+            # A team's model's endpoint is for its Admins only (they manage the model).
+            owning_team = team_of_principal(owner_id)
+            model_endpoints = owning_team is None or role_at_least(
+                team_role_for(conn, user, owning_team), MODEL_ACTIONS["manage"]
+            )
             agent["slug"] = ensure_agent_slug(conn, agent, owner_id)
             try:
-                export = serialize_agent(conn, agent, owner_id)
+                export = serialize_agent(
+                    conn, agent, owner_id, exporter=tree_owner, model_endpoints=model_endpoints
+                )
             except AgentExportError as exc:
                 return make_response(
                     jsonify({"success": False, "message": str(exc)}), 400
@@ -1945,9 +2817,27 @@ class ExportAgent(Resource):
         return response
 
 
+def _import_workspace(conn) -> Workspace:
+    """The workspace an import lands in: the request's, where the caller must be an Editor or above.
+
+    Raises:
+        WorkspaceError: 404 for a team the caller isn't in, 403 for a Viewer.
+    """
+    workspace = current_workspace(conn)
+    require_workspace_role(workspace, "editor")
+    return workspace
+
+
 @agents_portability_ns.route("/import_agent/plan")
 class ImportAgentPlan(Resource):
-    @api.doc(description="Dry-run an agent YAML import and return the resolution plan")
+    @api.doc(
+        description=(
+            "Dry-run an agent YAML import into the request's workspace (X-DocsGPT-Workspace) and return "
+            "the resolution plan. A team needs the editor role. Knowledge-folder entries carry key, path, "
+            "path_key and target_path; a team's plan marks a custom model or a personal-only tool "
+            "unavailable with a reason"
+        )
+    )
     def post(self):
         if not (decoded_token := request.decoded_token):
             return make_response(jsonify({"success": False}), 401)
@@ -1959,9 +2849,13 @@ class ImportAgentPlan(Resource):
             return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         try:
             with db_readonly() as conn:
-                if reason := _restricted_token_denial(conn, user, doc):
+                try:
+                    workspace = _import_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
+                if reason := _restricted_token_denial(conn, user, doc, workspace.owner_id):
                     return _token_denied_response(reason)
-                plan = plan_import(conn, user, doc)
+                plan = plan_import(conn, user, doc, workspace=workspace)
         except Exception:
             current_app.logger.error("Agent import plan failed", exc_info=True)
             return make_response(
@@ -1972,7 +2866,14 @@ class ImportAgentPlan(Resource):
 
 @agents_portability_ns.route("/import_agent")
 class ImportAgent(Resource):
-    @api.doc(description="Import an agent from YAML: create a draft, or update the agent matched by id or slug")
+    @api.doc(
+        description=(
+            "Import an agent from YAML into the request's workspace (X-DocsGPT-Workspace): create a draft, "
+            "or update the workspace's agent matched by id or slug. A team needs the editor role; the "
+            "agent and what the import creates are the team's. resolution.folders is keyed by a folder "
+            "entry's key, its path_key, or its name when no other folder entry shares it"
+        )
+    )
     def post(self):
         if not (decoded_token := request.decoded_token):
             return make_response(jsonify({"success": False}), 401)
@@ -1984,9 +2885,19 @@ class ImportAgent(Resource):
             return make_response(jsonify({"success": False, "message": str(exc)}), 400)
         try:
             with db_session() as conn:
-                if reason := _restricted_token_denial(conn, user, doc):
+                try:
+                    workspace = _import_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
+                if reason := _restricted_token_denial(conn, user, doc, workspace.owner_id):
                     return _token_denied_response(reason)
-                result = apply_import(conn, user, doc, resolution)
+                result = apply_import(conn, user, doc, resolution, workspace=workspace)
+        except ImportWorkspaceMismatch as exc:
+            # Raised before the transaction commits, so nothing of the import stays.
+            return make_response(jsonify(exc.body), 400)
+        except ImportRefused as exc:
+            # Also raised before the commit.
+            return make_response(jsonify(exc.body), exc.status)
         except AgentImportError as exc:
             # Apply-time rejection of the user's document (e.g. the workflow
             # graph failing the API's validation gate) — a client error, with
@@ -1997,4 +2908,7 @@ class ImportAgent(Resource):
             return make_response(
                 jsonify({"success": False, "message": "Import failed"}), 500
             )
+        if workspace.is_team and _describes_custom_models(doc):
+            # It may have added a team model; the registry rereads the team's models once it is committed.
+            ModelRegistry.invalidate_user(workspace.owner_id)
         return make_response(jsonify({"success": True, **result}), 200)

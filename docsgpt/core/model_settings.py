@@ -31,6 +31,10 @@ class ModelCapabilities:
     supports_streaming: bool = True
     supported_attachment_types: List[str] = field(default_factory=list)
     context_window: int = 128000
+    # Most tokens one call may generate, reasoning included where the provider
+    # counts it. Sent in each provider's own parameter; a lower per-request
+    # limit wins. None leaves the provider's default.
+    max_output_tokens: Optional[int] = None
     # USD per 1M tokens; consumed by ``docsgpt/pricing.py``. ``None`` means
     # "not declared": the call is recorded at $0 unless
     # ``QUOTA_UNPRICED_RATE_PER_MILLION`` is set.
@@ -46,6 +50,7 @@ class ModelCapabilities:
     # Responses path; ignored by providers that don't accept it.
     first_token_timeout: Optional[float] = None
     stall_timeout: Optional[float] = None
+    answer_timeout: Optional[float] = None
     reasoning_effort: Optional[str] = None
     # Which OpenAI wire protocol the model speaks: "chat_completions"
     # (the default) or "responses" (the /v1/responses endpoint). Set per
@@ -77,7 +82,8 @@ class AvailableModel:
     # Sent in the API call's ``model`` field; falls back to ``self.id``
     # for built-ins where id IS the upstream name.
     upstream_model_id: Optional[str] = None
-    # "builtin" for catalog YAMLs, "user" for BYOM records.
+    # "builtin" for catalog YAMLs, "user" for a person's BYOM records,
+    # "team" for a team's (owned by its principal).
     source: str = "builtin"
     # Decrypted/resolved at registry-merge time. Never serialized.
     api_key: Optional[str] = field(default=None, repr=False, compare=False)

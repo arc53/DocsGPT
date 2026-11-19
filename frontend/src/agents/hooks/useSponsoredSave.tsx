@@ -8,6 +8,14 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import {
+  connectionErrorMessage,
+  teamConnectionOutsideTools,
+} from '../../connectors/connectionErrors';
+import {
+  customModelErrorMessage,
+  isCustomModelSaveRefusal,
+} from '../../models/customModelErrors';
+import {
   confirmTakeOver,
   readSponsorRefusal,
   saveWithSponsorConsent,
@@ -152,13 +160,25 @@ export function useSponsoredSave({
       const staleWrite =
         response.status === 409 &&
         (body as { code?: unknown } | null)?.code === 'stale_write';
+      // A save that adds a tool on a team's account to an agent people
+      // outside the team reach: name the tools.
+      const outsideTools = teamConnectionOutsideTools(body);
       return {
         status: 'failed',
         response,
         body,
         message: staleWrite
           ? t('agents.form.errors.staleWrite')
-          : messageOf(body, fallback),
+          : outsideTools?.length
+            ? t('agents.form.errors.teamConnectionAdded', {
+                tools: outsideTools.map((tool) => tool.name).join(', '),
+                interpolation: { escapeValue: false },
+              })
+            : outsideTools
+              ? connectionErrorMessage(t, body)
+              : isCustomModelSaveRefusal(body)
+                ? customModelErrorMessage(t, body)
+                : messageOf(body, fallback),
       };
     },
     [i18n.language, sponsorPrompt.ask, t],

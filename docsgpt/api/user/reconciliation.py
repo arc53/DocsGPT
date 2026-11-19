@@ -381,8 +381,12 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     ),
                 },
             )
-            schedules_repo.bump_failure_count(str(run["schedule_id"]))
-            flipped = _terminal_flip_once_schedule(
+            # A Run now neither counts toward auto-pause nor closes a
+            # one-time task, whose own run is still to come.
+            manual = run.get("trigger_source") == "manual"
+            if not manual:
+                schedules_repo.bump_failure_count(str(run["schedule_id"]))
+            flipped = not manual and _terminal_flip_once_schedule(
                 schedules_repo, str(run["schedule_id"]),
             )
             summary["schedule_runs_failed"] += 1
@@ -425,8 +429,12 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                     ),
                 },
             )
-            schedules_repo.bump_failure_count(str(run["schedule_id"]))
-            flipped = _terminal_flip_once_schedule(
+            # A Run now neither counts toward auto-pause nor closes a
+            # one-time task, whose own run is still to come.
+            manual = run.get("trigger_source") == "manual"
+            if not manual:
+                schedules_repo.bump_failure_count(str(run["schedule_id"]))
+            flipped = not manual and _terminal_flip_once_schedule(
                 schedules_repo, str(run["schedule_id"]),
             )
             summary["schedule_runs_failed"] += 1

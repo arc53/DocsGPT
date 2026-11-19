@@ -10,9 +10,10 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
+from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, TYPE_CHECKING
 
 from docsgpt import tracing
+from docsgpt.agents.cannot_complete import cannot_complete_reason
 from docsgpt.agents.workflows.cel_evaluator import CelEvaluationError, evaluate_cel
 from docsgpt.agents.workflows.node_agent import WorkflowNodeAgentFactory
 from docsgpt.agents.workflows.retry import (
@@ -205,6 +206,15 @@ def _shorten_free_text(event: Dict[str, Any], limit: int) -> None:
             event[field] = text[: max(0, len(text) - over - 3)] + "…"
 
 
+def add_token_usage(total: Dict[str, int], usage: Any) -> None:
+    """Add an LLM's ``token_usage`` tally into ``total``, key by key."""
+    if not isinstance(usage, dict):
+        return
+    for key, value in usage.items():
+        if isinstance(value, int) and not isinstance(value, bool):
+            total[key] = total.get(key, 0) + value
+
+
 def _fit_text(event: Dict[str, Any]) -> Dict[str, Any]:
     """An event with only text to cut, held to WORKFLOW_STREAM_MAX_EVENT_BYTES."""
     from docsgpt.core.settings import settings
@@ -279,6 +289,10 @@ class WorkflowEngine:
         # Serializes code nodes on the run's one sandbox session: concurrent loop
         # items would otherwise overwrite each other's state.json and captures.
         self._sandbox_lock = threading.Lock()
+        # Tokens the run's agent nodes used, loop items included: each node
+        # agent owns its LLM, so the run's agent never sees them on its own.
+        self.node_token_usage: Dict[str, int] = {"prompt_tokens": 0, "generated_tokens": 0}
+        self._token_usage_lock = threading.Lock()
         self._condition_result: Optional[str] = None
         self._template_engine = TemplateEngine()
         self._namespace_manager = NamespaceManager()
@@ -857,11 +871,27 @@ class WorkflowEngine:
             prompt_embeds_documents as _prompt_embeds_documents,
         )
 
-        node_config = AgentNodeConfig(**node.config.get("config", node.config))
+        raw_config = node.config.get("config", node.config)
+        # A null list (a graph saved through the API) means none, as an omitted key does.
+        node_config = AgentNodeConfig(**{
+            key: value for key, value in raw_config.items()
+            if not (value is None and key in ("tools", "sources", "folders", "input_documents"))
+        })
 
         self._node_search_outcome = None
+        # The node's sources and folders are resolved once: its prefetch and its
+        # on-demand search read the same ones. A failed resolution is retried.
+        resolved: Dict[str, list] = {}
+
+        def _node_sources() -> list:
+            if "ids" not in resolved:
+                resolved["ids"] = self._node_source_ids(node_config)
+            return list(resolved["ids"])
+
         node_docs = (
-            self._retrieve_node_sources(node_config) if node_config.sources else []
+            self._retrieve_node_sources(node_config, source_ids=_node_sources)
+            if node_config.sources or node_config.folders
+            else []
         )
 
         if node_config.prompt_template:
@@ -947,7 +977,9 @@ class WorkflowEngine:
             "prompt_embeds_documents": _prompt_embeds_documents(
                 node_config.prompt_template
             ),
-            "sources_were_searched": bool(node_config.sources),
+            # What the retrieval actually covered: a node whose folders are gone
+            # or empty, or whose sources all went, searched nothing.
+            "sources_were_searched": bool(self._node_search_outcome and self._node_search_outcome.searched),
             "search_outcome": self._node_search_outcome,
             # The workflow agent's context limit; a node on a smaller model
             # still budgets against that model's own window.
@@ -958,8 +990,8 @@ class WorkflowEngine:
         if node_config.agent_type in (AgentType.AGENTIC, AgentType.RESEARCH):
             factory_kwargs["retriever_config"] = {
                 "source": (
-                    {"active_docs": self._authorized_node_sources(node_config.sources)}
-                    if node_config.sources
+                    {"active_docs": _node_sources()}
+                    if node_config.sources or node_config.folders
                     else {}
                 ),
                 "retriever_name": node_config.retriever or "classic",
@@ -972,6 +1004,7 @@ class WorkflowEngine:
             }
 
         node_agent = WorkflowNodeAgentFactory.create(**factory_kwargs)
+        self._share_run_request_id(node_agent)
         # Attribute this node's tool calls to the run's message and, crucially,
         # namespace their durability journal keys by it: node executors are built
         # without a message_id, so providers that reuse deterministic call ids
@@ -1017,30 +1050,40 @@ class WorkflowEngine:
         structured_response_parts: List[str] = []
         has_structured_response = False
         first_chunk = True
-        for event in node_agent.gen(formatted_prompt):
-            # A tool that pauses for approval makes the LLM handler yield
-            # ``tool_calls_pending`` and end. An ephemeral node agent has no resume path,
-            # so silently continuing would leave the node with empty output (or a confusing
-            # "Structured output was expected" when it has a json_schema). Fail visibly.
-            if event.get("type") == "tool_calls_pending":
-                raise ValueError(
-                    f'Node "{node.title}" uses a tool that requires approval, which is not '
-                    "supported inside a workflow. Disable require_approval for tools used in "
-                    "workflow nodes."
-                )
-            if "answer" in event:
-                chunk = str(event["answer"])
-                full_response_parts.append(chunk)
-                if event.get("structured"):
-                    has_structured_response = True
-                    structured_response_parts.append(chunk)
-                if hold_stream:
-                    held_events.append(event)
-                elif streams_to_user:
-                    if first_chunk and hasattr(self, "_has_streamed"):
-                        yield {"answer": "\n\n"}
-                        first_chunk = False
-                    yield event
+        # The text after the node's last tool call: its model's final round.
+        last_round_parts: List[str] = []
+        node_events = node_agent.gen(formatted_prompt)
+        try:
+            for event in node_events:
+                # A tool that pauses for approval makes the LLM handler yield
+                # ``tool_calls_pending`` and end. An ephemeral node agent has no resume path,
+                # so silently continuing would leave the node with empty output (or a confusing
+                # "Structured output was expected" when it has a json_schema). Fail visibly.
+                if event.get("type") == "tool_calls_pending":
+                    raise ValueError(
+                        f'Node "{node.title}" uses a tool that requires approval, which is not '
+                        "supported inside a workflow. Disable require_approval for tools used in "
+                        "workflow nodes."
+                    )
+                if event.get("type") == "tool_call":
+                    last_round_parts = []
+                if "answer" in event:
+                    chunk = str(event["answer"])
+                    full_response_parts.append(chunk)
+                    last_round_parts.append(chunk)
+                    if event.get("structured"):
+                        has_structured_response = True
+                        structured_response_parts.append(chunk)
+                    if hold_stream:
+                        held_events.append(event)
+                    elif streams_to_user:
+                        if first_chunk and hasattr(self, "_has_streamed"):
+                            yield {"answer": "\n\n"}
+                            first_chunk = False
+                        yield event
+        finally:
+            # Counted however the node ends: a failed or retried attempt spent its tokens too.
+            self._add_node_token_usage(node_agent, node_events)
 
         self._last_node_tool_calls = self._summarize_tool_calls(node_agent)
         full_response = "".join(full_response_parts).strip()
@@ -1070,6 +1113,11 @@ class WorkflowEngine:
             output_value = parsed_structured
             self._validate_structured_output(node_json_schema, output_value)
 
+        if getattr(self.agent, "endpoint", None) == "schedule" and self._loop_item is None:
+            # A JSON answer carries no marker: only the tool reports for it.
+            structured = has_structured_response or node_json_schema is not None
+            self._note_cannot_complete(node, node_agent, "" if structured else "".join(last_round_parts))
+
         if streams_to_user:
             for event in held_events:
                 if first_chunk and hasattr(self, "_has_streamed"):
@@ -1083,6 +1131,60 @@ class WorkflowEngine:
 
         if node_config.output_variable:
             self.state[node_config.output_variable] = output_value
+
+    def _share_run_request_id(self, node_agent: Any) -> None:
+        """Give a step the request id of the run it belongs to.
+
+        A step's calls then write their usage rows under the run's request,
+        so the agent's request limit counts the run once, not once per call.
+        A headless run has no id here; its steps take the one ``billed_to``
+        holds for the run.
+
+        Args:
+            node_agent: The step's agent, just built.
+        """
+        run_request_id = getattr(self.agent, "request_id", None) or getattr(
+            getattr(self.agent, "llm", None), "_request_id", None
+        )
+        if not run_request_id:
+            return
+        if getattr(node_agent, "request_id", None) is None:
+            node_agent.request_id = run_request_id
+        node_llm = getattr(node_agent, "llm", None)
+        if node_llm is not None and not getattr(node_llm, "_request_id", None):
+            node_llm._request_id = run_request_id
+
+    def _add_node_token_usage(self, node_agent: Any, node_events: Any) -> None:
+        """Add an agent node's LLM tokens to the run's tally, once its stream is closed."""
+        # A stream left suspended (the node failed mid-read, the run was
+        # stopped) records its last call's usage only when it is closed.
+        close = getattr(node_events, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("Closing a node agent's stream failed", exc_info=True)
+        node_llm = getattr(node_agent, "llm", None)
+        if node_llm is None or node_llm is getattr(self.agent, "llm", None):
+            return
+        # A fallback model bills its own LLM; read the cached one, never build it here.
+        fallback_llm = getattr(node_llm, "_fallback_llm", None)
+        with self._token_usage_lock:
+            add_token_usage(self.node_token_usage, getattr(node_llm, "token_usage", None))
+            if fallback_llm is not None:
+                add_token_usage(self.node_token_usage, getattr(fallback_llm, "token_usage", None))
+
+    def _note_cannot_complete(self, node: WorkflowNode, node_agent: Any, last_round: str) -> None:
+        """Note on the run's agent whether this agent node reported it cannot do its step.
+
+        The last agent node to run outside a loop decides, so a later agent
+        node (a branch that handles the failure, a fallback) clears an earlier
+        report, and one loop item's report never fails the whole run. Loop
+        items run side by side and never get here, so nothing races.
+        """
+        reported = getattr(getattr(node_agent, "tool_executor", None), "cannot_complete", None)
+        reason = reported if isinstance(reported, str) and reported else cannot_complete_reason(last_round)
+        self.agent.cannot_complete = f"{node.title}: {reason}" if reason else None
 
     def _execute_code_node(
         self, node: WorkflowNode
@@ -2057,6 +2159,8 @@ class WorkflowEngine:
         child.run_persisted = self.run_persisted
         child.preextracted_text = self.preextracted_text
         child._sandbox_lock = self._sandbox_lock
+        child.node_token_usage = self.node_token_usage
+        child._token_usage_lock = self._token_usage_lock
         child._loop_item = {"parent_node_id": node.id, "item_index": index, "item_count": count}
         child._loop_cancel = cancel
         # Deep: a template can mutate a nested value in place (``append``),
@@ -2329,6 +2433,51 @@ class WorkflowEngine:
         resolve_owner = getattr(self.agent, "_resolve_owner_id", None)
         return (resolve_owner() if callable(resolve_owner) else None) or self._resolve_user_id()
 
+    def _node_source_ids(self, node_config: AgentNodeConfig) -> list:
+        """The sources a node retrieves from: its own authorized ones, then its knowledge folders'.
+
+        Args:
+            node_config: The node's resolved configuration.
+
+        Returns:
+            list: Source ids, each once.
+        """
+        return self._with_folder_sources(self._authorized_node_sources(node_config.sources), node_config.folders)
+
+    def _with_folder_sources(self, source_ids: list, folders) -> list:
+        """``source_ids`` plus the sources a node's knowledge folders hold, each once.
+
+        A folder reads as its owner's filing (``folder_knowledge``); a
+        teammate's folder feeds only what they could sponsor, and nothing once
+        they no longer edit the workflow. A folder that no longer exists adds nothing.
+
+        Args:
+            source_ids: The node's authorized source ids.
+            folders: Folder ids from the stored node config.
+
+        Returns:
+            list: ``source_ids`` followed by the folders' sources.
+        """
+        if not folders:
+            return source_ids
+        owner = self._workflow_owner_id()
+        if not owner:
+            return source_ids
+        from docsgpt.api.user.folder_knowledge import folder_source_ids
+        from docsgpt.api.user.resource_access import reader_sources
+        from docsgpt.storage.db.session import db_readonly
+
+        holder = {**(getattr(self.agent, "workflow_row", None) or {}), "user_id": owner}
+        try:
+            with db_readonly() as conn:
+                # A folder's team sources reach the run's reader only as a node's own source would.
+                extra = reader_sources(conn, "workflow", holder, folder_source_ids(conn, folders, "workflow", holder))
+        except Exception:
+            logger.exception("Workflow node knowledge folders could not be read; dropping them.")
+            return source_ids
+        seen = {str(sid).lower() for sid in source_ids}
+        return list(source_ids) + [sid for sid in extra if sid not in seen]
+
     def _authorized_node_sources(self, sources) -> list:
         """Filter a node's configured source ids to those its owner may read.
 
@@ -2369,7 +2518,9 @@ class WorkflowEngine:
             logger.exception("Workflow node source authorization failed; dropping all.")
             return []
 
-    def _retrieve_node_sources(self, node_config: AgentNodeConfig) -> list:
+    def _retrieve_node_sources(
+        self, node_config: AgentNodeConfig, source_ids: Optional[Callable[[], list]] = None
+    ) -> list:
         """Retrieve this node's source documents.
 
         The node's own retriever searches every source at once; each source's
@@ -2378,6 +2529,8 @@ class WorkflowEngine:
 
         Args:
             node_config: The node's resolved configuration.
+            source_ids: Returns the node's source ids (the node's one
+                resolution); :meth:`_node_source_ids` when None.
 
         Returns:
             list: Retrieved documents, empty when there was nothing to fetch.
@@ -2393,7 +2546,10 @@ class WorkflowEngine:
 
         sources: list = []
         try:
-            sources = self._authorized_node_sources(node_config.sources)
+            sources = source_ids() if source_ids is not None else self._node_source_ids(node_config)
+            if not sources:
+                # Nothing left to search: no outcome, so the node isn't told it searched.
+                return []
             retriever = RetrieverCreator.create_retriever(
                 node_config.retriever or "classic",
                 source={"active_docs": sources},

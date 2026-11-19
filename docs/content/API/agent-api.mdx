@@ -77,10 +77,12 @@ Common request body fields:
 | `passthrough` | `object` | No | `/api/answer`, `/stream` | Values for the prompt's `{{ passthrough.* }}` variables, such as the end user's id. Strings, numbers, booleans and `null` are kept with the conversation and on each turn's [Logs](/Using/analytics-and-logs) row. |
 | `prompt_id` | `string` | No | `/api/answer`, `/stream` | Ignored when `api_key` already defines prompt. Without it, a chat without an agent uses `default`, not the prompt picked on **Settings → Prompts** (the web app sends that one itself). |
 | `active_docs` | `string` or `string[]` | No | `/api/answer`, `/stream` | Overrides active docs when not using key-owned source config. |
+| `active_folders` | `string[]` | No | `/api/answer`, `/stream` | Knowledge folder ids for a chat without an agent: the sources you filed anywhere in each folder, added to `active_docs`. Only your own folders count; others are ignored. Ignored when `api_key` or `agent_id` selects an agent, which brings its own folders. See [Pick a whole folder](/Sources/adding-knowledge#pick-a-whole-folder). |
 | `retriever` | `string` | No | `/api/answer`, `/stream` | Retriever type (for example `classic`). Ignored when `api_key` or `agent_id` selects an agent: the agent's retriever is used. |
 | `chunks` | `number` | No | `/api/answer`, `/stream` | Retrieval chunk count, default `6`: a total for the request, split across its sources. Clamped to `0`-`500`; `0` skips retrieval. Ignored when `api_key` or `agent_id` selects an agent (the agent's value is used), and when a source has its own chunk count configured (the source's value wins). |
 | `isNoneDoc` | `boolean` | No | `/api/answer`, `/stream` | Skip document retrieval. |
 | `agent_id` | `string` | No | `/api/answer`, `/stream` | Alternative to `api_key` when using authenticated user context. |
+| `capabilities` | `string[]` | No | `/api/answer`, `/stream` | What your client can render. `["forms"]` lets the assistant ask clarifying questions, which pause the turn so your client can show them. Optional: unknown values are ignored, and without `"forms"` the assistant never asks. See [Clarifying questions](#clarifying-questions). |
 
 Streaming-only fields:
 
@@ -192,7 +194,7 @@ Each `data:` frame is JSON with `type`:
 | `answer` | `answer` | Incremental answer chunk. |
 | `thought` | `thought` | Reasoning chunk (model and agent dependent). |
 | `source` | `source` | The retrieved sources and chunks. |
-| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval` or `requires_client_execution`) and `result` or `error`. A call that made files also has `artifacts` (see [Artifacts](#artifacts)). |
+| `tool_call` | `data` | One tool call's progress or outcome: `tool_name`, `action_name`, `call_id`, `arguments`, `status` (`pending`, `completed`, `error`, `denied`, `skipped`, `awaiting_approval`, `awaiting_answer` or `requires_client_execution`) and `result` or `error`. A call that made files also has `artifacts` (see [Artifacts](#artifacts)). |
 | `tool_calls` | `tool_calls` | The completed tool calls of the turn. |
 | `tool_calls_pending` | `data.pending_tool_calls` | The turn paused on tools that need approval or client-side execution. See [Tools that need approval](#tools-that-need-approval). |
 | `structured_answer` | `answer`, `structured`, `schema` | Final structured payload (when schema mode is active). |
@@ -363,6 +365,21 @@ A pause ends without an answer in two cases:
 Either way the paused turn is saved as complete. Its text so far and the calls that ran stay on its message. The calls it waited on never run: they are recorded with `"status": "denied"`, a `not_run` of `"moved_on"` or `"expired"`, and a `result` saying why, and the model reads them that way on later turns. Resuming a pause that has ended returns HTTP `409` with `"code": "tool_call_not_pending"` (on `/stream`, an `error` event with that code), and nothing runs. So does a resume whose `call_id`s belong to an earlier pause than the one waiting now.
 
 Write actions on the owner's accounts or credentials never reach this pause for an API-key caller: they are refused outright unless the owner allowed them (see below).
+
+## Clarifying questions
+
+When an answer depends on something neither the conversation nor the sources settle, the assistant can ask the user up to three short questions, once per user message. It does so only for a client that says it can show them, with `"capabilities": ["forms"]` on the request (and on the request that resumes the turn). Without it, which is the default, the assistant never asks and answers as usual, so an existing integration sees no change. An agent with no tools and no sources never asks either.
+
+With `"forms"`, the turn pauses as in [Tools that need approval](#tools-that-need-approval). The `tool_call` event has `"status": "awaiting_answer"`, a `message` (the lead-in, or `null`) and a `questions` list; the pending call's `pause_type` is `awaiting_answer`.
+
+Each entry in `questions` has an `id` (`q1`, `q2`, `q3`), its `text`, an optional `note`, `multi` (whether several options may be picked) and `options`, each with an `id` (`a`, `b`, ...), a `label`, `input` and `exclusive`. `input` is the placeholder of a field that picking the option opens for the rest (send the answer as `<label>: <typed text>`), or `null`. `exclusive` is `true` for at most one option of a `multi` question, listed last: picking it rules out the others ("None of these"). A question with no options takes a typed answer and may carry a `placeholder`.
+
+Resume with `tool_actions`, one action for the call:
+
+- `"answer": "..."`: the user's answers as text, one line per question (for example `Team size? → 11-50`), or whatever they typed instead. At most 4000 characters reach the model.
+- `"skipped": true`: the model goes ahead with its best assumptions and says what it assumed.
+
+A question call takes only `answer` or `skipped`, and an approval or client-side call never does; a mixed-up action is refused with HTTP `400`, `"code": "invalid_tool_actions"` and an `error` naming the problem (on `/stream`, an `error` event with that code). Nothing runs and the turn stays paused, so you can send the corrected action. Questions nobody answers end like any pause: they are recorded as not answered.
 
 ## Letting API callers make changes
 
@@ -625,10 +642,10 @@ On an update the file is authoritative: fields it sets are written even when tha
 | Part | Statuses |
 | --- | --- |
 | `target` | `action`: `create`, or `update` with the `agent_id` it matched and `matched_by` (`id` or `slug`) |
-| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached) |
+| `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached). A Knowledge folder the agent uses is an entry with `"type": "folder"` and a `key` (`folder-0`, `folder-1`, ...), matched to one of your own folders by its path, then by its name. The path is exported only for the exporter's own folder: someone else's folder, such as the owner's folder when an editor exports, or a teammate's folder on your agent, carries its name alone |
 | `tools` | `builtin`, `reuse` (one of your tools matches its type and name), `create` (a new tool is created; `requires_secrets` lists what you must supply) or `unavailable` |
 | `prompt` | `reuse`, `create` or `default` |
-| `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`) |
+| `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`). Into a team, a custom model is reused only from the team's own, matched by base URL and model ID; one the team doesn't have is created only by a team Admin, and is otherwise `unavailable` with `reason` `custom_model_admin_required` (`not_available_to_tokens` for a token) and left off |
 | `workflow` | For a workflow agent: `create` or `update` with node and edge counts, `delete` when the import would remove the workflow, or `null` |
 
 Each tool in the plan has a `key` (`tool-0`, `tool-1`, ... in file order) that the resolution refers to.
@@ -645,19 +662,21 @@ Each tool in the plan has a `key` (`tool-0`, `tool-1`, ... in file order) that t
     "tool-1": { "decision": "create", "secrets": { "api_key": "..." } },
     "tool-2": { "decision": "skip" }
   },
-  "models": { "My custom model": { "api_key": "..." } }
+  "models": { "My custom model": { "api_key": "..." } },
+  "folders": { "Carriers": "<id of one of your Knowledge folders>" }
 }
 ```
 
 - `sources` maps a source name in the file to one of your source ids.
 - `tools` takes a decision per tool key: `reuse` an existing tool, `create` a new one with the given secrets, or `skip` it.
 - `models` supplies the API key for a custom model that has to be created, keyed by its display name.
+- `folders` maps a Knowledge folder name in the file to one of your Knowledge folder ids. A folder that matches none of yours is left unattached with a warning.
 
 Ids you pass must belong to you; any other id is ignored with a warning. Prompts are not resolvable: the file's prompt is reused when you already have one with the same name and content, and created otherwise.
 
 ### Workflow agents
 
-A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources and custom models used inside the nodes are resolved like the agent's own.
+A workflow agent exports its graph under `spec.workflow`, and import checks its shape (up to 200 nodes and 400 edges) and creates the workflow or adds a new version of it. The full [graph rules](/Agents/nodes#graph-rules) apply when the agent it updates is published or can otherwise run, as for a builder save; a new agent lands as a draft, so an unfinished workflow exported from a draft imports again. Tools, sources, Knowledge folders and custom models used inside the nodes are resolved like the agent's own. A node names a folder by its entry's `key`, so two folders with the same name stay apart; a file exported before folders had keys names them, and each name resolves to the first folder of that name.
 
 Leaving `workflow` out of a file changes nothing. An explicit `workflow: null` imported over a draft workflow agent **deletes** its workflow, with its run history and artifacts; the plan's `workflow` block shows `"action": "delete"` first. A published workflow agent keeps its workflow.
 

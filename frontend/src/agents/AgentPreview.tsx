@@ -9,14 +9,22 @@ import { getSendReadiness } from '../components/message-input/armedSend';
 import AgentStarters from '../hero/AgentStarters';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
+import {
+  pendingQuestionCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
 import { selectSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import { selectAttachments } from '../upload/uploadSlice';
+import {
+  selectAttachments,
+  selectSendableAttachments,
+} from '../upload/uploadSlice';
 import {
   addQuery,
   fetchPreviewAnswer,
   handlePreviewAbort,
   resendQuery,
+  resumePreviewQuestion,
   selectPreviewQueries,
   selectPreviewStatus,
 } from './agentPreviewSlice';
@@ -29,6 +37,7 @@ export default function AgentPreview() {
   const status = useSelector(selectPreviewStatus);
   const selectedAgent = useSelector(selectSelectedAgent);
   const attachments = useSelector(selectAttachments);
+  const sendableAttachments = useSelector(selectSendableAttachments);
   // A starter that must wait for pending attachments is parked here;
   // MessageInput consumes it into an armed composer send.
   const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
@@ -78,6 +87,16 @@ export default function AgentPreview() {
     [dispatch, handleFetchAnswer, attachments],
   );
 
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      fetchStream.current = dispatch(resumePreviewQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them
+  // (not with files attached, which an answer can't carry).
+  const waitingQuestion = pendingQuestionCall(queries);
+
   const handleQuestionSubmission = (
     question?: string,
     updated?: boolean,
@@ -91,7 +110,11 @@ export default function AgentPreview() {
       });
     } else if (question && status !== 'loading') {
       const currentInput = question.trim();
-      if (lastQueryReturnedErr && queries.length > 0) {
+      if (waitingQuestion && sendableAttachments.length === 0) {
+        handleQuestionAction(waitingQuestion.call_id, {
+          answer: currentInput,
+        });
+      } else if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
           question: currentInput,
@@ -149,6 +172,7 @@ export default function AgentPreview() {
             queries={queries}
             status={status}
             showHeroOnEmpty={false}
+            onQuestionAction={handleQuestionAction}
           />
         )}
       </div>
@@ -159,6 +183,9 @@ export default function AgentPreview() {
             queuedQuestion={queuedQuestion}
             onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
             loading={status === 'loading'}
+            placeholder={
+              waitingQuestion ? t('questions.typeAnswer') : undefined
+            }
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}
             autoFocus={false}

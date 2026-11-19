@@ -31,9 +31,15 @@ import modelService from '../../api/services/modelService';
 import userService from '../../api/services/userService';
 import AgentDetailsModal from '../../modals/AgentDetailsModal';
 import ConfirmationModal from '../../modals/ConfirmationModal';
+import { isCustomModelSaveRefusal } from '../../models/customModelErrors';
 import { ActiveState } from '../../models/misc';
+import { isCatalogModel } from '../../models/modelGroups';
 import ShareToTeamModal from '../../teams/ShareToTeamModal';
-import { can } from '../../utils/accessUtils';
+import { can, canOpenShare, canPublish } from '../../utils/accessUtils';
+import {
+  selectCurrentOutsidePolicyOrNull,
+  selectWorkspaceRoleOrNull,
+} from '../../workspace/workspaceSlice';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { agentsListPath } from '../paths';
 import { ActionMenu } from '@/components/ui/dropdown-menu';
@@ -53,6 +59,7 @@ import type { SponsorAudience } from '../sponsorConsent';
 import { Agent, AgentConfig, ResourceSponsor, ResourceState } from '../types';
 import { analyticsOf } from '../analyticsConfig';
 import { largestModelWindow } from '../contextLimit';
+import type { FolderRefDetail } from '../../components/folders/pickedFolders';
 import { cleanStarters } from '../starters';
 import { useAnalyticsAvailability } from '../../settings/insights/useAnalyticsAvailability';
 import { ConditionCase, RetryConfig, WorkflowNode } from '../types/workflow';
@@ -96,6 +103,7 @@ import CanvasControls from './CanvasControls';
 import NodePalette from './NodePalette';
 import NodePanel from './panels/NodePanel';
 import { WorkflowModelsContext } from './WorkflowModelsContext';
+import type { ItemWorkspace } from '../../components/pickerScope';
 import AgentPanel from './panels/AgentPanel';
 import CodePanel from './panels/CodePanel';
 import ConditionPanel from './panels/ConditionPanel';
@@ -335,6 +343,8 @@ function WorkflowBuilderInner() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const token = useSelector(selectToken);
+  const workspaceRole = useSelector(selectWorkspaceRoleOrNull);
+  const outsidePolicy = useSelector(selectCurrentOutsidePolicyOrNull);
   const readerId = useMemo(() => readerIdFromToken(token), [token]);
   const previewStatus = useSelector(selectWorkflowPreviewStatus);
   const { agentId } = useParams<{ agentId?: string }>();
@@ -425,7 +435,23 @@ function WorkflowBuilderInner() {
   // laid over the saved config with the next save; null when none changed.
   const [pendingConfig, setPendingConfig] = useState<AgentConfig | null>(null);
   const analyticsAvailability = useAnalyticsAvailability();
-  const [availableModels, setAvailableModels] = useState<Model[]>([]);
+  const [listedModels, setListedModels] = useState<Model[]>([]);
+  // A node's model resolves in the owner's account, so a team editor picks
+  // from the owner's custom models, not their own (the save refuses those).
+  // Null for the owner.
+  const [ownerModels, setOwnerModels] = useState<Model[] | null>(null);
+  const availableModels = useMemo(
+    () =>
+      ownerModels
+        ? [
+            // The catalog from the list; every custom model is the owner's
+            // (a team's own models come with the list too: not twice).
+            ...listedModels.filter(isCatalogModel),
+            ...ownerModels,
+          ]
+        : listedModels,
+    [listedModels, ownerModels],
+  );
   const modelNames = useMemo(
     () =>
       Object.fromEntries(
@@ -446,7 +472,8 @@ function WorkflowBuilderInner() {
   const [nodeRefNames, setNodeRefNames] = useState<{
     tools: { id: string; label: string; name?: string }[];
     sources: { id: string; label: string }[];
-  }>({ tools: [], sources: [] });
+    folders: FolderRefDetail[];
+  }>({ tools: [], sources: [], folders: [] });
   const [agentJsonSchemaDrafts, setAgentJsonSchemaDrafts] = useState<
     Record<string, string>
   >({});
@@ -1165,7 +1192,7 @@ function WorkflowBuilderInner() {
           const transformedModels = modelService.transformModels(
             modelsData.models || [],
           );
-          setAvailableModels(transformedModels);
+          setListedModels(transformedModels);
           const preferredDefaultModel =
             transformedModels.find(
               (model) => model.id === modelsData.default_model_id,
@@ -1382,6 +1409,11 @@ function WorkflowBuilderInner() {
           ref_details: refDetails,
         } = responseData.data;
         applyResourceDetails(responseData.data);
+        setOwnerModels(
+          responseData.data.owner_models
+            ? modelService.transformModels(responseData.data.owner_models)
+            : null,
+        );
         setNodeRefNames({
           tools: (refDetails?.tools ?? []).map(
             (tool: { id: string; name?: string; display_name?: string }) => ({
@@ -1396,6 +1428,7 @@ function WorkflowBuilderInner() {
               label: source.name || '',
             }),
           ),
+          folders: Array.isArray(refDetails?.folders) ? refDetails.folders : [],
         });
         // The agent's own fields when there is one (an older agent's may
         // differ from its workflow's), else the workflow's.
@@ -1968,10 +2001,13 @@ function WorkflowBuilderInner() {
         );
         if (result.status === 'cancelled') return 'cancelled';
         if (result.status === 'failed') {
-          // A graph the server can't run lists each problem.
+          // A graph the server can't run lists each problem; a refused
+          // custom model is one line, already in the reader's words.
           const listed = (result.body as { errors?: unknown } | null)?.errors;
           setPublishErrors(
-            Array.isArray(listed) && listed.length > 0
+            Array.isArray(listed) &&
+              listed.length > 0 &&
+              !isCustomModelSaveRefusal(result.body)
               ? listed.map(String)
               : [result.message],
           );
@@ -2156,9 +2192,13 @@ function WorkflowBuilderInner() {
   }, [detailsSaveRequested, persistWorkflow, isPublished]);
 
   // Save on a published workflow is an edit and needs a change; Publish on a
-  // new or draft one doesn't. A new workflow has no access fields, so it
-  // reads as the owner's. Without the right the button isn't rendered.
-  const canSubmit = can(currentAgent, isPublished ? 'edit' : 'publish');
+  // new or draft one doesn't. A new workflow has no access fields: it is the
+  // workspace's, which in a team its outside policy says who publishes.
+  // Without the right the button isn't rendered, and Save draft is the main
+  // button instead.
+  const canSubmit = isPublished
+    ? can(currentAgent, 'edit')
+    : canPublish(currentAgent, workspaceRole, outsidePolicy);
   const isPrimaryActionDisabled =
     isPublishing || !canSave || (isPublished && !hasUnsavedWork);
   const primaryActionLabel = isPublished
@@ -2400,7 +2440,7 @@ function WorkflowBuilderInner() {
             {canSaveDraft && (
               <Button
                 type="button"
-                variant="outline"
+                variant={canSubmit ? 'outline' : 'default'}
                 size="field"
                 shape="pill"
                 onClick={handleSaveDraft}
@@ -2460,7 +2500,7 @@ function WorkflowBuilderInner() {
                       },
                     ]
                   : []),
-                ...(canManageAgent && can(currentAgent, 'share')
+                ...(canManageAgent && canOpenShare(currentAgent)
                   ? [
                       {
                         label: t('agents.shareWithTeam'),
@@ -2605,9 +2645,11 @@ function WorkflowBuilderInner() {
                   nodes={nodes}
                   edges={edges}
                   availableModels={availableModels}
+                  modelsFromOwner={ownerModels !== null}
                   availableTools={availableTools}
                   attachedTools={nodeRefNames.tools}
                   attachedSources={nodeRefNames.sources}
+                  attachedFolders={nodeRefNames.folders}
                   documentOptions={selectedAgentDocumentOptions}
                   jsonSchemaText={selectedAgentJsonSchemaText}
                   jsonSchemaError={selectedAgentJsonSchemaError}
@@ -2622,6 +2664,10 @@ function WorkflowBuilderInner() {
                   onReconnect={(connection, mcpToolId) =>
                     signInAgain.reconnect(connection, mcpToolId)
                   }
+                  holderWorkspace={
+                    (currentAgent as { workspace?: ItemWorkspace }).workspace
+                  }
+                  holderFolderId={currentAgent.folder_id ?? folderId}
                 />
               )}
               {selectedNode.type === 'note' && (
@@ -2756,6 +2802,8 @@ function WorkflowBuilderInner() {
             resourceId={effectiveAgentId}
             resourceName={workflowName}
             onClose={() => setShareModalOpen(false)}
+            // Moved to a team, it is that workspace's: back to the list.
+            onMoved={() => navigate(agentsListPath())}
             onOpenAccessDetails={
               canManageAgent && can(currentAgent, 'manage_access_details')
                 ? () => {

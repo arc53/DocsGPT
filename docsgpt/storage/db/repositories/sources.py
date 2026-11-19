@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import case, Connection, func, or_, select, text
+from sqlalchemy import and_, case, Connection, func, or_, select, text
 
 from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import ingest_chunk_progress_table, sources_table
@@ -43,17 +43,30 @@ def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
     return out
 
 
-def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
-    """WHERE predicate matching the owner's rows plus any ``extra_ids``.
+# Prefix of a team principal's id (``docsgpt.workspaces.principal.PRINCIPAL_PREFIX``); matched with ``left``,
+# since ``_`` is a LIKE wildcard.
+_PRINCIPAL_PREFIX = "__team__"
+
+
+def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list], received_ids: Optional[list] = None):
+    """WHERE predicate matching the owner's rows plus any ``extra_ids`` and ``received_ids``.
 
     Lets the paginated/count queries include team-shared sources (passed by id)
     alongside owned ones in a single query, so count/sort/search/pagination
-    stay correct across the union.
+    stay correct across the union. An extra id never brings in a row a team
+    workspace owns: those are listed in their team, never by a grant (a stale
+    grant row must not open one to a Personal list). ``received_ids`` are
+    another team's sources that team shares with the team workspace being
+    listed, already checked live by the caller; only teams' rows match them.
     """
     scope = sources_table.c.user_id == user_id
+    is_team_row = func.left(sources_table.c.user_id, len(_PRINCIPAL_PREFIX)) == _PRINCIPAL_PREFIX
     ids = _coerce_uuid_ids(extra_ids)
     if ids:
-        scope = or_(scope, sources_table.c.id.in_(ids))
+        scope = or_(scope, and_(sources_table.c.id.in_(ids), ~is_team_row))
+    received = _coerce_uuid_ids(received_ids)
+    if received:
+        scope = or_(scope, and_(sources_table.c.id.in_(received), is_team_row))
     return scope
 
 
@@ -148,7 +161,17 @@ class SourcesRepository:
         model: Optional[str] = None,
         date: Any = None,
         legacy_mongo_id: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> dict:
+        """Insert a source.
+
+        ``created_by`` names the person who added it. Without it the
+        ``fill_created_by`` trigger records the owner, except for a team
+        principal owner, so a create in a team passes the uploader. A
+        principal is never recorded as a creator.
+        """
+        if created_by is not None and str(created_by).startswith(_PRINCIPAL_PREFIX):
+            created_by = None
         result = self._conn.execute(
             text(
                 """
@@ -156,7 +179,7 @@ class SourcesRepository:
                     id, user_id, name, type, metadata, config,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
-                    language, model, date, legacy_mongo_id
+                    language, model, date, legacy_mongo_id, created_by
                 )
                 VALUES (
                     COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
@@ -168,7 +191,7 @@ class SourcesRepository:
                     CAST(:file_name_map AS jsonb),
                     :language, :model,
                     COALESCE(:date, now()),
-                    :legacy_mongo_id
+                    :legacy_mongo_id, :created_by
                 )
                 RETURNING *
                 """
@@ -200,6 +223,7 @@ class SourcesRepository:
                 "model": model,
                 "date": date,
                 "legacy_mongo_id": legacy_mongo_id,
+                "created_by": created_by,
             },
         )
         return row_to_dict(result.fetchone())
@@ -385,6 +409,7 @@ class SourcesRepository:
         sort_order: str = "desc",
         extra_ids: Optional[list] = None,
         only_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -410,6 +435,8 @@ class SourcesRepository:
             extra_ids: Ids of other users' sources (team-shared) to list too.
             only_ids: When given, keep only these ids (an empty list keeps
                 none); the paginated listing narrows by kind and usage this way.
+            received_ids: Ids of other teams' sources shared with the team
+                workspace ``user_id`` (its principal), to list too.
 
         Returns:
             A list of source rows as plain dicts (via ``row_to_dict``),
@@ -429,7 +456,7 @@ class SourcesRepository:
                     == sources_table.c.id,
                 )
             )
-            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
         )
         search = _name_search(search_term)
         if search is not None:
@@ -450,6 +477,75 @@ class SourcesRepository:
 
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """Every source ``list_for_user`` lists, as ``{id, user_id}`` only, in its default order (newest first).
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any source's
+        JSONB columns.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        stmt = (
+            select(sources_table.c.id, sources_table.c.user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in self._conn.execute(stmt)]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The scalar fields of the sources ``ids`` names, with their ingest status, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Source ids.
+
+        Returns:
+            ``{"id", "user_id", "name", "type", "tokens", "ingest_status"}`` dicts with string ids.
+        """
+        uuids = _coerce_uuid_ids(ids)
+        if not uuids:
+            return []
+        stmt = (
+            select(
+                sources_table.c.id, sources_table.c.user_id, sources_table.c.name, sources_table.c.type,
+                sources_table.c.tokens, _ingest_status_case(),
+            )
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table, ingest_chunk_progress_table.c.source_id == sources_table.c.id
+                )
+            )
+            .where(sources_table.c.id.in_(uuids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [
+            {"id": str(row.id), "user_id": row.user_id, "name": row.name, "type": row.type,
+             "tokens": row.tokens, "ingest_status": row.ingest_status}
+            for row in self._conn.execute(stmt)
+        ]
+
+    def get_directory_structure(self, source_id: str) -> Optional[dict]:
+        """One source's ``directory_structure``, with no access check: the caller has already made one.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            The stored tree, or None when it has none or there is no such source.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT directory_structure FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)}
+        ).scalar()
 
     def count_for_user(
         self,
@@ -489,6 +585,7 @@ class SourcesRepository:
         *,
         search_term: Optional[str] = None,
         extra_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
     ) -> list[dict]:
         """Every row ``list_for_user`` would match, with only the columns that decide its kind.
 
@@ -500,6 +597,7 @@ class SourcesRepository:
             user_id: Scope rows to this owner.
             search_term: Same substring filter as ``list_for_user``.
             extra_ids: Same union of team-shared ids as ``list_for_user``.
+            received_ids: Same union of other teams' shared ids as ``list_for_user``.
 
         Returns:
             Dicts with ``id``, ``user_id``, ``type``, ``remote_data``,
@@ -508,7 +606,7 @@ class SourcesRepository:
         t = sources_table
         stmt = select(
             t.c.id, t.c.user_id, t.c.type, t.c.remote_data, t.c.config, t.c.sync_frequency, t.c.connection_id,
-        ).where(_owned_or_shared_scope(user_id, extra_ids))
+        ).where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
         search = _name_search(search_term)
         if search is not None:
             stmt = stmt.where(search)

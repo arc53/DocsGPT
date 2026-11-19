@@ -177,7 +177,7 @@ def test_an_agentic_nodes_search_resolves_the_owners_model(user_models, built_ag
     owners = _custom_model("sk-owners-own")
     user_models[OWNER] = {owners.id: owners}
     engine = _engine()
-    monkeypatch.setattr(engine, "_retrieve_node_sources", lambda _config: [])
+    monkeypatch.setattr(engine, "_retrieve_node_sources", lambda _config, source_ids=None: [])
     monkeypatch.setattr(engine, "_authorized_node_sources", lambda sources: ",".join(sources))
     node = _node(owners.id)
     node.config.update(agent_type="agentic", sources=["src-1"])

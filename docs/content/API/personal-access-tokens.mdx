@@ -1,7 +1,7 @@
 ---
 title: Personal Access Tokens
 description: Scoped, revocable API tokens for managing agents, sources and other DocsGPT resources from the CLI, scripts and CI/CD pipelines.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-11
 ---
 
 # Personal Access Tokens
@@ -20,7 +20,7 @@ Every token is limited in three ways:
 2. Choose **Create token**, give it a name, and select the scopes it needs.
 3. Optionally restrict it to specific resources and pick an expiry.
 4. Copy the token. It starts with `dgpt_pat_` and is shown **once**. DocsGPT stores only a hash of it, so a lost token cannot be recovered. Revoke it and create a new one.
-5. Optionally, select **Create tool for agents**. It appears when the token has an `agents`, `analytics` or `conversations` scope, and adds an API tool that lets your agents read this account with the token. See [Let an agent review the logs](/Using/analytics-and-logs#let-an-agent-review-the-logs).
+5. Optionally, select **Create tool for agents** to let your agents use the token. See [Let an agent work in your account](#let-an-agent-work-in-your-account).
 
 Tokens can only be created, regenerated and revoked from a signed-in session. A token cannot create, list, regenerate or revoke tokens, so a leaked token cannot mint a replacement for itself.
 
@@ -152,19 +152,19 @@ A `write` scope includes the matching `read` scope.
 
 | Scope | Allows |
 | --- | --- |
-| `agents:read` | View agents, folders, guardrail events and export agent definitions |
-| `agents:write` | Create, update, delete, share and import (apply) agents and folders |
+| `agents:read` | View agents, agent folders, guardrail events and export agent definitions |
+| `agents:write` | Create, update, delete, share and import (apply) agents, and manage agent folders and file agents in them |
 | `agents:keys` | Regenerate agent API keys and read incoming webhook URLs |
-| `sources:read` | View sources, their files, chunks and ingestion task status |
-| `sources:write` | Upload, ingest, sync, edit and delete sources and chunks |
+| `sources:read` | View sources, their files, chunks and ingestion task status, and Knowledge folders |
+| `sources:write` | Upload, ingest, sync, edit and delete sources and chunks, and manage Knowledge folders and file sources in them |
 | `prompts:read` / `prompts:write` | View / create, update and delete prompts |
 | `tools:read` / `tools:write` | View / create, update and delete tools and MCP servers |
-| `models:read` / `models:write` | View models / manage custom models |
+| `models:read` / `models:write` | View models and your [task model](/Using/web-app#task-model) / manage your custom models and set your task model. A team's custom models are read-only to a token |
 | `workflows:read` / `workflows:write` | View / create, update and delete workflows |
 | `schedules:read` / `schedules:write` | View / create, update, run and delete agent schedules |
 | `conversations:read` / `conversations:write` | View / rename, delete and rate conversations |
 | `analytics:read` | View usage analytics and logs |
-| `teams:read` | View teams, members and resource shares |
+| `teams:read` | View teams, members and resource shares, and list your workspaces (`GET /api/workspaces`) |
 | `runs:read` | View the workflow runs you started: status, steps, final state and the files they produced |
 | `artifacts:read` | Download files your workflow runs produced, and view and download your artifacts |
 | `chat:run` | Ask agents, search sources and list an agent's starters (`/api/answer`, `/stream`, `/api/search`, `/api/agent_starters`); used for benchmarking |
@@ -181,11 +181,21 @@ Some parts of the API are never available to a token, whatever its scopes:
 - conversation sharing and shared links, and file download;
 - the OpenAI-compatible `/v1` API (use an [agent API key](/API/agent-keys)) and the live event stream `/api/events`;
 - [Activity](/Using/activity#over-the-api) (`/api/activity/now`, `/api/activity/planned`, `/api/activity/history`) and stopping a running answer (`POST /api/messages/<message_id>/cancel`), because they span every chat and agent of the account;
-- the agent webhook trigger, whose URL is its own credential.
+- [Draft with DocsGPT](/Agents/draft-with-docsgpt#over-the-api) (`/api/drafter/config`, `/api/drafter/stream`, `/api/drafter/topics/status`), because a draft reads the whole workspace and runs the model on it;
+- the agent webhook trigger, whose URL is its own credential;
+- moving items between Personal and a team (`/api/workspace_moves/plan`, `/api/workspace_moves`), because a move changes who owns them and re-seals their credentials.
 
 The [REST API reference](/API/reference) shows, for each endpoint, the scope a token needs or that tokens can't call it. A token also never carries the `admin` role, even when its owner is an admin.
 
 Authorization is deny by default. An endpoint that is not explicitly mapped to a scope cannot be called with a token, and answers `403` with `"error": "not_available_to_tokens"`. A mapped endpoint called without the scope answers `403` with `"error": "insufficient_scope"` and names the `required_scope`.
+
+## Team workspaces
+
+A token acts as you, in your Personal workspace by default. To list or create in a [team workspace](/Using/team-workspaces), send the `X-DocsGPT-Workspace` header (or the `workspace` query parameter) with the team's id; see [Work in a team workspace](/API#work-in-a-team-workspace). The token gets what your team role allows there, within its scopes: a token of a Viewer can't create in the team. If you leave the team, the token loses access to it on the next request.
+
+- `GET /api/workspaces` lists your workspaces and needs `teams:read`.
+- Moving items into or out of a team can't be done with a token.
+- The [tool for agents](#let-an-agent-work-in-your-account) has a `list_workspaces` action when the token has `teams:read`, and its list and create actions (such as `list_agents`, `create_agent`, `list_sources`, `create_prompt`, `list_folders` and `file_in_folder`) take a `workspace` parameter: a team id from `list_workspaces`, or empty for Personal. A tool created before this release has no such parameter; create a new token and tool to get it.
 
 ## Resource restrictions
 
@@ -211,7 +221,10 @@ For a restricted family the token:
   - **Workflow writes** are closed to tokens restricted on sources, tools or prompts, because a workflow graph names those inside its nodes. Such a token also cannot attach a workflow to an agent unless it is restricted on workflows too, in which case only the listed workflows can be attached.
   - **Workflow runs** belong to the agent that ran them. A token restricted to agents lists and reads only those agents' runs and downloads only their files; any other run, and a run started from the workflow builder's preview, answers `404`. Runs and their files are closed to tokens restricted on another family, and the `/api/artifacts` routes are closed to every restricted token.
   - `/api/sources/paginated` is closed to source-restricted tokens (use `/api/sources`).
+  - **Folders** (`/api/folders` and the `/api/agents/folders` routes) aren't on any list. A token restricted on agents can list agent folders and file the listed agents with `POST /api/folders/items`, but not create, rename, move or delete agent folders; a token restricted on sources gets the same for Knowledge folders and the listed sources.
+  - **Knowledge folders on agents and in chat**: a folder brings in every source filed in it, which no list names, so a token restricted on sources is refused for a non-empty `folders` on `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>`, and for `active_folders` in chat.
   - **The chat prompt** (`/api/user/preferences`): a token restricted on prompts can't read it, since the stored pick may be outside its list. It can set it to a preset (`default`, `creative`, `strict`) or a prompt on its list. Sending `only_if_unset` is refused (`403`, `resource_not_allowed`), since the answer could carry a stored pick outside its list.
+  - **The chat prompt** (`/api/user/preferences`): a token restricted on prompts never reads it, since the stored pick may be outside its list. With `models:read` it still reads the [task model](/Using/web-app#task-model) fields from the same route, and the answer leaves the chat prompt fields out; without `models:read` the read is refused. It can set the chat prompt to a preset (`default`, `creative`, `strict`) or a prompt on its list. Sending `only_if_unset` is refused (`403`, `resource_not_allowed`), since the answer could carry a stored pick outside its list. Setting the [task model](/Using/web-app#task-model) through the same route (`task_model_id`) needs `models:write` instead of `prompts:write`, and names no prompt, so the prompt list doesn't limit it.
 
 A restriction covers what the token *asks for*, not what an allowed resource already contains: an agent on the list runs with its own sources, prompt and tools even when the token is also restricted on those families. List an agent only if you are happy for the token to use everything that agent uses.
 
@@ -267,7 +280,32 @@ These endpoints need a signed-in session and cannot be called with a token.
 | `POST /api/user/tokens` | Create a token. Body: `name`, `scopes`, optional `resource_filter`, optional `expires_in_days` (`0` = never, when allowed). The response carries the plaintext `token` once |
 | `POST /api/user/tokens/<id>/regenerate` | New secret and new expiry for the same token. Optional body `expires_in_days`; omitted = the lifetime it was last issued with. The response carries the plaintext `token` once |
 | `DELETE /api/user/tokens/<id>` | Revoke a token |
-| `POST /api/user/tokens/<id>/tool` | Create an API tool that reads this account with the token. Body: the plaintext `token` and `base_url`, where agents reach the API. The tool gets the read endpoints the token may call (`400` when there are none) |
+| `POST /api/user/tokens/<id>/tool` | Create an API tool that lets agents work in this account with the token. Body: the plaintext `token` and `base_url`, where agents reach the API. The tool gets an action for each endpoint the token may call; the response lists them in `actions`, and those that start switched off in `inactive` |
+
+## Let an agent work in your account
+
+**Create tool for agents**, offered once when a token is created, adds an API tool named **DocsGPT API (*token name*)** under **Settings › Tools**. Add it to an agent and the agent can do in your account what the token's scopes allow: create and update agents, add sources and wiki pages, edit prompts, tools and workflows, manage schedules, and read conversations, logs and analytics. The token is stored, encrypted, as the tool's `Authorization` header; neither the model nor the chat sees it.
+
+The tool has one action per endpoint the token may call, so its scopes and resource restrictions decide what the agent gets: a token with `prompts:write` brings `list_prompts`, `create_prompt`, `update_prompt` and `delete_prompt`, and one with every scope brings about 120 actions. Each action's description is sent to the model with every request, so give the token only the scopes the agent's job needs. The actions are fixed when the tool is created. To change them, create a new token and tool.
+
+Some actions start switched off, and you turn them on in the tool when you want them:
+
+- **Deletes** (`delete_agent`, `delete_source`, `delete_chunk`, `delete_prompt`, `delete_tool`, `delete_workflow`, `delete_schedule`, `delete_conversation`, `delete_agent_folder`), because they cannot be undone.
+- **`ask_agent`**, which runs another agent for real and spends its tokens.
+
+A few things a token can do are never given to an agent:
+
+- Deleting all conversations at once.
+- Creating, changing or deleting custom models, which hold a provider key and the address every chat is sent to.
+- Uploading files, importing an agent definition and streaming chat, which an API tool cannot send.
+
+A token cannot change a tool that holds an access token, this one included: `update_tool` and the other tool update endpoints answer `403`. So an agent cannot switch on an action you left off, or point an action at another endpoint. Change the tool yourself, signed in, under **Settings › Tools**.
+
+An agent that can change tools still cannot read or move a credential a tool stores. Stored values come back masked, a tool or MCP server pointed at another server does not keep them, and connections and their OAuth sign-ins are closed to every token.
+
+Treat the agent like the token: anyone who can chat with an agent that has this tool can ask it to act on your account, and so can text the agent reads, such as a web page or a document in a source. Do not add the tool to an agent you share publicly, and prefer read scopes for an agent that reads content you do not control.
+
+The tool calls the API at the address this web app uses. Agent tools can't call `localhost` or private IP addresses, so on an instance reached at such an address the button reports that agents can't reach it and creates nothing.
 
 ## Good practice
 

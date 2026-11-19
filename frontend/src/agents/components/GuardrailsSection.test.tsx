@@ -148,6 +148,30 @@ describe('GuardrailsSection', () => {
     });
   };
 
+  it('opens itself when drafted and marks the on/off row', async () => {
+    const onUndo = vi.fn();
+    await act(async () => {
+      root.render(
+        <GuardrailsSection
+          value={config}
+          onChange={() => undefined}
+          token="tok"
+          drafted
+          onUndo={onUndo}
+        />,
+      );
+    });
+    expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('true');
+    const row = q('guardrails-enabled')!.closest('[data-slot="setting-row"]')!;
+    expect(row.getAttribute('data-drafted')).toBe('true');
+    await act(async () =>
+      row
+        .querySelector<HTMLButtonElement>('[data-slot="drafted-badge"] button')!
+        .click(),
+    );
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
   it('announces whether the section is open with aria-expanded', async () => {
     await render();
     expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('true');
@@ -157,8 +181,8 @@ describe('GuardrailsSection', () => {
     expect(q('guardrails-toggle')?.getAttribute('aria-expanded')).toBe('false');
   });
 
-  // Decision 64: the header is a section-toggle with a leading lucide
-  // chevron; the badges sit beside it and the panel draws the focus ring.
+  // The header is a section-toggle with a leading lucide chevron; the badges
+  // sit beside it and the panel draws the focus ring.
   it('renders the header as a section-toggle with the badges beside it', async () => {
     await render();
     const toggle = q('guardrails-toggle')!;
@@ -198,9 +222,9 @@ describe('GuardrailsSection', () => {
     expect(chevron.getAttribute('class')).not.toContain('rotate-90');
   });
 
-  // Decision 74: the panel spaces header and body with gap-5 like the other
-  // form sections, and the body stacks its rows with a gap-5 flex column
-  // rather than per-child margins.
+  // The panel spaces header and body with gap-5 like the other form
+  // sections, and the body stacks its rows with a gap-5 flex column rather
+  // than per-child margins.
   it('spaces the panel and its body with gap-5, not margins', async () => {
     await render({ disabled: true });
     const panel = q('guardrails-section')!;
@@ -394,7 +418,7 @@ describe('GuardrailsSection', () => {
     expect(q('guardrail-policy-text')?.dataset.slot).toBe('textarea');
   });
 
-  // Decision 63e-b: the monitor-only line is advice, so the field's muted hint.
+  // The monitor-only line is advice, so the field's muted hint.
   it('explains monitor-only mode in the mode field hint', async () => {
     await render();
     const hint = Array.from(container.querySelectorAll('p')).find(
@@ -409,7 +433,7 @@ describe('GuardrailsSection', () => {
     );
   });
 
-  // Decision 63a: each control's name is a 14px semibold sub-heading.
+  // Each control's name is a 14px semibold sub-heading.
   it('titles each check card with an xs section header', async () => {
     await render();
     const title = q('guardrail-check-pii')?.querySelector('h4');

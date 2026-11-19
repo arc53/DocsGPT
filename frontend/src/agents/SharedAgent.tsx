@@ -19,9 +19,16 @@ import {
   addQuery,
   fetchAnswer,
   resendQuery,
+  resumeQuestion,
   selectQueries,
   selectStatus,
 } from '../conversation/conversationSlice';
+import {
+  pendingQuestionCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
+import { followItemWorkspace } from '../conversation/followWorkspace';
+import { composerSubmitTarget } from '../conversation/turnSubmission';
 import { useArtifactDetail } from '../conversation/useArtifactDetail';
 import {
   selectConversationId,
@@ -29,7 +36,13 @@ import {
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
-import { selectAttachments } from '../upload/uploadSlice';
+import {
+  selectAttachments,
+  toSendableAttachments,
+} from '../upload/uploadSlice';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
+import { selectWorkspaceId } from '../workspace/workspaceSlice';
 import SharedAgentCard from './SharedAgentCard';
 import { Agent } from './types';
 
@@ -37,6 +50,7 @@ export default function SharedAgent() {
   const { t } = useTranslation();
   const { agentId } = useParams();
   const dispatch = useDispatch<AppDispatch>();
+  const currentWorkspace = useSelector(selectWorkspaceId);
 
   const token = useSelector(selectToken);
   const queries = useSelector(selectQueries);
@@ -138,6 +152,17 @@ export default function SharedAgent() {
     [dispatch, handleFetchAnswer, attachments],
   );
 
+  // The visitor's own token resumes the turn their message paused (a shared
+  // agent runs as its caller), as in the chat.
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      dispatch(resumeQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them.
+  const waitingQuestion = pendingQuestionCall(queries);
+
   const handleQuestionSubmission = (
     question?: string,
     updated?: boolean,
@@ -151,7 +176,17 @@ export default function SharedAgent() {
       });
     } else if (question && status !== 'loading') {
       const currentInput = question.trim();
-      if (lastQueryReturnedErr && queries.length > 0) {
+      const target = composerSubmitTarget({
+        question,
+        queries,
+        lastQueryReturnedErr,
+        composerFileCount: toSendableAttachments(attachments).length,
+      });
+      if (target.kind === 'answer') {
+        // What is typed answers the questions; it resumes the paused turn
+        // instead of starting a new one.
+        handleQuestionAction(target.callId, { answer: currentInput });
+      } else if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
           question: currentInput,
@@ -173,9 +208,37 @@ export default function SharedAgent() {
     if (agentId) getSharedAgent();
   }, [agentId, token]);
 
+  // The chat runs in the agent's workspace, and the server refuses it from
+  // any other: a member of the agent's team chats in that team, anyone else
+  // (the agent says no workspace to them) in Personal. When the app can't
+  // go there (the workspace list failed), the chat shows where it is.
+  const agentWorkspace: ItemWorkspace | null = sharedAgent
+    ? (sharedAgent.workspace ?? { kind: 'personal' })
+    : null;
+  const target = !agentWorkspace
+    ? null
+    : agentWorkspace.kind === 'personal'
+      ? PERSONAL_WORKSPACE
+      : (agentWorkspace.team_id ?? PERSONAL_WORKSPACE);
+  const [unreachable, setUnreachable] = useState<string | null>(null);
   useEffect(() => {
-    if (sharedAgent) dispatch(setSelectedAgent(sharedAgent));
-  }, [sharedAgent, dispatch]);
+    if (!agentWorkspace || !target || target === currentWorkspace) return;
+    let cancelled = false;
+    void dispatch(followItemWorkspace(agentWorkspace)).then((switched) => {
+      if (!cancelled && !switched) setUnreachable(target);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [target, currentWorkspace, dispatch]);
+  const inAgentWorkspace =
+    target !== null && (target === currentWorkspace || target === unreachable);
+
+  // A switch clears the selected agent, so it is set once the page is there.
+  useEffect(() => {
+    if (sharedAgent && inAgentWorkspace)
+      dispatch(setSelectedAgent(sharedAgent));
+  }, [sharedAgent, inAgentWorkspace, dispatch]);
 
   if (isLoading) return <LoadingState fill="parent" />;
   if (loadFailed)
@@ -192,6 +255,7 @@ export default function SharedAgent() {
     return (
       <EmptyState className="h-full" title={t('agents.shared.notFound')} />
     );
+  if (!inAgentWorkspace) return <LoadingState fill="parent" />;
   return (
     <div className="relative h-full w-full">
       <div className="absolute top-5 left-4 hidden items-center gap-3 sm:flex">
@@ -216,6 +280,7 @@ export default function SharedAgent() {
               status={status}
               showHeroOnEmpty={false}
               starters={sharedAgent.starters}
+              onQuestionAction={handleQuestionAction}
               onOpenArtifact={openArtifact}
               headerContent={
                 <div className="flex w-full items-center justify-center py-4">
@@ -232,6 +297,9 @@ export default function SharedAgent() {
               queuedQuestion={queuedQuestion}
               onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
+              placeholder={
+                waitingQuestion ? t('questions.typeAnswer') : undefined
+              }
               showSourceButton={sharedAgent ? false : true}
               showToolButton={sharedAgent ? false : true}
               autoFocus={false}

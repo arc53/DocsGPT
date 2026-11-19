@@ -11,9 +11,9 @@ import { Callout } from 'nextra/components'
 DocsGPT has two independent permission planes:
 
 - **Global RBAC** — every user holds the `admin` or `user` role for the whole instance. Admins can manage other users and see instance-wide usage and audit data.
-- **Team roles** — within a team a user is a `team_admin` or `team_member`, and resources can be shared to teams or individual members.
+- **Team roles** — within a team a user is its `owner`, an `admin`, an `editor` or a `viewer`. The role decides what they can do with the items the [team workspace](/Using/team-workspaces) owns. Personal resources can still be shared to teams or individual members.
 
-The two planes never mix: a global `admin` is a superuser over *all* teams, but a `team_admin` is **not** a global admin.
+The two planes never mix: a global `admin` can manage every team's members and settings, but a team `admin` is **not** a global admin. A global admin gets no role in a team's workspace from being an admin: they see its items and chats only as a member.
 
 <Callout type="info" emoji="🔒">
 Roles are resolved **server-side on every request** and are never trusted from the JWT. The frontend route guards are cosmetic — the server-side decorators are the real boundary. Persisted roles apply under `AUTH_TYPE=oidc`; token-only modes (`simple_jwt`, `session_jwt`) can never hold the admin role.
@@ -126,6 +126,7 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` `PUT` | `/api/admin/guardrails` | **Admin → Guardrails**: the [rules every agent follows](/Agents/guardrails#the-instance-floor) (the instance floor, existing agents included), the [MCP tool-description warnings](/Agents/guardrails#mcp-tool-descriptions) toggle, and what the prompt-injection model costs on this server. |
 | `GET` `PUT` | `/api/admin/defaults/sources` | **Admin → Defaults**, new sources: the [retrieval settings new sources start with](/Sources/Per-source-configuration#defaults-for-new-sources), relevance included, and what the relevance model costs per answer on this server. Saving never changes an existing source. |
 | `GET` `PUT` | `/api/admin/defaults/agents` | **Admin → Defaults**, new agents: the [guardrails new agents start with](/Agents/guardrails#defaults-for-new-agents). Saving never changes an existing agent. |
+| `GET` `PUT` | `/api/admin/defaults/models` | **Admin → Defaults**, models: the instance [task model](/Using/web-app#task-model), a built-in model for users who picked none (`{"task_model_id": null}` or a blank id clears it; spaces around an id are ignored). It applies at once. A stored model that can no longer run reads as `task_model_id: null` with `task_model_unavailable: true`, and the page shows **Unavailable model** until it is replaced. `task_model_error` is `{"model_id", "code", "at"}` when the model that runs for users without a choice failed a draft because its provider refused the key (code `model_auth`), else `null`; the page then marks it **· key refused**, and a draft that works on it or any change here clears it. |
 
 <Callout type="info" emoji="ℹ️">
 Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.
@@ -133,16 +134,24 @@ Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#sc
 
 ## Teams
 
-Teams let a group of users collaborate and share resources. Teams are self-serve — any user can create one and manage its membership.
+Teams let a group of users collaborate and share resources. Teams are self-serve — any user can create one and manage its membership. Each team has a workspace that owns the agents, sources, tools, prompts and folders created in it or moved into it; see [Team workspaces](/Using/team-workspaces).
 
 ### Team roles
 
+Each role includes everything the role above it in the table can do.
+
 | Role | Capabilities |
 | --- | --- |
-| `team_member` | Belongs to the team; can use resources shared with the team. |
-| `team_admin` | Manages membership and team settings. Implies `team_member`. |
+| `viewer` | Uses the team's agents, sources, tools and prompts, and lists its folders, its connected accounts and its custom models. New members join as viewers. |
+| `editor` | Creates, imports, edits and exports the team's items, sees an agent's logs and manages its schedules (and takes one over as its payer), manages the team's folders, moves their own items into the team, syncs the team's sources by hand, and adds tools each person signs in to with their own account. When the team's setting allows **Editors too**, also publishes agents, manages their API key, public link and webhook, and shares the team's items with other teams. |
+| `admin` | Publishes the team's agents, manages their API key, public link and webhook (and takes over paying for them), and shares the team's items with other teams, as far as the team's setting allows. Also deletes items, moves items out to their own Personal workspace, manages members and roles, reads the team's usage report, exports its chats when `TEAM_CHAT_EXPORT_ENABLED` is on, and edits the team's name and description. Connects accounts for the team and manages them; only the admin who connected an account browses it and picks what it syncs. Adds custom models for the team and manages them. |
+| `owner` | The team's creator, or whoever ownership was transferred to. An admin who can also transfer ownership, unlock the team, and delete the team. |
 
-The team **owner** is a distinct concept from `team_admin`: ownership can be transferred, and a global `admin` is treated as a superuser over every team.
+Accounts connected for the team follow their own rules: see [Team connections](/Using/team-workspaces#team-connections). So do the team's custom models: see [Team custom models](/Using/team-workspaces#team-custom-models). A global admin gets no access to either from being an admin.
+
+Taking items outside the team (an agent's API key, widget, public link and webhook, sharing with another team, and team chat links) follows the team's own [setting](/Using/team-workspaces#who-can-take-items-outside): admins by default, editors too when the team allows it, and nobody while the team is locked. Admins and the owner change the setting; only the owner unlocks a locked team. While it is locked, nobody moves items out or exports its agents either.
+
+The owner is `teams.owner_id`; the other roles are stored per member as `team_admin`, `team_editor` and `team_viewer`. Requests take and return the short names. The older names still work: `team_member` is read and accepted as `viewer`, and team payloads keep `member_role` (`team_admin` or `team_member`) beside the new `role`. Upgrading turns existing members into viewers and existing admins into admins.
 
 ### Managing a team
 
@@ -150,11 +159,18 @@ The team **owner** is a distinct concept from `team_admin`: ownership can be tra
 | --- | --- | --- |
 | `GET` / `POST` | `/api/teams` | List your teams / create a team. |
 | `GET` / `PUT` / `DELETE` | `/api/teams/<id>` | Read, update (team admin), or delete a team (owner only; a global admin overrides). |
-| `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member. |
-| `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's role / remove (or leave). |
-| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes a `team_admin` (owner only; a global admin overrides). |
+| `GET` / `POST` | `/api/teams/<id>/members` | List members / add a member: `email` or `user_id`, and `role` (`viewer`, the default, `editor` or `admin`). |
+| `PUT` / `DELETE` | `/api/teams/<id>/members/<member_id>` | Change a member's `role` / remove (or leave). |
+| `POST` | `/api/teams/<id>/transfer_owner` | Transfer ownership to an existing member, who becomes an `admin` too (owner only; a global admin overrides). |
+| `GET` | `/api/teams/<id>/usage?period=current` | The team's [usage report](/Using/team-workspaces#usage) for this `QUOTA_PERIOD` window, or `period=previous`: totals, chats and runs without a person, by person and by agent, and what is paused for its payer (owner and admins). |
+| `GET` | `/api/teams/<id>/chats/export` | Every chat of the team workspace as one NDJSON file (owner and admins; `404` while `TEAM_CHAT_EXPORT_ENABLED` is off). See [Export the team's chats](/Using/team-workspaces#export-the-teams-chats). |
+| `POST` | `/api/agents/<agent_id>/outside_access/take_over` | Become the payer of a team agent's API key, public link and webhook (admins). `409` `take_over_team_only` on a personal agent, `409` `no_outside_access` when none is on. |
 
-A team always keeps at least one `team_admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave.
+For the team's owner and admins, each row of `GET /api/teams/<id>/members` also has `pays_for` (`{schedules, outside_access, connections}`): what that member pays for on the team's agents, and the accounts they connected for the team, which pause if they leave or lose the role. Those rows also have `custom_models`: how many of the team's custom models that member added, which keep running if they leave. The usage, export and take over endpoints aren't open to personal access tokens; a schedule's take over is in [Agent Schedules](/Agents/schedules#rest-api).
+
+A team always keeps at least one `admin`: demoting or removing the last one returns `409`. The team owner can't be demoted or removed either: another admin gets `403`, and the owner gets `400` asking them to transfer ownership first. To step down or leave, transfer ownership (`POST /api/teams/<id>/transfer_owner`), then change your role or leave. `owner` can't be set as a role: only the transfer changes it.
+
+A team that still owns items, connections or custom models can't be deleted: `DELETE /api/teams/<id>` returns `409` with `"error": "team_not_empty"` and counts what is left (connections under `connection`, custom models under `custom_model`). Move the items out or delete them, and remove the connections and custom models, first.
 
 <Callout type="info" emoji="ℹ️">
 Members are added by email (or subject id). The invitee **must have signed in at least once** so DocsGPT can resolve them to a user account.
@@ -163,6 +179,8 @@ Members are added by email (or subject id). The invitee **must have signed in at
 ## Sharing resources with a team
 
 Four resource types can be shared: **agents**, **sources**, **prompts**, and **tools**. Sharing is **additive** — it grants access to others without changing ownership.
+
+Sharing is for personal resources. A resource a team workspace owns is reached by team role only, so it has no per-item shares: a share on one returns `409` with `"error": "team_item"`, and `GET /api/resource_shares` for one returns the team, its member count and the agent's outside access instead of a list of people. To give a team ownership of a personal resource, [move it to the team](/Using/team-workspaces#move-to-team-and-back).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -174,6 +192,7 @@ Sharing rules:
 
 - Only the **owner** of a resource can share it, unless they turn on **Editors can share** in the share dialog's **Access settings**.
 - A share targets either the **whole team** or a **single member**.
+- A share works only while the resource's owner is in that team. When they leave or are removed, their shares to the team pause; when they're added again, the shares work again.
 - Each share carries an access level: **`viewer`** (read-only) or **`editor`** (read and modify).
 - `editor` is not the same as owner — an editor can change a resource but cannot re-share it unless the owner turns on **Editors can share**, or delete it unless the owner turns on **Editors can delete** (agents and sources only; editors never delete tools or prompts).
 - Shared tools run server-side with the **owner's** credentials, or with each member's own account when a connected tool is shared that way; a grantee never sees the owner's secrets.
@@ -184,7 +203,7 @@ Sharing rules:
 Sharing an agent lets people use it; it doesn't share its tools, sources or prompt. Each stays with whoever owns it, and people reach them only through the agent.
 
 - **Viewers** chat with the agent. They don't see its configuration, and they never open its share dialog.
-- **Editors** open its edit page and change it: its instructions, model, tools, sources and prompt, and its [guardrails](/Agents/guardrails) and limits. They can share it or delete it only when you turn on **Editors can share** or **Editors can delete**.
+- **Editors** open its edit page and change it: its instructions, model, tools, sources and prompt, and its [guardrails](/Agents/guardrails) and limits. They can share it or delete it only when you turn on **Editors can share** or **Editors can delete**, and create or reset its API key, public link and webhook only when you turn on **Editors can manage access details**.
 
 Every tool, source and prompt on the agent runs with one person's access for everyone who uses the agent. The exception is a connected tool shared as **Each person's own**, which uses the account of whoever is chatting. The agent's share dialog lists them under **What this agent uses**, for you and its editors. For a workflow agent, the list also includes the tools and sources on its nodes.
 
@@ -206,6 +225,37 @@ Some runs are limited, because nobody can approve an action for you there:
 - **Wikis.** API and widget users, and webhook runs, edit a wiki only when its owner turns on **Let API and widget users edit this wiki** in its **Settings** (the wiki's menu on the Knowledge page). Public-link users edit only wikis they can edit themselves, and approve each edit (see [Wiki sources](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links)).
 - **Research agents.** A research step can't stop to ask, so it skips any action that would need approval or a connection, and any write the caller may not make on your accounts. The step is told why and carries on (see [Research Agent](/Agents/basics#3-research-agent)).
 
+### Agents that use someone else's tools or sources
+
+A tool or source someone shared with you can go into your own agents, and runs there with your access to it. It doesn't reach anyone its owner didn't share it with: an agent that uses one gets no API key (and so no website widget), no public link and no incoming webhook.
+
+- This covers the agent's tools and sources, the sources in its [Knowledge folders](/Sources/adding-knowledge#pick-a-whole-folder), and the tools, sources and folders on a workflow agent's nodes. A prompt counts only when a team owns it; a prompt a person shares with you doesn't. A resource an editor [sponsors](#resources-an-editor-adds-to-someone-elses-agent) runs with their access, not the owner's, and follows the sponsor rules instead.
+- Publishing such an agent makes it available in your own chats, and your teammates' if you shared the agent with them, but creates no API key.
+- Creating a key (`POST /api/regenerate_agent_key/<agent_id>` on an agent with none), a public link (`PUT /api/share_agent`) or a webhook (`GET /api/agent_webhook`) for it is refused with `403`, as is a promptable [conversation link](/Using/sharing) on someone else's source. Replacing a key or link the agent already has still works.
+- A save that adds such a tool, source or team prompt to an agent that has a key, a public link or a webhook (`PUT /api/update_agent/<agent_id>`, or `PUT /api/workflows/<id>` for a node) is refused with `403`. What is already on it stays.
+- A team's items (sources, tools, prompts and knowledge folders) stay with the people who reach them, so a personal agent that uses one can be shared only with the teams and people who already reach each of them; sharing it more widely is refused with `409` `uses_team_items`. See [A personal agent that uses a team's items](/Using/teams-and-sharing#a-personal-agent-that-uses-a-teams-items).
+
+The refusal names each resource and whose it is:
+
+```json
+{
+  "success": false,
+  "code": "borrowed_resource",
+  "message": "This agent uses the tool \"Jira\" from dana@example.com. An agent that uses another person's tools or sources can't have an API key, public link or webhook. Remove it from the agent first.",
+  "resources": [
+    {
+      "key": "tool:<id>",
+      "type": "tool",
+      "id": "<id>",
+      "name": "Jira",
+      "owner": { "user_id": "dana", "label": "dana@example.com" }
+    }
+  ]
+}
+```
+
+`owner` is `{ "user_id": null, "label": null }` for someone you don't know (see [Sharing agents and what they use](#sharing-agents-and-what-they-use)). A workflow save returns only `message` (and `error`).
+
 ### Resources an editor adds to someone else's agent
 
 An agent (and its workflow) runs as its owner, so its tools, sources and prompts are checked against the owner's access. When a team editor adds one the owner can't use, it runs with the **editor's** access instead, for everyone who uses the agent: members of the teams it is shared with, anyone with its API key or website widget, its public link and its webhook. The editor becomes that resource's **sponsor**.
@@ -214,9 +264,10 @@ An agent (and its workflow) runs as its owner, so its tools, sources and prompts
 - Sponsoring is never implied. A save that would make you a new sponsor is refused with `409` until you confirm it. In DocsGPT, a dialog names each resource and who will reach it through the agent. Through the API, send the save again with `confirm_sponsor` listing every resource from the response as `"<type>:<id>"`. A `confirm_sponsor` entry for anything the save doesn't ask you to sponsor is refused with `400`.
 - A sponsored resource stops running when its sponsor can no longer edit the agent, or no longer owns or edits the resource. It stays on the agent but does nothing, and it doesn't pass to whoever saves the agent next. The agent's edit page says why it stopped. An editor who may sponsor it can choose **Run … with my access** there; after they confirm in the same dialog that names who reaches the agent, it runs with their access from their next save. Through the API, include its key in `confirm_sponsor` on any save. Otherwise, someone removes it.
 - A resource that is removed and later added again needs a new confirmation, even if its old sponsor could still sponsor it.
+- A [Knowledge folder](/Sources/adding-knowledge#pick-a-whole-folder) can be added only by its owner, and an editor adding their own folder confirms it the same way: the save is refused with `409` until `confirm_sponsor` lists `"folder:<id>"`, and the dialog names the folder and says that sources filed in it later run with their access too. It asks once; the folder needs no sponsor record. It runs as its owner's filing, the way a sponsor would: it gives the agent each source in it that the agent's owner can use or the folder's owner owns or edits, and nothing once the folder's owner can no longer edit the agent. `folder_details` from `GET /api/get_agent` marks it `stopped` with `reason: "sponsor_cannot_edit_agent"`.
 - Editors can remove any tool, source or prompt from the agent or its workflow nodes, including the owner's private ones they can't open.
 - Workflow nodes follow the same rules, through `PUT /api/workflows/<id>` or the `workflow_graph` field of `POST /api/create_agent` and `PUT /api/update_agent/<agent_id>`. The owner's own saves are checked too: a node can't name a tool or source its owner can't use.
-- Models aren't sponsored. A workflow node's model is looked up in the owner's account, so a node can name one of the owner's [custom models](/Models/custom-models#where-the-model-appears), and it runs with the owner's key for everyone. A save that sets a node to the editor's own custom model is refused with `400`.
+- Models aren't sponsored. A workflow node's model is looked up in the owner's account, so a node can name one of the owner's [custom models](/Models/custom-models#where-the-model-appears), and it runs with the owner's key for everyone. A save that sets a node to the editor's own custom model is refused with `400`. A team's agents and workflows name only the [team's custom models](/Using/team-workspaces#team-custom-models), and a team's model runs only on that team's items. A save that breaks this is refused with `400` and `custom_model_personal_only` (a person's model on a team's item) or `custom_model_team_only` (a team's model on a personal item or another team's), naming the models under `models`.
 - The confirmation covers the audience the agent has at that moment. If the owner later shares the agent with more teams, or turns on a public link, sponsored resources reach those people too, and their sponsors aren't asked again.
 - `audience.teams` lists every team the agent is shared with, including teams where only some members were given access.
 
@@ -227,7 +278,10 @@ A save that needs confirmation returns:
   "success": false,
   "code": "sponsor_confirmation_required",
   "message": "These resources would run with your access for everyone who uses this agent. Confirm to add them.",
-  "resources": [{ "key": "tool:<id>", "type": "tool", "id": "<id>", "name": "Jira" }],
+  "resources": [
+    { "key": "tool:<id>", "type": "tool", "id": "<id>", "name": "Jira" },
+    { "key": "folder:<id>", "type": "folder", "id": "<id>", "name": "Carriers" }
+  ],
   "audience": { "teams": ["Support"], "api_key": true, "public_link": false, "webhook": false }
 }
 ```
@@ -249,6 +303,7 @@ Every run checks each tool, source and prompt on the agent (and each tool and so
 | `sponsor_cannot_edit_agent`, `sponsor_cannot_edit_resource` | Its sponsor lost access (see above). Left out of runs. | Choose **Run … with my access** if you may sponsor it, or remove it. |
 | `connection_needs_reconnect` | The account the tool uses was disconnected or needs signing in again. It can't run until someone signs in again. | If it is your account, choose **Reconnect**; otherwise ask the tool's owner. |
 | `connection_removed` | The tool's connection was removed but the tool was kept, and it has no credentials of its own. It can't run until the account is connected again. | Ask the tool's owner to connect the account again, or remove it. |
+| `connection_paused` | The tool runs on an [account connected for the team](/Using/team-workspaces#team-connections), and that account is paused: whoever connected it left the team, stopped being an admin, or was deactivated. It can't run until the pause clears. | Ask a team admin to reconnect it with their own account. |
 | `connector_disabled` | An admin turned the service off. It can't run until it is turned back on. | Ask an admin to turn it back on, or remove it. |
 
 Only tools that run on their owner's account (owner mode) are checked this way. A tool shared in member mode runs on each person's own account, so the owner's account doesn't decide whether it runs: it is listed as running, with the note that each person uses their own account, and whoever runs it is asked to connect their own account when they need to.
@@ -272,11 +327,25 @@ Admin, team, token and data-plane actions are appended to the `auth_events` tabl
 | `role_granted` / `role_revoked` | `access` | The admin role is granted or revoked; `metadata.source` is `manual` or `oidc_group`. |
 | `admin_user_activated` / `admin_user_deactivated` | `access` | An admin activates or deactivates a user. |
 | `admin_sessions_revoked` | `access` | An admin force-logs-out a user. |
-| `team.create`, `team.member_add`, `team.member_role`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. |
+| `team.create`, `team.member_add`, `team.member_role_changed`, `team.member_remove`, `team.share`, `team.unshare`, `team.transfer_owner`, `team.delete` | `access` | Team management. Older rows name a role change `team.member_role`. |
+| `team.item_moved_in`, `team.item_moved_out`, `team.folder_moved_in`, `team.folder_moved_out` | `access` | An agent, source, tool or prompt, or a folder, [moves](/Using/team-workspaces#move-to-team-and-back) into a team's workspace or out of it to a member's Personal workspace. |
+| `team.schedule_taken_over`, `team.outside_access_taken_over` | `access` | Someone [takes over](/Using/team-workspaces#take-over) paying for a schedule or for a team agent's outside access. The metadata names the schedule or agent, who paid before (`from`) and who pays now (`to`); outside access also lists which ways in were on. |
+| `team.chats_exported` | `access` | A team's owner or an admin [exports the team's chats](/Using/team-workspaces#export-the-teams-chats). The metadata counts the chats and the people in them. |
+| `team.outside_policy_changed` | `access` | A team's owner or an admin changes [who can take the team's items outside](/Using/team-workspaces#who-can-take-items-outside), locking or unlocking it included. The metadata has the setting `before` and `after` (`admins`, `editors` or `locked`). |
+| `team.connection_added` | `access` | A team admin [connects an account for the team](/Using/team-workspaces#team-connections). The metadata names the team, the `connection_id`, the `connector_key` and the `account_label`. |
+| `team.connection_reconnected` | `access` | A team's account is signed in to again. The metadata has the team, the `connection_id`, `replaced` (`true` when another admin [reconnected it with their own account](/Using/team-workspaces#pauses-and-reconnect)) and `previous_connected_by`. |
+| `team.connection_disconnected` | `access` | A team admin disconnects a team's account: its stored sign-in is deleted, and its sources and tools stay. The metadata names the team and the `connection_id`. |
+| `team.connection_removed` | `access` | A team admin removes a team's account. The metadata names the team and the `connection_id`, says whether its `sources` and `tools` were kept or deleted, and counts them (`source_count`, `tool_count`). |
+| `team.model_added` | `access` | A team admin adds a [custom model for the team](/Using/team-workspaces#team-custom-models), on the Custom Models page or through an agent import. The metadata names the team, the `model_id`, the `display_name` and the `upstream_model_id`, and has `copied` (`true` when it was [copied from someone's Personal](/Models/custom-models#copy-a-model-to-a-team)). |
+| `team.model_updated` | `access` | A team admin changes a team's custom model. The metadata names the team, the `model_id` and the `display_name`, lists the changed `fields` (never the key), and has `key_replaced`. |
+| `team.model_removed` | `access` | A team admin deletes a team's custom model. The metadata names the team, the `model_id` and the `display_name`, and counts the team's `agents` and `workflows` that used it. |
+| `team.item_shared_with_team` | `access` | A team's agent, source, tool or prompt is [shared with another team](/Using/team-workspaces#share-an-item-with-another-team). The metadata names the owning team, the receiving team (`to_team_id`), and the item (`resource_type`, `resource_id`). |
+| `team.item_unshared_from_team` | `access` | A share with another team [stops](/Using/team-workspaces#see-and-stop-sharing). The same metadata, plus `side`: `owner` when the owning team stopped it, `receiver` when the receiving team removed it. |
 | `quota_policy_set` / `quota_policy_deleted` | `config` | A [usage quota](/Deploying/Usage-Quotas) is changed. |
 | `connector_policy_set` | `config` | An admin changes connector policies under **Admin → Connectors**. |
 | `source_defaults_set` | `config` | An admin changes the default retrieval settings for new sources under **Admin → Defaults**. The metadata lists each changed field as `[old, new]`. |
 | `agent_defaults_set` | `config` | An admin changes the default guardrails for new agents under **Admin → Defaults**, each changed field as `[old, new]`. |
+| `model_defaults_set` | `config` | An admin changes the instance task model under **Admin → Defaults**, as `[old, new]`. |
 | `guardrails_settings_set` | `config` | An admin changes the floor or the MCP tool-description warnings under **Admin → Guardrails**, each changed field as `[old, new]`. |
 | `source.created`, `source.deleted`, `source.reingested`, `source.wiki_settings_updated` | `data` | Knowledge source changes. |
 | `agent.created`, `agent.updated`, `agent.deleted`, `agent.key_regenerated` | `data` | Agent changes. `agent.updated` records the names of the fields that changed, never their values. |
@@ -315,6 +384,7 @@ Two guardrail columns are deliberately never projected into the feed or the expo
 ## Related
 
 - [Teams and sharing](/Using/teams-and-sharing) — the web-app walkthrough for creating a team, adding members and sharing.
+- [Team workspaces](/Using/team-workspaces) — what a team owns, the workspace switcher, and moving items into a team and back.
 - [SSO with OIDC](/Deploying/OIDC-SSO) — sign-in, group allowlists, and the `auth_events` table.
 - [Usage Quotas](/Deploying/Usage-Quotas) — token and cost limits per user and per team.
 - [App Configuration](/Deploying/DocsGPT-Settings) — the full settings reference.

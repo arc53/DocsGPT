@@ -29,6 +29,7 @@ from uuid import UUID
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.workspaces.principal import is_principal_id, principal_id, team_of_principal
 
 
 _DEFAULT_PREFERENCES = '{"pinned": [], "shared_with_me": []}'
@@ -56,6 +57,9 @@ class UsersRepository:
 
         Args:
             user_id: Auth-provider ``sub`` (opaque string).
+
+        Returns:
+            The row, with ``kind`` (``user``, ``team`` or ``system``), or ``None``.
         """
         result = self._conn.execute(
             text("SELECT * FROM users WHERE user_id = :user_id"),
@@ -63,6 +67,47 @@ class UsersRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def team_principal(self, team_id: str) -> Optional[dict]:
+        """The principal row of a team (the ``users`` row that owns its items), or ``None``.
+
+        Args:
+            team_id: The team's UUID.
+
+        Returns:
+            The ``kind = 'team'`` row, or ``None`` when the team has none or ``team_id`` is malformed.
+        """
+        try:
+            user_id = principal_id(team_id)
+        except ValueError:
+            return None
+        row = self.get(user_id)
+        return row if row is not None and row.get("kind") == "team" else None
+
+    def create_team_principal(self, team_id: str) -> dict:
+        """Insert a team's principal row if it is missing, and return it.
+
+        Called in the transaction that creates the team, so the principal exists
+        before any item could be written under it.
+
+        Args:
+            team_id: The team's UUID (the team row must exist).
+
+        Returns:
+            The principal row.
+        """
+        user_id = principal_id(team_id)
+        self._conn.execute(
+            text(
+                """
+                INSERT INTO users (user_id, kind, team_id)
+                VALUES (:user_id, 'team', CAST(:team_id AS uuid))
+                ON CONFLICT (user_id) DO NOTHING
+                """
+            ),
+            {"user_id": user_id, "team_id": team_of_principal(user_id)},
+        )
+        return self.get(user_id)
 
     # ------------------------------------------------------------------
     # Upsert
@@ -81,8 +126,18 @@ class UsersRepository:
         upserts come from request paths that don't carry the email claim).
 
         The conflict branch also updates ``user_id`` (a no-op) so ``RETURNING *``
-        fires on both the insert and conflict paths.
+        fires on both the insert and conflict paths. A row that is not a person
+        (a team principal, ``__system__``) keeps its email.
+
+        Raises:
+            ValueError: ``user_id`` is a team principal id with no row: only
+                :meth:`create_team_principal` makes those.
         """
+        if is_principal_id(user_id):
+            existing = self.get(user_id)
+            if existing is None:
+                raise ValueError("a team principal is created with its team, not upserted")
+            return existing
         result = self._conn.execute(
             text(
                 """
@@ -90,7 +145,9 @@ class UsersRepository:
                 VALUES (:user_id, :email, CAST(:default_prefs AS jsonb))
                 ON CONFLICT (user_id) DO UPDATE
                     SET user_id = EXCLUDED.user_id,
-                        email = COALESCE(EXCLUDED.email, users.email)
+                        email = CASE WHEN users.kind = 'user'
+                                     THEN COALESCE(EXCLUDED.email, users.email)
+                                     ELSE users.email END
                 RETURNING *
                 """
             ),
@@ -103,12 +160,13 @@ class UsersRepository:
 
         Used to backfill an existing user's email from the OIDC claim on login
         without re-running the upsert. No-op when ``email`` is falsy so a login
-        without the claim never wipes a stored value.
+        without the claim never wipes a stored value, and for a row that is not
+        a person.
         """
         if not email:
             return
         self._conn.execute(
-            text("UPDATE users SET email = :email WHERE user_id = :user_id"),
+            text("UPDATE users SET email = :email WHERE user_id = :user_id AND kind = 'user'"),
             {"user_id": user_id, "email": email},
         )
 
@@ -116,12 +174,12 @@ class UsersRepository:
         """Return the user row whose email matches ``email`` (case-insensitive).
 
         Used by the add-team-member-by-email flow to resolve an email to its
-        ``user_id`` (sub). Returns None when no user has that email.
+        ``user_id`` (sub). Persons only. Returns None when no user has that email.
         """
         if not email or not email.strip():
             return None
         result = self._conn.execute(
-            text("SELECT * FROM users WHERE lower(email) = lower(:email) LIMIT 1"),
+            text("SELECT * FROM users WHERE lower(email) = lower(:email) AND kind = 'user' LIMIT 1"),
             {"email": email.strip()},
         )
         row = result.fetchone()
@@ -147,6 +205,27 @@ class UsersRepository:
             {"ids": ids},
         )
         return {row[0]: row[1] for row in result.fetchall()}
+
+    def principal_labels(self, user_ids: Iterable[str]) -> dict[str, str]:
+        """Map each given team principal id to ``"Team <name>"``.
+
+        Args:
+            user_ids: Any ids; only those with the principal prefix are looked up.
+
+        Returns:
+            ``{principal_id: "Team <name>"}`` for principals whose team exists.
+        """
+        ids = sorted({uid for uid in user_ids if is_principal_id(uid)})
+        if not ids:
+            return {}
+        result = self._conn.execute(
+            text(
+                "SELECT u.user_id, t.name FROM users u JOIN teams t ON t.id = u.team_id "
+                "WHERE u.user_id = ANY(:ids) AND u.kind = 'team'"
+            ),
+            {"ids": ids},
+        )
+        return {row[0]: f"Team {row[1]}" for row in result.fetchall()}
 
     def add_pinned(self, user_id: str, agent_id: str) -> None:
         """Idempotently append ``agent_id`` to ``agent_preferences.pinned``.
@@ -340,6 +419,35 @@ class UsersRepository:
         )
         return result.rowcount > 0
 
+    def set_task_model_id(self, user_id: str, model_id: Optional[str]) -> None:
+        """Store the model the user's DocsGPT jobs run on in ``tool_preferences.task_model_id``.
+
+        The caller validates the id (a model the user can use). ``None``
+        removes the key, so the instance's task model applies again; the
+        other keys are kept.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            model_id: A model id, or ``None`` to use the instance's.
+        """
+        self.upsert(user_id)
+        if model_id is None:
+            statement = """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb) - 'task_model_id',
+                    updated_at = now()
+                WHERE user_id = :user_id
+            """
+        else:
+            statement = """
+                UPDATE users
+                SET tool_preferences = COALESCE(tool_preferences, '{}'::jsonb)
+                        || jsonb_build_object('task_model_id', CAST(:model_id AS text)),
+                    updated_at = now()
+                WHERE user_id = :user_id
+            """
+        self._conn.execute(text(statement), {"user_id": user_id, "model_id": model_id})
+
     # ------------------------------------------------------------------
     # SCIM provisioning
     # ------------------------------------------------------------------
@@ -350,8 +458,11 @@ class UsersRepository:
         differs only by case counts as a duplicate. The pre-check keeps SCIM
         from provisioning a second row for a user the OIDC login already
         created under different casing; the ``ON CONFLICT`` clause remains an
-        exact-match backstop for the concurrent-insert race.
+        exact-match backstop for the concurrent-insert race. An id with the
+        team principal prefix is refused the same way (it is reserved).
         """
+        if is_principal_id(user_id) or is_principal_id(str(user_id).lower()):
+            return None
         existing = self._conn.execute(
             text("SELECT 1 FROM users WHERE lower(user_id) = lower(:user_id)"),
             {"user_id": user_id},
@@ -373,19 +484,26 @@ class UsersRepository:
         return row_to_dict(row) if row is not None else None
 
     def get_by_pk(self, pk: str) -> Optional[dict]:
-        """Return the user row by primary-key ``id``, or ``None`` (including malformed UUIDs)."""
+        """Return the person row by primary-key ``id``, or ``None``.
+
+        SCIM is its only caller, so a row that is not a person (a team
+        principal, ``__system__``) reads as missing, and so do malformed UUIDs.
+        """
         canonical = _canonical_uuid(pk)
         if canonical is None:
             return None
         result = self._conn.execute(
-            text("SELECT * FROM users WHERE id = CAST(:pk AS uuid)"),
+            text("SELECT * FROM users WHERE id = CAST(:pk AS uuid) AND kind = 'user'"),
             {"pk": canonical},
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
     def set_active(self, pk: str, active: bool) -> Optional[dict]:
-        """Set ``active`` on the row with primary-key ``id`` and return the updated row."""
+        """Set ``active`` on the person row with primary-key ``id`` and return the updated row.
+
+        A row that is not a person is left alone and ``None`` is returned.
+        """
         canonical = _canonical_uuid(pk)
         if canonical is None:
             return None
@@ -394,7 +512,7 @@ class UsersRepository:
                 """
                 UPDATE users
                 SET active = :active, updated_at = now()
-                WHERE id = CAST(:pk AS uuid)
+                WHERE id = CAST(:pk AS uuid) AND kind = 'user'
                 RETURNING *
                 """
             ),
@@ -403,16 +521,62 @@ class UsersRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def has_shared(self, user_id: str, agent_id: str) -> bool:
+        """Whether ``agent_id`` is in ``user_id``'s ``agent_preferences.shared_with_me``.
+
+        The entry is written when the user opens the agent's share link.
+
+        Args:
+            user_id: Auth-provider ``sub``.
+            agent_id: The agent's id.
+
+        Returns:
+            True when the user opened that agent's share link.
+        """
+        if not user_id or not agent_id:
+            return False
+        row = self._conn.execute(
+            text(
+                "SELECT 1 FROM users WHERE user_id = :user_id "
+                "AND COALESCE(agent_preferences->'shared_with_me', '[]'::jsonb) @> to_jsonb(CAST(:agent_id AS text))"
+            ),
+            {"user_id": user_id, "agent_id": str(agent_id).lower()},
+        ).first()
+        return row is not None
+
+    def deactivated_among(self, user_ids: Iterable[str]) -> set[str]:
+        """Return the ids in ``user_ids`` whose account is deactivated.
+
+        An id with no row counts as active, as for personal access tokens.
+
+        Args:
+            user_ids: Auth-provider ``sub`` values.
+
+        Returns:
+            The subset with ``active = false``.
+        """
+        ids = sorted({str(user_id) for user_id in user_ids if user_id})
+        if not ids:
+            return set()
+        rows = self._conn.execute(
+            text("SELECT user_id FROM users WHERE user_id = ANY(:ids) AND active = false"),
+            {"ids": ids},
+        ).fetchall()
+        return {row[0] for row in rows}
+
     def list_paginated(
         self, user_name: Optional[str], offset: int, limit: int
     ) -> tuple[int, list[dict]]:
-        """Return ``(total, page)`` ordered by ``created_at, id``; optional exact ``user_id`` filter."""
-        where = ""
+        """Return ``(total, page)`` of person rows ordered by ``created_at, id``; optional exact ``user_id`` filter.
+
+        SCIM is its only caller: team principals and ``__system__`` are never listed.
+        """
+        where = "WHERE kind = 'user'"
         filter_params: dict = {}
         if user_name is not None:
             # SCIM userName is case-insensitive (caseExact=false); match on
             # lower(user_id) so the IdP finds the account regardless of casing.
-            where = "WHERE lower(user_id) = lower(:user_name)"
+            where += " AND lower(user_id) = lower(:user_name)"
             filter_params = {"user_name": user_name}
         total = self._conn.execute(
             text(f"SELECT count(*) FROM users {where}"), filter_params

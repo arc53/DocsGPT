@@ -12,9 +12,14 @@ import { EmptyState } from '../components/ui/empty-state';
 import { ListRow, ListRows } from '../components/ui/list-row';
 import { LoadingState } from '../components/ui/loading-state';
 import { formatClock, formatDateTime } from '../utils/dateTimeUtils';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from './connectionErrors';
 import type { GitHubRepository } from './types';
 
-type LoadError = 'reconnect' | 'rate_limited' | 'failed' | null;
+// `refused`: a team's account the caller may not browse, or one paused.
+type LoadError = 'reconnect' | 'rate_limited' | 'refused' | 'failed' | null;
 
 /**
  * Pick one repository a GitHub connection can read. A token lists what it
@@ -44,6 +49,8 @@ export default function RepoPicker({
   const [error, setError] = useState<LoadError>(null);
   // When GitHub lifts the account's rate limit, as the API reported it.
   const [retryAt, setRetryAt] = useState<string | null>(null);
+  // A team's account's refusal (its body), worded when shown.
+  const [refusal, setRefusal] = useState<unknown>(null);
   const [query, setQuery] = useState('');
   // Only the latest load may land: a reload after choosing repositories
   // must not be overwritten by a slower earlier one.
@@ -60,6 +67,11 @@ export default function RepoPicker({
         if (data?.code === 'rate_limited' && data.retry_at) {
           setRetryAt(data.retry_at);
           setError('rate_limited');
+          return;
+        }
+        if (connectionErrorCode(data)) {
+          setRefusal(data);
+          setError('refused');
           return;
         }
         setError(data?.code === 'reconnect' ? 'reconnect' : 'failed');
@@ -122,14 +134,19 @@ export default function RepoPicker({
         title={
           error === 'reconnect'
             ? t('settings.connectors.detail.expired')
-            : error === 'rate_limited' && retryAt
-              ? t('settings.connectors.github.rateLimited', {
-                  time: formatClock(new Date(retryAt)),
-                  interpolation: { escapeValue: false },
-                })
-              : t('settings.connectors.github.loadFailed')
+            : error === 'refused'
+              ? connectionErrorMessage(t, refusal)
+              : error === 'rate_limited' && retryAt
+                ? t('settings.connectors.github.rateLimited', {
+                    time: formatClock(new Date(retryAt)),
+                    interpolation: { escapeValue: false },
+                  })
+                : t('settings.connectors.github.loadFailed')
         }
-        onRetry={error === 'reconnect' ? undefined : load}
+        // Who may browse it, or a pause, doesn't change on a retry.
+        onRetry={
+          error === 'reconnect' || error === 'refused' ? undefined : load
+        }
         action={
           error === 'reconnect' && onReconnect ? (
             <Button

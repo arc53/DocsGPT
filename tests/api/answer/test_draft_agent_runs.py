@@ -218,9 +218,12 @@ class TestUnfinishedWorkflowDraft:
         monkeypatch.setattr("docsgpt.storage.db.session.get_engine", lambda: pg_engine)
         built = _patch_run(monkeypatch)
         agent_id = str(_seed_workflow_draft(pg_engine, finished=False)["agent"]["id"])
+        from docsgpt.api.user.resource_access import build
+
+        # A team grant gives the teammate viewer access (``use``).
         monkeypatch.setattr(
-            "docsgpt.api.answer.services.stream_processor.TeamScopeRepository.can_read",
-            lambda self, user_id, resource_type, resource_id: user_id == TEAMMATE,
+            "docsgpt.api.answer.services.stream_processor.resolve",
+            lambda conn, rtype, rid, user_id: build(rtype, rid, "viewer", OWNER, {}) if user_id == TEAMMATE else None,
         )
 
         status, body = self._ask("/stream", agent_id, TEAMMATE)

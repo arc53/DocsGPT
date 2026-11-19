@@ -9,13 +9,19 @@ An agent uses a resource when running it would reach that resource:
   ``prompt_id``, ``agents.prompt_preset`` names the preset it runs
   (``creative`` or ``strict``), and NULL there too is ``default``.
 - A workflow agent through the agent nodes of its workflow's current graph
-  version (``workflows.current_graph_version``): their ``tools`` and
-  ``sources`` lists. Workflow nodes carry their prompt inline, so a workflow
-  agent never uses a prompt, and its classic columns are ignored.
+  version (``workflows.current_graph_version``): their ``tools``,
+  ``sources`` and ``folders`` lists. Workflow nodes carry their prompt inline,
+  so a workflow agent never uses a prompt, and its classic columns are ignored.
 
-Only agents the caller can open are listed: their own and the ones a team
-shares with them (narrowed further by a token's agent allowlist; a token
-without ``agents:read`` lists none). Each listed agent says whether the caller
+A source folder (kind ``folder``) is used by the classic agents that read it
+live (``agents.knowledge_folder_ids``) and by workflow agent nodes naming it in
+``folders``. A source is also used by those holders when one of their folders
+(its subtree included) feeds it to them (``folder_knowledge.folder_source_ids``).
+
+Only agents the caller can open are listed: their own, the ones a team
+shares with them, and the agents of every team workspace they belong to
+(narrowed further by a token's agent allowlist; a token without
+``agents:read`` lists none). Each listed agent says whether the caller
 may open its editor (``can_edit``, the agent action ``view``) and its
 ``status`` (``draft`` or ``published``). For a resource
 the caller may delete (the owner, or an editor the owner let delete), the
@@ -31,14 +37,18 @@ from typing import Iterable, Literal, Optional
 
 from sqlalchemy import Connection, text
 
-from docsgpt.api.user.resource_access import allowed_actions, settings_many
+from docsgpt.api.user.resource_access import allowed_actions, settings_many, workspace_allowed_actions
 from docsgpt.api.user.team_sharing import visible_with_access
-from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS
+from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.workspaces.outside import team_policy
+from docsgpt.workspaces.principal import PRINCIPAL_PREFIX, is_principal_id, principal_id, team_of_principal
+from docsgpt.workspaces.roles import from_stored_role
 
 logger = logging.getLogger(__name__)
 
-UsageKind = Literal["tool", "prompt", "source"]
+UsageKind = Literal["tool", "prompt", "source", "folder"]
 
 #: The ``used_by`` of a resource no agent uses. Compare against it; never mutate it.
 EMPTY_USAGE: dict = {"agents": [], "others": 0}
@@ -52,8 +62,13 @@ PROMPT_PRESETS = frozenset({DEFAULT_PROMPT, *STORED_PROMPT_PRESETS})
 # A classic agent is anything but a workflow agent.
 _CLASSIC = "a.agent_type IS DISTINCT FROM 'workflow'"
 
-# Agents the caller can open: their own and the ones a team shares with them.
-_VISIBLE = "(a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])))"
+# Agents the caller can open: their own, the ones a team shares with them, and
+# their teams' own agents (owned by each team's principal).
+_VISIBLE = (
+    "(a.user_id = :user_id OR a.id = ANY(CAST(:visible AS uuid[])) "
+    f"OR a.user_id IN (SELECT '{PRINCIPAL_PREFIX}' || m.team_id::text FROM team_members m "
+    "WHERE m.user_id = :user_id))"
+)
 
 # Each query reads every agent that uses a resource the caller may delete
 # (``:full``: hidden ones are counted in ``others``), but only the agents the
@@ -81,6 +96,17 @@ _CLASSIC_SOURCES_SQL = f"""
 # Uses ``agents_source_id_idx`` and the GIN index on ``agents.extra_source_ids`` (migration 0060).
 _CLASSIC_SOURCES_MATCH = "(a.source_id = ANY(CAST({ids} AS uuid[])) OR a.extra_source_ids && CAST({ids} AS uuid[]))"
 
+# A source folder an agent reads live (``agents.knowledge_folder_ids``, migration 0064).
+_CLASSIC_FOLDERS_SQL = f"""
+    SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, f.fid::text AS ref
+    FROM agents a
+    CROSS JOIN LATERAL unnest(a.knowledge_folder_ids) AS f(fid)
+    WHERE {_CLASSIC} AND ({{match}})
+      AND f.fid = ANY(CAST(:ids AS uuid[]))
+"""
+# Uses the GIN index on ``agents.knowledge_folder_ids`` (migration 0064).
+_CLASSIC_FOLDERS_MATCH = "a.knowledge_folder_ids && CAST({ids} AS uuid[])"
+
 _CLASSIC_PROMPTS_SQL = f"""
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status,
            COALESCE(a.prompt_id::text, a.prompt_preset, '{DEFAULT_PROMPT}') AS ref
@@ -99,6 +125,7 @@ _PRESETS_MATCH = (
 # engine reads them; a lone id is one ref (``_node_refs`` in the workflow routes).
 # The match is that function on a constant key, the expression the GIN indexes
 # ``workflow_nodes_tool_refs_gin_idx`` / ``workflow_nodes_source_refs_gin_idx`` hold.
+# ``folders`` has no such index: its match reads the agent nodes of current versions.
 _WORKFLOW_SQL = """
     SELECT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, r.ref
     FROM workflow_nodes n
@@ -110,7 +137,39 @@ _WORKFLOW_SQL = """
 """
 _WORKFLOW_MATCH = "workflow_node_refs(n.config, '{key}') && CAST({{ids}} AS text[])"
 
-_WORKFLOW_KEY = {"tool": "tools", "source": "sources"}
+_WORKFLOW_KEY = {"tool": "tools", "source": "sources", "folder": "folders"}
+
+# The folders each source is filed in, with every folder above them in the
+# same tree (a filing sits in its own user's folder): a holder naming any of
+# them reads the source, if the folder feeds it (checked in Python).
+_FOLDER_FED_UP = """
+    WITH RECURSIVE up(sid, id, level) AS (
+        SELECT fi.resource_id, fi.folder_id, 1 FROM folder_items fi
+        WHERE fi.resource_type = 'source' AND fi.resource_id = ANY(CAST(:ids AS uuid[]))
+        UNION
+        SELECT u.sid, p.id, u.level + 1
+        FROM up u JOIN folders c ON c.id = u.id JOIN folders p ON p.id = c.parent_id AND p.user_id = c.user_id
+        WHERE u.level < 64
+    )
+"""
+_FOLDER_FED_SQL = _FOLDER_FED_UP + f"""
+    SELECT DISTINCT a.id::text AS agent_id, a.name, a.user_id, a.agent_type, a.status, u.sid::text AS ref,
+           'agent' AS holder_type, a.id::text AS holder_id, u.id::text AS folder_id
+    FROM up u JOIN agents a ON u.id = ANY(a.knowledge_folder_ids)
+    WHERE {_CLASSIC} AND ({{match}})
+    UNION
+    SELECT a.id::text, a.name, a.user_id, a.agent_type, a.status, u.sid::text,
+           'workflow', w.id::text, u.id::text
+    FROM up u
+    JOIN workflow_nodes n ON u.id::text = ANY(workflow_node_refs(n.config, 'folders'))
+    JOIN workflows w ON w.id = n.workflow_id AND n.graph_version = w.current_graph_version
+    JOIN agents a ON a.workflow_id = w.id
+    WHERE a.agent_type = 'workflow' AND n.node_type = 'agent' AND ({{match}})
+"""
+_FOLDER_FED_MATCH = "u.sid = ANY(CAST({ids} AS uuid[]))"
+
+# The workflows whose agent nodes read a candidate folder.
+_WORKFLOWS_BY_ID_SQL = "SELECT * FROM workflows WHERE id = ANY(CAST(:ids AS uuid[]))"
 
 # Installs migrated from Mongo (``scripts/db/backfill.py``) may still name a
 # tool in ``agents.tools``, or a tool or source in a workflow node, by its
@@ -293,6 +352,7 @@ def _usage_rows(
     ``scoped_ids`` and ``presets``. ``legacy`` (ObjectId -> UUID) adds the
     ObjectIds of the ids to the text matches (tool lists and workflow node
     refs), each read as widely as its UUID; the uuid source columns never hold one.
+    The agents of the caller's teams (owned by each team's principal) count as ones they can open.
     """
     params = {
         "full": full_ids,
@@ -314,9 +374,11 @@ def _usage_rows(
         return conn.execute(text(_CLASSIC_PROMPTS_SQL.format(match=where)), params).fetchall()
     if not (full_ids or scoped_ids):
         return []
-    classic_sql, classic_match = (
-        (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH) if kind == "tool" else (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH)
-    )
+    classic_sql, classic_match = {
+        "tool": (_CLASSIC_TOOLS_SQL, _CLASSIC_TOOLS_MATCH),
+        "source": (_CLASSIC_SOURCES_SQL, _CLASSIC_SOURCES_MATCH),
+        "folder": (_CLASSIC_FOLDERS_SQL, _CLASSIC_FOLDERS_MATCH),
+    }[kind]
     classic_params = text_params if kind == "tool" else params
     rows = list(conn.execute(
         text(classic_sql.format(match=_match(classic_match, classic_params["full"], classic_params["scoped"]))),
@@ -327,6 +389,62 @@ def _usage_rows(
     rows.extend(
         conn.execute(text(_WORKFLOW_SQL.format(key=key).format(match=workflow_match)), text_params).fetchall()
     )
+    if kind == "source":
+        rows.extend(_folder_fed_rows(conn, full_ids, scoped_ids, params))
+    return rows
+
+
+def _folder_fed_rows(conn: Connection, full_ids: list[str], scoped_ids: list[str], params: dict) -> list[tuple]:
+    """The usage rows of sources an agent or workflow node reads through one of its knowledge folders.
+
+    A filing under a holder's folder is a candidate; it counts only when the
+    folder feeds that holder the source (``expand_folders``: the folder
+    owner may use it, the teammate rules, no borrowed source on a holder
+    with outside access).
+
+    Args:
+        conn: An open connection.
+        full_ids: Source ids whose every agent is read.
+        scoped_ids: Source ids whose agents are read only when the caller can open them.
+        params: The query parameters of :func:`_usage_rows`.
+
+    Returns:
+        list[tuple]: ``(agent_id, name, user_id, agent_type, status, ref)`` rows.
+    """
+    from docsgpt.api.user.folder_knowledge import expand_folders_of_holders
+    from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+    match = _match(_FOLDER_FED_MATCH, full_ids, scoped_ids)
+    candidates = conn.execute(text(_FOLDER_FED_SQL.format(match=match)), params).fetchall()
+    if not candidates:
+        return []
+    # Every holder, and what each of its candidate folders feeds it, read together: the holder rules
+    # still apply holder by holder, but the rows and folder contents load once for the whole listing.
+    folders_of: dict[tuple[str, str], list[str]] = {}
+    for *_agent, holder_type, holder_id, folder_id in candidates:
+        holder_folders = folders_of.setdefault((holder_type, holder_id), [])
+        if folder_id not in holder_folders:
+            holder_folders.append(folder_id)
+    agent_ids = [hid for kind, hid in folders_of if kind == "agent"]
+    workflow_ids = [hid for kind, hid in folders_of if kind == "workflow"]
+    holders: dict[tuple[str, str], dict] = {
+        ("agent", str(row["id"]).lower()): row for row in AgentsRepository(conn).list_by_ids(agent_ids)
+    }
+    if workflow_ids:
+        for row in conn.execute(text(_WORKFLOWS_BY_ID_SQL), {"ids": workflow_ids}).fetchall():
+            workflow = row_to_dict(row)
+            holders[("workflow", str(workflow["id"]).lower())] = workflow
+    present = [key for key in folders_of if key in holders]
+    expanded = expand_folders_of_holders(conn, [(key[0], holders[key], folders_of[key]) for key in present])
+    fed: dict[tuple[str, str, str], set[str]] = {
+        (*key, folder_id): set(sources)
+        for key, by_folder in zip(present, expanded)
+        for folder_id, sources in by_folder.items()
+    }
+    rows: list[tuple] = []
+    for agent_id, name, owner, agent_type, status, ref, holder_type, holder_id, folder_id in candidates:
+        if ref.lower() in fed.get((holder_type, holder_id, folder_id), ()):
+            rows.append((agent_id, name, owner, agent_type, status, ref))
     return rows
 
 
@@ -357,11 +475,39 @@ def _collect(
 
     team_access = visible_with_access(conn, user_id, "agent")
     team_agents = sorted(team_access)
+    # A team's own agents open by the caller's role in that team, not by a
+    # grant; read only once a team's agent turns up, so a Personal list costs nothing more.
+    roles_box: list[dict[str, Optional[str]]] = []
+
+    def _team_role(owner: str) -> Optional[str]:
+        if not is_principal_id(owner):
+            return None
+        if not roles_box:
+            roles_box.append({
+                principal_id(team_id): from_stored_role(role)
+                for team_id, role in TeamMembersRepository(conn).roles_by_team(user_id).items()
+            })
+        return roles_box[0].get(owner)
+
+    can_edit_by_owner: dict[str, bool] = {}
+
+    def _can_edit(owner: str) -> bool:
+        # The caller's role and the team's policy depend on the owner alone: worked out once per owner,
+        # not once per agent and resource.
+        if owner not in can_edit_by_owner:
+            role = _team_role(owner)
+            can_edit_by_owner[owner] = owner == user_id or (
+                role is not None
+                and "view" in workspace_allowed_actions(
+                    "agent", role, policy=team_policy(conn, team_of_principal(owner))
+                )
+            )
+        return can_edit_by_owner[owner]
 
     def _can_open(agent_id: str, owner: str) -> bool:
         if agent_allowlist is not None and agent_id not in agent_allowlist:
             return False
-        return owner == user_id or agent_id in team_access
+        return owner == user_id or agent_id in team_access or _team_role(owner) is not None
 
     shared_listed: set[str] = set()
     full_ids = [k for k in uuid_ids if k in deletable]
@@ -374,8 +520,8 @@ def _collect(
         if ref_key not in wanted:
             continue
         if _can_open(agent_id, owner):
-            listed[ref_key][agent_id] = (name, agent_type or "classic", owner == user_id, status)
-            if owner != user_id:
+            listed[ref_key][agent_id] = (name, agent_type or "classic", _can_edit(owner), status)
+            if owner != user_id and _team_role(owner) is None:
                 shared_listed.add(agent_id)
         elif ref_key in deletable:
             hidden[ref_key].add(agent_id)

@@ -14,12 +14,18 @@ import userService from '../api/services/userService';
 import ConnectorAuth from '../components/ConnectorAuth';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
+import {
   loadConnectors,
   selectConnections,
+  selectPickableConnections,
 } from '../connectors/connectorsSlice';
 import { connectorIconKey } from '../connectors/i18n';
 import { useDebouncedCallback } from '../hooks';
 import { useLoadMore, type LoadMorePage } from '../hooks/useLoadMore';
+import { selectInTeam } from '../settings/workspaceAccess';
 import type { AppDispatch } from '../store';
 import { formatCount, formatDateOnly } from '../utils/dateTimeUtils';
 import { formatBytes } from '../utils/stringUtils';
@@ -142,9 +148,14 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
           : t('filePicker.root');
 
   // The wizard hands in the account; only a caller that doesn't falls back
-  // to the first connected one and the picker's own sign-in.
+  // to the first connected one and the picker's own sign-in. In a team, that
+  // is a team account the caller may pick from, and there is no sign-in
+  // here (it would connect the caller's own account).
   const supplied = suppliedConnectionId !== undefined;
-  const connections = useSelector(selectConnections);
+  const ownConnections = useSelector(selectConnections);
+  const pickable = useSelector(selectPickableConnections);
+  const inTeam = useSelector(selectInTeam);
+  const connections = inTeam ? pickable : ownConnections;
   const fallbackConnectionId =
     connections.find(
       (connection) =>
@@ -167,6 +178,8 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
   const [searchedQuery, setSearchedQuery] = useState('');
   const [allowsSharedContent, setAllowsSharedContent] = useState(false);
   const [needsReconnect, setNeedsReconnect] = useState(false);
+  // A team's account's refusal (its body), worded when shown.
+  const [refusal, setRefusal] = useState<unknown>(null);
   const [authError, setAuthError] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
@@ -183,7 +196,10 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      if (cursor === null) setNeedsReconnect(false);
+      if (cursor === null) {
+        setNeedsReconnect(false);
+        setRefusal(null);
+      }
       const response = await userService.getConnectorFiles(
         {
           provider,
@@ -199,6 +215,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
       );
       const data = await response.json();
       if (!data.success) {
+        if (connectionErrorCode(data)) setRefusal(data);
         if (data.reconnect) {
           setNeedsReconnect(true);
           dispatch(loadConnectors({ token }));
@@ -339,9 +356,12 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
             title={
               needsReconnect
                 ? t('settings.connectors.detail.expired')
-                : t('filePicker.loadFailed')
+                : refusal
+                  ? connectionErrorMessage(t, refusal)
+                  : t('filePicker.loadFailed')
             }
-            onRetry={needsReconnect ? undefined : feed.retry}
+            // Who may browse it, or a pause, doesn't change on a retry.
+            onRetry={needsReconnect || refusal ? undefined : feed.retry}
             action={
               needsReconnect && onReconnect ? (
                 <Button
@@ -495,7 +515,7 @@ export const FilePicker: React.FC<CloudFilePickerProps> = ({
 
   return (
     <div className="flex flex-col gap-4">
-      {!supplied && (
+      {!supplied && !inTeam && (
         <ConnectorAuth
           provider={provider}
           label={t('filePicker.connectTo', {

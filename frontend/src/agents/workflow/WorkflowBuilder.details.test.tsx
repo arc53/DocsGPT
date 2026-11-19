@@ -59,7 +59,14 @@ vi.mock('../../modals/ConfirmationModal', () => ({
     return null;
   },
 }));
-vi.mock('../../teams/ShareToTeamModal', () => ({ default: () => null }));
+// The Share dialog's props, from its last render.
+let shareProps: Props | null = null;
+vi.mock('../../teams/ShareToTeamModal', () => ({
+  default: (props: Props) => {
+    shareProps = props;
+    return null;
+  },
+}));
 vi.mock('../components/AgentPreviewSheet', () => ({ default: () => null }));
 vi.mock('./WorkflowPreview', () => ({ default: () => null }));
 vi.mock('./NodePalette', () => ({ default: () => null }));
@@ -221,6 +228,57 @@ describe('WorkflowBuilder Access details', () => {
     });
     expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
       agentsListPath('f1'),
+    );
+  });
+
+  // The builder's own ⋯ comes after the phone stand-in's.
+  const openBuilderMenu = async () => {
+    const triggers = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label="agents.form.buttons.moreActions"]',
+      ),
+    );
+    const trigger = triggers[triggers.length - 1];
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+      );
+    });
+    return Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+  };
+
+  it("offers Share on a team's workflow to an Editor, to see who has access", async () => {
+    getAgent.mockResolvedValue(
+      jsonResponse(true, {
+        id: 'a1',
+        name: 'Renewal desk',
+        agent_type: 'workflow',
+        status: 'published',
+        access: 'editor',
+        origin: 'team',
+        workspace: { kind: 'team', team_id: 't1' },
+        allowed_actions: ['use', 'view', 'edit'],
+      }),
+    );
+    await render();
+    const labels = (await openBuilderMenu()).map((i) => i.textContent);
+    expect(labels).toContain('agents.shareWithTeam');
+  });
+
+  it("goes to the agent list when the Share dialog's offer moves the workflow", async () => {
+    shareProps = null as Props | null;
+    await render();
+    const item = (await openBuilderMenu()).find(
+      (i) => i.textContent === 'agents.shareWithTeam',
+    )!;
+    await act(async () => item.click());
+    const onMoved = shareProps?.onMoved as (() => void) | undefined;
+    expect(onMoved).toBeTypeOf('function');
+    act(() => onMoved!());
+    expect(container.querySelector('[data-testid="where"]')?.textContent).toBe(
+      agentsListPath(),
     );
   });
 });

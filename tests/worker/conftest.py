@@ -21,6 +21,7 @@ from sqlalchemy import Connection
 from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.vectorstore.index_lock import SourceBusy
+from docsgpt.workspaces.principal import ADMIN_NOTICE_KINDS, is_principal_id, route_owner_notice
 
 
 @pytest.fixture
@@ -73,12 +74,25 @@ class Published(list):
 
 @pytest.fixture
 def published(monkeypatch) -> Published:
-    """Capture ``publish_user_event`` in ``docsgpt.worker``."""
+    """Capture ``publish_user_event`` in ``docsgpt.worker``.
+
+    An event addressed to a team's principal is recorded under the people the
+    real publisher routes it to (``route_owner_notice``, read through the
+    worker's ``db_readonly``), so a test sees who would hear it.
+    """
     events = Published()
 
     def _publish(user, kind, payload, **kwargs):
-        events.users.append(user)
-        events.append((kind, payload))
+        recipients = [user]
+        if is_principal_id(user):
+            actor = kwargs.get("actor_id")
+            recipients = []
+            if actor or kind in ADMIN_NOTICE_KINDS:
+                with worker.db_readonly() as conn:
+                    recipients = route_owner_notice(conn, user, actor, kind)
+        for recipient in recipients:
+            events.users.append(recipient)
+            events.append((kind, payload))
 
     monkeypatch.setattr(worker, "publish_user_event", _publish)
     return events

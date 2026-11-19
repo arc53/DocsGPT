@@ -262,6 +262,40 @@ class TestListForUser:
         assert with_agent["agent_name"] == "a"
 
 
+class TestOwnerInactiveFlag:
+    """A schedule says it is paused while its agent's owner is deactivated."""
+
+    def _get(self, app, pg_conn, resource, url, *args):
+        with _patch_db(pg_conn), app.test_request_context(url, method="GET"):
+            from flask import request
+            request.decoded_token = {"sub": "member"}
+            return resource().get(*args)
+
+    def test_the_list_and_the_detail_flag_it(self, app, pg_conn):
+        from docsgpt.api.user.schedules.routes import ScheduleResource, UserSchedules
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        repo = SchedulesRepository(pg_conn)
+        paused = repo.create(
+            user_id="member", agent_id=_make_agent(pg_conn, "owner"), trigger_type="recurring",
+            instruction="on the owner's agent", cron="* * * * *",
+        )
+        repo.create(
+            user_id="member", agent_id=_make_agent(pg_conn, "member"), trigger_type="recurring",
+            instruction="on my agent", cron="* * * * *",
+        )
+        UsersRepository(pg_conn).upsert("owner")
+        pg_conn.execute(text("UPDATE users SET active = false WHERE user_id = 'owner'"))
+
+        rows = self._get(app, pg_conn, UserSchedules, "/api/schedules").get_json()["schedules"]
+        flags = {r["instruction"]: r["owner_inactive"] for r in rows}
+        assert flags == {"on the owner's agent": True, "on my agent": False}
+        detail = self._get(
+            app, pg_conn, ScheduleResource, f"/api/schedules/{paused['id']}", str(paused["id"]),
+        ).get_json()["schedule"]
+        assert detail["owner_inactive"] is True
+
+
 class TestListForUserImages:
     def test_never_returns_a_storage_path_for_the_agent_image(self, app, pg_conn):
         from docsgpt.api.user.schedules.routes import UserSchedules

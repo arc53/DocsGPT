@@ -6,13 +6,18 @@ import {
 } from '@reduxjs/toolkit';
 
 import { MAX_OVERLAPPING, MAX_TOPICS } from '../agents/analyticsConfig';
-import { Agent, AgentFolder } from '../agents/types';
+import { loadFolders } from '../components/folders/foldersSlice';
+import { Agent } from '../agents/types';
 import { ActiveState, Doc, Prompt } from '../models/misc';
+import { presetPrompts } from '../prompts/promptAccess';
 import { RootState } from '../store';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   getLocalRecentDocs,
   setLocalApiKey,
   setLocalRecentDocs,
+  setStoredRecentFolders,
+  type SelectedFolder,
 } from './preferenceApi';
 
 import type { Model } from '../models/types';
@@ -36,6 +41,12 @@ export interface Preference {
   prompts: Prompt[];
   chunks: string;
   selectedDocs: Doc[];
+  /**
+   * Whole knowledge folders picked in the composer, sent as
+   * `active_folders`; kept with their names so the pill reads before the
+   * folder list loads.
+   */
+  selectedFolders: SelectedFolder[];
   sourceDocs: Doc[] | null;
   /** The last source list fetch failed; `sourceDocs` is then null. */
   sourceDocsFailed: boolean;
@@ -57,7 +68,6 @@ export interface Preference {
   selectedModel: Model | null;
   availableModels: Model[];
   modelsLoading: boolean;
-  agentFolders: AgentFolder[] | null;
   // RBAC roles for the current principal, fetched fresh from /api/user/me each
   // session (DB-authoritative — deliberately NOT persisted to localStorage, so
   // a demotion can't survive a reload). ``rolesResolved`` gates UI that must
@@ -86,13 +96,10 @@ export interface Preference {
 const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
-  prompts: [
-    { name: 'default', id: 'default', type: 'public' },
-    { name: 'creative', id: 'creative', type: 'public' },
-    { name: 'strict', id: 'strict', type: 'public' },
-  ],
+  prompts: presetPrompts(),
   chunks: '6',
   selectedDocs: [],
+  selectedFolders: [],
   sourceDocs: null,
   sourceDocsFailed: false,
   conversations: {
@@ -109,7 +116,6 @@ const initialState: Preference = {
   selectedModel: null,
   availableModels: [],
   modelsLoading: false,
-  agentFolders: null,
   roles: [],
   rolesResolved: false,
   ttsAvailable: true,
@@ -130,6 +136,9 @@ export const prefSlice = createSlice({
     },
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
+    },
+    setSelectedFolders: (state, action: PayloadAction<SelectedFolder[]>) => {
+      state.selectedFolders = action.payload;
     },
     /** A source list fetch's answer; null when it failed. */
     setSourceDocs: (state, action) => {
@@ -273,9 +282,6 @@ export const prefSlice = createSlice({
     setModelsLoading: (state, action: PayloadAction<boolean>) => {
       state.modelsLoading = action.payload;
     },
-    setAgentFolders: (state, action: PayloadAction<AgentFolder[] | null>) => {
-      state.agentFolders = action.payload;
-    },
     setRoles: (state, action: PayloadAction<string[]>) => {
       state.roles = action.payload;
       state.rolesResolved = true;
@@ -310,11 +316,36 @@ export const prefSlice = createSlice({
       state.analyticsMaxOverlapping = action.payload.maxOverlapping;
     },
   },
+  extraReducers: (builder) => {
+    // Lists and picks from the old workspace go; the next loads fill them
+    // from the new one. Templates, built-in models and the session are the
+    // same in every workspace.
+    builder.addCase(switchWorkspace, (state) => {
+      // Custom models are a person's own or one team's: the model list
+      // loads again for the new workspace, and a custom pick from the old
+      // one goes, or sends from an open chat would name a model the
+      // server refuses here. Without a pick, sends use the default model.
+      state.availableModels = [];
+      if (state.selectedModel && state.selectedModel.source !== 'builtin')
+        state.selectedModel = null;
+      state.agents = null;
+      state.sharedAgents = null;
+      state.selectedAgent = null;
+      state.sourceDocs = null;
+      state.sourceDocsFailed = false;
+      state.paginatedDocuments = null;
+      state.selectedDocs = [];
+      state.selectedFolders = [];
+      state.prompts = presetPrompts();
+      state.conversations = { data: null, loading: false };
+    });
+  },
 });
 
 export const {
   setApiKey,
   setSelectedDocs,
+  setSelectedFolders,
   setSourceDocs,
   setConversations,
   setConversationsHead,
@@ -337,7 +368,6 @@ export const {
   setSelectedModel,
   setAvailableModels,
   setModelsLoading,
-  setAgentFolders,
   setRoles,
   clearRoles,
   setSpeechAvailability,
@@ -364,6 +394,50 @@ prefListenerMiddleware.startListening({
         ? state.preference.selectedDocs
         : null,
     );
+  },
+});
+
+prefListenerMiddleware.startListening({
+  matcher: isAnyOf(setSelectedFolders),
+  effect: (_action, listenerApi) => {
+    setStoredRecentFolders(
+      (listenerApi.getState() as RootState).preference.selectedFolders,
+    );
+  },
+});
+
+// The picked folders follow the workspace's folder tree (whichever page
+// loaded it): a rename shows, and a deleted folder drops out of the pick.
+// Only a load the tree took counts: an older one answering after a newer
+// one lists folders as they were.
+prefListenerMiddleware.startListening({
+  actionCreator: loadFolders.fulfilled,
+  effect: (action, listenerApi) => {
+    const tree = (listenerApi.getOriginalState() as RootState).folders?.tree;
+    if (tree && tree.latestRequestId !== action.meta.requestId) return;
+    const { selectedFolders } = (listenerApi.getState() as RootState)
+      .preference;
+    if (selectedFolders.length === 0) return;
+    const byId = new Map(action.payload.map((folder) => [folder.id, folder]));
+    const next = selectedFolders
+      .filter((folder) => byId.has(folder.id))
+      .map((folder) => ({ id: folder.id, name: byId.get(folder.id)!.name }));
+    const same =
+      next.length === selectedFolders.length &&
+      next.every((folder, i) => folder.name === selectedFolders[i].name);
+    if (!same) listenerApi.dispatch(setSelectedFolders(next));
+  },
+});
+
+// The composer's picks were the old workspace's: a reload in the new one
+// must not bring them back. The model pick is kept only if it survived.
+prefListenerMiddleware.startListening({
+  actionCreator: switchWorkspace,
+  effect: (_action, listenerApi) => {
+    setLocalRecentDocs(null);
+    setStoredRecentFolders([]);
+    if (!(listenerApi.getState() as RootState).preference.selectedModel)
+      localStorage.removeItem('DocsGPTSelectedModel');
   },
 });
 
@@ -454,6 +528,8 @@ export const selectModalStateDeleteConv = (state: RootState) =>
   state.preference.modalState;
 export const selectSelectedDocs = (state: RootState) =>
   state.preference.selectedDocs;
+export const selectSelectedFolders = (state: RootState) =>
+  state.preference.selectedFolders ?? [];
 export const selectConversations = (state: RootState) =>
   state.preference.conversations;
 export const selectConversationId = (state: RootState) =>
@@ -477,8 +553,6 @@ export const selectAvailableModels = (state: RootState) =>
   state.preference.availableModels;
 export const selectModelsLoading = (state: RootState) =>
   state.preference.modelsLoading;
-export const selectAgentFolders = (state: RootState) =>
-  state.preference.agentFolders;
 export const selectRoles = (state: RootState) => state.preference.roles;
 export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;

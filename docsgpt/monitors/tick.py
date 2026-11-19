@@ -50,9 +50,11 @@ from docsgpt.monitors.fetch import (
     fetch_webpage,
 )
 from docsgpt.monitors.spec import POLLED_SOURCES, bounded_state, next_tick, parse_iso
+from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.monitors import MonitorsRepository
 from docsgpt.storage.db.repositories.trigger_links import TriggerHitsRepository, TriggerLinksRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
 
@@ -577,28 +579,71 @@ def _reset_failures(monitor: Dict[str, Any], *, force: bool = False) -> None:
 # ----------------------------------------------------------------------
 
 
+def _agent_team(owner: str, agent_id: Optional[str]) -> Optional[str]:
+    """The team a monitor's spend belongs to: its agent's team, None for a personal agent or none.
+
+    Args:
+        owner: The monitor's owner; a team's principal names the team itself.
+        agent_id: The monitor's agent, if any.
+
+    Returns:
+        The team id, or None.
+    """
+    from docsgpt.quotas.payer import agent_payer_and_team
+    from docsgpt.workspaces.principal import team_of_principal
+
+    team_id = team_of_principal(owner)
+    if team_id or not agent_id:
+        return team_id
+    try:
+        return agent_payer_and_team(agent_id)[1]
+    except Exception:
+        # A report figure, never a reason to skip the judge.
+        logger.exception("monitor: could not read the team of agent %s", agent_id)
+        return None
+
+
 def _judge(monitor: Dict[str, Any], evaluation: Evaluation, content: Content) -> Tuple[str, Any]:
-    """Ask the judge; returns ``("match"|"no_match", verdict)``, ``("budget", None)``, ``("quota", None)``
-    or ``("error", message)``."""
+    """Ask the judge; returns ``("match"|"no_match", verdict)``, ``("budget", None)``, ``("quota", None)``,
+    ``("no_payer", None)`` or ``("error", message)``.
+
+    The judge bills the monitor's person. A monitor a team agent's outside
+    traffic left (owned by the team's principal) bills whoever pays for that
+    agent's published access, and waits while nobody does. Its usage is a
+    ``monitor`` run in the agent's team.
+    """
     from docsgpt.monitors import judge
+    from docsgpt.quotas.payer import billed_to, payer_for
+    from docsgpt.quotas.run_limits import RunLimits
     from docsgpt.quotas.service import QuotaService
 
     budget = int(monitor.get("token_budget") or 0)
     if budget and int(monitor.get("judge_tokens") or 0) >= budget:
         return "budget", None
-    if QuotaService.check(str(monitor["user_id"]), "direct") is not None:
+    owner = str(monitor["user_id"])
+    agent_id = str(monitor["agent_id"]) if monitor.get("agent_id") else None
+    payer = payer_for(owner, agent_id)
+    if not payer:
+        return "no_payer", None
+    if QuotaService.check(payer, "direct") is not None:
         return "quota", None
     spec = monitor.get("monitor_spec") or {}
+    # The judge's call is checked too: the payer may have run out since the check above.
+    limits = RunLimits.start(payer, bucket="direct")
     try:
-        verdict = judge.judge(
-            user_id=str(monitor["user_id"]),
-            monitor_id=str(monitor["id"]),
-            description=str(monitor.get("description") or ""),
-            condition=str(spec.get("condition") or ""),
-            check_summary=evaluation.summary,
-            content=content.text,
-        )
+        with billed_to(payer, kind="monitor", team_id=_agent_team(owner, agent_id), limits=limits):
+            verdict = judge.judge(
+                user_id=owner,
+                monitor_id=str(monitor["id"]),
+                description=str(monitor.get("description") or ""),
+                condition=str(spec.get("condition") or ""),
+                check_summary=evaluation.summary,
+                content=content.text,
+            )
     except judge.JudgeError as exc:
+        if limits is not None and limits.reached is not None:
+            # The judge's call was refused for the payer's allowance: it waits, as above.
+            return "quota", None
         # A content-policy refusal won't change on a retry: the same content is refused again.
         return ("refused" if exc.refused else "error"), str(exc)
     with db_session() as conn:
@@ -638,6 +683,9 @@ def _decide(
     if outcome == "quota":
         _store(str(monitor["id"]), None, {"last_error": "the user's usage quota is used up; the condition waits"})
         return "retry", None, None
+    if outcome == "no_payer":
+        _store(str(monitor["id"]), None, {"last_error": "nobody pays for this agent's use; the condition waits"})
+        return "retry", None, None
     if outcome == "refused":
         return "refused", None, None
     count = _strike(monitor, f"the condition could not be judged: {verdict}")
@@ -664,6 +712,10 @@ def _payload(evaluation: Evaluation, content: Content, summary: str, extra: Opti
 # ----------------------------------------------------------------------
 # The polled tick
 # ----------------------------------------------------------------------
+
+
+#: Why a monitor ends once its conversation stops taking wakes.
+NOT_RESUMABLE = "its conversation can no longer be resumed"
 
 
 def _resumable(monitor: Dict[str, Any]) -> bool:
@@ -727,7 +779,7 @@ def _tick(monitor_id: str) -> str:
         expire(monitor_id, now=now)
         return "expired"
     if not _resumable(monitor):
-        _finish(monitor_id, "cancelled", "its conversation can no longer be resumed")
+        _finish(monitor_id, "cancelled", NOT_RESUMABLE)
         return "cancelled"
     try:
         content = _fetch(monitor, now)
@@ -950,6 +1002,12 @@ def process_hit(hit_id: str, attempt: int = 0) -> Dict[str, Any]:
             with db_session() as conn:
                 TriggerHitsRepository(conn).mark(hit_id, "ignored", "the monitor is not active")
             return {"state": "ignored"}
+        if not _resumable(monitor):
+            # As on a polled tick: nobody can be woken, so no delivery is judged (and billed) any more.
+            with db_session() as conn:
+                TriggerHitsRepository(conn).mark(hit_id, "ignored", NOT_RESUMABLE)
+            _finish(monitor_id, "cancelled", NOT_RESUMABLE)
+            return {"state": "cancelled"}
         payload = claimed.get("payload") or {}
         try:
             outcome = _event(
@@ -1021,13 +1079,51 @@ def _requeue_event(monitor_id: str, event: Dict[str, Any], attempt: int, countdo
 INGEST_EVENTS = ("source.ingest.completed", "source.ingest.failed")
 
 
+def _ingest_monitors(conn: Any, user_id: str, source_id: str) -> List[Dict[str, Any]]:
+    """The ingest monitors one published copy of a source's ingest event wakes.
+
+    A person's source: the monitors that person set, as before. A team's
+    source (owned by its principal) is watched by its members, but its events
+    are published to the principal and copied to whoever started the ingest:
+    the principal's own event wakes every member's monitor on the source, once,
+    and a person's copy wakes nothing. Someone who left the team stops hearing.
+
+    Args:
+        conn: Open connection.
+        user_id: Who this copy of the event was published to.
+        source_id: The source whose ingest ended.
+
+    Returns:
+        The monitor rows to queue the event for.
+    """
+    repo = MonitorsRepository(conn)
+    owner = None
+    if looks_like_uuid(source_id):
+        owner = conn.execute(
+            text("SELECT user_id FROM sources WHERE id = CAST(:id AS uuid)"), {"id": source_id}
+        ).scalar()
+    if not is_principal_id(owner):
+        return repo.find_ingest_monitors(user_id, source_id)
+    if user_id != owner:
+        return []
+    from docsgpt.workspaces.roles import team_role_for
+
+    team_id = team_of_principal(owner)
+    return [
+        monitor
+        for monitor in repo.find_ingest_monitors_by_source(source_id)
+        if team_id and team_role_for(conn, str(monitor["user_id"]), team_id) is not None
+    ]
+
+
 def on_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> None:
     """Queue the ingest monitors watching a source whose ingest just ended; never raises.
 
     Called for every user event; only the terminal ingest events do anything.
 
     Args:
-        user_id: The source's owner.
+        user_id: Who this copy of the event was published to: the source's owner, or the
+            person who started the ingest (see :func:`_ingest_monitors`).
         event_type: The event published.
         payload: The event payload (``source_id``, ``filename``, ``error``...).
     """
@@ -1038,7 +1134,7 @@ def on_ingest_event(user_id: str, event_type: str, payload: Dict[str, Any]) -> N
         return
     try:
         with db_readonly() as conn:
-            monitors = MonitorsRepository(conn).find_ingest_monitors(str(user_id), str(source_id))
+            monitors = _ingest_monitors(conn, str(user_id), str(source_id))
     except Exception:
         logger.exception("ingest monitors lookup failed for source %s", source_id)
         return
@@ -1105,6 +1201,10 @@ def process_event(monitor_id: str, event: Dict[str, Any], attempt: int = 0) -> D
         if monitor is None or monitor.get("status") != "active" or monitor.get("source_type") != "ingest":
             _settle_event(row_id, "ignored", "the monitor is not active")
             return {"state": "skipped"}
+        if not _resumable(monitor):
+            _settle_event(row_id, "ignored", NOT_RESUMABLE)
+            _finish(monitor_id, "cancelled", NOT_RESUMABLE)
+            return {"state": "cancelled"}
         status = event.get("event")
         summary_text = (
             f"the ingest of source {event.get('source_id')} {'finished' if status == 'completed' else 'failed'}"

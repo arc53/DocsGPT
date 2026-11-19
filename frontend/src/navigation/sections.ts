@@ -49,6 +49,8 @@ import {
 } from '../agents/paths';
 import { type AccessFields } from '../utils/accessUtils';
 import { canAgent } from '../agents/agentAccess';
+import { teamPath } from '../teams/page/teamTabs';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 
 /** A single destination in a section's vertical nav. */
 export type SectionItem = {
@@ -64,6 +66,10 @@ export type SectionItem = {
   leavesSection?: boolean;
   /** Hidden when the backend reports this feature off (`/api/config`). */
   feature?: 'connectors' | 'analytics';
+  /** Hidden in a team workspace (people share with a person, not a team). */
+  personalOnly?: boolean;
+  /** Hidden in Personal (other teams share with a team). */
+  teamOnly?: boolean;
 };
 
 /** Items sharing a heading in the nav. */
@@ -369,16 +375,27 @@ export const AGENTS_SECTION: Section = {
           icon: User,
         },
         {
-          key: 'team',
-          path: agentsFilterPath('team'),
-          labelKey: 'agents.filters.team',
+          key: 'teamShared',
+          path: agentsFilterPath('teamShared'),
+          labelKey: 'workspace.page.sharedFromTeams.title',
           icon: Users,
+          teamOnly: true,
+        },
+        {
+          key: 'sharedWithYou',
+          path: agentsFilterPath('sharedWithYou'),
+          // The old Team section's address lands here in Personal.
+          aliases: [agentsFilterPath('team')],
+          labelKey: 'workspace.page.sharedWithYou',
+          icon: Users,
+          personalOnly: true,
         },
         {
           key: 'shared',
           path: agentsFilterPath('shared'),
           labelKey: 'agents.filters.shared',
           icon: Globe,
+          personalOnly: true,
         },
       ],
     },
@@ -495,6 +512,26 @@ export function buildAgentSection(
   };
 }
 
+/**
+ * The sidebar's "Team" entry while the app is in a team workspace: it opens
+ * that team's page (members, shared items, settings). Personal has none.
+ *
+ * Args:
+ *   workspaceId: The current workspace, `personal` or a team id.
+ *
+ * Returns:
+ *   The entry, or null in Personal.
+ */
+export function teamNavItem(workspaceId: string): SectionItem | null {
+  if (!workspaceId || workspaceId === PERSONAL_WORKSPACE) return null;
+  return {
+    key: 'team',
+    path: teamPath(workspaceId),
+    labelKey: 'workspace.team.navEntry',
+    icon: Users,
+  };
+}
+
 export const SECTIONS: Section[] = [
   ACTIVITY_SECTION,
   SETTINGS_SECTION,
@@ -524,15 +561,20 @@ export function getSectionItems(
     .filter((item) => !item.adminOnly || isAdmin);
 }
 
-/** Groups with admin-only entries removed, dropping any group left empty. */
+/**
+ * Groups with admin-only entries removed (and, in a team, Personal-only
+ * ones), dropping any group left empty.
+ */
 export function getVisibleGroups(
   section: Section,
   {
     isAdmin = true,
     features = {},
+    inTeam = false,
   }: {
     isAdmin?: boolean;
     features?: Partial<Record<NonNullable<SectionItem['feature']>, boolean>>;
+    inTeam?: boolean;
   } = {},
 ): SectionGroup[] {
   return section.groups
@@ -541,7 +583,9 @@ export function getVisibleGroups(
       items: group.items.filter(
         (item) =>
           (!item.adminOnly || isAdmin) &&
-          (!item.feature || features[item.feature] !== false),
+          (!item.feature || features[item.feature] !== false) &&
+          (!item.personalOnly || !inTeam) &&
+          (!item.teamOnly || inTeam),
       ),
     }))
     .filter((group) => group.items.length > 0);

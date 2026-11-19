@@ -82,6 +82,27 @@ describe('toSourcePickerItems', () => {
     ]);
   });
 
+  it("lists another team's sources last, under Shared with this team, naming the team", () => {
+    const received = {
+      origin: 'team_shared' as const,
+      ownership: 'team' as const,
+      shared_from: { team_id: 'sales', name: 'Sales' },
+    };
+    const items = build([
+      doc({ id: 'r1', name: 'Rates', ...received }),
+      doc({ id: 't1', name: 'Team one', ownership: 'team' }),
+      doc({ id: 'o1', name: 'Own one' }),
+    ]);
+    expect(items.map((item) => [item.id, item.group])).toEqual([
+      ['o1', 'Yours'],
+      ['t1', 'Shared with team'],
+      ['r1', 'workspace.page.sharedFromTeams.title'],
+    ]);
+    expect(items[2].description).toContain(
+      'workspace.page.sharedFromTeams.from:{"team":"Sales"}',
+    );
+  });
+
   // Not the same database icon on every row.
   it.each<[string, Partial<Doc>, string]>([
     [

@@ -415,14 +415,23 @@ def require_agent(func):
             return make_response(
                 jsonify({"success": False, "message": "Webhook token missing"}), 400
             )
+        from docsgpt.api.owner_pause import outside_access_refusal
+
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_webhook_token(webhook_token)
+            paused = outside_access_refusal(conn, agent)
         if not agent:
             current_app.logger.warning(
                 f"Webhook attempt with invalid token: {webhook_token}"
             )
             return make_response(
                 jsonify({"success": False, "message": "Agent not found"}), 404
+            )
+        if paused is not None:
+            # The webhook pauses while the agent's owner or payer is deactivated,
+            # or nobody pays for it; the sender is not told whose account it is.
+            return make_response(
+                jsonify({"success": False, "message": paused.message, "code": paused.code}), 403
             )
         kwargs["agent"] = agent
         kwargs["agent_id_str"] = str(agent["id"])

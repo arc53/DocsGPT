@@ -228,6 +228,50 @@ class TestListForUser:
         assert len(ids) == 6
 
 
+class TestBriefListing:
+    def test_ids_cover_own_and_extra_rows_newest_first_without_blobs(self, pg_conn):
+        repo = _repo(pg_conn)
+        own = [repo.create(f"s{i}", user_id="u", directory_structure={"a.md": {}}) for i in range(2)]
+        shared = repo.create("theirs", user_id="other")
+        repo.create("hidden", user_id="other")
+        rows = repo.list_ids_for_user("u", extra_ids=[str(shared["id"]), "not-a-uuid"])
+        assert {r["id"] for r in rows} == {str(own[0]["id"]), str(own[1]["id"]), str(shared["id"])}
+        assert all(set(r) == {"id", "user_id"} for r in rows)
+        assert rows == repo.list_ids_for_user("u", extra_ids=[str(shared["id"])])
+        listed = [r["id"] for r in repo.list_for_user("u", extra_ids=[str(shared["id"])])]
+        assert [r["id"] for r in rows] == listed
+
+    def test_brief_rows_carry_scalars_and_ingest_status_in_listing_order(self, pg_conn):
+        from sqlalchemy import text
+
+        repo = _repo(pg_conn)
+        done = repo.create("done", user_id="u", type="local", tokens="1200", directory_structure={"a.md": {}})
+        busy = repo.create("busy", user_id="u", type="url")
+        pg_conn.execute(
+            text(
+                "INSERT INTO ingest_chunk_progress (source_id, total_chunks, embedded_chunks, last_index) "
+                "VALUES (CAST(:sid AS uuid), 10, 2, 1)"
+            ),
+            {"sid": str(busy["id"])},
+        )
+        rows = repo.list_brief([str(done["id"]), str(busy["id"]), "nope"])
+        assert [r["id"] for r in rows] == [r["id"] for r in repo.list_for_user("u")]
+        by_id = {r["id"]: r for r in rows}
+        assert set(by_id[str(done["id"])]) == {"id", "user_id", "name", "type", "tokens", "ingest_status"}
+        assert by_id[str(done["id"])]["ingest_status"] is None and by_id[str(done["id"])]["tokens"] == "1200"
+        assert by_id[str(busy["id"])] == {"id": str(busy["id"]), "user_id": "u", "name": "busy", "type": "url",
+                                          "tokens": None, "ingest_status": "processing"}
+        assert repo.list_brief([]) == []
+
+    def test_directory_structure_of_one_source(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("s", user_id="u", directory_structure={"a.md": {"token_count": 1}})
+        bare = repo.create("bare", user_id="u")
+        assert repo.get_directory_structure(str(src["id"])) == {"a.md": {"token_count": 1}}
+        assert repo.get_directory_structure(str(bare["id"])) is None
+        assert repo.get_directory_structure("not-a-uuid") is None
+
+
 class TestCountForUser:
     def test_returns_zero_for_no_rows(self, pg_conn):
         repo = _repo(pg_conn)

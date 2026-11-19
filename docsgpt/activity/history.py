@@ -8,7 +8,9 @@ Five sources are folded into one row shape with one status vocabulary
   has no table of its own).
 - **workflow**: ``workflow_runs`` that ended, except those a webhook or
   scheduled run already lists (its trace names the workflow run, and a
-  scheduled one is also named by the run's ``started_by``).
+  scheduled one is also named by the run's ``started_by``). A run lists in
+  the workspace it was started in (``workflow_run_team_sql``) while its
+  runner may still read it.
 - **job**: ``background_jobs`` that ended.
 - **monitor**: ``conversation_wakes`` a monitor, trigger link or approval
   link delivered to its conversation.
@@ -24,8 +26,16 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
+from docsgpt.activity.common import (
+    WS_PARAM,
+    owner_team_sql,
+    schedule_team_sql,
+    workflow_run_team_sql,
+    workspace_params,
+)
 from docsgpt.activity.labels import tool_labels
 from docsgpt.storage.db.base_repository import like_escape, row_to_dict
+from docsgpt.storage.db.repositories.workflow_runs import run_reach_sql
 
 KINDS = ("schedule", "webhook", "workflow", "job", "monitor")
 STATUSES = ("success", "failed", "timeout", "skipped", "cancelled")
@@ -43,7 +53,10 @@ MAX_LIMIT = 200
 #: and Postgres rejects an OFFSET past int8.
 MAX_OFFSET = 1_000_000
 
-_SCHEDULE = """
+# Each part names the workspace its run belongs to (``ws_team``: a team id as
+# text, NULL for Personal); the page keeps one workspace's runs.
+
+_SCHEDULE = f"""
     SELECT 'schedule' AS kind, sr.id::text AS id,
            COALESCE(s.name, LEFT(s.instruction, 80)) AS title,
            s.agent_id::text AS agent_id, a.name AS agent_name,
@@ -54,7 +67,8 @@ _SCHEDULE = """
            (sr.prompt_tokens + sr.generated_tokens)::bigint AS tokens,
            sr.schedule_id::text AS schedule_id, NULL::text AS trace_id,
            NULL::text AS workflow_run_id,
-           sr.error_type AS error_type, LEFT(sr.error, 300) AS error
+           sr.error_type AS error_type, LEFT(sr.error, 300) AS error,
+           {schedule_team_sql()} AS ws_team
     FROM schedule_runs sr
     JOIN schedules s ON s.id = sr.schedule_id
     LEFT JOIN agents a ON a.id = s.agent_id
@@ -63,7 +77,7 @@ _SCHEDULE = """
       AND COALESCE(sr.finished_at, sr.scheduled_for) > now() - make_interval(days => :days)
 """
 
-_WEBHOOK = """
+_WEBHOOK = f"""
     SELECT 'webhook' AS kind, t.id::text AS id,
            COALESCE(a.name, t.name) AS title,
            t.agent_id::text AS agent_id, a.name AS agent_name,
@@ -76,7 +90,8 @@ _WEBHOOK = """
             + COALESCE((t.summary ->> 'output_tokens')::bigint, 0)) AS tokens,
            NULL::text AS schedule_id, t.id::text AS trace_id,
            t.workflow_run_id::text AS workflow_run_id,
-           NULL::text AS error_type, NULL::text AS error
+           NULL::text AS error_type, NULL::text AS error,
+           {owner_team_sql("a.user_id")} AS ws_team
     FROM request_traces t
     LEFT JOIN agents a ON a.id = t.agent_id
     WHERE t.user_id = :user_id
@@ -85,7 +100,7 @@ _WEBHOOK = """
       AND t.started_at > now() - make_interval(days => :days)
 """
 
-_WORKFLOW = """
+_WORKFLOW = f"""
     SELECT 'workflow' AS kind, r.id::text AS id,
            COALESCE(ag.name, w.name) AS title,
            ag.id::text AS agent_id, ag.name AS agent_name,
@@ -97,7 +112,8 @@ _WORKFLOW = """
            NULL::bigint AS tokens,
            NULL::text AS schedule_id, NULL::text AS trace_id,
            r.id::text AS workflow_run_id,
-           NULL::text AS error_type, NULL::text AS error
+           NULL::text AS error_type, NULL::text AS error,
+           {workflow_run_team_sql("r", "w")} AS ws_team
     FROM workflow_runs r
     JOIN workflows w ON w.id = r.workflow_id
     LEFT JOIN LATERAL (
@@ -112,6 +128,8 @@ _WORKFLOW = """
     WHERE r.user_id = :user_id
       AND r.status IN ('completed', 'failed')
       AND COALESCE(r.ended_at, r.started_at) > now() - make_interval(days => :days)
+      -- Only while the runner may still read it (the run-access rule).
+      AND {run_reach_sql("r", "w", ":user_id")}
       AND NOT EXISTS (
           SELECT 1 FROM request_traces t
           WHERE t.workflow_run_id = r.id AND t.source IN ('webhook', 'schedule')
@@ -124,13 +142,13 @@ _WORKFLOW = """
           WHERE sr.user_id = r.user_id
             AND sr.id = CASE
                 WHEN r.inputs ->> 'started_by'
-                     ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                     ~* '^[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}$'
                 THEN CAST(r.inputs ->> 'started_by' AS uuid)
             END
       )
 """
 
-_JOB = """
+_JOB = f"""
     SELECT 'job' AS kind, j.id::text AS id,
            COALESCE(j.tool_name, 'job') AS title,
            j.agent_id::text AS agent_id, a.name AS agent_name,
@@ -142,7 +160,8 @@ _JOB = """
            NULL::bigint AS tokens,
            NULL::text AS schedule_id, NULL::text AS trace_id,
            j.workflow_run_id::text AS workflow_run_id,
-           NULL::text AS error_type, LEFT(j.error::text, 300) AS error
+           NULL::text AS error_type, LEFT(j.error::text, 300) AS error,
+           (CASE WHEN c.id IS NOT NULL THEN c.team_id::text ELSE {owner_team_sql("a.user_id")} END) AS ws_team
     FROM background_jobs j
     LEFT JOIN agents a ON a.id = j.agent_id
     LEFT JOIN conversations c ON c.id = j.conversation_id
@@ -162,7 +181,8 @@ _MONITOR = """
            NULL::bigint AS duration_ms, NULL::bigint AS tokens,
            NULL::text AS schedule_id, NULL::text AS trace_id,
            NULL::text AS workflow_run_id,
-           NULL::text AS error_type, LEFT(wk.error, 300) AS error
+           NULL::text AS error_type, LEFT(wk.error, 300) AS error,
+           c.team_id::text AS ws_team
     FROM conversation_wakes wk
     JOIN conversations c ON c.id = wk.conversation_id
     LEFT JOIN agents a ON a.id = c.agent_id
@@ -213,8 +233,9 @@ def list_history(
     days: int = DEFAULT_DAYS,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
+    team_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """One page of the user's finished runs, newest first.
+    """One page of the user's finished runs in one workspace, newest first.
 
     Args:
         conn: A read-only connection.
@@ -227,6 +248,8 @@ def list_history(
         days: How far back to look (clamped to ``1..MAX_DAYS``).
         limit: Rows per page (clamped to ``1..MAX_LIMIT``).
         offset: Rows to skip (clamped to ``0..MAX_OFFSET``).
+        team_id: The workspace: a team's runs (the user's own there), or
+            None for Personal, which shows no team's.
 
     Returns:
         ``{runs, has_more}``. ``duration_ms`` and ``tokens`` are None when the
@@ -244,8 +267,10 @@ def list_history(
     limit = max(1, min(int(limit), MAX_LIMIT))
     offset = max(0, min(int(offset), MAX_OFFSET))
 
-    where: List[str] = []
-    params: Dict[str, Any] = {"user_id": user_id, "days": days, "limit": limit + 1, "offset": offset}
+    where: List[str] = [f"ws_team IS NOT DISTINCT FROM CAST(:{WS_PARAM} AS text)"]
+    params: Dict[str, Any] = {
+        "user_id": user_id, "days": days, "limit": limit + 1, "offset": offset, **workspace_params(team_id),
+    }
     if status == "failed":
         where.append("status IN ('failed', 'timeout')")
     elif status:
@@ -262,7 +287,7 @@ def list_history(
         params["job_tools"] = _tools_labelled(conn, user_id, query.strip())
     sql = (
         "SELECT * FROM (" + " UNION ALL ".join(parts) + ") runs"
-        + (" WHERE " + " AND ".join(where) if where else "")
+        + " WHERE " + " AND ".join(where)
         + " ORDER BY at DESC, id DESC LIMIT :limit OFFSET :offset"
     )
     rows = [row_to_dict(r) for r in conn.execute(text(sql), params).fetchall()]
@@ -270,6 +295,7 @@ def list_history(
     labels = tool_labels(conn, user_id, [r["title"] for r in rows if r.get("kind") == "job"])
     for row in rows:
         row.pop("_id", None)
+        row.pop("ws_team", None)
         if row.get("kind") == "job" and row.get("title") in labels:
             row["title"] = labels[row["title"]]
     return {"runs": rows[:limit], "has_more": len(rows) > limit}

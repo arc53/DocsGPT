@@ -1,0 +1,4 @@
+# BuildKit reads this file, not the root .dockerignore, when it builds
+# .oss-scanner/Dockerfile. The root one admits only what the deployment image
+# needs; the scanner needs the whole checkout, tests and git history included.
+# Git-ignored files are not in a clone, so nothing is listed here.

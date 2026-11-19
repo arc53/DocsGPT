@@ -4,10 +4,12 @@ from typing import Any, Dict
 
 from docsgpt.llm.tool_images import IMAGE_TOKENS
 from docsgpt.pricing import compute_cost_usd
+from docsgpt.quotas.payer import current_run_billing
 from docsgpt.tracing.llm import finish_llm_call, start_llm_span
 from docsgpt.storage.db.repositories.token_usage import TokenUsageRepository
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import num_tokens_from_object_or_list, num_tokens_from_string
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +141,12 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     stamped on the LLM lets ``count_in_range`` deduplicate the multiple
     rows produced by a single multi-tool agent run.
 
+    Inside a run with a payer of its own (:func:`docsgpt.quotas.payer.billed_to`)
+    the row bills that payer, whatever identity the LLM runs as, and a call
+    with no request id takes the run's. The row records the run's kind and
+    team workspace; a call that runs as a team's principal in a run that named
+    no team (or in no run) is recorded in that principal's team.
+
     Args:
         llm: The LLM instance the call ran on.
         call_usage: The call's token counts.
@@ -155,8 +163,31 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
     user_id = (
         decoded_token.get("sub") if isinstance(decoded_token, dict) else None
     )
+    run = current_run_billing()
+    team_id = run.team_id if run is not None else None
+    if team_id is None:
+        # Work that runs as a team (its agent, its source) is that team's spend.
+        team_id = team_of_principal(user_id)
+    if run is not None and run.payer:
+        user_id = run.payer
+    request_id = getattr(llm, "_request_id", None) or (run.request_id if run is not None else None)
     user_api_key = getattr(llm, "user_api_key", None)
     agent_id = getattr(llm, "agent_id", None)
+    if is_principal_id(user_id):
+        # A team principal is never a payer: every run on a team agent opens
+        # ``billed_to`` with a person. Reaching here is a bug in that run's
+        # payer, so say so loudly; the row keeps its key (the agent's own
+        # limit still counts it) but never names the principal.
+        logger.error(
+            "principal_billed: a model call would bill team principal %s",
+            user_id,
+            extra={
+                "principal": user_id,
+                "agent_id": str(agent_id) if agent_id else None,
+                "source": getattr(llm, "_token_usage_source", None) or "agent_stream",
+            },
+        )
+        user_id = None
     if not user_id and not user_api_key:
         # Repository would raise on the attribution check — log instead
         # so operators see the gap rather than crashing the stream.
@@ -194,10 +225,12 @@ def _persist_call_usage(llm, call_usage, *, duration_ms=None, ttft_ms=None):
                 source=(
                     getattr(llm, "_token_usage_source", None) or "agent_stream"
                 ),
-                request_id=getattr(llm, "_request_id", None),
+                request_id=request_id,
                 model_id=model_id,
                 duration_ms=duration_ms,
                 ttft_ms=ttft_ms,
+                team_id=team_id,
+                run_kind=run.kind if run is not None else None,
             )
     except Exception:
         logger.exception("token_usage persist failed")

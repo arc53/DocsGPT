@@ -6,9 +6,14 @@ import react from 'eslint-plugin-react';
 import unusedImports from 'eslint-plugin-unused-imports';
 import prettier from 'eslint-plugin-prettier';
 import globals from 'globals';
+import { createRequire } from 'node:module';
 
 import { cardSurfaceSelectors } from './eslint/card-surfaces.js';
 import { everywhereSelectors, pageSelectors } from './eslint/design-rules.js';
+
+const reactVersion = createRequire(import.meta.url)(
+  'react/package.json',
+).version;
 
 // Selectors every file gets: viewport heights, focus return, card surfaces.
 // On iOS Safari vh (and h-screen, which is 100vh) is the viewport with the
@@ -305,7 +310,8 @@ export default [
     },
     settings: {
       react: {
-        version: 'detect',
+        // 'detect' calls context.getFilename(), which ESLint 10 removed.
+        version: reactVersion,
       },
       shadcn: {
         note: 'See frontend/DESIGN.md for tokens, component variants and approved exceptions.',
