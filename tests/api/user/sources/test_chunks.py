@@ -112,9 +112,28 @@ def test_parent_text_is_cleared_from_siblings_after_chunk_change_or_delete():
     ]
     store = MagicMock()
 
-    _drop_sibling_parent_text(store, chunks, chunks[0], exclude_id="changed")
+    _drop_sibling_parent_text(store, chunks, chunks[0], {"id": "source"}, exclude_id="changed")
 
-    store.update_chunk.assert_called_once_with("sibling", "sibling", {"x": 1})
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+
+
+def test_parent_invalidation_remaps_fallback_store_chunk_ids():
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    parent = "parent containing sibling"
+    chunks = [
+        {"doc_id": "changed", "text": "changed", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+    ]
+    store = MagicMock()
+    store.clear_parent_text.return_value = [("sibling", "sibling-new-id")]
+    doc = {"id": "source", "config": {"retriever": "graphrag"}}
+
+    with patch("docsgpt.api.user.sources.chunks._remap_graph_chunk") as remap:
+        _drop_sibling_parent_text(store, chunks, chunks[0], doc, exclude_id="changed")
+
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+    remap.assert_called_once_with(doc, "sibling", "sibling-new-id")
 
 
 def test_text_edit_drops_parent_text_from_edited_chunk_and_siblings(app):
@@ -128,15 +147,38 @@ def test_text_edit_drops_parent_text_from_edited_chunk_and_siblings(app):
     store = MagicMock()
     store.get_chunks.return_value = chunks
     store.update_chunk.return_value = "edited"
+    store.clear_parent_text.return_value = []
     with app.app_context(), patch(
         "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
     ):
-        response = _update_chunk({"id": "source"}, "edited", "public", None)
+        response = _update_chunk(
+            {"id": "source"}, "edited", "public", {"parent_text": "replacement metadata"}
+        )
 
     assert response.status_code == 200
-    edits = {call.args[0]: call.args[2] for call in store.update_chunk.call_args_list}
-    assert "parent_text" not in edits["edited"]
-    assert "parent_text" not in edits["sibling"]
+    edited_metadata = store.update_chunk.call_args.args[2]
+    assert "parent_text" not in edited_metadata
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+
+
+def test_text_edit_is_not_applied_when_sibling_invalidation_fails(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    parent = "original parent"
+    store = MagicMock()
+    store.get_chunks.return_value = [
+        {"doc_id": "edited", "text": "old child", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+    ]
+    store.clear_parent_text.side_effect = RuntimeError("metadata invalidation failed")
+    with app.app_context(), patch(
+        "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+    ):
+        response = _update_chunk({"id": "source"}, "edited", "new child", None)
+
+    assert response.status_code == 500
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+    store.update_chunk.assert_not_called()
 
 
 class TestGetChunks:
@@ -510,6 +552,37 @@ class TestDeleteChunk:
             request.decoded_token = None
             response = DeleteChunk().delete()
         assert response.status_code == 401
+
+    def test_deleting_parent_child_chunk_clears_sibling_parent_text(self, app):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        @contextmanager
+        def unlocked(_source_id):
+            yield
+
+        parent = "parent contains deleted child and sibling"
+        store = MagicMock()
+        store.get_chunks.return_value = [
+            {"doc_id": "deleted", "text": "deleted child", "metadata": {"parent_text": parent}},
+            {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+        ]
+        store.clear_parent_text.return_value = []
+        store.delete_chunk.return_value = True
+        with patch("docsgpt.api.user.sources.chunks._resolve_source", return_value={"id": "source"}), patch(
+            "docsgpt.api.user.sources.chunks.edit_lock", side_effect=unlocked
+        ), patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=store), app.test_request_context(
+            "/api/delete_chunk?id=source&chunk_id=deleted", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "owner"}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == 200
+        store.delete_chunk.assert_called_once_with("deleted")
+        store.clear_parent_text.assert_called_once_with(["sibling"])
+        assert [name for name, *_ in store.method_calls] == [
+            "get_chunks", "clear_parent_text", "delete_chunk"
+        ]
 
     def test_returns_404_inaccessible_source(self, app, pg_conn):
         # No ownership and no team grant: the source isn't visible → 404

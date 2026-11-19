@@ -543,6 +543,19 @@ class TestPGVectorPrecomputedQueryVector:
 
 @pytest.mark.unit
 class TestPGVectorStoreUpdateChunk:
+    def test_clears_parent_metadata_in_one_source_scoped_update_without_embedding(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+
+        updated = store.clear_parent_text(["42", "43"])
+
+        assert updated == [("42", "42"), ("43", "43")]
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "metadata = metadata - 'parent_text'" in sql
+        assert "WHERE id = ANY(%s) AND source_id = %s" in sql
+        assert params == ([42, 43], "src1")
+        mock_emb.embed_documents.assert_not_called()
+        mock_conn.commit.assert_called_once()
+
     def test_updates_the_row_in_place(self):
         store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
         mock_emb.embed_documents.return_value = [[0.4, 0.5]]

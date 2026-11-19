@@ -2,7 +2,7 @@ import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
@@ -617,6 +617,33 @@ class BaseVectorStore(ABC):
                 exc_info=True,
             )
         raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Remove stored parent windows from chunks without changing their text.
+
+        Backends should override this to update metadata without recomputing
+        embeddings. This compatibility fallback preserves support for custom
+        stores by using their existing chunk update operation.
+
+        Args:
+            chunk_ids: IDs of chunks whose parent window should be removed.
+
+        Returns:
+            Pairs of ``(old_id, new_id)`` for stores whose fallback changes IDs.
+        """
+        wanted = {str(chunk_id) for chunk_id in chunk_ids}
+        if not wanted:
+            return []
+        updated_ids = []
+        for chunk in self.get_chunks() or []:
+            chunk_id = str(chunk.get("doc_id") or "")
+            metadata = dict(chunk.get("metadata") or {})
+            if chunk_id not in wanted or not metadata.get("parent_text"):
+                continue
+            metadata.pop("parent_text", None)
+            new_id = self.update_chunk(chunk_id, chunk.get("text", ""), metadata)
+            updated_ids.append((chunk_id, str(new_id)))
+        return updated_ids
 
     @classmethod
     def supports_chunk_edits(cls) -> bool:

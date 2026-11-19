@@ -493,9 +493,14 @@ class DeleteChunk(Resource):
                 # would otherwise remove another source's chunk by its id.
                 chunks = store.get_chunks() or []
                 target = next((c for c in chunks if c.get("doc_id") == chunk_id), None)
-                deleted = target is not None and store.delete_chunk(chunk_id)
-                if deleted:
-                    _drop_sibling_parent_text(store, chunks, target)
+                if target is not None:
+                    # Clear siblings before deleting the source of their parent
+                    # window. If clearing fails, the original chunk still
+                    # exists and the parent remains valid wherever it remains.
+                    _drop_sibling_parent_text(store, chunks, target, doc)
+                    deleted = store.delete_chunk(chunk_id)
+                else:
+                    deleted = False
             if deleted:
                 return make_response(
                     jsonify({"message": "Chunk deleted successfully"}), 200
@@ -600,15 +605,20 @@ def _update_chunk(doc: dict, chunk_id: str, text: Optional[str], metadata: Optio
         new_metadata = existing_chunk["metadata"].copy()
     if text is not None:
         new_metadata["token_count"] = num_tokens_from_string(new_text)
-        parent_text = new_metadata.pop("parent_text", None)
+        # Invalidate the original parent group even if this edit also changes
+        # or removes parent_text in the supplied metadata.
+        parent_text = (existing_chunk.get("metadata") or {}).get("parent_text")
+        new_metadata.pop("parent_text", None)
     else:
         parent_text = None
     try:
         # In place where the store supports it (same id, same list
         # position); the base fallback re-adds under a new id.
-        new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
         if parent_text:
-            _drop_sibling_parent_text(store, chunks, existing_chunk, exclude_id=chunk_id)
+            # Invalidate siblings first. If a sibling update fails, leave the
+            # edited chunk unchanged so no stale parent can expose removed text.
+            _drop_sibling_parent_text(store, chunks, existing_chunk, doc, exclude_id=chunk_id)
+        new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
         if new_chunk_id != chunk_id:
             _remap_graph_chunk(doc, chunk_id, new_chunk_id)
         return make_response(
@@ -637,6 +647,7 @@ def _drop_sibling_parent_text(
     store: Any,
     chunks: List[Dict],
     changed_chunk: Dict,
+    doc: Dict,
     exclude_id: Optional[str] = None,
 ) -> None:
     """Clear a stale parent window from siblings after its child changes or disappears."""
@@ -645,15 +656,16 @@ def _drop_sibling_parent_text(
     if not isinstance(parent, str) or not parent:
         return
     changed_id = str(exclude_id or changed_chunk.get("doc_id"))
-    for chunk in chunks:
-        chunk_id = str(chunk.get("doc_id") or "")
-        if not chunk_id or chunk_id == changed_id:
-            continue
-        sibling_metadata = dict(chunk.get("metadata") or {})
-        if sibling_metadata.get("parent_text") != parent:
-            continue
-        sibling_metadata.pop("parent_text", None)
-        store.update_chunk(chunk_id, chunk.get("text", ""), sibling_metadata)
+    sibling_ids = [
+        str(chunk.get("doc_id"))
+        for chunk in chunks
+        if chunk.get("doc_id")
+        and str(chunk.get("doc_id")) != changed_id
+        and (chunk.get("metadata") or {}).get("parent_text") == parent
+    ]
+    for chunk_id, new_chunk_id in store.clear_parent_text(sibling_ids):
+        if new_chunk_id != chunk_id:
+            _remap_graph_chunk(doc, chunk_id, new_chunk_id)
 
 
 @sources_chunks_ns.route("/sources/<string:source_id>/injection_review")

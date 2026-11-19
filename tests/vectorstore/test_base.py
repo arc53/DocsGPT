@@ -914,6 +914,30 @@ class _ChunkListStore(ConcreteVectorStore):
         return self._chunks
 
 
+class _ParentClearFallbackStore(_ChunkListStore):
+    def add_chunk(self, text, metadata=None, *args, **kwargs):
+        chunk_id = f"new-{len(self._chunks)}"
+        self._chunks.append({"doc_id": chunk_id, "text": text, "metadata": metadata or {}})
+        return chunk_id
+
+    def delete_chunk(self, chunk_id, *args, **kwargs):
+        before = len(self._chunks)
+        self._chunks[:] = [chunk for chunk in self._chunks if chunk["doc_id"] != chunk_id]
+        return len(self._chunks) < before
+
+
+@pytest.mark.unit
+def test_base_clear_parent_text_fallback_preserves_id_remapping_information():
+    store = _ParentClearFallbackStore([
+        {"doc_id": "old", "text": "child", "metadata": {"parent_text": "parent"}}
+    ])
+
+    changed_ids = store.clear_parent_text(["old"])
+
+    assert changed_ids == [("old", "new-1")]
+    assert store.get_chunks() == [{"doc_id": "new-1", "text": "child", "metadata": {}}]
+
+
 @pytest.mark.unit
 class TestBaseGetChunkByKey:
     """The default lookup hashes the source's chunks until one matches."""

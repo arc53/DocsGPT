@@ -1,6 +1,6 @@
 import logging
 from functools import cached_property
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from docsgpt.core.settings import settings
 from docsgpt.vectorstore.base import BaseVectorStore, InvalidChunkMetadataError
@@ -306,6 +306,19 @@ class MongoDBVectorStore(BaseVectorStore):
         if result.matched_count == 0:
             raise KeyError(f"Chunk {chunk_id} not found for source {self._source_id}")
         return chunk_id
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Unset parent metadata from this source's listed chunks without embedding."""
+        from bson.objectid import ObjectId
+
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        self._collection.update_many(
+            {"_id": {"$in": [ObjectId(chunk_id) for chunk_id in ids]}, "source_id": self._source_id},
+            {"$unset": {"parent_text": ""}},
+        )
+        return [(chunk_id, chunk_id) for chunk_id in ids]
 
     def delete_chunk(self, chunk_id):
         """Delete one of this source's chunks by id.
