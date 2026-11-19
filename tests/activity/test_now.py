@@ -527,6 +527,44 @@ class TestNeedsYou:
         self._pending(pg_conn, _chat(pg_conn), pause_type="client_tool")
         assert activity_now.build_now(pg_conn, "u1")["needs_you"] == []
 
+    def test_lists_turns_waiting_for_answers_as_questions(self, pg_conn):
+        conv = _chat(pg_conn, "Carrier onboarding")
+        self._pending(pg_conn, conv, pause_type="awaiting_answer")
+        snap = activity_now.build_now(pg_conn, "u1")
+        (item,) = snap["needs_you"]
+        assert item["kind"] == "question"
+        assert item["id"] == f"question:{conv}"
+        assert item["conversation_id"] == conv
+        assert item["title"] == "Carrier onboarding"
+        assert item["expires_at"] and item["created_at"]
+        assert "tools" not in item
+        # The chat gets the sidebar's waiting mark, as an approval's does.
+        assert snap["approval_conversations"] == [conv]
+
+    def test_a_turn_waiting_on_an_approval_and_questions_is_marked_once(self, pg_conn):
+        conv = _chat(pg_conn, "Carrier onboarding")
+        PendingToolStateRepository(pg_conn).save_state(
+            conv, "u1",
+            messages=[], tools_dict={}, tool_schemas=[], agent_config={},
+            pending_tool_calls=[
+                {"call_id": "c1", "tool_name": "send_email", "pause_type": "awaiting_approval"},
+                {"call_id": "c2", "tool_name": "ask_user", "pause_type": "awaiting_answer"},
+            ],
+        )
+        snap = activity_now.build_now(pg_conn, "u1")
+        assert sorted(item["kind"] for item in snap["needs_you"]) == ["approval", "question"]
+        assert snap["approval_conversations"] == [conv]
+
+    def test_an_expired_question_pause_is_not_listed(self, pg_conn):
+        conv = _chat(pg_conn)
+        self._pending(pg_conn, conv, pause_type="awaiting_answer")
+        pg_conn.execute(
+            text("UPDATE pending_tool_state SET expires_at = now() - interval '1 minute' "
+                 "WHERE conversation_id = CAST(:id AS uuid)"),
+            {"id": conv},
+        )
+        assert activity_now.build_now(pg_conn, "u1")["needs_you"] == []
+
     def test_lists_schedules_paused_after_failures(self, pg_conn, monkeypatch):
         from docsgpt.core.settings import settings
 

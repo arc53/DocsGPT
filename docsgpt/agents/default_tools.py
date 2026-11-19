@@ -24,20 +24,21 @@ _FK_BOUND_TOOLS = frozenset({"notes", "todo_list"})
 # ``scheduler`` only makes sense from an interactive chat — letting an LLM
 # call ``schedule_task`` from a scheduled run chains new schedules each fire,
 # bounded only by ``SCHEDULE_MAX_PER_USER`` (cost foot-gun, confusing UX).
-_HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler", "check_job"})
+_HEADLESS_EXCLUDED_TOOLS = frozenset({"scheduler", "check_job", "ask_user"})
 
 # Default tools that exist only while their feature is on.
 _FEATURE_GATED_TOOLS = {"monitor": "MONITORS_ENABLED"}
 
 # Tools the server attaches to a turn by itself, never listed, toggled or
-# picked: ``check_job`` comes with every turn that can hand calls off
-# (``BaseAgent._prepare_tools``). An entry in ``DEFAULT_CHAT_TOOLS`` or an
-# agent's saved tools is ignored, so no setting can leave hand-offs without it.
-SERVER_ATTACHED_TOOLS = frozenset({"check_job"})
+# picked: ``check_job`` comes with every turn that can hand calls off, and
+# ``ask_user`` with every interactive chat turn (``BaseAgent._prepare_tools``).
+# An entry in ``DEFAULT_CHAT_TOOLS`` or an agent's saved tools is ignored, so
+# no setting can leave a turn without them.
+SERVER_ATTACHED_TOOLS = frozenset({"check_job", "ask_user"})
 
 
 def is_server_attached_tool(tool_name: Optional[str]) -> bool:
-    """Whether the server attaches ``tool_name`` itself (``check_job``)."""
+    """Whether the server attaches ``tool_name`` itself (``check_job``, ``ask_user``)."""
     return bool(tool_name) and tool_name in SERVER_ATTACHED_TOOLS
 
 

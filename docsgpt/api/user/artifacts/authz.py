@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from typing import Mapping, Optional
 
 from flask import request
+from sqlalchemy import text
 
+from docsgpt.api.user.workflow_runs.access import run_in_reach
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.artifacts import ArtifactsRepository
@@ -47,15 +49,22 @@ def principal_for(decoded_token: Optional[dict], api_key: Optional[str]) -> Prin
 
     Priority: a decoded JWT (owner session) first, then the ``api_key``
     (agent-scoped). An unresolvable caller yields an anonymous principal (both
-    fields ``None``) that only a valid ``share_token`` can authorize.
+    fields ``None``) that only a valid ``share_token`` can authorize. So does a
+    key whose outside access is paused (the agent's team locked, its owner or
+    payer deactivated, nobody paying): the key reaches the agent's artifacts
+    only while it could chat with the agent.
     """
+    # Lazy: owner_pause reaches the quota and workspace modules.
+    from docsgpt.api.owner_pause import outside_access_refusal
+
     if decoded_token:
         return Principal(user_id=decoded_token.get("sub"))
 
     if api_key:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
-        if agent and agent.get("user_id") and agent.get("id"):
+            paused = bool(agent) and outside_access_refusal(conn, agent) is not None
+        if agent and not paused and agent.get("user_id") and agent.get("id"):
             return Principal(user_id=str(agent["user_id"]), agent_id=str(agent["id"]))
     return Principal()
 
@@ -102,9 +111,19 @@ def _shared_row_for(conn, conversation_id, share_token):
     if not share_token:
         return None
     shared = SharedConversationsRepository(conn).find_by_uuid(share_token)
-    if shared and str(shared.get("conversation_id")) == str(conversation_id):
-        return shared
-    return None
+    if not shared or str(shared.get("conversation_id")) != str(conversation_id):
+        return None
+    # Lazy: the sharing routes module registers its namespace on import.
+    from docsgpt.api.user.sharing.routes import chat_link_paused
+
+    row = conn.execute(
+        text("SELECT team_id, agent_id FROM conversations WHERE id = CAST(:id AS uuid)"), {"id": str(conversation_id)}
+    ).mappings().first()
+    if row is not None and chat_link_paused(conn, dict(row)):
+        # A locked team's chat links are paused, and so are links to its agent's answers, with the artifacts
+        # they reach.
+        return None
+    return shared
 
 
 def user_can_access_conversation(
@@ -185,7 +204,11 @@ def authorize_artifact(
         if not principal.user_id:
             return False
         run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
-        return run is not None and run.get("user_id") == principal.user_id
+        # A team workflow's run closes to someone who left the team.
+        return (
+            run is not None and run.get("user_id") == principal.user_id
+            and run_in_reach(conn, run, principal.user_id)
+        )
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False
 
@@ -211,6 +234,9 @@ def authorize_artifact_write(conn, artifact: dict, principal: Principal) -> bool
         )
     if workflow_run_id is not None:
         run = WorkflowRunsRepository(conn).get(str(workflow_run_id))
-        return run is not None and run.get("user_id") == principal.user_id
+        return (
+            run is not None and run.get("user_id") == principal.user_id
+            and run_in_reach(conn, run, principal.user_id)
+        )
     # No parent row reachable -> deny (e.g. deleted conversation/run).
     return False

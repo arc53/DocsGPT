@@ -182,9 +182,9 @@ class MarkdownParser(BaseParser):
             open_fence = self._next_fence_state(line, open_fence)
             header_match = None if in_code_block else re.match(r"^#+\s", line)
             if header_match:
-                if current_header is not None:
-                    if current_text == "" or None:
-                        continue
+                # An empty section contributes no tuple, but the header still
+                # advances: a body after a header chain belongs to the last one.
+                if current_header is not None and current_text:
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
                 elif current_header is None and _has_text(current_text):
                     # Text before the first heading is a section of its own, without a header.
@@ -261,7 +261,7 @@ class MarkdownParser(BaseParser):
             self, filepath: Path, errors: str = "ignore"
     ) -> List[Tuple[Optional[str], str]]:
         """Parse file into tuples."""
-        with open(filepath, "r") as f:
+        with open(filepath, "r", encoding="utf-8", errors=errors) as f:
             content = f.read()
         if self._remove_hyperlinks:
             content = self.remove_hyperlinks(content)

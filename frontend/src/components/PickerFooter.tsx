@@ -1,4 +1,5 @@
 import { ArrowRight } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Button } from './ui/button';
@@ -7,15 +8,23 @@ type PickerFooterProps = {
   /** The settings page the link opens. */
   to: string;
   linkLabel: string;
-  /** Fires when the link is followed so the caller can close its popover. */
-  onNavigate?: () => void;
-  actionLabel: string;
-  onAction: () => void;
+  /**
+   * Fires when the link is followed so the caller can close its popover; a
+   * builder with unsaved changes prevents the event and asks first.
+   */
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void;
+  /**
+   * The shortcut on the right (Upload new, Add tool). Left out where the
+   * host can't use it, so the row is the link alone.
+   */
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 /**
- * Shared footer for the composer's pickers (knowledge, tools): a link to the
- * item's settings page on the left and a "new" action on the right.
+ * Shared footer for the pickers (knowledge, tools, prompts): a link to the
+ * item's settings page on the left and, when given, a "new" action on the
+ * right.
  */
 export default function PickerFooter({
   to,
@@ -34,14 +43,16 @@ export default function PickerFooter({
           <ArrowRight aria-hidden="true" />
         </Link>
       </Button>
-      <Button
-        type="button"
-        variant="outline-primary"
-        shape="pill"
-        onClick={onAction}
-      >
-        {actionLabel}
-      </Button>
+      {actionLabel && onAction ? (
+        <Button
+          type="button"
+          variant="outline-primary"
+          shape="pill"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }

@@ -268,6 +268,78 @@ describe('admin Users actions', () => {
     expect(toasts()).toEqual([]);
   });
 
+  it("a team's account is named by its team and offers no actions", async () => {
+    await render();
+    getUser.mockImplementation(() =>
+      respond({
+        success: true,
+        user: {
+          user_id: 'team:ops',
+          email: null,
+          active: true,
+          kind: 'team',
+          team_id: 'ops',
+          label: 'Team Operations',
+        },
+        roles: ['user'],
+        counts: {},
+        recent_events: [],
+      }),
+    );
+    await clickOption('View details');
+    const dialog = document.body.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).toContain('Team Operations');
+    expect(dialog.textContent).toContain(
+      'This account belongs to a team, not a person',
+    );
+    expect(
+      Array.from(dialog.querySelectorAll('button')).some(
+        (b) => b.textContent?.trim() === 'Actions',
+      ),
+    ).toBe(false);
+  });
+
+  it('leaves out a row that is not a person', async () => {
+    getUsers.mockImplementation(() =>
+      respond({
+        success: true,
+        total: 2,
+        users: [
+          { user_id: 'priya', active: true },
+          { user_id: 'team:ops', active: true, kind: 'team' },
+        ],
+      }),
+    );
+    getAdmins.mockImplementation(() => respond({ success: true, admins: [] }));
+    await act(async () => root.render(<Users />));
+    await flush();
+    const rows = Array.from(container.querySelectorAll('tbody tr'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].textContent).toContain('priya');
+  });
+
+  it('says why an action on a team account is refused', async () => {
+    grantAdmin.mockImplementation(() =>
+      respond(
+        {
+          success: false,
+          error: 'not_a_person',
+          message: 'This account is not a person',
+        },
+        false,
+      ),
+    );
+    await render();
+    await clickOption('Make admin');
+    expect(toasts()).toEqual([
+      {
+        variant: 'destructive',
+        message:
+          "This account belongs to a team, not a person, so it can't be changed here.",
+      },
+    ]);
+  });
+
   it('a failed confirmed action stays in the dialog, no toast', async () => {
     setUserActive.mockImplementation(() =>
       respond({ success: false, message: 'Last admin' }, false),

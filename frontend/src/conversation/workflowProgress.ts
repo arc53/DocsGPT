@@ -13,6 +13,32 @@ export type WorkflowStepEvent = {
   status: 'running' | 'completed' | 'failed';
   output?: unknown;
   state_delta?: Record<string, unknown>;
+  /** Set when the event was too large to send whole: a preview, key names. */
+  summarized?: boolean;
+  output_preview?: string;
+  output_truncated?: boolean;
+  state_keys_changed?: string[];
+  error?: string;
+  /** Set on the steps of a loop's body: the loop and the item they ran for. */
+  parent_node_id?: string;
+  item_index?: number;
+  /** On a ``running`` event for a retry: the attempt starting (from 2). */
+  attempt?: number;
+  max_attempts?: number;
+  retry_delay_seconds?: number;
+  retry_reason?: 'transient' | 'invalid_output';
+  /** Why the previous attempt failed, short and sanitized. */
+  retry_error?: string;
+  /** On the final event of a step that ran more than once. */
+  attempts?: number;
+};
+
+/** A ``workflow_loop_item`` stream event: one item of a loop started or ended. */
+export type WorkflowLoopItemEvent = {
+  node_id: string;
+  item_index: number;
+  item_count: number;
+  status: 'running' | 'completed' | 'failed';
   error?: string;
 };
 
@@ -35,13 +61,19 @@ function oneLine(value: unknown): string {
  * state values it set (``tone: friendly``). Internal keys are left out.
  */
 export function stepDetail(event: WorkflowStepEvent): string | undefined {
-  const output = oneLine(event.output);
+  const output = oneLine(event.output ?? event.output_preview);
   if (output) return output;
-  const entries = Object.entries(event.state_delta ?? {}).filter(
-    ([key]) =>
-      !['query', 'chat_history', 'input_documents', 'passthrough'].includes(
-        key,
-      ) && !key.startsWith('node_'),
+  const shown = (key: string) =>
+    !['query', 'chat_history', 'input_documents', 'passthrough'].includes(
+      key,
+    ) && !key.startsWith('node_');
+  if (!event.state_delta && event.state_keys_changed) {
+    // A summarized step sent the keys it set, not their values.
+    const keys = event.state_keys_changed.filter(shown);
+    return keys.length ? oneLine(keys.join(' · ')) : undefined;
+  }
+  const entries = Object.entries(event.state_delta ?? {}).filter(([key]) =>
+    shown(key),
   );
   if (entries.length === 0) return undefined;
   return oneLine(
@@ -51,7 +83,8 @@ export function stepDetail(event: WorkflowStepEvent): string | undefined {
 
 /**
  * Applies one ``workflow_step`` event to a turn's progress, in place. Steps
- * keep the order they started in; start, end and note nodes are skipped.
+ * keep the order they started in; start, end and note nodes are skipped. A
+ * ``running`` event with an ``attempt`` past 1 is a retry of the same step.
  * ``answer`` is the turn's streamed text, so the step that wrote it gets no
  * detail line.
  */
@@ -62,6 +95,8 @@ export function applyWorkflowStep(
   answer?: string,
 ): void {
   if (HIDDEN_NODE_TYPES.has(event.node_type)) return;
+  // A loop's body runs once per item; its steps count as the loop's items.
+  if (event.parent_node_id) return;
   const existing = progress.steps.find((s) => s.nodeId === event.node_id);
   const step: WorkflowStep = existing ?? {
     nodeId: event.node_id,
@@ -72,11 +107,21 @@ export function applyWorkflowStep(
   };
   step.status = event.status;
   if (event.node_title) step.title = event.node_title;
-  if (event.status === 'running') {
+  const isRetry = event.status === 'running' && (event.attempt ?? 1) > 1;
+  if (isRetry) {
+    // The step's time keeps running from its first attempt.
+    step.attempt = event.attempt;
+    step.maxAttempts = event.max_attempts;
+    step.retryError = event.retry_error || undefined;
+  } else if (event.status === 'running') {
     step.startedAt = now;
     step.endedAt = undefined;
   } else {
     step.endedAt = now;
+    delete step.attempt;
+    delete step.maxAttempts;
+    delete step.retryError;
+    if ((event.attempts ?? 1) > 1) step.attempts = event.attempts;
     // The step that wrote the answer would only repeat its first line.
     const wroteAnswer =
       Boolean(answer?.trim()) &&
@@ -86,6 +131,22 @@ export function applyWorkflowStep(
     if (event.error) step.error = event.error;
   }
   if (!existing) progress.steps.push(step);
+}
+
+/** Counts an ended item of a loop onto the loop's step, in place. */
+export function applyLoopItem(
+  progress: WorkflowProgress,
+  event: WorkflowLoopItemEvent,
+): void {
+  if (event.status === 'running') return;
+  const step = progress.steps.find((s) => s.nodeId === event.node_id);
+  if (!step) return;
+  const items = step.items ?? { total: event.item_count, done: 0, failed: 0 };
+  step.items = {
+    total: event.item_count,
+    done: items.done + 1,
+    failed: items.failed + (event.status === 'failed' ? 1 : 0),
+  };
 }
 
 /** The step still working, if any. */

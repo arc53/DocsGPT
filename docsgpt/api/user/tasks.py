@@ -5,8 +5,11 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.exc import DataError
 
 from docsgpt.api.user.idempotency import with_idempotency
+from docsgpt.api.user.ingest_slots import with_ingest_slot
 from docsgpt.celery_init import celery
+from docsgpt.parser.connectors.base import ConnectorAuthError
 from docsgpt.parser.file.base_parser import DocumentParseError
+from docsgpt.parser.ingest_limits import IngestTooLarge
 from docsgpt.parser.remote.github_loader import GitHubRateLimited
 from docsgpt.worker import (
     AttachmentRejectedError,
@@ -71,11 +74,14 @@ logger = logging.getLogger(__name__)
 # ``/api/task_status`` (the wiki-convert and GraphRAG-enable modals) just keeps
 # reporting "pending". It is the DEFAULT here so a new durable task cannot
 # forget it; tasks needing a wider set pass their own via ``durable_task()``.
+# A source over ``INGEST_MAX_FILES`` / ``INGEST_MAX_TOKENS`` (``IngestTooLarge``)
+# is the same on every attempt too.
+NO_RETRY = (DocumentParseError, IngestTooLarge)
 DURABLE_TASK = dict(
     bind=True,
     acks_late=True,
     autoretry_for=(Exception,),
-    dont_autoretry_for=(DocumentParseError,),
+    dont_autoretry_for=NO_RETRY,
     max_retries=3,
     retry_backoff=60,
 )
@@ -116,17 +122,20 @@ def _emit_ingest_poison_event(task_name, bound):
 
     The guard returns before the worker runs, so the worker's own failed
     event never fires — without this the upload toast spins on "training".
+    It goes out the way the worker's own event would: for a team's source, to
+    the person who started it while they are still in the team, else to the
+    team's admins, and never to the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import close_failed_ingest_progress
+    from docsgpt.worker import _publish_source_event, close_failed_ingest_progress
 
     close_failed_ingest_progress(source_id)
-    publish_user_event(
+    _publish_source_event(
         user,
+        bound.get("actor_id"),
         "source.ingest.failed",
         {
             "source_id": str(source_id),
@@ -142,7 +151,10 @@ def _emit_ingest_poison_event(task_name, bound):
 # a file that cannot be converted to text fails identically on every attempt,
 # so retrying only multiplies the log noise before the same failure — go
 # straight to the poison/failure path.
+# ``with_ingest_slot`` goes outside ``with_idempotency``: a task waiting for one
+# of its user's ingest slots claims no lease and spends no attempt.
 @celery.task(**DURABLE_TASK)
+@with_ingest_slot
 @with_idempotency(task_name="ingest", on_poison=_emit_ingest_poison_event)
 def ingest(
     self,
@@ -157,7 +169,10 @@ def ingest(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
+    actor_id=None,
 ):
+    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner)."""
     resp = ingest_worker(
         self,
         directory,
@@ -172,19 +187,23 @@ def ingest(
         source_id=source_id,
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
+        **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
 
 # A GitHub rate limit lasts up to an hour: retrying after 60/120/240 s
 # cannot help, so the failed event tells the user when to try again instead.
-@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, GitHubRateLimited)))
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, GitHubRateLimited)))
+@with_ingest_slot
 @with_idempotency(task_name="ingest_remote", on_poison=_emit_ingest_poison_event)
 def ingest_remote(
     self, source_data, job_name, user, loader,
     config=None, idempotency_key=None, source_id=None, connection_id=None,
-    sync_frequency="never",
+    sync_frequency="never", folder_id=None, actor_id=None,
 ):
+    """Ingest a remote source; ``actor_id`` is who added it when ``user`` is a team's principal (the owner)."""
     resp = remote_worker(
         self, source_data, job_name, user, loader,
         sync_frequency=sync_frequency,
@@ -192,11 +211,14 @@ def ingest_remote(
         idempotency_key=idempotency_key,
         source_id=source_id,
         connection_id=connection_id,
+        **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
 
 @celery.task(**DURABLE_TASK)
+@with_ingest_slot
 @with_idempotency(
     task_name="reingest_source_task", on_poison=_emit_ingest_poison_event,
 )
@@ -218,10 +240,10 @@ def reembed_wiki_page(
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="convert_source_to_wiki")
-def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
+def convert_source_to_wiki(self, source_id, user, idempotency_key=None, actor_id=None):
     from docsgpt.worker import convert_source_to_wiki_worker
 
-    resp = convert_source_to_wiki_worker(self, source_id, user)
+    resp = convert_source_to_wiki_worker(self, source_id, user, actor_id=actor_id)
     return resp
 
 
@@ -229,16 +251,19 @@ def _emit_graph_poison_event(task_name, bound):
     """Publish a terminal ``graph.extract.failed`` when the poison-guard trips.
 
     The guard returns before the worker runs, so the worker's own failed event
-    never fires — without this the build UI spins forever.
+    never fires — without this the build UI spins forever. For a team's source
+    it reaches the person who started the build while they are still in the
+    team, never the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import _publish_source_event
 
-    publish_user_event(
+    _publish_source_event(
         user,
+        bound.get("actor_id"),
         "graph.extract.failed",
         {
             "source_id": str(source_id),
@@ -250,15 +275,18 @@ def _emit_graph_poison_event(task_name, bound):
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False):
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False, actor_id=None):
     """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks.
 
     ``sync`` (after a sync re-embedded the source) carries the graph over by
-    chunk content and extracts only new text.
+    chunk content and extracts only new text. ``actor_id`` (who added the
+    knowledge) pays for the extraction's model calls and hears its events.
     """
     from docsgpt.worker import extract_graph_worker
 
-    return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids, sync=sync)
+    return extract_graph_worker(
+        self, source_id, user, chunk_ids=chunk_ids, sync=sync, **({"actor_id": actor_id} if actor_id else {}),
+    )
 
 
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
@@ -271,8 +299,9 @@ def schedule_syncs(self, frequency):
     return resp
 
 
+# Each attempt walks the whole selection again, so what fails the same way every time is not retried.
 @celery.task(bind=True, acks_late=True, autoretry_for=(Exception,), max_retries=3, retry_backoff=60,
-             dont_autoretry_for=(_connection_unavailable(),))
+             dont_autoretry_for=(*NO_RETRY, _connection_unavailable(), ConnectorAuthError))
 def sync_connector_source(self, source_id):
     """Re-sync one connector source from its connection, with no browser involved."""
     from docsgpt.worker import sync_connector_source as run
@@ -307,6 +336,8 @@ def website_pages(
 
 
 @celery.task(bind=True)
+@with_ingest_slot
+@with_idempotency(task_name="sync_source")
 def sync_source(
     self,
     source_data,
@@ -318,8 +349,15 @@ def sync_source(
     doc_id,
     connection_id=None,
     actor_id=None,
+    idempotency_key=None,
+    lock_wait_seconds=None,
+    notify_skip=True,
 ):
-    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too."""
+    """Sync one source; ``actor_id`` (a team editor who asked) hears its events too.
+
+    A scheduled sync passes ``lock_wait_seconds=0`` and ``notify_skip=False``:
+    a source busy with another job is left to the next schedule, quietly.
+    """
     resp = sync(
         self,
         source_data,
@@ -331,6 +369,8 @@ def sync_source(
         doc_id,
         connection_id=connection_id,
         actor_id=actor_id,
+        notify_skip=notify_skip,
+        **({"lock_wait_seconds": lock_wait_seconds} if lock_wait_seconds is not None else {}),
     )
     return resp
 
@@ -527,7 +567,9 @@ except Exception:
 
 # A revoked or disconnected connection will not heal by retrying; the
 # service has already paused the source and told its owner to reconnect.
-@celery.task(**durable_task(dont_autoretry_for=(DocumentParseError, _connection_unavailable())))
+# Neither will a sign-in the provider rejects after a refresh.
+@celery.task(**durable_task(dont_autoretry_for=(*NO_RETRY, _connection_unavailable(), ConnectorAuthError)))
+@with_ingest_slot
 @with_idempotency(
     task_name="ingest_connector_task", on_poison=_emit_ingest_poison_event,
 )
@@ -549,6 +591,7 @@ def ingest_connector_task(
     source_id=None,
     connection_id=None,
     actor_id=None,
+    folder_id=None,
 ):
     """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
 
@@ -575,6 +618,7 @@ def ingest_connector_task(
         idempotency_key=idempotency_key,
         source_id=source_id,
         actor_id=actor_id,
+        **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
 
@@ -633,6 +677,60 @@ def cleanup_schedule_runs(self):
     with engine.begin() as conn:
         deleted = ScheduleRunsRepository(conn).cleanup_older_than(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def sse_connections_gauge_task(self):
+    """Log a point-in-time gauge of open SSE connections and Celery queues.
+
+    Counts the live leases in the per-user ``user:*:sse_leases`` sorted
+    sets that SSE streams hold and emits a structured ``sse_gauge`` event
+    with ``connected_users`` / ``connections`` attributes. An idle fleet
+    still logs a zero so a chart has continuous data.
+
+    The same event carries the Celery queue gauge
+    (``queue_<name>_depth`` / ``_wait_s`` / ``_in_flight`` for every
+    declared queue, see ``docsgpt/events/queue_gauge.py``). The two are
+    read independently: a cache Redis error drops only the connection
+    counts, a broker error only the queue fields, and the event is
+    skipped only when neither could be read.
+    """
+    from docsgpt.cache import get_redis_instance
+    from docsgpt.events.gauge import measure_sse_connections
+    from docsgpt.events import queue_gauge
+
+    snapshot = None
+    skipped = "redis unavailable"
+    redis_client = get_redis_instance()
+    if redis_client is not None:
+        try:
+            snapshot = measure_sse_connections(redis_client)
+        except Exception:
+            # Transient Redis hiccup — the next minute's sweep will cover it.
+            logging.warning("sse_gauge sweep failed", exc_info=True)
+            skipped = "redis error"
+    queues = None
+    try:
+        broker = queue_gauge.broker_redis()
+        if broker is not None:
+            from docsgpt.celeryconfig import task_queues
+
+            queues = queue_gauge.measure_celery_queues(broker, [q.name for q in task_queues])
+    except Exception:
+        logging.warning("queue gauge sweep failed", exc_info=True)
+        queues = None
+    if snapshot is None and not queues:
+        return {"skipped": skipped}
+    logging.info(
+        "sse_gauge",
+        extra={
+            **(snapshot or {}),
+            **(queue_gauge.queue_log_fields(queues) if queues else {}),
+        },
+    )
+    if queues:
+        return {**(snapshot or {}), "queues": queues}
+    return snapshot
 
 
 @celery.task(bind=True, acks_late=False)
@@ -892,6 +990,13 @@ def setup_periodic_tasks(sender, **kwargs):
         cleanup_schedule_runs.s(),
         name="cleanup-schedule-runs",
     )
+    # Open SSE connections and Celery queue depth, wait and in-flight, once a
+    # minute; the sweep is a few SCAN / pipelined round-trips.
+    sender.add_periodic_task(
+        timedelta(seconds=60),
+        sse_connections_gauge_task.s(),
+        name="sse-connections-gauge",
+    )
     # Close idle-past-TTL sandbox sessions roughly every minute. The on-open
     # opportunistic reap still runs in the API processes; this covers worker
     # processes (and quiet periods where no new session is opened).
@@ -920,6 +1025,9 @@ def setup_periodic_tasks(sender, **kwargs):
         name="cleanup-background-jobs",
     )
     sender.add_periodic_task(timedelta(hours=24), cleanup_trigger_hits.s(), name="cleanup-trigger-hits")
+    # Vectors of ingests that ended without a source, once they are
+    # INGEST_ORPHAN_TTL_HOURS old.
+    sender.add_periodic_task(timedelta(hours=1), cleanup_orphaned_ingests.s(), name="cleanup-orphaned-ingests")
     # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
     # digest run on ANALYTICS_QUEUE and are only scheduled while
     # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
@@ -959,8 +1067,19 @@ def setup_periodic_tasks(sender, **kwargs):
 # terminal ``mcp.oauth.failed``; the hard limit is the prefork backstop.
 # Generous so a human actively clicking through OAuth isn't cut off.
 @celery.task(bind=True, soft_time_limit=600, time_limit=660)
-def mcp_oauth_task(self, config, user):
-    resp = mcp_oauth(self, config, user)
+def mcp_oauth_task(self, config, user, actor=None):
+    """Sign in to an MCP server; ``user`` owns the sign-in, ``actor`` is the Admin signing in for a team.
+
+    Args:
+        self: The bound task.
+        config: The MCP server config.
+        user: The person, or a team's principal.
+        actor: For a team's sign-in, the Admin who follows it (its events and status are theirs).
+
+    Returns:
+        What :func:`docsgpt.worker.mcp_oauth` returns.
+    """
+    resp = mcp_oauth(self, config, user, actor)
     return resp
 
 
@@ -1045,6 +1164,14 @@ def cleanup_idempotency_dedup(self):
     engine = get_engine()
     with engine.begin() as conn:
         return IdempotencyRepository(conn).cleanup_expired()
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_orphaned_ingests(self):
+    """Delete the vectors of ingests that ended without a source, past ``INGEST_ORPHAN_TTL_HOURS``."""
+    from docsgpt.api.user.ingest_orphans import sweep_orphaned_ingests
+
+    return sweep_orphaned_ingests()
 
 
 @celery.task(bind=True, acks_late=False)

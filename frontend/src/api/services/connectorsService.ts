@@ -1,4 +1,6 @@
+import type { ConnectionOwner, ReconnectResult } from '../../connectors/types';
 import type { SourceConfig } from '../../models/misc';
+import { workspaceHeader } from '../../workspace/requestWorkspace';
 import apiClient, { throttledApiClient } from '../client';
 import endpoints from '../endpoints';
 
@@ -23,8 +25,58 @@ export type ConnectionSetupBody = {
     name?: string;
     /** The source's retrieval settings, as an upload sends them. */
     config?: SourceConfig;
+    /** The caller's Knowledge folder to file the new source into. */
+    folder_id?: string;
   };
 };
+
+/**
+ * Whose list to read. `owner: 'team'` reads the team's connections (any
+ * member); `workspace` names the team to send it for, so an answer is filed
+ * under the team it was asked for even if the user switches meanwhile.
+ */
+export type ConnectionListOptions = {
+  owner?: ConnectionOwner;
+  workspace?: string;
+};
+
+/** `POST /api/tools/member`: a team tool on each person's own account. */
+export type MemberToolBody = {
+  /** A catalog key, or `custom_mcp` with `server_url` for a sign-in server. */
+  connector_key: string;
+  /** `custom_mcp`: the server each person signs in to (OAuth). */
+  server_url?: string;
+  /** `custom_mcp`: `auto` (the default), `http` or `sse`. */
+  transport_type?: 'auto' | 'http' | 'sse';
+  /** `custom_mcp`: the tool's name; the server's host when left out. */
+  displayName?: string;
+  permissions?: Record<string, 'always' | 'ask' | 'off'>;
+  /** The team's Tools folder to file it in. */
+  folder_id?: string;
+  status?: boolean;
+};
+
+/**
+ * `{success, id}`, or a refusal: 400 `team_workspace_required`, 409
+ * `member_mode_not_allowed`, 409 `connect_personal_first` (with
+ * `connector_key`), 502 when the service's actions can't be read.
+ */
+export type MemberToolResult = {
+  success: boolean;
+  id?: string;
+  error?: string;
+  message?: string;
+  connector_key?: string;
+};
+
+const listUrl = (
+  personal: string,
+  team: string,
+  options: ConnectionListOptions,
+) => (options.owner === 'team' ? team : personal);
+
+const listHeaders = (options: ConnectionListOptions) =>
+  options.workspace ? workspaceHeader(options.workspace) : {};
 
 export type RemoveConnectionBody = {
   sources: 'keep' | 'delete';
@@ -32,22 +84,56 @@ export type RemoveConnectionBody = {
 };
 
 const connectorsService = {
-  getCatalog: async (token: string | null) =>
+  /** The catalog, its card states worked out for whose list `options` names. */
+  getCatalog: async (
+    token: string | null,
+    options: ConnectionListOptions = {},
+  ) =>
     json(
-      await throttledApiClient.get(endpoints.USER.CONNECTORS_CATALOG, token),
+      await throttledApiClient.get(
+        listUrl(
+          endpoints.USER.CONNECTORS_CATALOG,
+          endpoints.USER.CONNECTORS_CATALOG_TEAM,
+          options,
+        ),
+        token,
+        listHeaders(options),
+      ),
     ),
-  listConnections: async (token: string | null) =>
-    json(await throttledApiClient.get(endpoints.USER.CONNECTIONS, token)),
+  /** The caller's own connections, or a team's with `owner: 'team'`. */
+  listConnections: async (
+    token: string | null,
+    options: ConnectionListOptions = {},
+  ) =>
+    json(
+      await throttledApiClient.get(
+        listUrl(
+          endpoints.USER.CONNECTIONS,
+          endpoints.USER.CONNECTIONS_TEAM,
+          options,
+        ),
+        token,
+        listHeaders(options),
+      ),
+    ),
   getConnection: async (id: string, token: string | null) =>
     json(await apiClient.get(endpoints.USER.CONNECTION(id), token)),
+  /** Pasted credentials; `owner: 'team'` connects them for the team (Admins). */
   createConnection: async (
     body: {
       connector_key: string;
       credentials: Record<string, string>;
       label?: string;
+      owner?: ConnectionOwner;
     },
     token: string | null,
   ) => json(await apiClient.post(endpoints.USER.CONNECTIONS, body, token)),
+  /** Adds a team tool that runs on each person's own account (Editors). */
+  createMemberTool: async (
+    body: MemberToolBody,
+    token: string | null,
+  ): Promise<MemberToolResult> =>
+    json(await apiClient.post(endpoints.USER.CREATE_MEMBER_TOOL, body, token)),
   setup: async (
     id: string,
     body: ConnectionSetupBody,
@@ -62,11 +148,12 @@ const connectorsService = {
         idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
       ),
     ),
+  /** Signs a connection in again; see `ReconnectResult` for `replace`. */
   reconnect: async (
     id: string,
     body: { credentials?: Record<string, string> },
     token: string | null,
-  ) =>
+  ): Promise<ReconnectResult> =>
     json(
       await apiClient.post(
         endpoints.USER.CONNECTION_RECONNECT(id),

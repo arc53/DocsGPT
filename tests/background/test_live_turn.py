@@ -11,6 +11,9 @@ from docsgpt.background import continuation, live_turn, wake
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 @pytest.fixture()
 def quiet(monkeypatch):
     """No Celery, notifications or Redis: record what would go out instead."""

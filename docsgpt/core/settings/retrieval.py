@@ -26,7 +26,12 @@ class RetrievalSettings(SettingsGroup):
     )
     GRAPHRAG_ENABLED: bool = Field(default=False, description="Gates graph-aware ingestion and retrieval.")
     GRAPHRAG_EXTRACTION_MODEL: Optional[str] = Field(
-        default=None, description="Model for ingest-time graph extraction; unset reuses LLM_PROVIDER/LLM_NAME."
+        default=None,
+        description=(
+            "Model for ingest-time graph extraction when the source sets none; unset, or a model the instance "
+            "has disabled, uses the source owner's task model: their pick in Settings > General, else the "
+            "instance's in Admin > Defaults, else TASK_MODEL_ID, else the default model."
+        ),
     )
     GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION: int = Field(
         default=2000, ge=0, description="Hard cap on chunks extracted per source (cost control); 0 extracts nothing."

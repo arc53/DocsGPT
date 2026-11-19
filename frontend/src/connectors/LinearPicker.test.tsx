@@ -234,4 +234,20 @@ describe('LinearPicker', () => {
       }),
     ).toBe('Linear · Engineering, Launch');
   });
+
+  it.each([
+    ['connection_picker_owner_only', 'pickerOwnerOnly'],
+    ['connection_paused', 'paused'],
+  ])('words a team account refusal (%s), with no retry', async (code, key) => {
+    service.linearWorkspace.mockResolvedValue({ success: false, error: code });
+    await render(EMPTY_LINEAR_SELECTION, vi.fn(), vi.fn());
+    expect(container.textContent).toContain(
+      `settings.connectors.team.errors.${key}`,
+    );
+    const labels = Array.from(container.querySelectorAll('button')).map(
+      (b) => b.textContent,
+    );
+    expect(labels).not.toContain('retry');
+    expect(labels).not.toContain('settings.connectors.status.reconnect');
+  });
 });

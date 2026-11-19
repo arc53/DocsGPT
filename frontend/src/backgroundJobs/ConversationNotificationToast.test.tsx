@@ -30,8 +30,31 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 function Location() {
   const location = useLocation();
-  return <div data-testid="location">{location.pathname}</div>;
+  return (
+    <div data-testid="location">
+      {location.pathname}
+      {location.search}
+    </div>
+  );
 }
+
+const schedulePaused = (id: string, scheduleId = 's1'): SSEEvent =>
+  notification(id, {
+    kind: 'schedule_paused',
+    title: 'Nightly digest',
+    body: 'No CRM tool.',
+    url: `/activity/schedules?schedule=${scheduleId}`,
+    conversation_id: null,
+    schedule_id: scheduleId,
+  });
+
+const scheduleEvent = (id: string, type: string, scheduleId = 's1') => ({
+  id,
+  ts: new Date().toISOString(),
+  type,
+  scope: { kind: 'schedule', id: scheduleId },
+  payload: { schedule_id: scheduleId, status: 'active' },
+});
 
 const notification = (
   id: string,
@@ -263,6 +286,54 @@ describe('ConversationNotificationToast', () => {
       vi.advanceTimersByTime(1010);
     });
     expect(cards()).toHaveLength(0);
+  });
+
+  it('a paused schedule opens the schedule', async () => {
+    store.dispatch(sseEventReceived(schedulePaused('n1')));
+    await renderAt('/');
+    expect(
+      container.querySelector('[data-slot="toast-title"]')?.textContent,
+    ).toBe('backgroundJobs.notify.title.schedule_paused');
+    expect(container.textContent).toContain('Nightly digest');
+    expect(container.textContent).toContain('No CRM tool.');
+    await act(async () => buttonByText('backgroundJobs.notify.open')!.click());
+    expect(
+      container.querySelector('[data-testid="location"]')?.textContent,
+    ).toBe('/activity/schedules?schedule=s1');
+    expect(service.markConversationRead).not.toHaveBeenCalled();
+  });
+
+  it.each(['schedule.resumed', 'schedule.cancelled', 'schedule.run.completed'])(
+    'a paused schedule is dropped once a later %s settles it',
+    async (type) => {
+      store.dispatch(sseEventReceived(schedulePaused('n1')));
+      await renderAt('/');
+      expect(cards()).toHaveLength(1);
+      await act(async () => {
+        store.dispatch(sseEventReceived(scheduleEvent('e1', type)));
+      });
+      expect(cards()).toHaveLength(0);
+      // Coming back to the page does not bring it back.
+      await leaveTo('/');
+      expect(cards()).toHaveLength(0);
+    },
+  );
+
+  it("another schedule's resume leaves it, and a pause after a resume shows", async () => {
+    store.dispatch(sseEventReceived(schedulePaused('n1')));
+    store.dispatch(
+      sseEventReceived(scheduleEvent('e1', 'schedule.resumed', 's2')),
+    );
+    store.dispatch(sseEventReceived(scheduleEvent('e2', 'schedule.resumed')));
+    store.dispatch(sseEventReceived(schedulePaused('n2')));
+    await renderAt('/');
+    expect(cards()).toHaveLength(1);
+    expect(
+      (cards()[0] as HTMLElement).textContent?.includes('Nightly digest'),
+    ).toBe(true);
+    expect(
+      store.getState().background.dismissedNotifications.map((d) => d.id),
+    ).toEqual(['n1']);
   });
 
   it('shows at most three at once', async () => {

@@ -21,6 +21,8 @@ from docsgpt.api.user.sources.upload import (
     _read_idempotency_key,
     _release_claim,
     _scoped_idempotency_key,
+    creation_workspace,
+    owner_task_kwargs,
     sources_upload_ns,
 )
 from docsgpt.api.user.tasks import ingest
@@ -232,6 +234,11 @@ class SourceFromAttachments(Resource):
         ids, name, error = _read_request()
         if error is not None:
             return error
+        # The attachments stay the caller's; in a team the new source is the team's.
+        workspace, workspace_refusal = creation_workspace(user)
+        if workspace_refusal is not None:
+            return workspace_refusal
+        owner = workspace.owner_id
 
         with db_readonly() as conn:
             repo = AttachmentsRepository(conn)
@@ -267,14 +274,14 @@ class SourceFromAttachments(Resource):
             predetermined_task_id, cached = _claim_task_or_get_cached(scoped_key, "ingest")
             if cached is not None:
                 # The same shape as the first response, name included.
-                cached["name"] = _source_name(cached.get("source_id"), user) or job_name
+                cached["name"] = _source_name(cached.get("source_id"), owner) or job_name
                 return make_response(jsonify(cached), 200)
 
         # With a key, the source id is derived from it as /api/upload does, so
         # a repeat (and a retried worker task) lands on the same source.
         source_uuid = derive_source_id(scoped_key) if scoped_key else uuid.uuid4()
         dir_name = f"{safe_filename(job_name)}-{source_uuid.hex[:8]}"
-        base_path = f"{settings.UPLOAD_FOLDER}/{safe_filename(user)}/{dir_name}"
+        base_path = f"{settings.UPLOAD_FOLDER}/{safe_filename(owner)}/{dir_name}"
         file_name_map: dict[str, str] = {}
         copy_files: list[dict[str, str]] = []
         for row in files:
@@ -288,7 +295,7 @@ class SourceFromAttachments(Resource):
                     settings.UPLOAD_FOLDER,
                     list(SUPPORTED_SOURCE_EXTENSIONS),
                     job_name,
-                    user,
+                    owner,
                 ),
                 "kwargs": {
                     "file_path": base_path,
@@ -299,6 +306,7 @@ class SourceFromAttachments(Resource):
                     "idempotency_key": scoped_key,
                     "source_id": str(source_uuid),
                     "copy_files": copy_files,
+                    **owner_task_kwargs(owner, user),
                 },
             }
             if predetermined_task_id is not None:

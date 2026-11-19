@@ -1,0 +1,10 @@
+key: mcp:notion
+rank: 10
+name: Notion
+description: Search, read and update Notion pages and databases.
+icon: notion
+category: knowledge
+mcp_url: https://mcp.notion.com/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://developers.notion.com/docs/mcp

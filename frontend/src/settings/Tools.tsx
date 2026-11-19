@@ -1,4 +1,15 @@
-import { Eye, Pencil, Plug, RefreshCw, Trash2, Users } from 'lucide-react';
+import {
+  Eye,
+  Folder as FolderIcon,
+  FolderInput,
+  FolderOpen,
+  Pencil,
+  Plug,
+  RefreshCw,
+  Trash2,
+  UserRound,
+  Users,
+} from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
@@ -6,11 +17,25 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import devicesService from '../api/services/devicesService';
 import userService from '../api/services/userService';
+import FilterSelect from '../components/FilterSelect';
 import PageToolbar from '../components/PageToolbar';
 import { Pagination, pageRangeParams } from '../components/ui/pagination';
 import { SHORT_LIST_PAGE_SIZE, useClientPage } from '../hooks/usePageState';
 import SearchInput from '../components/SearchInput';
-import RoleBadge from '../components/RoleBadge';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import { canMoveToFolder } from '../components/folders/folderFiling';
+import { canCreateIn } from '../components/folders/folderTree';
+import MoveToFolderModal from '../components/folders/MoveToFolderModal';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import { useFolderActions } from '../components/folders/useFolderActions';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
 import SkeletonLoader from '../components/SkeletonLoader';
 import ToolIcon from '../components/ToolIcon';
 import { Badge } from '../components/ui/badge';
@@ -19,18 +44,27 @@ import { ActionMenu, type MenuOption } from '../components/ui/dropdown-menu';
 import { SectionHeader } from '../components/ui/section-header';
 import { Switch } from '../components/ui/switch';
 import { EmptyState } from '../components/ui/empty-state';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import ConnectorIcon from '../connectors/ConnectorIcon';
 import ConnectorTile from '../connectors/ConnectorTile';
 import {
   connectionNeedsSignIn,
-  loadConnectors,
-  selectConnections,
+  reloadConnectors,
   selectConnectorCatalog,
+  selectWorkspaceConnections,
 } from '../connectors/connectorsSlice';
 import { accountLine, connectorDescription } from '../connectors/i18n';
 import { useSignInAgain } from '../connectors/SignInAgainNotice';
+import {
+  connectedByText,
+  connectionCan,
+  connectionPauseText,
+  isConnectionPaused,
+  isTeamConnection,
+} from '../connectors/teamConnections';
 import { toolServiceOf } from '../connectors/toolService';
 import { useLoaderState } from '../hooks';
+import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
 import type { AvailableToolType } from '../modals/types';
 import AddToolModal from '../modals/AddToolModal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -42,31 +76,107 @@ import type { AppDispatch } from '../store';
 import ShareToTeamModal, {
   type ShareCredentials,
 } from '../teams/ShareToTeamModal';
-import { can, isOwner, roleOf } from '../utils/accessUtils';
+import {
+  can,
+  canOpenShare,
+  isOwner,
+  roleOf,
+  type AccessFields,
+} from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
+import { readerIdFromToken } from '../utils/personLabel';
+import { agentUseCount } from '../utils/resourceUsage';
 import {
   canAddToolToOwn,
   isChatToolVisible,
   isSharedOAuthMcp,
   toolInChat,
 } from '../utils/toolUtils';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
+import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
+import WorkspaceLine from '../workspace/WorkspaceLine';
+import {
+  roleAtLeast,
+  selectCurrentWorkspace,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
+import {
+  type FiledItem,
+  filedAt,
+  folderLabelOf,
+  itemsWithin,
+  listedFolders,
+} from './folderListing';
+import FolderSection from './FolderSection';
 import RemoteDeviceConfig from './RemoteDeviceConfig';
 import ToolConfig from './ToolConfig';
-import { groupTools, type ToolGroup } from './toolGroups';
+import { toolGroupTitle } from './toolGroupTitle';
+import {
+  groupTools,
+  TOOL_KINDS,
+  toolKindLabel,
+  toolKindOf,
+  type ToolKindFilter,
+} from './toolGroups';
 import { APIToolType, UserToolType } from './types';
+import UsedByAgents from './UsedByAgents';
+import { useFolderPage } from './useFolderPage';
+import { selectCanCreateHere, selectInTeam } from './workspaceAccess';
 
+/** A tool as the list carries it: its workspace fields and its filing. */
+type ListedTool = UserToolType & AccessFields & FiledItem;
+
+const GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+
+const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
+type UsageFilter = (typeof USAGE_FILTERS)[number];
+
+/** A team tool that runs on each person's own account (no connection). */
+const isEachPersonTool = (tool: UserToolType): boolean =>
+  tool.credential_mode === 'member' && !tool.connection_id;
+
+/** In use: an agent uses it, or it is on in the caller's own chats. */
+const isToolInUse = (tool: UserToolType): boolean =>
+  agentUseCount(tool.used_by) > 0 || toolInChat(tool);
+
+/**
+ * Settings › Tools in the current workspace: the line saying whose they are,
+ * the workspace's folders, its tools grouped by kind and, in Personal, the
+ * ones shared with the caller. A folder opens in place (`?folder=`) with its
+ * crumb row; a search or a filter lists everything in reach, each tool
+ * naming its folder. A tool added inside a folder is filed there. Opening a
+ * tool shows its editor in place of the list.
+ */
 export default function Tools() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const token = useSelector(selectToken);
   const dispatch = useDispatch<AppDispatch>();
-  const connections = useSelector(selectConnections);
+  // The workspace's accounts: the team's in a team (its tools run on
+  // them), else the caller's own.
+  const connections = useSelector(selectWorkspaceConnections);
   const catalog = useSelector(selectConnectorCatalog);
+  const inTeam = useSelector(selectInTeam);
+  const canCreate = useSelector(selectCanCreateHere);
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  const isTeamAdmin = inTeam && roleAtLeast(role, 'admin');
+  const teamName = useSelector(
+    (state: Parameters<typeof selectCurrentWorkspace>[0]) =>
+      state.workspace ? selectCurrentWorkspace(state).name : '',
+  );
+  const me = readerIdFromToken(token);
   const location = useLocation();
   const navigate = useNavigate();
 
   const [searchTerm, setSearchTerm] = React.useState('');
+  // The address holds the kind and usage filters, so Back and a reload
+  // keep them.
+  const [kind, setKind] = useUrlFilter(TOOL_KINDS, { name: 'kind' });
+  const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, { name: 'usage' });
   const [addToolModalState, setAddToolModalState] =
     React.useState<ActiveState>('INACTIVE');
-  const [userTools, setUserTools] = React.useState<UserToolType[]>([]);
+  const [userTools, setUserTools] = React.useState<ListedTool[]>([]);
   const [selectedTool, setSelectedTool] = React.useState<
     UserToolType | APIToolType | null
   >(null);
@@ -92,9 +202,32 @@ export default function Tools() {
   const [toolToShare, setToolToShare] = React.useState<UserToolType | null>(
     null,
   );
+  const [toolToFile, setToolToFile] = React.useState<ListedTool | null>(null);
+  const page = useFolderPage('tool', () => getUserTools());
+  const { folderId, folder, tree } = page;
+  const inFolder = folderId !== null;
+  const folderActions = useFolderActions('tool');
+  const moveToWorkspace = useMoveToWorkspace('tool');
+  // Opening a folder (or leaving one) starts a fresh search there.
+  React.useEffect(() => {
+    setSearchTerm('');
+  }, [folderId]);
   const [mcpStatuses, setMcpStatuses] = React.useState<{
     [toolId: string]: string;
   }>({});
+  // Under a usage filter, a tool whose In my chats switch moved keeps the
+  // usage it had before (by id), so its tile doesn't vanish mid-click. It
+  // settles on the next search or filter change (`key`) or reload.
+  const filterKey = `${kind}\n${usage}\n${searchTerm}`;
+  const [heldUsage, setHeldUsage] = React.useState<{
+    key: string;
+    inUse: Record<string, boolean>;
+  }>({ key: '', inUse: {} });
+  // A new search or filter drops what was held, so coming back to the
+  // first filter doesn't bring it back.
+  if (heldUsage.key !== '' && heldUsage.key !== filterKey)
+    setHeldUsage({ key: '', inUse: {} });
+  const heldInUse = heldUsage.key === filterKey ? heldUsage.inUse : {};
 
   // A connection-backed tool shares its connection's account or asks each
   // member to connect their own; the share dialog shows that choice. Whose
@@ -184,7 +317,7 @@ export default function Tools() {
   };
 
   // `detail`: the open tool's own ⋯, which leaves out Edit / View.
-  const getMenuOptions = (tool: UserToolType, detail = false): MenuOption[] => {
+  const getMenuOptions = (tool: ListedTool, detail = false): MenuOption[] => {
     const canEdit = can(tool, 'edit') || can(tool, 'edit_credentials');
     const options: MenuOption[] = [];
     const connection = connectionOf(tool);
@@ -193,7 +326,11 @@ export default function Tools() {
     const connectorKey =
       connection?.connector_key ??
       toolServiceOf(tool, connections, catalog)?.connector?.key;
-    if (tool.connection_id && isOwner(tool) && connectorKey) {
+    // A team's account is managed there by its Admins.
+    const managesConnection = isTeamConnection(connection)
+      ? connectionCan(connection, 'manage')
+      : isOwner(tool);
+    if (tool.connection_id && managesConnection && connectorKey) {
       const params = new URLSearchParams({
         connector: connectorKey,
         connection: tool.connection_id,
@@ -206,8 +343,13 @@ export default function Tools() {
       });
     }
     // The caller's own connection that needs reconnecting (the badge says
-    // so) is reconnected from here, in place where it can be.
-    if (connection && connectionNeedsSignIn(connection))
+    // so) is reconnected from here, in place where it can be; a team's is
+    // reconnected on Connectors.
+    if (
+      connection &&
+      !isTeamConnection(connection) &&
+      connectionNeedsSignIn(connection)
+    )
       options.push({
         icon: RefreshCw,
         label: t('settings.connectors.status.reconnect'),
@@ -252,7 +394,25 @@ export default function Tools() {
         variant: 'default',
       });
     }
-    if (can(tool, 'share')) {
+    // A default chat tool has no row to file or move.
+    if (!tool.default && canCreate && canMoveToFolder(tool, inTeam))
+      options.push({
+        icon: FolderInput,
+        label: t('folders.moveToFolder'),
+        onClick: () => setToolToFile(tool),
+        variant: 'default',
+      });
+    const moveOut = tool.default
+      ? null
+      : moveToWorkspace.menuOption(
+          {
+            ...tool,
+            name: tool.customName || tool.displayName,
+          },
+          { onMoved: () => getUserTools() },
+        );
+    if (moveOut) options.push(moveOut);
+    if (canOpenShare(tool)) {
       options.push({
         icon: Users,
         label: t('settings.tools.shareWithTeam'),
@@ -305,10 +465,11 @@ export default function Tools() {
         // registered tools (``scheduler``: builtin + default) stay visible
         // here so the user can toggle the default off in agentless chats.
         // Server-attached tools (check_job) are not the user's to toggle.
-        const filtered = (data.tools || []).filter((tool: UserToolType) =>
+        const filtered = (data.tools || []).filter((tool: ListedTool) =>
           isChatToolVisible(tool),
         );
         setUserTools(filtered);
+        setHeldUsage({ key: '', inUse: {} });
         const open = selectedToolRef.current;
         const reopened =
           reopenId && open && 'id' in open && open.id === reopenId
@@ -341,6 +502,12 @@ export default function Tools() {
 
   // The switch moves at once and flips back when the server refuses it.
   const updateToolStatus = (toolId: string, newStatus: boolean) => {
+    const tool = userTools.find((candidate) => candidate.id === toolId);
+    if (tool && usage !== 'all' && !(toolId in heldInUse))
+      setHeldUsage({
+        key: filterKey,
+        inUse: { ...heldInUse, [toolId]: isToolInUse(tool) },
+      });
     setToolInChat(toolId, newStatus);
     const fail = () => {
       setToolInChat(toolId, !newStatus);
@@ -392,27 +559,37 @@ export default function Tools() {
       .catch((error) => console.error('Error fetching tools:', error));
   };
 
-  const handleDevicePaired = (deviceId: string) => {
-    setAddToolModalState('INACTIVE');
-    userService
-      .getUserTools(token)
-      .then((res) => res.json())
-      .then((data) => {
-        const newTool = data.tools.find(
-          (toolItem: UserToolType) =>
-            toolItem.name === 'remote_device' &&
-            toolItem.config?.device_id === deviceId,
-        );
-        if (newTool) setSelectedTool(newTool);
-        else console.error('Paired device tool not found');
-      })
-      .catch((error) => console.error('Error fetching tools:', error));
+  // New tools from Add tool, whatever made them: the list reloads, and a
+  // lone new tool opens so its actions can be set up. Inside a folder they
+  // are filed there first, however they were made (a built-in, a form, a
+  // connection, a paired device).
+  const handleToolsCreated = (toolIds: string[]) => {
+    const show = () => {
+      getUserTools();
+      if (toolIds.length === 1) handleToolAdded(toolIds[0]);
+    };
+    if (!folderId || toolIds.length === 0) {
+      show();
+      return;
+    }
+    folderActions
+      .fileItems(toolIds, folderId)
+      .catch(() =>
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('settings.tools.fileFailed'),
+          }),
+        ),
+      )
+      .finally(show);
   };
 
   React.useEffect(() => {
     getUserTools();
     fetchMcpStatuses();
-    dispatch(loadConnectors({ token }));
+    // The caller's own accounts and, in a team, the team's.
+    dispatch(reloadConnectors({ token }));
   }, []);
 
   // The Connectors page opens a new OpenAPI tool here as an unsaved draft:
@@ -420,9 +597,19 @@ export default function Tools() {
   const routeState = location.state as {
     openToolId?: string;
     newApiTool?: boolean;
+    newMcpServer?: Record<string, unknown>;
   } | null;
   const openToolId = routeState?.openToolId;
   const newApiTool = routeState?.newApiTool;
+  // A team's MCP form sends the adder here, in Personal, to sign in to the
+  // server themselves first: the form opens again, filled in.
+  const newMcpServer = routeState?.newMcpServer;
+  React.useEffect(() => {
+    if (!newMcpServer) return;
+    navigate(location.pathname, { replace: true, state: null });
+    setReconnectTool(newMcpServer);
+    setReconnectModalState('ACTIVE');
+  }, [newMcpServer]);
   React.useEffect(() => {
     if (!openToolId) return;
     handleToolAdded(openToolId);
@@ -453,47 +640,114 @@ export default function Tools() {
       .catch(() => undefined);
   }, [newApiTool]);
 
-  const filteredTools = userTools.filter((tool) =>
+  const matchesUsage = (tool: UserToolType, key: UsageFilter) =>
+    key === 'all' ||
+    (key === 'inUse') === (heldInUse[tool.id] ?? isToolInUse(tool));
+  const matchesKind = (tool: UserToolType, key: ToolKindFilter) =>
+    key === 'all' || toolKindOf(tool, connections, catalog) === key;
+  const matchesSearch = (tool: UserToolType) =>
     (tool.customName || tool.displayName)
       .toLowerCase()
-      .includes(searchTerm.toLowerCase()),
+      .includes(searchTerm.toLowerCase());
+  const query = searchTerm.trim();
+  // A search or a filter lists everything in reach, folders' contents too;
+  // otherwise the level shows what is filed right here.
+  const flat = query !== '' || kind !== 'all' || usage !== 'all';
+  const inReach = itemsWithin(tree, userTools, folderId);
+  const searchedTools = inReach.filter(matchesSearch);
+  // Each filter counts with the other one and the search applied, as
+  // Knowledge's do, so a pill never leads to "No tools found".
+  const kindCounts = Object.fromEntries(
+    TOOL_KINDS.map((key) => [
+      key,
+      searchedTools.filter(
+        (tool) => matchesUsage(tool, usage) && matchesKind(tool, key),
+      ).length,
+    ]),
+  ) as Record<ToolKindFilter, number>;
+  const usageCounts = Object.fromEntries(
+    USAGE_FILTERS.map((key) => [
+      key,
+      searchedTools.filter(
+        (tool) => matchesKind(tool, kind) && matchesUsage(tool, key),
+      ).length,
+    ]),
+  ) as Record<UsageFilter, number>;
+  // No pill leads to an empty list; with only All left there is no track.
+  const kinds = shownFilters(TOOL_KINDS, kind, kindCounts);
+
+  const filteredTools = flat
+    ? searchedTools.filter(
+        (tool) => matchesKind(tool, kind) && matchesUsage(tool, usage),
+      )
+    : searchedTools.filter((tool) => filedAt(tree, tool, folderId));
+  // The workspace's own tools in their groups; then, each in a section of
+  // its own, the ones other teams shared with a team and the ones shared
+  // with the caller in Personal.
+  const isShared = (tool: ListedTool) => tool.origin === 'shared';
+  const isReceived = (tool: ListedTool) => tool.origin === 'team_shared';
+  const isOwn = (tool: ListedTool) => !isShared(tool) && !isReceived(tool);
+  const ownTools = filteredTools.filter(isOwn);
+  const receivedTools = filteredTools.filter(isReceived);
+  const sharedTools = filteredTools.filter(isShared);
+  // A section's count is its whole group, not the part on this page.
+  const groupSizes = new Map(
+    groupTools(ownTools, connections, catalog).map((group) => [
+      group.key,
+      group.tools.length,
+    ]),
   );
-  // Grouped like the composer's picker. Paged in group order, so a group
-  // that runs past a page carries on (under its header) on the next one.
-  const orderedTools = groupTools(filteredTools, connections, catalog).flatMap(
-    (group) => group.tools,
-  );
+  // Grouped like the pickers. Paged in group order, so a group that runs
+  // past a page carries on (under its header) on the next one.
+  const orderedTools = [
+    ...groupTools(ownTools, connections, catalog).flatMap(
+      (group) => group.tools,
+    ),
+    ...receivedTools,
+    ...sharedTools,
+  ];
   const {
     page: toolsPage,
     setPage: setToolsPage,
     pageItems: pageTools,
-  } = useClientPage(orderedTools, SHORT_LIST_PAGE_SIZE, searchTerm);
-  const pageGroups = groupTools(pageTools, connections, catalog);
-
-  const groupTitle = (group: ToolGroup<UserToolType>) =>
-    group.kind === 'builtIn' ? (
-      t('settings.tools.groupBuiltIn')
-    ) : group.kind === 'custom' ? (
-      t('agents.form.toolsPopup.groupCustom')
-    ) : (
-      <span className="flex items-center gap-2">
-        {group.service?.icon ? (
-          <ConnectorIcon
-            icon={group.service.icon}
-            className="size-4 shrink-0"
-          />
-        ) : null}
-        {group.service?.name}
-      </span>
-    );
+  } = useClientPage(
+    orderedTools,
+    SHORT_LIST_PAGE_SIZE,
+    `${filterKey}|${folderId}`,
+  );
+  const pageGroups = groupTools(pageTools.filter(isOwn), connections, catalog);
+  const pageReceived = pageTools.filter(isReceived);
+  const pageShared = pageTools.filter(isShared);
+  // The level's folders, on the first page; a filter alone lists tools
+  // only, a search also finds folders.
+  const folders =
+    toolsPage !== 1 || (flat && !query)
+      ? []
+      : listedFolders(tree, 'tool', folderId, query);
 
   // The state leads the badge row: the caller's own connection needing a
   // sign-in, or a custom MCP server's sign-in. "Configured" is not a
   // health check, so it gets none.
   const stateBadge = (tool: UserToolType) => {
     const connection = connectionOf(tool);
+    // A team's account paused: nothing runs on it until it is reconnected.
+    if (isConnectionPaused(connection))
+      return (
+        <Badge
+          variant="warning"
+          title={connectionPauseText(t, connection, {
+            teamName,
+            me,
+            language: i18n.language,
+          })}
+        >
+          {t('settings.connectors.status.paused')}
+        </Badge>
+      );
+    // A tool on each person's own sign-in has no state of its own: each
+    // person signs in when they use it.
     const mcpStatus =
-      tool.name === 'mcp_tool' && !connection
+      tool.name === 'mcp_tool' && !connection && !isEachPersonTool(tool)
         ? mcpStatuses[tool.id]
         : undefined;
     if (connectionNeedsSignIn(connection) || mcpStatus === 'needs_auth')
@@ -511,7 +765,7 @@ export default function Tools() {
     return null;
   };
 
-  const renderTile = (tool: UserToolType) => {
+  const renderTile = (tool: ListedTool) => {
     const connection = connectionOf(tool);
     const service = toolServiceOf(tool, connections, catalog);
     const connector = service?.connector;
@@ -529,6 +783,57 @@ export default function Tools() {
         ? connectorDescription(t, connector)
         : tool.description;
     const account = connection ? accountLine(t, connection) : null;
+    // A team's account names who connected it; a tool on each person's own
+    // account names none.
+    const connectedBy = connectedByText(t, connection, me);
+    const eachPerson = isEachPersonTool(tool)
+      ? t('settings.tools.team.eachPersonMeta')
+      : null;
+    // Where a tool a search or filter found is filed.
+    const folderLabel = flat ? folderLabelOf(tree, tool, folderId) : null;
+    // The meta line: where it is filed, the account, who added it (a team's)
+    // or owns it (shared with the caller) and the caller's role on a shared
+    // one, then the agents that use it. Whether it is in the reader's chats
+    // is the switch's to say.
+    const meta = (
+      <MetaLine>
+        {folderLabel ? (
+          <MetaItem icon={<FolderIcon />} title={folderLabel}>
+            {folderLabel}
+          </MetaItem>
+        ) : null}
+        {account ? (
+          <MetaItem icon={<UserRound />} title={account}>
+            {account}
+          </MetaItem>
+        ) : null}
+        {connectedBy ? (
+          <MetaItem icon={<Users />} title={connectedBy}>
+            {connectedBy}
+          </MetaItem>
+        ) : null}
+        {eachPerson ? (
+          <MetaItem icon={<UserRound />} title={eachPerson}>
+            {eachPerson}
+          </MetaItem>
+        ) : null}
+        {showsCreator(tool) ? <CreatorMeta item={tool} /> : null}
+        {showsSharedFrom(tool) ? <SharedFromMeta item={tool} /> : null}
+        {showsRole(tool) ? <RoleMeta item={tool} /> : null}
+        {agentUseCount(tool.used_by) > 0 ? (
+          <UsedByAgents usage={tool.used_by} />
+        ) : null}
+      </MetaLine>
+    );
+    const hasMeta =
+      !!folderLabel ||
+      !!account ||
+      !!connectedBy ||
+      !!eachPerson ||
+      showsCreator(tool) ||
+      showsSharedFrom(tool) ||
+      showsRole(tool) ||
+      agentUseCount(tool.used_by) > 0;
     return (
       <ConnectorTile
         key={tool.id}
@@ -558,43 +863,42 @@ export default function Tools() {
             />
           ) : undefined
         }
-        badges={
-          <>
-            {stateBadge(tool)}
-            {/* The default copy of a built-in tool (it has no menu), told
-                apart from one the user added. */}
-            {tool.default && (
-              <Badge variant="neutral">
-                {t('settings.tools.defaultBadge')}
-              </Badge>
-            )}
-            <RoleBadge item={tool} />
-          </>
-        }
+        badges={stateBadge(tool)}
         // Which account this is (each account of a service is its own
-        // tool) and the caller's own "In my chats" switch, named for screen
-        // readers only. A shared tool without use_in_own can't be in the
-        // caller's chats at all, so it has no switch.
+        // tool), where it is used (agents, the caller's chats) and the
+        // caller's own "In my chats" switch, named for screen readers only.
+        // A shared tool without use_in_own can't be in the caller's chats
+        // at all, so it has no switch.
         footer={
-          account || canAddToolToOwn(tool) ? (
+          hasMeta || canAddToolToOwn(tool) ? (
             <>
-              {account && (
-                <span className="min-w-0 truncate" title={account}>
-                  {account}
-                </span>
-              )}
+              {meta}
               {canAddToolToOwn(tool) && (
-                <Switch
-                  className="ml-auto shrink-0"
-                  checked={toolInChat(tool)}
-                  onCheckedChange={(checked) =>
-                    updateToolStatus(tool.id, checked)
-                  }
-                  aria-label={t('settings.tools.useInMyChatsAria', {
-                    interpolation: { escapeValue: false },
-                    toolName: tool.customName || tool.displayName,
-                  })}
-                />
+                // No visible label: the switch shows the state, and its
+                // tooltip says what it does. The tooltip hangs on a wrapper:
+                // as the trigger itself it would set the switch's data-state.
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="ml-auto flex shrink-0">
+                      <Switch
+                        className="shrink-0"
+                        checked={toolInChat(tool)}
+                        onCheckedChange={(checked) =>
+                          updateToolStatus(tool.id, checked)
+                        }
+                        aria-label={t('settings.tools.useInMyChatsAria', {
+                          interpolation: { escapeValue: false },
+                          toolName: tool.customName || tool.displayName,
+                        })}
+                      />
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {toolInChat(tool)
+                      ? t('settings.usage.inChatsOn')
+                      : t('settings.usage.inChatsOff')}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           ) : undefined
@@ -603,10 +907,25 @@ export default function Tools() {
     );
   };
 
+  // The open folder before the tree has loaded: wait for it (or say it
+  // failed) rather than draw a folder with no name.
+  const folderPending = inFolder && !folder;
+  const foldersFailed = page.list.failed && !page.list.loaded;
+  const addToolButton = (
+    <Button
+      type="button"
+      size="field"
+      shape="pill"
+      onClick={() => setAddToolModalState('ACTIVE')}
+    >
+      {t('settings.tools.addTool')}
+    </Button>
+  );
+
   // The open tool's ⋯ (none for a draft without an id, or with no items).
   const detailMenuOptions =
     selectedTool && 'id' in selectedTool && selectedTool.id
-      ? getMenuOptions(selectedTool as UserToolType, true)
+      ? getMenuOptions(selectedTool as ListedTool, true)
       : [];
 
   return (
@@ -637,34 +956,103 @@ export default function Tools() {
       ) : (
         <div>
           <div className="relative flex flex-col">
+            {/* Inside a folder its crumb row stands where the intro was: the
+                trail, its count line, what else it holds, and its ⋯ last. */}
+            {folder ? (
+              <div className="mb-5">
+                <FolderCrumbRow
+                  kind="tool"
+                  trail={page.trail}
+                  onNavigate={page.openFolder}
+                  meta={folderCountLine(t, folder, 'tool')}
+                  menu={page.folderMenu.crumbMenu(folder)}
+                />
+              </div>
+            ) : inFolder ? null : (
+              <div className="mb-5">
+                <p className="text-muted-foreground text-sm leading-6">
+                  {t('settings.tools.subtitle')}
+                </p>
+                <WorkspaceLine kind="tools" />
+              </div>
+            )}
             <PageToolbar
-              intro={t('settings.tools.subtitle')}
               search={
                 <SearchInput
                   maxLength={256}
-                  label={t('settings.tools.searchPlaceholder')}
+                  label={
+                    folder
+                      ? t('folders.searchIn', {
+                          name: folder.name,
+                          interpolation: { escapeValue: false },
+                        })
+                      : t('settings.tools.searchPlaceholder')
+                  }
                   name="Document-search-input"
                   id="tool-search-input"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               }
+              // Below Editor in a team nothing can be added here.
               action={
-                <Button
-                  type="button"
-                  size="field"
-                  shape="pill"
-                  onClick={() => {
-                    setAddToolModalState('ACTIVE');
-                  }}
-                >
-                  {t('settings.tools.addTool')}
-                </Button>
+                canCreate ? (
+                  <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
+                    <NewFolderButton
+                      atDepthLimit={!canCreateIn(tree, folderId)}
+                      onClick={page.newFolder}
+                    />
+                    {addToolButton}
+                  </div>
+                ) : undefined
               }
               divider
-            />
-            {loading ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            >
+              {/* A picked filter stays drawn while the search empties the
+                  list, so it can still be seen and changed. */}
+              {!loading && !loadFailed && inReach.length > 0 ? (
+                <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
+                  {kinds.length > 0 ? (
+                    <ToggleGroup
+                      type="single"
+                      value={kind}
+                      onValueChange={(value) =>
+                        value && setKind(value as ToolKindFilter)
+                      }
+                      aria-label={t('settings.tools.kindFilterLabel')}
+                    >
+                      {kinds.map((key) => (
+                        <ToggleGroupItem
+                          key={key}
+                          value={key}
+                          count={kindCounts[key]}
+                        >
+                          {toolKindLabel(t, key)}
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  ) : null}
+                  <FilterSelect
+                    value={usage}
+                    onValueChange={setUsage}
+                    values={USAGE_FILTERS}
+                    counts={usageCounts}
+                    labelOf={(value) => t(`settings.usage.filters.${value}`)}
+                    ariaLabel={t('settings.usage.filterLabel')}
+                  />
+                </div>
+              ) : null}
+            </PageToolbar>
+            {folderPending && foldersFailed ? (
+              <FolderSection
+                kind="tool"
+                page={page}
+                folders={[]}
+                query=""
+                title=""
+              />
+            ) : loading || folderPending ? (
+              <div className={GRID}>
                 <SkeletonLoader component="toolCards" count={6} />
               </div>
             ) : loadFailed ? (
@@ -674,48 +1062,97 @@ export default function Tools() {
                 title={t('settings.tools.loadError')}
                 onRetry={() => getUserTools()}
               />
-            ) : userTools.length === 0 ? (
+            ) : !inFolder &&
+              userTools.length === 0 &&
+              folders.length === 0 &&
+              !foldersFailed ? (
               <EmptyState
                 title={t('settings.tools.noToolsYet')}
                 action={
-                  <div className="flex flex-wrap justify-center gap-2">
-                    <Button
-                      type="button"
-                      shape="pill"
-                      onClick={() => setAddToolModalState('ACTIVE')}
-                    >
-                      {t('settings.tools.addTool')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      shape="pill"
-                      onClick={() =>
-                        navigate('/settings/connectors?capability=tools')
-                      }
-                    >
-                      {t('settings.tools.connectService')}
-                    </Button>
-                  </div>
+                  canCreate ? (
+                    <div className="flex flex-wrap justify-center gap-2">
+                      <Button
+                        type="button"
+                        shape="pill"
+                        onClick={() => setAddToolModalState('ACTIVE')}
+                      >
+                        {t('settings.tools.addTool')}
+                      </Button>
+                      {/* A team's accounts are its Admins' to connect. */}
+                      {inTeam && !isTeamAdmin ? null : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          shape="pill"
+                          onClick={() =>
+                            navigate('/settings/connectors?capability=tools')
+                          }
+                        >
+                          {t('settings.tools.connectService')}
+                        </Button>
+                      )}
+                    </div>
+                  ) : undefined
                 }
               />
-            ) : filteredTools.length === 0 ? (
-              <EmptyState
-                size="xs"
-                illustration="none"
-                title={t('settings.tools.noToolsFound')}
-              />
+            ) : filteredTools.length === 0 &&
+              folders.length === 0 &&
+              !foldersFailed ? (
+              folder && !flat ? (
+                <EmptyState
+                  size="sm"
+                  icon={FolderOpen}
+                  title={t('folders.emptyTitle')}
+                  description={t('settings.tools.folders.emptyHint')}
+                  action={canCreate ? addToolButton : undefined}
+                />
+              ) : (
+                <EmptyState
+                  size="xs"
+                  illustration="none"
+                  title={t('settings.tools.noToolsFound')}
+                />
+              )
             ) : (
               <>
                 <div className="flex flex-col gap-8">
+                  <FolderSection
+                    kind="tool"
+                    page={page}
+                    folders={folders}
+                    query={query}
+                    title={t('settings.tools.sections.folders')}
+                  />
                   {pageGroups.map((group) => (
                     <section key={group.key} className="flex flex-col gap-3">
-                      <SectionHeader size="sm" title={groupTitle(group)} />
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {group.tools.map(renderTile)}
-                      </div>
+                      <SectionHeader
+                        size="sm"
+                        title={toolGroupTitle(t, group)}
+                        count={groupSizes.get(group.key)}
+                      />
+                      <div className={GRID}>{group.tools.map(renderTile)}</div>
                     </section>
                   ))}
+                  {pageReceived.length > 0 ? (
+                    <section className="flex flex-col gap-3">
+                      <SectionHeader
+                        size="sm"
+                        title={t('workspace.page.sharedFromTeams.title')}
+                        count={receivedTools.length}
+                      />
+                      <div className={GRID}>{pageReceived.map(renderTile)}</div>
+                    </section>
+                  ) : null}
+                  {pageShared.length > 0 ? (
+                    <section className="flex flex-col gap-3">
+                      <SectionHeader
+                        size="sm"
+                        title={t('workspace.page.sharedWithYou')}
+                        count={sharedTools.length}
+                      />
+                      <div className={GRID}>{pageShared.map(renderTile)}</div>
+                    </section>
+                  ) : null}
                 </div>
                 <Pagination
                   page={toolsPage}
@@ -734,18 +1171,25 @@ export default function Tools() {
             modalState={addToolModalState}
             setModalState={setAddToolModalState}
             getUserTools={() => getUserTools()}
-            onToolAdded={handleToolAdded}
-            onDevicePaired={handleDevicePaired}
+            onToolsCreated={handleToolsCreated}
           />
         </div>
       )}
+      {page.dialogs}
       {/* The tool's dialogs serve its tile and its open page alike. */}
       <ConfirmationModal
         message={t('settings.tools.deleteWarning', {
           interpolation: { escapeValue: false },
           toolName: toolToDelete?.customName || toolToDelete?.displayName || '',
         })}
-        description={t('settings.tools.deleteConsequence')}
+        description={
+          agentUseCount(toolToDelete?.used_by) > 0
+            ? t('settings.tools.deleteUsedBy', {
+                count: agentUseCount(toolToDelete?.used_by),
+                formatted: formatCount(agentUseCount(toolToDelete?.used_by)),
+              })
+            : t('settings.tools.deleteConsequence')
+        }
         modalState={deleteModalState}
         setModalState={setDeleteModalState}
         handleSubmit={confirmDeleteTool}
@@ -764,6 +1208,24 @@ export default function Tools() {
           fetchMcpStatuses();
         }}
       />
+      {toolToFile ? (
+        <MoveToFolderModal
+          open
+          onOpenChange={(open) => !open && setToolToFile(null)}
+          kind="tool"
+          subject={{
+            kind: 'items',
+            ids: [toolToFile.id],
+            name: toolToFile.customName || toolToFile.displayName,
+            folderId: toolToFile.folder_id ?? null,
+          }}
+          onMoved={() => {
+            setToolToFile(null);
+            getUserTools();
+          }}
+        />
+      ) : null}
+      {moveToWorkspace.dialog}
       {toolToShare && (
         <ShareToTeamModal
           resourceType="tool"
@@ -774,6 +1236,7 @@ export default function Tools() {
             setToolToShare(null);
             getUserTools();
           }}
+          onMoved={() => getUserTools()}
         />
       )}
     </div>

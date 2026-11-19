@@ -993,6 +993,7 @@ class OpenAILLM(BaseLLM):
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        self._apply_output_token_cap(kwargs)
 
         # Defense-in-depth: drop tools / response_format if the
         # registry's capability flags deny them.
@@ -1068,6 +1069,7 @@ class OpenAILLM(BaseLLM):
         # Convert max_tokens to max_completion_tokens for newer models
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        self._apply_output_token_cap(kwargs)
 
         # See _raw_gen for rationale — drop tools/response_format when the
         # registry-provided capabilities say the model doesn't support them.
@@ -2078,6 +2080,15 @@ class OpenAILLM(BaseLLM):
         if self.capabilities is not None:
             return bool(self.capabilities.supports_structured_output)
         return True
+
+    def _apply_output_token_cap(self, kwargs):
+        """Bound ``max_completion_tokens`` by the model's ``max_output_tokens``.
+
+        The Responses path sends the same value as ``max_output_tokens``.
+        """
+        limit = self._capped_output_tokens(kwargs.get("max_completion_tokens"))
+        if limit is not None:
+            kwargs["max_completion_tokens"] = limit
 
     def _apply_reasoning_effort(self, kwargs):
         """Inject the model's configured reasoning_effort into ``kwargs``.

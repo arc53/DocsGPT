@@ -1,0 +1,52 @@
+name: ClusterFuzzLite batch fuzzing
+
+# A longer daily run of the tests/fuzz/ harnesses. Its corpus is kept as
+# workflow artifacts, which the pull-request runs start from.
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One batch at a time: each run continues the corpus the last one saved.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: Batch fuzzing
+    if: ${{ github.repository == 'arc53/DocsGPT' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # list the corpus artifacts of earlier runs
+    steps:
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: address
+
+      - name: Run fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          # Total budget, shared by the harnesses.
+          fuzz-seconds: 2400
+          mode: batch
+          sanitizer: address
+
+      - name: Upload crash
+        if: failure() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-crash
+          path: ./out/artifacts
+          if-no-files-found: ignore
+          retention-days: 30

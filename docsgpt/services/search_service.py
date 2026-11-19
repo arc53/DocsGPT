@@ -11,6 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from docsgpt import tracing
+from docsgpt.api.owner_pause import AgentPausedError, refuse_if_owner_deactivated
 from docsgpt.core.settings import settings
 from docsgpt.retriever.fanout import fetch_per_source
 from docsgpt.storage.db.repositories.agents import AgentsRepository
@@ -247,6 +248,7 @@ def search(
 
     Raises:
         InvalidAPIKey: if ``api_key`` does not resolve to an agent.
+        AgentPausedError: if the agent's owner is deactivated.
         SearchFailed: on unexpected DB / infrastructure errors.
     """
     if chunks <= 0:
@@ -257,11 +259,25 @@ def search(
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise InvalidAPIKey()
-            # Authorize inside the same connection the agent was read on.
-            source_ids = _authorized_source_ids(
-                conn, agent, _collect_source_ids(agent)
-            )
-    except InvalidAPIKey:
+            # The key pauses while its owner is deactivated.
+            refuse_if_owner_deactivated(conn, agent)
+            from docsgpt.api.user.folder_knowledge import folder_source_ids
+            from docsgpt.api.user.resource_access import reader_sources, run_reader
+
+            # A key holder is nobody signed in: a team's source reaches them
+            # only through an agent of that team.
+            with run_reader(""):
+                # Authorize inside the same connection the agent was read on.
+                source_ids = _authorized_source_ids(
+                    conn, agent, _collect_source_ids(agent)
+                )
+                # Its knowledge folders read as their owner's filing.
+                seen = {str(sid).lower() for sid in source_ids}
+                folder_ids = folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+                source_ids += [
+                    sid for sid in reader_sources(conn, "agent", agent, folder_ids) if sid not in seen
+                ]
+    except (InvalidAPIKey, AgentPausedError):
         raise
     except Exception as e:
         raise SearchFailed("agent lookup failed") from e

@@ -5,6 +5,12 @@ under the owner's ``user_id`` whoever creates it, and managing it needs
 ``manage_schedules`` on the agent (owner and team editors). A schedule the
 caller made themselves (e.g. via the chat scheduler tool on a shared agent)
 stays theirs to manage.
+
+A team's agent is the exception: a team pays for nothing, so a schedule
+on it is stored under the member who set it, who pays for its runs (the run
+still acts as the team's principal). Its Editors and up manage every such
+schedule, and the list is per workspace: a team's agents' schedules show in
+that team only.
 """
 
 from __future__ import annotations
@@ -27,22 +33,33 @@ from docsgpt.agents.scheduler_utils import (
     resolve_timezone,
 )
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
+from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
 from docsgpt.api.user.resource_access import (
+    WORKSPACE_ACTIONS,
     AccessDenied,
     allowed_actions,
+    created_by_payload,
+    creator_payloads,
     require,
     settings_many,
+    workspace_allowed_actions,
 )
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.core.settings import settings
+from docsgpt.quotas.pause import PayerChecks, schedule_pause
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.schedule_runs import (
     ScheduleRunsRepository,
 )
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
+from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
+from docsgpt.workspaces.context import WorkspaceError, current_workspace
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +76,11 @@ def _ok(data: Any, status: int = 200):
 
 def _err(message: str, status: int = 400):
     return make_response(jsonify({"success": False, "message": message}), status)
+
+
+def _refuse(status: int, code: str, message: str):
+    """An error response with a machine-readable ``error`` code beside the message."""
+    return make_response(jsonify({"success": False, "error": code, "message": message}), status)
 
 
 def _safe_route(func: Callable) -> Callable:
@@ -104,6 +126,24 @@ def _format_schedule(row: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _mark_owner_inactive(conn, rows: list[Dict[str, Any]], agent_owners: list[Optional[str]]) -> None:
+    """Set ``owner_inactive`` on each schedule row, in place.
+
+    A schedule pauses while the owner of its agent, or the user it is stored
+    under, is deactivated: its runs are skipped with that reason.
+
+    Args:
+        conn: Open database connection.
+        rows: Schedule rows (need ``user_id``).
+        agent_owners: The owner of each row's agent, None when agentless.
+    """
+    inactive = UsersRepository(conn).deactivated_among(
+        [row.get("user_id") for row in rows] + list(agent_owners)
+    )
+    for row, agent_owner in zip(rows, agent_owners):
+        row["owner_inactive"] = row.get("user_id") in inactive or agent_owner in inactive
+
+
 def _format_run(row: Dict[str, Any], caller: Optional[str] = None) -> Dict[str, Any]:
     """Render a schedule_run row for the API.
 
@@ -133,14 +173,15 @@ def _format_run(row: Dict[str, Any], caller: Optional[str] = None) -> Dict[str, 
 
 
 def _agent_for_schedules(agent_id: str, user_id: str) -> tuple[Dict[str, Any], str]:
-    """The agent row and the id its schedules live under.
+    """The agent row and the id a new schedule on it is stored under.
 
     Args:
         agent_id: Agent id from the URL.
         user_id: The caller.
 
     Returns:
-        ``(agent, owner_id)``.
+        ``(agent, owner_id)``: the agent's owner, or the caller on a team's
+        agent (the setter pays, never the team's principal).
 
     Raises:
         AccessDenied: 404 when the agent isn't visible, 403 without
@@ -158,23 +199,33 @@ def _agent_for_schedules(agent_id: str, user_id: str) -> tuple[Dict[str, Any], s
         agent = AgentsRepository(conn).get_by_id(ra.resource_id)
     if agent is None:
         raise AccessDenied(404, "agent not found")
-    return agent, ra.owner_id
+    return agent, (user_id if ra.is_team_item else ra.owner_id)
 
 
-def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any], str]:
+def _schedule_for(
+    conn, schedule_id: str, user_id: str, own_action: str = "manage_schedules",
+) -> tuple[Dict[str, Any], str]:
     """Fetch a schedule the caller may manage, and the id to act as.
 
-    The caller's own schedule is always theirs. Otherwise it must be a
-    schedule of an agent they hold ``manage_schedules`` on, stored under
-    that agent's owner (another member's private schedule stays hidden).
+    The caller's own schedule is theirs, except on a team's agent, where they
+    still need ``own_action`` there: someone who left the team, or lost the
+    role, stops managing what they set. Otherwise it must be a schedule of an
+    agent they hold ``manage_schedules`` on, stored under that agent's owner
+    (another member's private schedule stays hidden).
 
     Args:
         conn: Open database connection.
         schedule_id: Schedule UUID.
         user_id: The caller.
+        own_action: The agent action the caller needs on a team's agent to
+            reach their own schedule: ``manage_schedules`` to change it,
+            ``use`` to read it (a Viewer still lists the schedules they set).
 
     Returns:
         ``(schedule, acting_user_id)``.
+
+    On a team's agent every member's schedule is reachable by the team's
+    Editors and up, and acted on as the member who set it (they still pay).
 
     Raises:
         AccessDenied: 404 when not visible, 403 when the role can't manage it.
@@ -183,20 +234,60 @@ def _schedule_for(conn, schedule_id: str, user_id: str) -> tuple[Dict[str, Any],
     # A monitor is managed from /api/monitors, never as a schedule.
     if row is None or row.get("trigger_type") == "monitor":
         raise AccessDenied(404, "schedule not found")
-    if row.get("user_id") == user_id:
-        return row, user_id
     agent_id = row.get("agent_id")
+    if row.get("user_id") == user_id:
+        agent = AgentsRepository(conn).get_by_id(str(agent_id)) if agent_id else None
+        if agent is None or not is_principal_id(agent.get("user_id")):
+            return row, user_id
+        _require_on_agent(conn, str(agent_id), user_id, own_action)
+        return row, user_id
     if not agent_id:
         raise AccessDenied(404, "schedule not found")
+    ra = _require_on_agent(conn, str(agent_id), user_id, "manage_schedules")
+    if ra.is_team_item and not is_principal_id(row.get("user_id")):
+        return row, row["user_id"]
+    if row.get("user_id") != ra.owner_id:
+        raise AccessDenied(404, "schedule not found")
+    return row, ra.owner_id
+
+
+def _require_on_agent(conn, agent_id: str, user_id: str, action: str):
+    """``require`` on a schedule's agent, a hidden agent reading as a missing schedule.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The schedule's agent.
+        user_id: The caller.
+        action: The agent action needed.
+
+    Returns:
+        The caller's ``ResourceAccess`` on the agent.
+
+    Raises:
+        AccessDenied: 404 when the agent isn't visible, 403 when the role can't do ``action``.
+    """
     try:
-        ra = require(conn, "agent", str(agent_id), user_id, "manage_schedules")
+        return require(conn, "agent", agent_id, user_id, action)
     except AccessDenied as denied:
         if denied.status == 404:
             raise AccessDenied(404, "schedule not found")
         raise
-    if row.get("user_id") != ra.owner_id:
-        raise AccessDenied(404, "schedule not found")
-    return row, ra.owner_id
+
+
+def _refuse_unfinished_agent_graph(conn, agent_id) -> Any:
+    """The 400 that keeps a schedule from running a workflow agent's unfinished graph.
+
+    Args:
+        conn: Open database connection.
+        agent_id: The schedule's agent, or None for an agentless one.
+
+    Returns:
+        The error response, or None when the schedule may run.
+    """
+    if not agent_id:
+        return None
+    agent = AgentsRepository(conn).get_by_id(str(agent_id))
+    return refuse_unfinished_graph(conn, agent) if agent else None
 
 
 def _user_id() -> Optional[str]:
@@ -273,6 +364,154 @@ def _publish_schedule_event(
         )
 
 
+def _mark_paid_by(conn, viewer: str, rows: list[Dict[str, Any]], agent_owners: list[Optional[str]]) -> None:
+    """Set ``paid_by`` (``{user_id, label}``) on each schedule row, in place: the person it is stored under.
+
+    A team's agent names its schedules' setters to every member, as its own
+    record; a personal agent names someone only to a reader who knows them
+    (``resource_access.creator_payloads``). A schedule stored under a team's
+    principal has nobody paying for it (the team is never billed), so its
+    ``paid_by`` is None.
+
+    Args:
+        conn: Open database connection.
+        viewer: The caller.
+        rows: Schedule rows (need ``user_id``).
+        agent_owners: The owner of each row's agent, None when agentless.
+    """
+    pairs = [{"user_id": owner, "created_by": row.get("user_id")} for row, owner in zip(rows, agent_owners)]
+    payers = creator_payloads(conn, viewer, pairs)
+    for row, pair in zip(rows, pairs):
+        row["paid_by"] = None if is_principal_id(row.get("user_id")) else created_by_payload(pair, payers)
+
+
+#: Statuses of a schedule that still runs, or would once resumed.
+_LIVE_STATUSES = ("active", "paused")
+
+
+def _may_take_over(conn, checks: PayerChecks, viewer: str, row: Dict[str, Any], agent_owner: Optional[str]) -> bool:
+    """Whether ``viewer`` may make themselves the payer of a schedule.
+
+    Only a schedule on a team's agent can change payer (a personal agent's
+    schedule is its setter's own), only by someone whose team role manages
+    schedules there (Editor and up), and only when they don't pay already.
+
+    Args:
+        conn: Open database connection.
+        checks: The request's payer checks (caches team roles).
+        viewer: The caller.
+        row: The schedule (``user_id``, ``status``).
+        agent_owner: The owner of its agent; None when agentless.
+
+    Returns:
+        True when a take over would be allowed.
+    """
+    team_id = team_of_principal(agent_owner)
+    if not team_id or row.get("user_id") == viewer or row.get("status") not in _LIVE_STATUSES:
+        return False
+    return role_at_least(checks.team_role(conn, viewer, team_id), WORKSPACE_ACTIONS["agent"]["manage_schedules"])
+
+
+def _mark_payer_state(
+    conn, viewer: str, rows: list[Dict[str, Any]], agent_owners: list[Optional[str]],
+) -> None:
+    """Set ``paused_for`` and ``can_take_over`` on each schedule row, in place.
+
+    ``paused_for`` is ``{reason, until, since}`` while the schedule is paused
+    for its payer (``quotas.pause.schedule_pause``), else None: ``until`` is
+    when it resumes by itself (an allowance's reset), ``since`` when its runs
+    began to be skipped for that reason (None before the first skip). Only an
+    ``active`` schedule is reported paused: one a person or auto-pause
+    stopped isn't running, so nothing pauses it for its payer (the team's
+    Usage tab and the payer's quota leave it out too). Each distinct payer's
+    allowance is checked once per call.
+
+    Args:
+        conn: Open database connection.
+        viewer: The caller.
+        rows: Schedule rows (``id``, ``user_id``, ``agent_id``, ``status``).
+        agent_owners: The owner of each row's agent, None when agentless.
+    """
+    checks = PayerChecks()
+    pauses = []
+    for row, owner in zip(rows, agent_owners):
+        running = row.get("status") == "active"
+        agent = {"id": row.get("agent_id"), "user_id": owner} if row.get("agent_id") else None
+        pauses.append(schedule_pause(conn, row, agent, checks=checks) if running else None)
+        row["can_take_over"] = _may_take_over(conn, checks, viewer, row, owner)
+    paused = [str(row["id"]) for row, pause in zip(rows, pauses) if pause is not None]
+    latest = ScheduleRunsRepository(conn).latest_finished(paused) if paused else {}
+    for row, pause in zip(rows, pauses):
+        if pause is None:
+            row["paused_for"] = None
+            continue
+        run = latest.get(str(row["id"])) or {}
+        # A paused streak keeps one row, its first skip; a new payer's pause starts a streak of its own.
+        streak = (
+            run.get("status") == "skipped"
+            and run.get("error_type") == pause.reason
+            and run.get("user_id") == row.get("user_id")
+        )
+        row["paused_for"] = {**pause.payload(), "since": run.get("scheduled_for") if streak else None}
+
+
+def _list_payload(conn, viewer: str, rows: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    """Schedule rows with context (``agent_user_id``, ``agent_image``) as the lists return them.
+
+    Args:
+        conn: Open database connection.
+        viewer: The caller.
+        rows: Rows from a ``*_with_context`` query, with ``team`` already set.
+
+    Returns:
+        The rows as JSON-ready payloads, with ``owner_inactive``, ``paid_by``,
+        ``paused_for``, ``can_take_over`` and a signed ``agent_image``.
+    """
+    agent_owners = [row.pop("agent_user_id", None) for row in rows]
+    _mark_owner_inactive(conn, rows, agent_owners)
+    _mark_paid_by(conn, viewer, rows, agent_owners)
+    _mark_payer_state(conn, viewer, rows, agent_owners)
+    out = []
+    for row, agent_owner in zip(rows, agent_owners):
+        image = row.get("agent_image")
+        # A storage path never leaves the server: sign it as the agents
+        # API does, or drop it.
+        row["agent_image"] = (
+            generate_image_url(image, row.get("agent_id"), agent_owner)
+            if image and row.get("agent_id")
+            else None
+        )
+        out.append(_format_schedule(row))
+    return out
+
+
+def _runs_user(conn, schedule: Dict[str, Any], acting: str, viewer: str) -> Optional[str]:
+    """Whose runs a schedule's run log shows: everyone's on a team agent, else the acting user's.
+
+    A team agent's schedule changes payer when someone takes it over; its log
+    keeps the runs billed to whoever paid before. Only those who manage the
+    team's schedules read that whole log: a setter who is now a Viewer reads
+    the runs billed to them.
+
+    Args:
+        conn: Open database connection.
+        schedule: The schedule row.
+        acting: The id the caller acts as on it.
+        viewer: The caller.
+
+    Returns:
+        The user to filter runs by, or None for every run of the schedule.
+    """
+    agent_id = schedule.get("agent_id")
+    if agent_id:
+        agent = AgentsRepository(conn).get_by_id(str(agent_id))
+        if agent is not None and is_principal_id(agent.get("user_id")):
+            team_id = team_of_principal(agent.get("user_id"))
+            if role_at_least(team_role_for(conn, viewer, team_id), WORKSPACE_ACTIONS["agent"]["manage_schedules"]):
+                return None
+    return acting
+
+
 def _team_schedule_agents(conn, user_id: str) -> list[str]:
     """Agents shared to the caller's teams on which their role may manage schedules.
 
@@ -298,45 +537,54 @@ def _team_schedule_agents(conn, user_id: str) -> list[str]:
 class UserSchedules(Resource):
     @api.doc(
         description=(
-            "List the caller's schedules across every agent: their own, agentless ones created in "
-            "chat, and those of teammates' agents they manage through a team (team: true). "
+            "List the schedules of the current workspace (X-DocsGPT-Workspace). Personal: the caller's own "
+            "across every personal agent, agentless ones created in chat, and those of teammates' agents they "
+            "manage through a team (team: true). A team: the schedules on the team's agents, every member's "
+            "for an Editor and up, the caller's own for a Viewer. Each row names who pays for it (paid_by). "
             "Monitors are not included."
         ),
     )
     @_safe_route
     def get(self):
-        """Return the caller's schedules with agent and origin-chat names.
+        """Return the workspace's schedules with agent and origin-chat names.
 
         Returns:
-            A Flask response with ``schedules``: schedule rows plus
-            ``agent_name``, ``agent_image`` (a signed URL, never a storage
-            path), ``origin_conversation_name`` and ``team`` (a schedule of a
-            teammate's agent the caller manages through a team).
+            A Flask response with ``workspace`` (``{kind, team_id, role}``) and
+            ``schedules``: schedule rows plus ``agent_name``, ``agent_image``
+            (a signed URL, never a storage path), ``origin_conversation_name``,
+            ``team`` (someone else's schedule the caller manages through a
+            team) and ``paid_by``.
         """
         user_id = _user_id()
         if not user_id:
             return _err("unauthorized", 401)
         with db_readonly() as conn:
+            try:
+                workspace = current_workspace(conn)
+            except WorkspaceError as err:
+                return err.response()
             repo = SchedulesRepository(conn)
-            own = repo.list_owned_with_context(user_id)
-            team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
-        seen = {str(row["id"]) for row in own}
-        rows = [{**row, "team": False} for row in own] + [
-            {**row, "team": True} for row in team if str(row["id"]) not in seen
-        ]
-        out = []
-        for row in rows:
-            image = row.get("agent_image")
-            agent_owner = row.pop("agent_user_id", None)
-            # A storage path never leaves the server: sign it as the agents
-            # API does, or drop it.
-            row["agent_image"] = (
-                generate_image_url(image, row.get("agent_id"), agent_owner)
-                if image and row.get("agent_id")
-                else None
-            )
-            out.append(_format_schedule(row))
-        return _ok({"schedules": out})
+            if workspace.is_team:
+                manages = "manage_schedules" in workspace_allowed_actions(
+                    "agent", workspace.role, policy=workspace.outside_policy
+                )
+                found = repo.list_for_owner_agents_with_context(
+                    workspace.owner_id, user_id, setter=None if manages else user_id,
+                )
+                rows = [{**row, "team": row.get("user_id") != user_id} for row in found]
+            else:
+                # A schedule on a team's agent lists in that team, not here.
+                own = [
+                    row for row in repo.list_owned_with_context(user_id)
+                    if not is_principal_id(row.get("agent_user_id"))
+                ]
+                team = repo.list_for_agents_with_context(_team_schedule_agents(conn, user_id))
+                seen = {str(row["id"]) for row in own}
+                rows = [{**row, "team": False} for row in own] + [
+                    {**row, "team": True} for row in team if str(row["id"]) not in seen
+                ]
+            out = _list_payload(conn, user_id, rows)
+        return _ok({"schedules": out, "workspace": workspace.payload()})
 
 
 @schedules_ns.route("/agents/<string:agent_id>/schedules")
@@ -353,9 +601,15 @@ class AgentSchedules(Resource):
             return _err(denied.message, denied.status)
         try:
             with db_readonly() as conn:
+                # A team agent's schedules are stored under the members who set
+                # them, and its Editors manage every one.
                 rows = SchedulesRepository(conn).list_for_agent(
-                    str(agent["id"]), owner_id,
+                    str(agent["id"]), None if is_principal_id(agent.get("user_id")) else owner_id,
                 )
+                owners = [agent.get("user_id")] * len(rows)
+                _mark_owner_inactive(conn, rows, owners)
+                _mark_paid_by(conn, user_id, rows, owners)
+                _mark_payer_state(conn, user_id, rows, owners)
         except Exception as exc:
             current_app.logger.error("list schedules failed: %s", exc, exc_info=True)
             return _err("internal error", 500)
@@ -418,7 +672,12 @@ class AgentSchedules(Resource):
             except (TypeError, ValueError):
                 return _err("token_budget must be a non-negative integer")
         with db_readonly() as conn:
+            # A schedule runs the agent's graph headless: a workflow agent's
+            # must be a finished one.
+            refusal = refuse_unfinished_graph(conn, agent)
             count = SchedulesRepository(conn).count_active_for_user(owner_id)
+        if refusal is not None:
+            return refusal
         if (
             settings.SCHEDULE_MAX_PER_USER > 0
             and count >= settings.SCHEDULE_MAX_PER_USER
@@ -546,8 +805,11 @@ class AgentScheduleStats(Resource):
             days = 30
         try:
             with db_readonly() as conn:
+                # A team agent's schedules are stored under the members who set
+                # them; whoever manages them (Editors and up, checked above)
+                # sees every one's runs, as in the schedule list.
                 stats = ScheduleRunsRepository(conn).stats_for_agent(
-                    str(agent["id"]), owner_id, days=days,
+                    str(agent["id"]), None if is_principal_id(agent.get("user_id")) else owner_id, days=days,
                 )
         except Exception as exc:
             current_app.logger.error(
@@ -578,9 +840,15 @@ class ScheduleResource(Resource):
             return _err("invalid schedule id", 400)
         with db_readonly() as conn:
             try:
-                row, _acting = _schedule_for(conn, schedule_id, user_id)
+                row, _acting = _schedule_for(conn, schedule_id, user_id, own_action="use")
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
+            agent = AgentsRepository(conn).get_by_id(str(row["agent_id"])) if row.get("agent_id") else None
+            row = dict(row)
+            owners = [(agent or {}).get("user_id")]
+            _mark_owner_inactive(conn, [row], owners)
+            _mark_paid_by(conn, user_id, [row], owners)
+            _mark_payer_state(conn, user_id, [row], owners)
         return _ok({"schedule": _format_schedule(row)})
 
     @api.doc(description="Edit a schedule's editable fields.")
@@ -710,6 +978,10 @@ class ScheduleResource(Resource):
                 return _err(denied.message, denied.status)
             if existing.get("status") in ("cancelled", "completed"):
                 return _err("schedule is terminal", 409)
+            if action == "resume":
+                refusal = _refuse_unfinished_agent_graph(conn, existing.get("agent_id"))
+                if refusal is not None:
+                    return refusal
             if action == "pause":
                 fields_in: Dict[str, Any] = {"status": "paused", "next_run_at": None}
             else:
@@ -815,6 +1087,9 @@ class ScheduleRunNow(Resource):
                 return _err("schedule not found", 404)
             if schedule.get("status") == "cancelled":
                 return _err("schedule is cancelled", 409)
+            refusal = _refuse_unfinished_agent_graph(conn, schedule.get("agent_id"))
+            if refusal is not None:
+                return refusal
             if ScheduleRunsRepository(conn).has_active_run(schedule_id):
                 return _err("a run is already in flight", 409)
             scheduled_for = datetime.now(timezone.utc)
@@ -864,11 +1139,11 @@ class ScheduleRunList(Resource):
             offset = 0
         with db_readonly() as conn:
             try:
-                _schedule, acting = _schedule_for(conn, schedule_id, user_id)
+                _schedule, acting = _schedule_for(conn, schedule_id, user_id, own_action="use")
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
             rows = ScheduleRunsRepository(conn).list_runs(
-                schedule_id, acting, limit=limit, offset=offset,
+                schedule_id, _runs_user(conn, _schedule, acting, user_id), limit=limit, offset=offset,
             )
         return _ok(
             {
@@ -891,12 +1166,97 @@ class ScheduleRunDetail(Resource):
             return _err("invalid id", 400)
         with db_readonly() as conn:
             try:
-                schedule, acting = _schedule_for(conn, schedule_id, user_id)
+                schedule, acting = _schedule_for(conn, schedule_id, user_id, own_action="use")
             except AccessDenied as denied:
                 return _err(denied.message, denied.status)
-            run = ScheduleRunsRepository(conn).get(run_id, acting)
+            run = ScheduleRunsRepository(conn).get(run_id, _runs_user(conn, schedule, acting, user_id))
             if run is None or str(run.get("schedule_id")) != str(
                 schedule["id"]
             ):
                 return _err("run not found", 404)
         return _ok({"run": _format_run(run, user_id)})
+
+
+@schedules_ns.route("/schedules/<string:schedule_id>/take_over")
+class ScheduleTakeOver(Resource):
+    @api.doc(
+        description=(
+            "Make the caller the payer of a schedule on a team agent: it runs under them from now on (its failure "
+            "count reset, the chat it was set from no longer linked). Editors and up of the team; a personal "
+            "agent's schedule can't be taken over. Returns the schedule in the list's shape and whether anything "
+            "changed. Not available to access tokens."
+        ),
+    )
+    @_safe_route
+    def post(self, schedule_id: str):
+        """Take over a schedule on a team agent.
+
+        Args:
+            schedule_id: Schedule id from the URL.
+
+        Returns:
+            200 ``{success, schedule, changed}``; ``changed`` is false when the
+            caller already paid for it. Refusals carry ``{success: false,
+            error, message}``: 401; 404 ``schedule_not_found``; 403
+            ``workspace_role_required``; 409 ``take_over_team_only`` or
+            ``schedule_finished`` (completed or cancelled); 429 ``max_schedules``.
+        """
+        user_id = _user_id()
+        if not user_id:
+            return _err("unauthorized", 401)
+        not_found = _refuse(404, "schedule_not_found", "schedule not found")
+        if not looks_like_uuid(schedule_id):
+            return not_found
+        with db_session() as conn:
+            schedules = SchedulesRepository(conn)
+            row = schedules.get_internal(schedule_id)
+            if row is None or row.get("trigger_type") == "monitor":
+                return not_found
+            agent_id = row.get("agent_id")
+            agent = AgentsRepository(conn).get_by_id(str(agent_id)) if agent_id else None
+            team_id = team_of_principal((agent or {}).get("user_id"))
+            if not team_id:
+                # A personal agent's (or an agentless) schedule is its setter's own.
+                try:
+                    _schedule_for(conn, schedule_id, user_id)
+                except AccessDenied as denied:
+                    if denied.status == 404:
+                        return not_found
+                return _refuse(409, "take_over_team_only", "only a schedule on a team agent can be taken over")
+            try:
+                require(conn, "agent", str(agent_id), user_id, "manage_schedules")
+            except AccessDenied as denied:
+                if denied.status == 404:
+                    return not_found
+                return _refuse(403, "workspace_role_required", "your role in this team can't manage its schedules")
+            # Locked until commit: two people taking over at once each see who
+            # really paid before them.
+            locked = schedules.lock_internal(schedule_id)
+            if locked is None:
+                return not_found
+            # A completed or cancelled schedule never runs again: nobody pays for it.
+            if locked.get("status") not in _LIVE_STATUSES:
+                return _refuse(409, "schedule_finished", "a completed or cancelled schedule can't be taken over")
+            previous = locked.get("user_id")
+            changed = previous != user_id
+            if changed:
+                if (
+                    settings.SCHEDULE_MAX_PER_USER > 0
+                    and schedules.count_active_for_user(user_id) >= settings.SCHEDULE_MAX_PER_USER
+                ):
+                    return _refuse(429, "max_schedules", "max schedules per user reached")
+                schedules.take_over(schedule_id, user_id)
+                # A run not yet started bills the new payer; one in flight keeps its own.
+                ScheduleRunsRepository(conn).reassign_pending(schedule_id, user_id)
+                record_event(
+                    conn,
+                    "team.schedule_taken_over",
+                    actor=user_id,
+                    team_id=team_id,
+                    schedule_id=str(schedule_id),
+                    agent_id=str(agent_id),
+                    **{"from": previous, "to": user_id},
+                )
+            fresh = schedules.get_with_context(schedule_id, user_id)
+            payload = _list_payload(conn, user_id, [{**fresh, "team": fresh.get("user_id") != user_id}])[0]
+        return _ok({"success": True, "schedule": payload, "changed": changed})

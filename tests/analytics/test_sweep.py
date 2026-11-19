@@ -1388,7 +1388,8 @@ class TestScale:
         getattr(ConversationLabelsRepository(recorder), query)(schema.SCHEMA_HASH, VERSION, *args, exclude=exclude)
         (statement, params), = recorder.statements
         plan = _generic_plan(db, statement, params)
-        assert "NOT (hashed SubPlan" in plan and "<> ALL" not in plan, plan
+        # Postgres 16 prints ``NOT (hashed SubPlan 1)``, 17+ ``NOT (ANY (col = (hashed SubPlan 1).col1))``.
+        assert re.search(r"NOT \((?:ANY \([^()]+ = \()?hashed SubPlan", plan) and "<> ALL" not in plan, plan
 
     def test_a_backfill_holds_the_rows_of_about_a_call(self, db, fake, monkeypatch):
         monkeypatch.setattr(tasks, "PAGE", 4)

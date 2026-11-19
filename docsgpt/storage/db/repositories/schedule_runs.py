@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from sqlalchemy import Connection, text
 
@@ -108,16 +108,75 @@ class ScheduleRunsRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def get(self, run_id: str, user_id: str) -> Optional[dict]:
-        """Fetch an owned run row."""
+    def get(self, run_id: str, user_id: Optional[str]) -> Optional[dict]:
+        """Fetch an owned run row; ``user_id`` None fetches it whoever it billed (a team agent's schedule)."""
         row = self._conn.execute(
             text(
                 "SELECT * FROM schedule_runs "
-                "WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
+                "WHERE id = CAST(:id AS uuid) "
+                "AND (CAST(:user_id AS text) IS NULL OR user_id = :user_id)"
             ),
             {"id": str(run_id), "user_id": user_id},
         ).fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def latest_finished(self, schedule_ids: Iterable[str]) -> dict[str, dict]:
+        """Each schedule's newest run that is over (neither ``pending`` nor ``running``).
+
+        A run of a paused schedule is stored once per paused streak, so when
+        this is a ``skipped`` run its ``scheduled_for`` is when the streak
+        began.
+
+        Args:
+            schedule_ids: Schedule UUIDs.
+
+        Returns:
+            ``{schedule_id: run row}``; a schedule with no finished run is absent.
+        """
+        ids = [str(schedule_id) for schedule_id in schedule_ids]
+        if not ids:
+            return {}
+        rows = self._conn.execute(
+            text(
+                """
+                SELECT DISTINCT ON (schedule_id) *
+                FROM schedule_runs
+                WHERE schedule_id = ANY(CAST(:ids AS uuid[]))
+                  AND status NOT IN ('pending', 'running')
+                ORDER BY schedule_id, scheduled_for DESC
+                """
+            ),
+            {"ids": ids},
+        ).fetchall()
+        runs = [row_to_dict(r) for r in rows]
+        return {str(run["schedule_id"]): run for run in runs}
+
+    def delete_pending(self, run_id: str) -> bool:
+        """Delete a run that hasn't started (still ``pending``); True when one was deleted."""
+        result = self._conn.execute(
+            text("DELETE FROM schedule_runs WHERE id = CAST(:id AS uuid) AND status = 'pending'"),
+            {"id": str(run_id)},
+        )
+        return (result.rowcount or 0) > 0
+
+    def reassign_pending(self, schedule_id: str, user_id: str) -> int:
+        """Move a schedule's runs that haven't started to a new payer; a running one keeps its own.
+
+        Args:
+            schedule_id: Schedule UUID.
+            user_id: The schedule's new payer.
+
+        Returns:
+            How many runs moved.
+        """
+        result = self._conn.execute(
+            text(
+                "UPDATE schedule_runs SET user_id = :user_id "
+                "WHERE schedule_id = CAST(:id AS uuid) AND status = 'pending'"
+            ),
+            {"id": str(schedule_id), "user_id": user_id},
+        )
+        return int(result.rowcount or 0)
 
     def get_internal(self, run_id: str) -> Optional[dict]:
         """Fetch a run row with no ownership scoping (worker-only)."""
@@ -127,33 +186,40 @@ class ScheduleRunsRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def has_active_run(self, schedule_id: str) -> bool:
-        """True iff a ``pending``/``running`` run exists for the schedule."""
+    def has_active_run(self, schedule_id: str, *, trigger_source: Optional[str] = None) -> bool:
+        """True iff a ``pending``/``running`` run (of ``trigger_source``, when given) exists for the schedule."""
         scalar = self._conn.execute(
             text(
                 "SELECT 1 FROM schedule_runs "
                 "WHERE schedule_id = CAST(:id AS uuid) "
                 "AND status IN ('pending', 'running') "
+                "AND (CAST(:source AS text) IS NULL OR trigger_source = :source) "
                 "LIMIT 1"
             ),
-            {"id": str(schedule_id)},
+            {"id": str(schedule_id), "source": trigger_source},
         ).first()
         return scalar is not None
 
     def list_runs(
         self,
         schedule_id: str,
-        user_id: str,
+        user_id: Optional[str],
         *,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
-        """Paginated newest-first run log for an owned schedule."""
+        """Paginated newest-first run log for an owned schedule.
+
+        ``user_id`` None lists every run whoever it billed: a team agent's
+        schedule changes payer when someone takes it over, and its log keeps
+        the runs from before.
+        """
         rows = self._conn.execute(
             text(
                 """
                 SELECT * FROM schedule_runs
-                WHERE schedule_id = CAST(:id AS uuid) AND user_id = :user_id
+                WHERE schedule_id = CAST(:id AS uuid)
+                  AND (CAST(:user_id AS text) IS NULL OR user_id = :user_id)
                 ORDER BY scheduled_for DESC
                 LIMIT :limit OFFSET :offset
                 """
@@ -168,17 +234,19 @@ class ScheduleRunsRepository:
         return [row_to_dict(r) for r in rows]
 
     def stats_for_agent(
-        self, agent_id: str, user_id: str, *, days: int = 30,
+        self, agent_id: str, user_id: Optional[str], *, days: int = 30,
     ) -> dict:
-        """Aggregate run stats for an agent's owned schedules over a window.
+        """Aggregate run stats for an agent's schedules over a window.
 
-        Only runs of schedules owned by ``user_id`` on ``agent_id`` whose
-        ``scheduled_for`` falls within the last ``days`` days are counted;
-        runs scheduled in the future are not.
+        Only runs of schedules on ``agent_id`` set by ``user_id`` (every
+        setter's when None) whose ``scheduled_for`` falls within the last
+        ``days`` days are counted; runs scheduled in the future are not.
 
         Args:
             agent_id: Agent UUID the schedules belong to.
-            user_id: Owner of the schedules (and runs).
+            user_id: Owner of the schedules (and runs), or None for every
+                schedule on the agent (a team's agent, whose schedules are
+                stored under the members who set them).
             days: Window length in days, counted back from now.
 
         Returns:
@@ -196,8 +264,8 @@ class ScheduleRunsRepository:
                     FROM schedule_runs r
                     JOIN schedules s ON s.id = r.schedule_id
                     WHERE s.agent_id = CAST(:agent_id AS uuid)
-                      AND s.user_id = :user_id
-                      AND r.user_id = :user_id
+                      AND (CAST(:user_id AS text) IS NULL
+                           OR (s.user_id = :user_id AND r.user_id = :user_id))
                       AND r.scheduled_for >= now() - make_interval(days => :days)
                       AND r.scheduled_for <= now()
                 ),

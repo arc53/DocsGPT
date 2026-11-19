@@ -19,6 +19,7 @@ from docsgpt.agents.tools.code_executor_hints import (
     clean_output,
     error_signature,
     fix_hints,
+    script_exception,
 )
 from docsgpt.sandbox import manifest
 from docsgpt.sandbox.base import ExecResult
@@ -664,3 +665,41 @@ def test_malformed_and_hostless_urls_are_not_app_urls():
     result = _error("ConnectionError", "Max retries exceeded")
     for url in ("http://[::1", "http:///no-host"):
         assert not any("Artifact/app" in h for h in fix_hints(_facts(f"requests.get('{url}')", result)))
+
+
+_TRACEBACK = 'Traceback (most recent call last):\n  File "<stdin>", line 3, in <module>\nAttributeError: \'str\' object has no attribute \'save\'\n'
+
+
+def test_a_script_exception_is_named_from_the_kernel_or_the_process_output():
+    kernel = _error("AttributeError", "'str' object has no attribute 'save'", traceback=["AttributeError: ..."])
+    assert script_exception(kernel) == "AttributeError"
+    assert script_exception(_daytona_error(_TRACEBACK)) == "AttributeError"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        ExecResult(status="ok", stdout="done\n"),
+        # The wall-clock cap, on Jupyter and on a detached run.
+        _error("TimeoutError", "execution exceeded 60s", exit_code=-1),
+        ExecResult(status="error", stdout=_TRACEBACK, error_name="TimeoutError", error_value="execution exceeded 60s",
+                   exit_code=-1),
+        # A library timeout inside the script is not a bug in it either.
+        _daytona_error("Traceback...\nrequests.exceptions.ReadTimeout: read timed out\n"),
+        # The sandbox failed, not the code.
+        _error("ConnectionError", "toolbox unreachable", exit_code=-1, sandbox_error=True),
+        _error("WebSocketBadStatusException", "Handshake status 403", exit_code=-1),
+        _error("SandboxError", "lost contact with the sandbox while the code ran", exit_code=-1),
+        _error("KernelDiedError", "kernel channel closed", traceback=["ValueError: x"]),
+        # Killed for memory, stopped, or exited on purpose.
+        ExecResult(status="error", stdout=_TRACEBACK, error_name="ExecutionError", error_value="killed",
+                   exit_code=137, out_of_memory=True),
+        _error("MemoryError", "", traceback=["MemoryError"]),
+        _error("KeyboardInterrupt", "", traceback=["KeyboardInterrupt"]),
+        _daytona_error("Traceback...\nSystemExit: 2\n"),
+        # A non-zero exit with no exception to name.
+        _daytona_error("usage: tool [-h]\n"),
+    ],
+)
+def test_other_failures_are_not_script_exceptions(result):
+    assert script_exception(result) is None

@@ -1004,8 +1004,9 @@ class TestGetConversationsPaging:
 
         assert [c["id"] for c in items] == _expected_order(pg_conn, user)[:30]
         assert set(items[0]) == {
-            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date", "unread",
+            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date", "unread", "workspace",
         }
+        assert items[0]["workspace"] == {"kind": "personal", "team_id": None}
         # No continuation landed unseen.
         assert items[0]["unread"] is False
         parsed = dt.datetime.fromisoformat(items[0]["date"])

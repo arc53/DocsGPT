@@ -505,3 +505,29 @@ class TestRequireAgentPgConn:
         with _patch_base_db(pg_conn), flask_app.app_context():
             result = fn(webhook_token="webhook-123")
         assert result["got"] == str(agent["id"])
+
+    def test_a_deactivated_owners_webhook_is_paused(self, pg_conn, flask_app):
+        from sqlalchemy import text
+
+        from docsgpt.api.user.base import require_agent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        AgentsRepository(pg_conn).create(
+            "owner", "wh-agent", "published", incoming_webhook_token="webhook-123",
+        )
+        UsersRepository(pg_conn).upsert("owner")
+        pg_conn.execute(text("UPDATE users SET active = false WHERE user_id = 'owner'"))
+        ran = []
+
+        @require_agent
+        def fn(webhook_token=None, agent=None, agent_id_str=None):
+            ran.append(agent_id_str)
+            return {"got": agent_id_str}
+
+        with _patch_base_db(pg_conn), flask_app.app_context():
+            result = fn(webhook_token="webhook-123")
+        assert ran == []
+        assert result.status_code == 403
+        assert result.json["code"] == "agent_paused"
+        assert "owner" not in result.json["message"].lower()

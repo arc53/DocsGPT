@@ -138,6 +138,32 @@ describe('WorkflowRunProgress', () => {
     expect(body.textContent).not.toMatch(/Step title 7\d/);
   });
 
+  it('says which attempt a retrying step is on', () => {
+    render(
+      {
+        steps: [
+          {
+            ...step(1, 'running'),
+            attempt: 2,
+            maxAttempts: 3,
+            retryError: 'upstream 503',
+          },
+        ],
+      },
+      { isStreaming: true },
+    );
+    expect(container.textContent).toContain(
+      'Retrying · attempt 2 of 3 · upstream 503',
+    );
+  });
+
+  it('counts the attempts of a step that ran more than once', () => {
+    render({ steps: [{ ...step(1, 'completed'), attempts: 2 }] });
+    act(() => header().click());
+    expect(container.textContent).toContain('2 attempts');
+    expect(container.textContent).not.toContain('Retrying');
+  });
+
   it('renders nothing before the first step', () => {
     render({ steps: [] }, { isStreaming: true });
     expect(container.innerHTML).toBe('');

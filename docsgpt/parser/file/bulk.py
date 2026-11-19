@@ -526,7 +526,7 @@ class SimpleDirectoryReader(BaseReader):
                             "firecrawl-anydoc is not installed (pip install firecrawl-anydoc)"
                         )
                     # do standard read
-                    with open(input_file, "r", errors=self.errors) as f:
+                    with open(input_file, "r", encoding="utf-8", errors=self.errors) as f:
                         data = f.read()
             except DocumentParseError as e:
                 logging.warning(f"Skipping unreadable file {input_file.name}: {e}")

@@ -1,7 +1,7 @@
 ---
 title: Concepts
 description: The words the DocsGPT docs and web app use - agents, knowledge and sources, chunks, connectors and connections, tools, workflows, prompts, teams, and the credentials that call the API.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-30
 ---
 
 # Concepts
@@ -16,11 +16,11 @@ A saved assistant: a [prompt](#prompt), the [sources](#knowledge-and-sources) it
 
 ### Conversation
 
-A chat with DocsGPT, with or without an agent. Without an agent, a chat uses your [active prompt](#prompt) and the sources and tools you pick in the composer. See [Using the web app](/Using/web-app).
+A chat with DocsGPT, with or without an agent. Without an agent, a chat uses the [prompt](#prompt) you picked for chats and the sources and tools you pick in the composer. See [Using the web app](/Using/web-app).
 
 ### Prompt
 
-The system instructions sent to the model. Prompts are Jinja2 templates that can pull in retrieved documents, tool data and values the caller passes. Each agent has its own prompt; chats without an agent use the **Active prompt** from **Settings > General**. See [Prompts](/Agents/prompts).
+The system instructions sent to the model. Prompts are Jinja2 templates that can pull in retrieved documents, tool data and values the caller passes. Each agent has its own prompt; chats without an agent use the one you pick in **Settings > Prompts**, saved to your account. See [Prompts](/Agents/prompts).
 
 ### Workflow
 
@@ -90,7 +90,7 @@ A provider is the service or server that runs a model, such as OpenAI, Anthropic
 
 ### Custom model
 
-An OpenAI-compatible model a user adds in **Settings > Custom Models**, with their own endpoint and key. See [Custom models](/Models/custom-models).
+An OpenAI-compatible model a user adds in **Settings > Custom Models**, with their own endpoint and key. A team Admin can add one for the team, with the team's key, and every member can use it. See [Custom models](/Models/custom-models).
 
 ### Fallback model
 

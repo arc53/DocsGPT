@@ -19,6 +19,7 @@ from docsgpt.security.safe_url import (
     UnsafeUserUrlError,
     _GuardedAsyncTransport,
     _PinnedHTTPSTransport,
+    _pinned_session,
     guarded_async_client,
     pinned_fetch_bytes,
     pinned_request,
@@ -1215,6 +1216,89 @@ def test_pinned_session_verifies_tls_against_the_ascii_name(monkeypatch):
     assert captured["prepared"].headers["Host"] == "xn--bcher-kva.example"
 
 
+_CA_VARIABLES = ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "SSL_CERT_FILE")
+
+
+def _session_for_ca_test():
+    """A pinned session for a resolvable public host, without touching DNS."""
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        return _pinned_session("https://api.openai.com/v1", None)[0]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("variable", _CA_VARIABLES)
+def test_pinned_session_keeps_a_custom_ca_bundle(monkeypatch, tmp_path, variable):
+    """A private CA still verifies: it does not change which address is dialled."""
+    bundle = tmp_path / "corp-ca.pem"
+    bundle.write_text("")
+    for name in _CA_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(variable, str(bundle))
+
+    session = _session_for_ca_test()
+    try:
+        assert session.verify == str(bundle)
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_session_verify_stays_on_without_a_custom_ca(monkeypatch):
+    """With no CA in the environment, verification stays on with the shipped bundle."""
+    for name in _CA_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+    session = _session_for_ca_test()
+    try:
+        assert session.verify is True
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_session_ignores_environment_proxies(monkeypatch):
+    """A proxy would re-resolve the host and discard the validated IP."""
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("104.18.6.192")):
+        session, pinned_url, _headers = _pinned_session("https://api.openai.com/v1", None)
+    try:
+        assert session.trust_env is False
+        assert session.merge_environment_settings(pinned_url, {}, None, None, None)["proxies"] == {}
+    finally:
+        session.close()
+
+
+@pytest.mark.unit
+def test_pinned_fetch_bytes_dials_the_pinned_ip_not_the_environment_proxy(local_server, monkeypatch):
+    base, routes = local_server
+    port = base.rsplit(":", 1)[1]
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    _test_hosts_to_loopback(monkeypatch)
+    seen: list[str] = []
+
+    def record_host(handler):
+        seen.append(handler.headers["Host"])
+        handler.send_response(200)
+        handler.send_header("Content-Length", "2")
+        handler.end_headers()
+        handler.wfile.write(b"ok")
+
+    routes["/"] = record_host
+
+    body, response = pinned_fetch_bytes(f"http://pinned.test:{port}/", max_bytes=100, timeout=5)
+
+    assert body == b"ok"
+    assert response.status_code == 200
+    assert seen == [f"pinned.test:{port}"]
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("url", [
     "http://" + "a" * 64 + ".com/",
@@ -1488,6 +1572,22 @@ def test_reject_ambiguous_url_refuses(url):
 ])
 def test_reject_ambiguous_url_accepts(url):
     assert reject_ambiguous_url(url) is None
+
+
+# Percent-encoded hosts are refused outright.
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://127%2e0%2e0%2e1/",
+    "http://%31%32%37.0.0.1/",
+    "http://localhost%2e/",
+    "http://exa%6dple.com/",
+])
+def test_percent_encoded_host_is_refused(url):
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        with pytest.raises(UnsafeUserUrlError, match="percent-encodes its host"):
+            validate_user_base_url(url)
 
 
 # Operator allowlist (SAFE_URL_ALLOWED_HOSTS)

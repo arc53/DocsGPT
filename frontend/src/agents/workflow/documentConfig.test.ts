@@ -63,6 +63,7 @@ describe('normalizeFilePassing', () => {
     expect(normalizeFilePassing('auto')).toBe('auto');
     expect(normalizeFilePassing('native')).toBe('native');
     expect(normalizeFilePassing('extract')).toBe('extract');
+    expect(normalizeFilePassing('lines')).toBe('lines');
   });
 
   it('falls back to the default for unknown values', () => {

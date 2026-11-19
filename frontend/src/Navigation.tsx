@@ -54,12 +54,19 @@ import { ActiveState } from './models/misc';
 import { LoadMoreStatus } from './components/ui/load-more-status';
 import { Skeleton } from './components/ui/skeleton';
 import { useScrollSentinel } from './hooks/useLoadMore';
-import { getConversations } from './preferences/preferenceApi';
 import useMonitorsLoader from './monitors/useMonitorsLoader';
 import MobileTopBar from './navigation/MobileTopBar';
 import SectionNav from './navigation/SectionNav';
 import SectionRail from './navigation/SectionRail';
 import SidebarLevel from './navigation/SidebarLevel';
+import SidebarTeamEntry from './navigation/SidebarTeamEntry';
+import {
+  deleteAllChats,
+  deleteAllChatsCopy,
+  loadOlderChats,
+  refreshChats,
+} from './navigation/sidebarChats';
+import useRecentAgents from './navigation/useRecentAgents';
 import {
   getActiveItem,
   getSectionForPath,
@@ -78,13 +85,8 @@ import {
   selectSharedAgents,
   selectToken,
   setAgents,
-  appendConversations,
-  receiveConversations,
   removeConversation,
-  removeAllConversations,
   renameConversation,
-  setConversations,
-  setConversationsLoading,
   setModalStateDeleteConv,
   setSelectedAgent,
   setSharedAgents,
@@ -92,6 +94,10 @@ import {
 import { AppDispatch } from './store';
 import TeamSwitcher from './teams/TeamSwitcher';
 import Upload from './upload/Upload';
+import {
+  selectCurrentWorkspace,
+  selectWorkspaceId,
+} from './workspace/workspaceSlice';
 
 interface NavigationProps {
   navOpen: boolean;
@@ -115,6 +121,10 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const sharedAgents = useSelector(selectSharedAgents);
   const selectedAgent = useSelector(selectSelectedAgent);
   const isAdmin = useSelector(selectIsAdmin);
+  // Chats, pins and recent agents are the current workspace's.
+  const workspaceId = useSelector(selectWorkspaceId);
+  const workspace = useSelector(selectCurrentWorkspace);
+  const recentAgents = useRecentAgents();
 
   const { isMobile } = useMediaQuery();
   const { showTokenModal, handleTokenSubmit } = useTokenAuth();
@@ -185,7 +195,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
-  const [recentAgents, setRecentAgents] = useState<Agent[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const navRef = useRef<HTMLDivElement>(null);
@@ -222,41 +231,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     return () => document.removeEventListener('keydown', handleSearchShortcut);
   }, []);
 
-  async function fetchRecentAgents() {
-    try {
-      const response = await userService.getPinnedAgents(token);
-      if (!response.ok) throw new Error('Failed to fetch pinned agents');
-      const pinnedAgents: Agent[] = await response.json();
-      if (pinnedAgents.length >= 3) {
-        setRecentAgents(pinnedAgents);
-        return;
-      }
-      let tempAgents: Agent[] = [];
-      if (!agents) {
-        const response = await userService.getAgents(token);
-        if (!response.ok) throw new Error('Failed to fetch agents');
-        const data: Agent[] = await response.json();
-        dispatch(setAgents(data));
-        tempAgents = data;
-      } else tempAgents = agents;
-      const additionalAgents = tempAgents
-        .filter(
-          (agent: Agent) =>
-            agent.status === 'published' &&
-            !pinnedAgents.some((pinned) => pinned.id === agent.id),
-        )
-        .sort(
-          (a: Agent, b: Agent) =>
-            new Date(b.last_used_at ?? 0).getTime() -
-            new Date(a.last_used_at ?? 0).getTime(),
-        )
-        .slice(0, 3 - pinnedAgents.length);
-      setRecentAgents([...pinnedAgents, ...additionalAgents]);
-    } catch (error) {
-      console.error('Failed to fetch recent agents: ', error);
-    }
-  }
-
   // Older chats load as the end of the list scrolls into view; the list
   // scrolls with the sidebar column, so there is no inner scroller.
   const [olderLoading, setOlderLoading] = useState(false);
@@ -267,14 +241,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     if (!last?.date || olderLoading) return;
     setOlderLoading(true);
     setOlderError(false);
-    getConversations(token, { date: last.date, id: last.id })
+    dispatch(loadOlderChats(token, { date: last.date, id: last.id }))
       .then((result) => {
-        if (result.data)
-          dispatch(appendConversations(result.data, result.requestedAt));
-        else setOlderError(true);
+        if (result === 'failed') setOlderError(true);
       })
       .finally(() => setOlderLoading(false));
   };
+  // A page of the last workspace's older chats failed: not this one's.
+  useEffect(() => {
+    setOlderError(false);
+  }, [workspaceId]);
   const olderSentinelRef = useScrollSentinel(
     loadOlderConversations,
     !!conversations?.hasMore &&
@@ -284,23 +260,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
     conversations?.data?.length,
   );
 
-  async function fetchConversations() {
-    // Only the flag: a copy of the list from this render would put back
-    // a chat removed just before, and the merge would then keep it.
-    dispatch(setConversationsLoading(true));
-    return await getConversations(token)
-      .then((fetchedConversations) => {
-        dispatch(receiveConversations(fetchedConversations));
-      })
-      .catch((error) => {
-        console.error('Failed to fetch conversations: ', error);
-        dispatch(setConversations({ data: null, loading: false }));
-      });
+  function fetchConversations() {
+    return dispatch(refreshChats(token));
   }
-
-  useEffect(() => {
-    fetchRecentAgents();
-  }, [agents, sharedAgents, token, dispatch]);
 
   useEffect(() => {
     if (queries.length === 0) resetConversation();
@@ -308,13 +270,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
 
   // Both return the request to ConfirmationModal: pending while it runs,
   // a failure stays in the dialog.
+  // Clears the current workspace's chats only, as the dialog says.
+  const deleteAllCopy = deleteAllChatsCopy(t, workspace);
   const handleDeleteAllConversations = () => {
     setIsDeletingConversation(true);
-    return conversationService.deleteAll(token).then((response: Response) => {
-      if (!response.ok) throw new Error('Failed to delete conversations');
-      dispatch(removeAllConversations());
-      fetchConversations();
-    });
+    return dispatch(deleteAllChats(token, workspaceId));
   };
 
   const handleDeleteConversation = (id: string) => {
@@ -518,6 +478,7 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <ActivityIcon aria-hidden />
                 <ActivityNavBadge variant="rail" />
               </IconButton>
+              <SidebarTeamEntry rail onNavigate={goToLevel} />
               <IconButton
                 label={t('manageAgents')}
                 side="right"
@@ -644,6 +605,12 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 <ActivityNavBadge />
               </NavLink>
             </Button>
+            <SidebarTeamEntry
+              onNavigate={(path) => {
+                closeNavOnMobile();
+                goToLevel(path);
+              }}
+            />
             <div
               id="conversationsMainDiv"
               className="scrollbar-overlay min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
@@ -973,8 +940,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         }
       />
       <ConfirmationModal
-        message={t('modals.deleteConv.confirm')}
-        description={t('modals.deleteConv.consequence')}
+        message={deleteAllCopy.message}
+        description={deleteAllCopy.description}
         modalState={modalStateDeleteConv}
         setModalState={(state) => dispatch(setModalStateDeleteConv(state))}
         submitLabel={t('modals.deleteConv.delete')}

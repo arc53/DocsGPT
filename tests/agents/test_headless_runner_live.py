@@ -45,6 +45,15 @@ class TestLiveHeadlessRun:
         assert seen == events
         assert outcome["answer"] == "ab" and outcome["stopped"] is False
 
+    def test_sources_reach_the_observer_and_outcome_without_the_knowledge_name(self, monkeypatch):
+        # The name is for the model; the live stream and the stored turn go to clients.
+        docs = [{"text": "t", "title": "a.md", "source_name": "test-1", "connector_name": "Google Drive"}]
+        seen = []
+        outcome, _ = _run(monkeypatch, [{"sources": docs}, {"answer": "a"}], on_event=seen.append)
+        assert seen[0] == {"sources": [{"text": "t", "title": "a.md", "connector_name": "Google Drive"}]}
+        assert outcome["sources"] == [{"text": "t", "title": "a.md", "connector_name": "Google Drive"}]
+        assert docs[0]["source_name"] == "test-1"
+
     def test_a_failing_observer_does_not_end_the_run(self, monkeypatch):
         def _boom(event):
             raise RuntimeError("journal down")

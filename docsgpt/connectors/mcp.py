@@ -92,11 +92,46 @@ def discover_connection_actions(user_id: str, connection: dict, writes: bool = F
         Exception: The server could not be reached or listed.
     """
     definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    config = service.connection_mcp_config(definition, writes=writes)
+    config = service.connection_mcp_config(definition, writes=writes, connection=connection)
     if config is None:
         raise ValueError("This connector has no MCP server")
     try:
         actions = _classified(connection, config, _discover(user_id, connection, {"config": config}))
+    except service.ConnectionUnavailable:
+        raise
+    except Exception as exc:
+        if _needs_sign_in(exc):
+            service.mark_reconnect_needed(str(connection["id"]), SIGN_IN_EXPIRED)
+            raise service.ConnectionUnavailable(SIGN_IN_EXPIRED, connection_id=str(connection["id"])) from exc
+        raise
+    tool_descriptions.score_actions(actions)
+    return actions
+
+
+def discover_server_actions(user_id: str, connection: dict, config: dict) -> list[dict]:
+    """The actions of a custom MCP server, read with ``connection``'s own sign-in.
+
+    For a team's tool on each person's own account: the creator's personal
+    sign-in reads the actions; none of its tokens go onto the tool. While
+    Admin > Guardrails warns on tool descriptions, each action carries its
+    prompt-injection score.
+
+    Args:
+        user_id: The connection's owner (the creator).
+        connection: Their connection to the server.
+        config: The tool's MCP config (``server_url`` on the connection's own server).
+
+    Raises:
+        ValueError: ``config`` names another server than the connection's.
+        service.ConnectionUnavailable: The connection needs reconnecting.
+        Exception: The server could not be reached or listed.
+    """
+    from docsgpt.connectors.resolve import mcp_server_of
+
+    if catalog.base_url(config.get("server_url")) != mcp_server_of(connection):
+        raise ValueError("A connection's sign-in only goes to its own server")
+    try:
+        actions = _discover(user_id, connection, {"config": config})
     except service.ConnectionUnavailable:
         raise
     except Exception as exc:

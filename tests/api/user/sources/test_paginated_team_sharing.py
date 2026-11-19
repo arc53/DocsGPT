@@ -43,6 +43,17 @@ def _source_row(sid, *, user_id):
     }
 
 
+class _NoFiling:
+    folders: list = []
+    paths: dict = {}
+
+    def folder_of(self, _source_id):
+        return None
+
+    def fields(self, _source_id):
+        return {"folder_id": None, "folder_path": []}
+
+
 def _run(sub, repo, team_shared, client):
     patches = [
         patch("docsgpt.app.handle_auth", return_value={"sub": sub}),
@@ -55,6 +66,11 @@ def _run(sub, repo, team_shared, client):
         ),
         # Owner switches all at their defaults.
         patch("docsgpt.api.user.sources.routes.settings_many", return_value={}),
+        # No agent uses any source.
+        patch("docsgpt.api.user.sources.routes.used_by_many", return_value={}),
+        patch("docsgpt.api.user.sources.routes.deletable_row_ids", return_value=[]),
+        # The caller has filed nothing.
+        patch("docsgpt.api.user.sources.routes.SourceFiling", return_value=_NoFiling()),
     ]
     for p in patches:
         p.start()
@@ -70,11 +86,11 @@ class TestPaginatedSourcesTeamSharing:
     def test_team_shared_source_appears_with_access(self, client):
         owned, shared = str(uuid.uuid4()), str(uuid.uuid4())
         repo = Mock()
-        repo.count_for_user.return_value = 2
         repo.list_for_user.return_value = [
             _source_row(owned, user_id="bob"),
             _source_row(shared, user_id="alice"),  # not the caller → team-shared
         ]
+        repo.list_facets_for_user.return_value = repo.list_for_user.return_value
         resp = _run("bob", repo, {shared: "editor"}, client)
         assert resp.status_code == 200
         by_id = {d["id"]: d for d in json.loads(resp.data)["paginated"]}
@@ -87,13 +103,13 @@ class TestPaginatedSourcesTeamSharing:
         assert "edit" in by_id[shared]["allowed_actions"]
         # The shared ids are unioned into the owner-scoped queries by id.
         assert repo.list_for_user.call_args.kwargs["extra_ids"] == [shared]
-        assert repo.count_for_user.call_args.kwargs["extra_ids"] == [shared]
+        assert repo.list_facets_for_user.call_args.kwargs["extra_ids"] == [shared]
 
     def test_no_shares_returns_only_owned(self, client):
         owned = str(uuid.uuid4())
         repo = Mock()
-        repo.count_for_user.return_value = 1
         repo.list_for_user.return_value = [_source_row(owned, user_id="bob")]
+        repo.list_facets_for_user.return_value = repo.list_for_user.return_value
         resp = _run("bob", repo, {}, client)
         assert resp.status_code == 200
         docs = json.loads(resp.data)["paginated"]

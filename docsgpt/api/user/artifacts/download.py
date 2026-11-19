@@ -134,6 +134,76 @@ async def _close_file(file_obj: BinaryIO) -> None:
         await anyio.to_thread.run_sync(close)
 
 
+async def serve_artifact_version(request: Request, artifact_id: str, version_row: dict) -> Response:
+    """Serve an authorized version: a 302 (or a JSON URL envelope) on S3, streamed bytes otherwise.
+
+    Args:
+        request: The download request (its ``disposition`` and ``Accept`` pick the S3 shape).
+        artifact_id: The artifact, for the fallback filename.
+        version_row: The version row the caller is allowed to read.
+
+    Raises:
+        FileNotFoundError: The stored bytes are gone.
+    """
+    query = request.query_params
+    # The object key is derived only from the stored path, never client input.
+    storage_path = version_row.get("storage_path")
+    if not storage_path:
+        return json_error("No file for this version", 404)
+
+    mime_type = version_row.get("mime_type") or "application/octet-stream"
+    storage = await anyio.to_thread.run_sync(StorageCreator.get_storage)
+
+    # With URL_STRATEGY=="s3" the contract is to hand back a presigned
+    # URL. If the active backend can't mint one, that's a config error:
+    # surface a 500 rather than silently proxying bytes from a backend
+    # the operator expected to be off the hot path.
+    if settings.URL_STRATEGY == "s3":
+        try:
+            url = await anyio.to_thread.run_sync(
+                partial(storage.generate_presigned_url, storage_path, expires_in=_PRESIGNED_URL_TTL)
+            )
+        except NotImplementedError:
+            logger.error(
+                "URL_STRATEGY=s3 but %s cannot mint presigned URLs",
+                type(storage).__name__,
+            )
+            return json_error("Storage misconfigured", 500)
+        # A 302 to a cross-origin S3 URL can't be read by the app's authed
+        # fetch (the bucket has no CORS grant for the app origin). When the
+        # client opts in via ?disposition=url (or Accept: application/json)
+        # hand the presigned URL back as JSON so it can navigate to it
+        # top-level (no CORS). Default stays a 302 so nothing else breaks.
+        if query.get("disposition") == "url" or (
+            "application/json" in request.headers.get("Accept", "")
+        ):
+            # Tag the envelope with a distinctive media type so the client
+            # keys off a server-set signal, not the JSON body shape. A
+            # ``data`` artifact whose bytes happen to be
+            # ``{"success":true,"url":"..."}`` is streamed under the backend
+            # strategy with its own content-type and can never carry this
+            # vendor type, so it can't be mistaken for a redirect
+            # (open-redirect gadget). Content-Type is CORS-safelisted.
+            return JSONResponse(
+                {"success": True, "url": url}, media_type=_ARTIFACT_URL_ENVELOPE_MIME
+            )
+        return RedirectResponse(url, status_code=302)
+
+    # Build the headers before opening the file, so nothing between the
+    # open and the response can fail and leave the handle unclosed.
+    headers = {"Content-Disposition": _content_disposition(version_row.get("filename"), artifact_id)}
+    # Stream the bytes in chunks instead of buffering the whole object in
+    # memory (artifacts can be many MB); the handle closes when the
+    # response ends, including on a client disconnect.
+    file_obj = await anyio.to_thread.run_sync(storage.get_file, storage_path)
+    return ClosingStreamingResponse(
+        _read_chunks(file_obj),
+        media_type=mime_type,
+        headers=headers,
+        on_close=partial(_close_file, file_obj),
+    )
+
+
 async def download_artifact(request: Request) -> Response:
     """Serve an artifact version: a 302 (or a JSON URL envelope) on S3, streamed bytes otherwise."""
     artifact_id = request.path_params["artifact_id"]
@@ -145,7 +215,9 @@ async def download_artifact(request: Request) -> Response:
     if api_key:
         decoded, error = None, None
     else:
-        decoded, error = await authenticate(request)
+        # A token with ``artifacts:read`` reads what its owner may; a
+        # resource-restricted one is refused, as for the other artifact routes.
+        decoded, error = await authenticate(request, pat_scope="artifacts:read")
     if error is not None:
         return error
     # Same endpoint value the Flask-RESTX route logged, so saved log queries keep matching.
@@ -161,63 +233,7 @@ async def download_artifact(request: Request) -> Response:
         )
         if failure is not None:
             return json_error(*failure)
-
-        # The object key is derived only from the stored path, never client input.
-        storage_path = version_row.get("storage_path")
-        if not storage_path:
-            return json_error("No file for this version", 404)
-
-        mime_type = version_row.get("mime_type") or "application/octet-stream"
-        storage = await anyio.to_thread.run_sync(StorageCreator.get_storage)
-
-        # With URL_STRATEGY=="s3" the contract is to hand back a presigned
-        # URL. If the active backend can't mint one, that's a config error:
-        # surface a 500 rather than silently proxying bytes from a backend
-        # the operator expected to be off the hot path.
-        if settings.URL_STRATEGY == "s3":
-            try:
-                url = await anyio.to_thread.run_sync(
-                    partial(storage.generate_presigned_url, storage_path, expires_in=_PRESIGNED_URL_TTL)
-                )
-            except NotImplementedError:
-                logger.error(
-                    "URL_STRATEGY=s3 but %s cannot mint presigned URLs",
-                    type(storage).__name__,
-                )
-                return json_error("Storage misconfigured", 500)
-            # A 302 to a cross-origin S3 URL can't be read by the app's authed
-            # fetch (the bucket has no CORS grant for the app origin). When the
-            # client opts in via ?disposition=url (or Accept: application/json)
-            # hand the presigned URL back as JSON so it can navigate to it
-            # top-level (no CORS). Default stays a 302 so nothing else breaks.
-            if query.get("disposition") == "url" or (
-                "application/json" in request.headers.get("Accept", "")
-            ):
-                # Tag the envelope with a distinctive media type so the client
-                # keys off a server-set signal, not the JSON body shape. A
-                # ``data`` artifact whose bytes happen to be
-                # ``{"success":true,"url":"..."}`` is streamed under the backend
-                # strategy with its own content-type and can never carry this
-                # vendor type, so it can't be mistaken for a redirect
-                # (open-redirect gadget). Content-Type is CORS-safelisted.
-                return JSONResponse(
-                    {"success": True, "url": url}, media_type=_ARTIFACT_URL_ENVELOPE_MIME
-                )
-            return RedirectResponse(url, status_code=302)
-
-        # Build the headers before opening the file, so nothing between the
-        # open and the response can fail and leave the handle unclosed.
-        headers = {"Content-Disposition": _content_disposition(version_row.get("filename"), artifact_id)}
-        # Stream the bytes in chunks instead of buffering the whole object in
-        # memory (artifacts can be many MB); the handle closes when the
-        # response ends, including on a client disconnect.
-        file_obj = await anyio.to_thread.run_sync(storage.get_file, storage_path)
-        return ClosingStreamingResponse(
-            _read_chunks(file_obj),
-            media_type=mime_type,
-            headers=headers,
-            on_close=partial(_close_file, file_obj),
-        )
+        return await serve_artifact_version(request, artifact_id, version_row)
     except FileNotFoundError:
         return json_error("File not found", 404)
     except Exception:

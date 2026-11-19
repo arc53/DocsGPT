@@ -827,6 +827,7 @@ const TreeBrowser: React.FC<TreeBrowserProps> = ({
                 onSelect: onBackToDocuments,
               }
         }
+        parents={embedded ? [] : undefined}
         segments={embedded ? rest : treeCrumbs}
         badge={embedded ? undefined : badge}
         byline={byline}

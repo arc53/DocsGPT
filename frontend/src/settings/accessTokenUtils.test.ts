@@ -9,7 +9,6 @@ import {
   expiryStatus,
   groupScopesByFamily,
   isScopeImplied,
-  isUuid,
   NO_ESCAPE,
   NO_EXPIRY,
   renewalExpiry,
@@ -17,6 +16,7 @@ import {
   scopesToSubmit,
   toResourceOptions,
 } from './accessTokenUtils';
+import { isUuid } from '../utils/wireGuards';
 
 const CATALOG = [
   { name: 'agents:read', description: 'View agents' },
@@ -92,6 +92,13 @@ describe('eligibleFilterFamilies', () => {
     expect(eligibleFilterFamilies(['chat:run'], FAMILIES)).toEqual([
       'agents',
       'sources',
+    ]);
+  });
+
+  it('run and artifact reads permit an agent restriction', () => {
+    expect(eligibleFilterFamilies(['runs:read'], FAMILIES)).toEqual(['agents']);
+    expect(eligibleFilterFamilies(['artifacts:read'], FAMILIES)).toEqual([
+      'agents',
     ]);
   });
 

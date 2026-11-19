@@ -773,6 +773,10 @@ class GoogleDriveLoader(BaseConnectorLoader):
                     if not _error_reasons(e) & _CONTENT_REFUSAL_REASONS:
                         fingerprintable = False
 
+            logging.info(
+                f"Google Drive download finished: downloaded={files_downloaded} "
+                f"skipped={stats.skipped} failed={stats.failed}"
+            )
             return {
                 "files_downloaded": files_downloaded,
                 "files_failed": stats.failed,

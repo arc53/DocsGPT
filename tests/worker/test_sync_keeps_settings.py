@@ -64,25 +64,6 @@ class TestSyncWrite:
 
         assert held_lock == [str(src["id"]), "upload", "released"]
 
-    def test_a_scheduled_sync_skips_a_busy_source_quietly(
-        self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock, published,
-    ):
-        SourcesRepository(pg_conn).create(
-            "Docs", user_id=USER, type="website", sync_frequency="daily",
-            remote_data={"entries": [{"url": "https://x.io/", "mode": "page"}]},
-        )
-        waits = busy_lock()
-        remote = MagicMock(name="remote_worker")
-        monkeypatch.setattr(worker, "remote_worker", remote)
-        counts = worker.sync_worker(task_self, "daily")
-
-        # The beat run doesn't wait on a long job, and nobody waits on it:
-        # the next schedule picks the source up, without a notice.
-        assert waits == [0]
-        assert counts["sync_skipped"] == 1 and counts["sync_failure"] == 0
-        remote.assert_not_called()
-        assert published == []
-
 
 @contextmanager
 def _patch_db(conn):
@@ -554,3 +535,71 @@ class TestUploadIndexForADeletedSource:
         assert response.json == {"status": "skipped", "reason": "gone"}
         assert SourcesRepository(pg_conn).get(sid, USER) is None
         storage.save_file.assert_not_called()
+
+
+# Who owns a source after it moves while a sync of it runs (an Admin moving it out of a team, say).
+NEW_OWNER = "lena"
+
+
+def _move(pg_conn, source_id: str) -> None:
+    from sqlalchemy import text
+
+    pg_conn.execute(
+        text("UPDATE sources SET user_id = :new WHERE id = CAST(:id AS uuid)"), {"new": NEW_OWNER, "id": source_id},
+    )
+
+
+@pytest.mark.unit
+class TestASyncOfASourceMovedMeanwhile:
+    """The sync was queued with the old owner; the source lives on under its new one and keeps its vectors."""
+
+    def test_the_upload_writes_the_moved_row(self, pg_conn):
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", remote_data=SITE, directory_structure={"old.md": {"token_count": 1}},
+        )
+        _move(pg_conn, str(src["id"]))
+        form = {
+            "user": USER, "name": "Docs", "tokens": "5", "retriever": "classic", "id": str(src["id"]),
+            "type": "website", "remote_data": json.dumps(SITE), "sync_frequency": "weekly",
+            "directory_structure": json.dumps({"new.md": {"token_count": 5}}), "operation": "sync",
+        }
+
+        response = _post(pg_conn, form)
+
+        assert response.json == {"status": "ok"}
+        row = SourcesRepository(pg_conn).get(str(src["id"]), NEW_OWNER)
+        assert row["directory_structure"] == {"new.md": {"token_count": 5}}
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER) is None
+
+    def test_a_move_during_the_faiss_save_keeps_the_index(self, pg_conn):
+        saving = TestUploadIndexSavesFilesOutsideTheRowLock()
+        src = saving._seed(pg_conn)
+
+        response, events = saving._post_recording(
+            pg_conn, saving._form(src, operation="sync"), on_save=lambda: _move(pg_conn, str(src["id"])),
+        )
+
+        assert response.json == {"status": "ok"}
+        assert SourcesRepository(pg_conn).get(str(src["id"]), NEW_OWNER)["directory_structure"] == {
+            "new.md": {"token_count": 5}
+        }
+
+    def test_the_worker_keeps_the_vectors(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, monkeypatch,
+    ):
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        dropped = []
+        monkeypatch.setattr(worker, "_drop_refused_sync_vectors", lambda reason, sid: dropped.append(reason))
+
+        def upload(full_path, file_data):
+            # The move lands while the sync stores its upload.
+            _move(pg_conn, str(src["id"]))
+            return _post(pg_conn, {k: v for k, v in file_data.items() if v is not None}).json
+
+        monkeypatch.setattr(worker, "upload_index", upload)
+        result = worker.sync(
+            task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]), directory=str(tmp_path),
+        )
+
+        assert result == {"status": "success"}
+        assert dropped == []

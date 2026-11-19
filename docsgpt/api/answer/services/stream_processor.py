@@ -1,12 +1,14 @@
 import datetime
 import functools
+import hmac
 import json
 import logging
 import uuid
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar
 
-from flask import after_this_request
+from flask import after_this_request, has_request_context, request
 
 from docsgpt import tracing
 from docsgpt.agents.agent_creator import AgentCreator
@@ -43,28 +45,89 @@ from docsgpt.core.model_utils import (
     get_token_limit,
     validate_model_id,
 )
+from docsgpt.agents.client_capabilities import FORMS, parse_capabilities
+from docsgpt.agents.tools.ask_user import is_awaiting_answer, offered_questions
 from docsgpt.agents.tools.wiki import apply_resume_caller_rules, outside_edits_allowed
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import AgentConfig, context_window_limit_of, history_token_limit_of
 from sqlalchemy import text as sql_text
 
-from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.base_repository import looks_like_uuid
+from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_to_dict
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
 from docsgpt.storage.db.repositories.sources import SourcesRepository
-from docsgpt.storage.db.repositories.team_scope import TeamScopeRepository
+from docsgpt.api.user.resource_access import resolve, resource_owner, team_item_reach
 from docsgpt.api.user.team_sharing import can_access
+from docsgpt.api.owner_pause import AgentPausedError, refuse_if_owner_deactivated
+from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
+from docsgpt.retriever.base import SearchOutcome, search_outcome_of
 from docsgpt.retriever.dispatcher import build_dispatcher
 from docsgpt.retriever.retriever_creator import RetrieverCreator
 from docsgpt.utils import (
     calculate_doc_token_budget,
     limit_chat_history,
 )
+from docsgpt.workspaces.context import WORKSPACE_HEADER, WORKSPACE_PARAM, parse_workspace_ref
+from docsgpt.workspaces.principal import canonical_team_id, is_principal_id, principal_id, team_of_principal
+from docsgpt.workspaces.roles import team_role_for
 
 logger = logging.getLogger(__name__)
+
+
+class ChatWorkspaceError(Exception):
+    """A chat refused for its workspace: an HTTP status, a stable code and a message.
+
+    ``workspace_not_found`` (404): the request names a team the caller is not in.
+    ``workspace_mismatch`` (409): the agent lives in another workspace than the chat.
+    ``conversation_not_found`` (404): the chat it continues is one the caller
+    can't read (a team chat they left with the team, or none at all).
+    ``custom_model_personal_only`` (400): a team chat asked for the caller's
+    own custom model, which runs only in Personal.
+    """
+
+    def __init__(self, status: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+def item_in_chat_workspace(
+    owner: Optional[str],
+    team_id: Optional[str],
+    *,
+    conn: Any = None,
+    resource_type: Optional[str] = None,
+    resource_id: Optional[str] = None,
+) -> bool:
+    """Whether an item owned by ``owner`` belongs to a chat in workspace ``team_id``.
+
+    A team chat takes that team's items (owned by its principal) and, given
+    the item's kind and id, another team's item shared with it while the
+    share is live (not revoked, its team not locked). A Personal chat takes
+    no team's items.
+
+    Args:
+        owner: The item's ``user_id``.
+        team_id: The chat's team, or None for Personal.
+        conn: Open connection, to read shares with the chat's team.
+        resource_type: ``source``, ``tool`` or ``prompt``.
+        resource_id: The item's id.
+
+    Returns:
+        bool: True when the item may be used in the chat.
+    """
+    if not team_id:
+        return not is_principal_id(owner)
+    if bool(owner) and owner == principal_id(team_id):
+        return True
+    if conn is None or not resource_type or not resource_id or not is_principal_id(owner):
+        return False
+    # The chat's team reaches it as its principal does: only through a share with that team.
+    return team_item_reach(conn, principal_id(team_id), resource_type, str(resource_id)) is not None
 
 
 def is_external_api_caller(data: Dict[str, Any], decoded_token: Optional[Dict], owner: Optional[str]) -> bool:
@@ -229,27 +292,16 @@ def authorized_prompt_id(prompt_id: Any, principal: Optional[str], agent: Option
     return "default"
 
 
-def _agent_source_doc(conn: Any, sources_repo: Any, agent: dict, source_id: Any) -> Optional[dict]:
-    """The source row an agent may retrieve from, or None.
-
-    Authorized as the owner (owned or team-shared to them), else as the
-    editor who attached it while they still qualify. Read unscoped once
-    authorized: an owner-scoped read misses a team-shared source.
-    """
-    from docsgpt.api.user.resource_access import log_stopped, ref_access
-
-    access = ref_access(conn, "agent", agent, "source", str(source_id))
-    if not access.principal:
-        log_stopped("agent", agent, "source", source_id, access.reason)
-        return None
-    return sources_repo.get_by_id(str(source_id))
-
-
 def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], List[dict]]:
-    """The source rows an agent run retrieves from: primary first, then extras.
+    """The source rows an agent run retrieves from: primary first, then extras, then its folders'.
 
-    Each is authorized like :func:`_agent_source_doc` (the owner, else the
-    editor who attached it), and a source listed twice appears once.
+    Each is authorized by ``resource_access.authorized_holder_sources`` (the
+    owner, else the editor who attached it while they still qualify), the
+    check workflow nodes use too, and a source listed twice appears once.
+    The agent's knowledge folders (``knowledge_folder_ids``) add the sources
+    their owner filed in them and may use (``folder_knowledge``). Rows are
+    read unscoped once authorized: an owner-scoped read misses a team-shared
+    source.
 
     Args:
         conn: An open database connection.
@@ -259,19 +311,25 @@ def authorized_agent_sources(conn: Any, agent: dict) -> Tuple[Optional[dict], Li
         The primary source row (None when unset or not usable) and every
         usable row in run order.
     """
+    from docsgpt.api.user.folder_knowledge import folder_source_ids
+    from docsgpt.api.user.resource_access import authorized_holder_sources, reader_sources
+
+    primary_id = agent.get("source_id")
+    refs = [primary_id, *(agent.get("extra_source_ids") or [])]
     sources_repo = SourcesRepository(conn)
     primary: Optional[dict] = None
     rows: List[dict] = []
     seen: set = set()
-    refs = [(True, agent.get("source_id"))]
-    refs.extend((False, sid) for sid in agent.get("extra_source_ids") or [])
-    for is_primary, sid_raw in refs:
-        if not sid_raw:
-            continue
-        source_doc = _agent_source_doc(conn, sources_repo, agent, sid_raw)
+    authorized = authorized_holder_sources(conn, "agent", agent, refs)
+    # A folder's team sources reach a run's reader only as a direct ref would.
+    authorized += reader_sources(
+        conn, "agent", agent, folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+    )
+    for sid in authorized:
+        source_doc = sources_repo.get_by_id(str(sid))
         if not source_doc or str(source_doc["id"]) in seen:
             continue
-        if is_primary:
+        if primary_id and primary is None and str(sid).lower() == str(primary_id).lower():
             primary = source_doc
         seen.add(str(source_doc["id"]))
         rows.append(source_doc)
@@ -400,6 +458,10 @@ def _wiki_write_owner(conn: Any, source_id: str, caller: str) -> Optional[str]:
 #: Agent types that build a tools_dict and so can carry the Wiki tool.
 WIKI_AGENT_TYPES = ("classic", "agentic", "research")
 
+#: Agent types whose chat turn can ask the user clarifying questions (``ask_user``).
+#: A research agent's steps and a workflow's nodes can't stop for an answer.
+QUESTION_AGENT_TYPES = ("classic", "react", "agentic")
+
 
 def wiki_tool_config(
     conn: Any,
@@ -519,6 +581,22 @@ def _without_response_id(turn: Dict[str, Any]) -> Dict[str, Any]:
     return {**turn, "metadata": {k: v for k, v in metadata.items() if k != "response_id"}}
 
 
+class UnfinishedWorkflowError(Exception):
+    """A chat named a draft workflow agent whose stored graph isn't finished.
+
+    A draft's graph saves with its shape checked only, so the stored graph may
+    lack a start or end node or break another graph rule. Its builder's
+    Preview runs the graph it sends and stops on those rules; a chat with the
+    draft runs the stored one, so it stops here instead.
+    """
+
+    code = "workflow_unfinished"
+    message = "This workflow isn't finished yet, so it can't run. Finish it in the workflow builder first."
+
+    def __init__(self) -> None:
+        super().__init__(self.message)
+
+
 class StreamProcessor:
     def __init__(
         self,
@@ -559,6 +637,9 @@ class StreamProcessor:
         self.earlier_attachments: List[Dict[str, Any]] = []
         self.history = []
         self.retrieved_docs = []
+        # Which sources the pre-fetch searched and which failed to (see
+        # ``pre_fetch_docs``); None when no pre-fetch ran.
+        self.search_outcome: Optional[SearchOutcome] = None
         self.agent_config = {}
         self.retriever_config = {}
         self.is_shared_usage = False
@@ -569,6 +650,12 @@ class StreamProcessor:
         self.agent_id = self.data.get("agent_id")
         # Set by _get_agent_key once access checks pass; read for keyless runs.
         self._authorized_agent_row: Optional[Dict[str, Any]] = None
+        # The team workspace the chat lives in (``conversations.team_id``),
+        # None for Personal; set by _configure_agent.
+        self.workspace_team_id: Optional[str] = None
+        # Set by _get_agent_key: the team whose agent this is, when the caller
+        # reaches it as a member or as the team's own principal.
+        self._agent_team_id: Optional[str] = None
         self.agent_key = None
         self.model_id: Optional[str] = None
         # BYOM-resolution scope, set by _validate_and_set_model.
@@ -576,6 +663,8 @@ class StreamProcessor:
         # WAL placeholder id pulled from continuation state on resume.
         self.reserved_message_id: Optional[str] = None
         self.prior_tool_calls: List[Dict[str, Any]] = []
+        # The paused turn's text, reasoning and their order, finalized ahead of the resumed answer.
+        self.prior_turn: Dict[str, Any] = {}
         # Carried through resumes so multi-pause runs keep one request_id.
         self.request_id: Optional[str] = None
         # The request's execution trace, started by the first traced setup
@@ -597,6 +686,13 @@ class StreamProcessor:
         # one made this turn); the agent stamps it on the turn's metadata.
         self.last_compression_at: Optional[Any] = None
         self._agent_data: Optional[Dict[str, Any]] = None
+        # Set by the route: checks the turn's limits once its caller and agent
+        # are known and returns the billing the rest of the setup runs in.
+        self.setup_gate: Optional[Callable[["StreamProcessor"], Any]] = None
+        # True once that check passed, so the route doesn't repeat it.
+        self.setup_gate_passed = False
+        # The billing that check resolved; the agent carries it to its stream.
+        self.run_admission: Any = None
 
     @functools.cached_property
     def decision_record(self) -> DecisionRecord:
@@ -607,9 +703,27 @@ class StreamProcessor:
         """
         return DecisionRecord()
 
+    @property
+    def client_capabilities(self) -> frozenset:
+        """What the requesting client says it can render (its ``capabilities``).
+
+        Not enforced: a client that sends none (API agents, the widget, bots)
+        gets the turn as before any capability existed. ``/v1`` maps none.
+        """
+        return parse_capabilities(self.data.get("capabilities"))
+
+    def _client_draws_forms(self) -> bool:
+        """Whether the client draws question forms; without them a turn has no ``ask_user``."""
+        return FORMS in self.client_capabilities
+
     def initialize(self):
-        """Initialize all required components for processing"""
+        """Initialize all required components for processing.
+
+        The setup gate runs once the caller and agent are known, before
+        anything that can call a model (history compression among them).
+        """
         self._configure_agent()
+        self._pass_setup_gate()
         self._validate_and_set_model()
         self._configure_source()
         self._configure_retriever()
@@ -657,29 +771,65 @@ class StreamProcessor:
         A request with neither a token nor an agent API key has nobody to run
         for: nothing is set up (no pre-fetch runs the agent's tools), None is
         returned and the route answers 401.
+
+        Once the caller and agent are known, the route's ``setup_gate`` checks
+        the turn's limits, before setup reaches any model (history
+        compression, the query rephrase, the source prescreen), and the rest
+        of the setup runs in the billing it returns, as the stream does.
         """
         if not self.decoded_token and not self.data.get("api_key"):
             return None
         if not getattr(self, "request_id", None):
             self.request_id = str(uuid.uuid4())
-        self.initialize()
+        from docsgpt.api.user.resource_access import run_reader
 
-        agent_type = self.agent_config.get("agent_type", "classic")
+        # Who asked reads the answers: a team's item they can't use is left
+        # out of the run. A run its agent's key authenticates reads as an
+        # outside caller nobody signed in as (""), even when the token handed
+        # in is the key owner's (``/v1``): anyone may hold the key.
+        self._run_reader = "" if self.data.get("api_key") else (getattr(self, "initial_user_id", None) or "")
+        with ExitStack() as scope:
+            scope.enter_context(run_reader(self._run_reader))
+            # The setup gate's billing is entered here, so it covers the rest of the build.
+            self._setup_scope = scope
+            try:
+                self.initialize()
+            finally:
+                self._setup_scope = None
 
-        # Sources by exposure (D11), decided the same way for a headless run:
-        # see ``plan_source_use``.
-        _, agentic_sources = self._exposure_partition()
-        use = plan_source_use(agent_type, agentic_sources)
-        docs_together, docs_list = None, None
-        if use.prefetch:
-            docs_together, docs_list = self.pre_fetch_docs(question, exposure=use.exposure)
-        tools_data = self.pre_fetch_tools()
-        return self.create_agent(
-            docs_together=docs_together,
-            docs=docs_list,
-            tools_data=tools_data,
-            agentic_sources=use.agentic_sources,
-        )
+            agent_type = self.agent_config.get("agent_type", "classic")
+
+            # Sources by exposure (D11), decided the same way for a headless run:
+            # see ``plan_source_use``.
+            _, agentic_sources = self._exposure_partition()
+            use = plan_source_use(agent_type, agentic_sources)
+            docs_together, docs_list = None, None
+            if use.prefetch:
+                docs_together, docs_list = self.pre_fetch_docs(question, exposure=use.exposure)
+            tools_data = self.pre_fetch_tools()
+            return self.create_agent(
+                docs_together=docs_together,
+                docs=docs_list,
+                tools_data=tools_data,
+                agentic_sources=use.agentic_sources,
+            )
+
+    def _pass_setup_gate(self) -> None:
+        """Run the route's ``setup_gate`` and bill the rest of the build as it says.
+
+        The billing is entered on the build's scope (:meth:`build_agent`), so
+        it lasts until the agent is built. Nothing happens without a gate.
+
+        Raises:
+            Exception: Whatever the gate refuses the turn with.
+        """
+        if self.setup_gate is None:
+            return
+        billing = self.setup_gate(self)
+        self.setup_gate_passed = True
+        scope = getattr(self, "_setup_scope", None)
+        if scope is not None and billing is not None:
+            scope.enter_context(billing)
 
     @_traced_setup
     def build_continuation_from_messages(self, messages, tool_actions):
@@ -1243,7 +1393,17 @@ class StreamProcessor:
         return attachments
 
     def _validate_and_set_model(self):
-        """Pick model_id with agent authority on agent-bound chats."""
+        """Pick model_id with agent authority on agent-bound chats.
+
+        An agent runs on its default under its owner's account. Without an
+        agent, the requested model resolves in the chat's account: the
+        caller's in Personal, the team's principal in a team chat, where the
+        caller's own custom models are refused.
+
+        Raises:
+            ChatWorkspaceError: 400 ``custom_model_personal_only`` for the caller's own model in a team chat.
+            ValueError: Any other requested model this chat doesn't offer.
+        """
         from docsgpt.core.model_settings import ModelRegistry
 
         requested_model = self.data.get("model_id")
@@ -1267,11 +1427,22 @@ class StreamProcessor:
             return
 
         if requested_model:
-            if not validate_model_id(requested_model, user_id=caller_user_id):
+            # A team chat offers the instance's models and the team's own, which
+            # resolve in the team's account; a person's own models stay out of it.
+            team_id = getattr(self, "workspace_team_id", None)
+            scope_user_id = principal_id(team_id) if team_id else caller_user_id
+            if not validate_model_id(requested_model, user_id=scope_user_id):
+                if team_id and caller_user_id and validate_model_id(requested_model, user_id=caller_user_id):
+                    raise ChatWorkspaceError(
+                        400,
+                        "custom_model_personal_only",
+                        "Your own custom models can't be used in a team chat. "
+                        "Pick one of the team's models or a model the whole instance offers.",
+                    )
                 registry = ModelRegistry.get_instance()
                 available_models = [
                     m.id
-                    for m in registry.get_enabled_models(user_id=caller_user_id)
+                    for m in registry.get_enabled_models(user_id=scope_user_id)
                 ]
                 raise ValueError(
                     f"Invalid model_id '{requested_model}'. "
@@ -1283,7 +1454,7 @@ class StreamProcessor:
                     )
                 )
             self.model_id = requested_model
-            self.model_user_id = caller_user_id
+            self.model_user_id = scope_user_id
         else:
             self.model_id = get_default_model_id()
             self.model_user_id = None
@@ -1306,41 +1477,69 @@ class StreamProcessor:
                         ),
                         {"id": str(agent_id)},
                     )
-                    row = result.fetchone()
-                    if row is not None:
-                        agent = row_to_dict(row)
+                    agent = agent_row_to_dict(result.fetchone())
                 if agent is None:
                     agent = repo.get_by_legacy_id(str(agent_id))
                 if agent is None:
                     raise Exception("Agent not found")
                 agent_owner = agent.get("user_id")
                 is_owner = agent_owner == user_id
-                is_shared_with_user = bool(agent.get("shared", False))
 
-                # Team-shared agents are runnable by any member with a grant
-                # (viewer is enough to run). Resolved live against team_members
-                # on the SAME connection so a revoked grant/membership denies on
-                # the next call; resolution failure fails closed. Checked on a
-                # public agent too: a teammate there is not a link user.
+                # A team grant (a personal agent) or the caller's role in the
+                # agent's team (a team agent) lets them chat with it: ``use``,
+                # which a viewer has. Resolved live on the SAME connection so a
+                # revoked grant or membership denies on the next call;
+                # resolution failure fails closed. Checked on a public agent
+                # too: a teammate there is not a link user.
                 is_team_shared = False
+                via_team_role = False
+                receiving_team = None
                 if not is_owner and user_id:
                     try:
-                        is_team_shared = TeamScopeRepository(conn).can_read(
-                            user_id, "agent", str(agent["id"])
-                        )
+                        ra = resolve(conn, "agent", str(agent["id"]), user_id)
+                        is_team_shared = ra is not None and ra.can("use")
+                        # A member of the agent's team, not someone it reaches
+                        # through a share with their own team.
+                        via_team_role = is_team_shared and ra.is_team_item and not ra.via_team_id
+                        if is_team_shared and ra.via_team_id:
+                            receiving_team = team_item_reach(
+                                conn, user_id, "agent", str(agent["id"]),
+                                prefer_team=self._receiving_team_preference(user_id),
+                            ) or ra.via_team_id
                     except Exception:
                         logger.error(
                             "team access check failed for agent run", exc_info=True
                         )
                         is_team_shared = False
+                        receiving_team = None
+                # The team's chat: a member, or the team's own principal
+                # (an API-key or /v1 run). Someone the agent is shared with
+                # through another team chats in that receiving team, so the
+                # chat and its usage are that team's. A link user's chat
+                # stays theirs.
+                self._agent_team_id = (
+                    team_of_principal(agent_owner) if (is_owner or via_team_role) else receiving_team
+                )
 
-            if not (is_owner or is_shared_with_user or is_team_shared):
-                raise Exception("Unauthorized access to the agent")
-            self.public_link_usage = not (is_owner or is_team_shared)
+                # Anyone else needs the agent's link or its key: knowing the
+                # id is not enough.
+                is_outside = not (is_owner or is_team_shared)
+                if is_outside and not (
+                    self._holds_agent_key(agent) or self._holds_share_link(conn, agent, user_id)
+                ):
+                    raise Exception("Unauthorized access to the agent")
+                # The link and the key pause while the owner is deactivated;
+                # a team grant does not.
+                if is_outside:
+                    refuse_if_owner_deactivated(conn, agent)
+
+            self.public_link_usage = is_outside
             # Authorized. Keep the row so _configure_agent can run a draft
             # agent, which has key = NULL, from it.
             self._authorized_agent_row = agent
-            if is_owner:
+            # The agent page's "last used": its owner's chats, and on a team
+            # agent its members' (the team owns it).
+            if is_owner or via_team_role:
                 now = datetime.datetime.now(datetime.timezone.utc)
                 try:
                     with db_session() as conn:
@@ -1358,16 +1557,88 @@ class StreamProcessor:
                 not is_owner,
                 agent.get("shared_token"),
             )
+        except AgentPausedError:
+            raise
         except Exception as e:
             logger.error(f"Error in get_agent_key: {str(e)}", exc_info=True)
             raise
 
-    def _get_data_from_api_key(self, api_key: str) -> Dict[str, Any]:
-        """Resolve agent metadata + the unioned source set for the given key."""
+    def _receiving_team_preference(self, caller: str) -> Optional[str]:
+        """The team a shared agent's chat should live in when it reaches ``caller`` through several.
+
+        The existing chat's team first, then the workspace the request names.
+        A named workspace the caller isn't in prefers nothing here: the
+        workspace check refuses it later with its own code.
+
+        Args:
+            caller: The signed-in person.
+
+        Returns:
+            Optional[str]: A team id, or None to take the oldest share.
+        """
+        existing = self._existing_conversation(caller)
+        if existing is not None:
+            return str(existing["team_id"]) if existing.get("team_id") else None
+        try:
+            _, team_id = self._named_workspace(caller)
+        except ChatWorkspaceError:
+            return None
+        return team_id
+
+    def _holds_agent_key(self, agent: Dict[str, Any]) -> bool:
+        """Whether the request carries ``agent``'s own API key.
+
+        Args:
+            agent: The agent row.
+
+        Returns:
+            True when the request's ``api_key`` is the agent's key.
+        """
+        presented, key = self.data.get("api_key"), agent.get("key")
+        return bool(presented and key) and hmac.compare_digest(str(presented), str(key))
+
+    def _holds_share_link(self, conn: Any, agent: Dict[str, Any], user_id: Optional[str]) -> bool:
+        """Whether the caller reaches ``agent`` through its live public link.
+
+        The link counts while it is on, and only when the request presents its
+        token (``shared_token``) or the caller opened it before: opening the
+        shared-agent page as a signed-in user records the agent in their
+        ``agent_preferences.shared_with_me`` (the record that also lists it
+        under their shared agents and lets them pin it).
+
+        Args:
+            conn: Open database connection.
+            agent: The agent row.
+            user_id: The caller, or None.
+
+        Returns:
+            True when the caller holds the link.
+        """
+        token = agent.get("shared_token")
+        if not agent.get("shared") or not token:
+            return False
+        presented = self.data.get("shared_token")
+        if presented and hmac.compare_digest(str(presented), str(token)):
+            return True
+        return bool(user_id) and UsersRepository(conn).has_shared(user_id, str(agent["id"]))
+
+    def _get_data_from_api_key(self, api_key: str, *, outside: bool = False) -> Dict[str, Any]:
+        """Resolve agent metadata + the unioned source set for the given key.
+
+        Args:
+            api_key: The agent's key.
+            outside: The key came with the request (an API or widget caller),
+                not from an access check that already passed.
+
+        Raises:
+            AgentPausedError: ``outside`` and the owner is deactivated.
+        """
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
             if not agent:
                 raise Exception("Invalid API Key, please generate a new key", 401)
+            if outside:
+                refuse_if_owner_deactivated(conn, agent)
             return self._agent_run_data(conn, agent)
 
     def _agent_run_data(self, conn: Any, agent: Dict[str, Any]) -> Dict[str, Any]:
@@ -1470,27 +1741,64 @@ class StreamProcessor:
                 self.source = {}
                 self.all_sources = []
             return
-        if "active_docs" in self.data:
-            active_docs = self.data["active_docs"]
-            if active_docs and active_docs != "default":
-                # The retriever queries ``self.source["active_docs"]``, so it
-                # must carry only the ids the caller may actually read — the
-                # authorized set that _load_request_sources resolved, not the
-                # raw client input.
-                self.all_sources = self._load_request_sources(active_docs)
-                allowed = [entry["id"] for entry in self.all_sources]
-                if not allowed:
-                    self.source = {}
-                elif isinstance(active_docs, list):
-                    self.source = {"active_docs": allowed}
-                else:
-                    self.source = {"active_docs": allowed[0]}
-            else:
-                self.source = {}
-                self.all_sources = []
-            return
-        self.source = {}
-        self.all_sources = []
+        active_docs = self.data.get("active_docs")
+        has_docs = bool(active_docs) and active_docs != "default"
+        # The retriever queries ``self.source["active_docs"]``, so it must
+        # carry only the ids the caller may actually read — the authorized set
+        # that _load_request_sources resolved, not the raw client input.
+        entries = self._load_request_sources(active_docs) if has_docs else []
+        folder_entries = self._load_request_folder_sources(self.data.get("active_folders"))
+        seen = {str(entry["id"]).lower() for entry in entries}
+        entries += [entry for entry in folder_entries if str(entry["id"]).lower() not in seen]
+        self.all_sources = entries
+        allowed = [entry["id"] for entry in entries]
+        if not allowed:
+            self.source = {}
+        elif isinstance(active_docs, list) or folder_entries:
+            self.source = {"active_docs": allowed}
+        else:
+            self.source = {"active_docs": allowed[0]}
+
+    def _load_request_folder_sources(self, active_folders) -> list:
+        """Per-source entries of an agentless request's ``active_folders``.
+
+        Each folder must be one of the caller's own source folders; it adds
+        the sources the caller filed anywhere in it that they may still use
+        (``folder_knowledge``). Anything else adds nothing: a malformed value,
+        someone else's folder, a failed read (fail closed).
+
+        Args:
+            active_folders: The request's ``active_folders`` (a list of folder ids).
+
+        Returns:
+            list: ``{"id", "retrieval"}`` entries, each source once.
+        """
+        from docsgpt.api.user.folder_knowledge import caller_folder_source_ids
+
+        owner = self.initial_user_id
+        if not owner or not active_folders:
+            return []
+        folders = active_folders if isinstance(active_folders, list) else [active_folders]
+        # A team chat reads the team's own folders (its one tree); a Personal
+        # chat the caller's, without any team's sources filed there.
+        team_id = getattr(self, "workspace_team_id", None)
+        folder_owner = principal_id(team_id) if team_id else owner
+        try:
+            with db_readonly() as conn:
+                source_ids = caller_folder_source_ids(conn, folders, folder_owner)
+                rows = SourcesRepository(conn).list_by_ids(source_ids) if source_ids else []
+        except Exception:
+            logger.warning("Could not read the request's knowledge folders; dropping them.", exc_info=True)
+            return []
+        kept = [row for row in rows if item_in_chat_workspace(row.get("user_id"), team_id)]
+        if len(kept) < len(rows):
+            logger.warning("Dropping %d folder source(s) from another workspace.", len(rows) - len(kept))
+        configs = {str(row["id"]).lower(): row.get("config") for row in kept}
+        return [
+            {"id": sid, "retrieval": SourceConfig.parse(configs.get(sid)).retrieval}
+            for sid in source_ids
+            if sid in configs
+        ]
 
     def _load_request_sources(self, active_docs) -> list:
         """Per-source list (with each source's retrieval config) for a non-agent
@@ -1524,6 +1832,15 @@ class StreamProcessor:
             try:
                 with db_readonly() as conn:
                     permitted = can_access(conn, "source", str(sid), owner)
+                    # The chat's workspace: a team chat searches only that
+                    # team's sources and those shared with it, a Personal
+                    # chat no team's.
+                    if permitted and not item_in_chat_workspace(
+                        resource_owner(conn, "source", str(sid)), getattr(self, "workspace_team_id", None),
+                        conn=conn, resource_type="source", resource_id=str(sid),
+                    ):
+                        logger.warning("Dropping source %s from request: it is not in this chat's workspace.", sid)
+                        continue
             except Exception:
                 # Fail closed: a check we could not complete is not permission
                 # to read someone's documents.
@@ -1574,13 +1891,7 @@ class StreamProcessor:
         if not self.conversation_id or not self.initial_user_id:
             return None
 
-        try:
-            conversation = self.conversation_service.get_conversation(
-                self.conversation_id, self.initial_user_id
-            )
-        except Exception:
-            return None
-
+        conversation = self._existing_conversation(self.initial_user_id)
         if not conversation:
             return None
 
@@ -1590,12 +1901,176 @@ class StreamProcessor:
 
         return None
 
+    def _refuse_unreadable_conversation(self) -> None:
+        """Refuse an in-app turn on a chat its caller can't read, before its agent is looked at.
+
+        The history load would refuse it later anyway; here it gets a code the
+        client can act on instead of an agent access error. Key traffic reads
+        the chat as the agent's owner, so it is left to that load.
+
+        Raises:
+            ChatWorkspaceError: 404 ``conversation_not_found``.
+        """
+        if not self.conversation_id or not self.initial_user_id or self.data.get("api_key"):
+            return
+        if self._existing_conversation(self.initial_user_id) is None:
+            raise ChatWorkspaceError(
+                404, "conversation_not_found", "This chat isn't there, or you no longer have access to it."
+            )
+
+    def _existing_conversation(self, identity: Optional[str]) -> Optional[Dict[str, Any]]:
+        """The request's conversation as ``identity`` may read it, or None (looked up once per identity)."""
+        if not self.conversation_id or not identity:
+            return None
+        cache = self.__dict__.setdefault("_conversation_reads", {})
+        if identity not in cache:
+            try:
+                cache[identity] = self.conversation_service.get_conversation(self.conversation_id, identity)
+            except Exception:
+                cache[identity] = None
+        return cache[identity]
+
+    def _named_workspace(self, caller: Optional[str]) -> Tuple[bool, Optional[str]]:
+        """Whether the request names a workspace, and the team it names (checked against membership).
+
+        The header ``X-DocsGPT-Workspace`` wins over the ``workspace`` query
+        parameter; ``personal`` names Personal. A request outside Flask (a
+        test, a worker) names none.
+
+        Args:
+            caller: The signed-in person.
+
+        Returns:
+            Tuple[bool, Optional[str]]: ``(named, team_id)``; ``team_id`` None for Personal.
+
+        Raises:
+            ChatWorkspaceError: 404 ``workspace_not_found`` for a team the caller is not in.
+        """
+        if not has_request_context():
+            return False, None
+        raw = request.headers.get(WORKSPACE_HEADER)
+        if raw is None or not raw.strip():
+            raw = request.args.get(WORKSPACE_PARAM)
+        if raw is None or not raw.strip():
+            return False, None
+        ref = parse_workspace_ref(request)
+        if ref is None:
+            return True, None
+        team_id = canonical_team_id(ref)
+        role = None
+        if team_id and caller and not is_principal_id(caller):
+            with db_readonly() as conn:
+                role = team_role_for(conn, caller, team_id)
+        if role is None:
+            raise ChatWorkspaceError(404, "workspace_not_found", "Workspace not found")
+        return True, team_id
+
+    def _chat_workspace(
+        self, caller: Optional[str], *, has_agent: bool, agent_team: Optional[str] = None
+    ) -> Optional[str]:
+        """The team workspace this chat lives in, None for Personal.
+
+        A conversation that exists keeps the workspace it was created in. A
+        new one takes the agent's workspace when there is an agent (for a
+        member, or a run as the team), else the workspace the request names.
+        An agent from another workspace than the chat's is refused, as is a
+        request naming a different workspace than a new chat's agent. API-key
+        runs ignore what the request names.
+
+        Args:
+            caller: Who asked (before an API key swaps the identity).
+            has_agent: The chat runs an agent.
+            agent_team: That agent's team as this caller reaches it, else None.
+
+        Returns:
+            Optional[str]: The team id, or None.
+
+        Raises:
+            ChatWorkspaceError: 404 ``workspace_not_found``; 409 ``workspace_mismatch``.
+        """
+        mismatch = ChatWorkspaceError(
+            409, "workspace_mismatch", "This agent belongs to another workspace than this chat"
+        )
+        by_key = bool(self.data.get("api_key"))
+        identity = caller
+        if by_key and self._agent_data:
+            identity = self._agent_data.get("user") or caller
+        existing = self._existing_conversation(identity)
+        if existing is not None:
+            existing_team = str(existing["team_id"]) if existing.get("team_id") else None
+            if has_agent and existing_team != agent_team:
+                raise mismatch
+            return existing_team
+        if has_agent:
+            if not by_key:
+                named, team_id = self._named_workspace(caller)
+                if named and team_id != agent_team:
+                    raise mismatch
+            return agent_team
+        _, team_id = self._named_workspace(caller)
+        return team_id
+
+    def _workspace_prompt_id(self, prompt_id: Any) -> Any:
+        """An agentless request's ``prompt_id`` if it belongs to the chat's workspace, else ``"default"``.
+
+        Presets pass through. A custom prompt must be the team's (or shared
+        with the team) in a team chat and must not be a team's in a Personal
+        one; access is then checked as before by :func:`authorized_prompt_id`.
+        """
+        if prompt_id is None or prompt_id == "":
+            return prompt_id
+        pid = str(prompt_id)
+        if is_composed_preset(pid) or pid in _PROMPT_PRESETS_WITHOUT_ROW or not looks_like_uuid(pid):
+            return prompt_id
+        team_id = getattr(self, "workspace_team_id", None)
+        try:
+            with db_readonly() as conn:
+                owner = resource_owner(conn, "prompt", pid)
+                in_workspace = owner is None or item_in_chat_workspace(
+                    owner, team_id, conn=conn, resource_type="prompt", resource_id=pid
+                )
+        except Exception:
+            logger.warning("Could not read the owner of prompt %s; using the default prompt.", pid)
+            return "default"
+        if not in_workspace:
+            logger.warning("Dropping prompt %s: it is not in this chat's workspace.", pid)
+            return "default"
+        return prompt_id
+
+    def _resume_workspace(self, conversation_id: Optional[str]) -> Optional[str]:
+        """The team of the conversation a resume carries on, refusing someone no longer in it.
+
+        Args:
+            conversation_id: The conversation being resumed.
+
+        Returns:
+            Optional[str]: Its team id, or None for a Personal (or unknown) chat.
+
+        Raises:
+            ValueError: A team chat the resuming identity may no longer read.
+        """
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        if not conversation_id:
+            return None
+        with db_readonly() as conn:
+            repo = ConversationsRepository(conn)
+            team_id = repo.team_id_of(str(conversation_id))
+            if team_id and (
+                not self.initial_user_id or repo.get_any(str(conversation_id), self.initial_user_id) is None
+            ):
+                raise ValueError("Conversation not found or unauthorized")
+        return team_id
+
     def _configure_agent(self):
         """Configure the agent based on request data.
 
         Unified flow: resolve the effective API key, then extract config once.
         """
+        self._refuse_unreadable_conversation()
         agent_id = self._resolve_agent_id()
+        # Who asked, before an API key swaps the identity to the agent's owner.
+        caller = self.initial_user_id
 
         self.agent_key, self.is_shared_usage, self.shared_token = self._get_agent_key(
             agent_id, self.initial_user_id
@@ -1614,12 +2089,26 @@ class StreamProcessor:
 
         if effective_key or draft_row:
             if effective_key:
-                self._agent_data = self._get_data_from_api_key(effective_key)
+                self._agent_data = self._get_data_from_api_key(
+                    effective_key, outside=bool(self.data.get("api_key"))
+                )
             else:
                 with db_readonly() as conn:
+                    if draft_row.get("agent_type") == "workflow":
+                        from docsgpt.api.user.agents.graph_checks import unfinished_graph_errors
+
+                        if unfinished_graph_errors(conn, draft_row):
+                            raise UnfinishedWorkflowError()
                     self._agent_data = self._agent_run_data(conn, draft_row)
             if self._agent_data.get("_id"):
                 self.agent_id = str(self._agent_data.get("_id"))
+            # An API key runs as the agent's owner, so its chat is the agent's
+            # workspace whatever the request names.
+            if self.data.get("api_key"):
+                agent_team = team_of_principal(self._agent_data.get("user"))
+            else:
+                agent_team = getattr(self, "_agent_team_id", None)
+            self.workspace_team_id = self._chat_workspace(caller, has_agent=True, agent_team=agent_team)
 
             self.agent_config.update(
                 {
@@ -1684,8 +2173,6 @@ class StreamProcessor:
             ):
                 agent_type = "workflow"
                 self.agent_config["workflow"] = self.data["workflow"]
-                if isinstance(self.decoded_token, dict):
-                    self.agent_config["workflow_owner"] = self.decoded_token.get("sub")
                 # A saved workflow id alongside the embedded graph (builder
                 # Preview) lets the run persist a ``workflow_runs`` row so its
                 # artifacts are listable + authz'd; ownership is re-checked on
@@ -1693,11 +2180,17 @@ class StreamProcessor:
                 preview_workflow_id = self.data.get("workflow_id")
                 if preview_workflow_id:
                     self.agent_config["workflow_id"] = str(preview_workflow_id)
+                if isinstance(self.decoded_token, dict):
+                    self.agent_config["workflow_owner"] = self._preview_workflow_owner(
+                        preview_workflow_id, self.decoded_token.get("sub")
+                    )
 
+            self.workspace_team_id = self._chat_workspace(caller, has_agent=False)
             caller = self.decoded_token.get("sub") if isinstance(self.decoded_token, dict) else None
+            prompt_id = self._workspace_prompt_id(self.data.get("prompt_id", "default"))
             self.agent_config.update(
                 {
-                    "prompt_id": authorized_prompt_id(self.data.get("prompt_id", "default"), caller),
+                    "prompt_id": authorized_prompt_id(prompt_id, caller),
                     "agent_type": agent_type,
                     "user_api_key": None,
                     "json_schema": None,
@@ -1719,6 +2212,38 @@ class StreamProcessor:
             # An explicit json_object request beats an agent-configured schema
             # (otherwise the configured json_schema would silently override it).
             self.agent_config["json_schema"] = None
+
+    @staticmethod
+    def _preview_workflow_owner(workflow_id: Any, caller: Optional[str]) -> Optional[str]:
+        """Whom a builder Preview of a saved workflow runs as.
+
+        A team's workflow is owned by the team, so a member's Preview has to run
+        as the team for its run to save under the workflow and for its folders
+        and sources to resolve. Only a caller who may edit the workflow gets
+        that: they could save the same graph and run it anyway. Anyone else
+        previews as themselves, which finds no row and so persists nothing.
+
+        Args:
+            workflow_id: The saved workflow's id from the request, if any.
+            caller: The signed-in caller.
+
+        Returns:
+            The workflow's owner, or ``caller``.
+        """
+        if not workflow_id or not caller:
+            return caller
+        from docsgpt.api.user.resource_access import AccessDenied
+        from docsgpt.api.user.workflows.routes import _workflow_access
+
+        try:
+            with db_readonly() as conn:
+                workflow, _acting = _workflow_access(conn, str(workflow_id), caller, "edit")
+        except AccessDenied:
+            return caller
+        except Exception:
+            logger.exception("Preview workflow owner lookup failed; running as the caller.")
+            return caller
+        return workflow.get("user_id") or caller
 
     def _configured_source_chunks(self) -> Optional[int]:
         """Return the top-k a source explicitly configured, or None.
@@ -1928,12 +2453,21 @@ class StreamProcessor:
         ):
             logger.info("Pre-fetch skipped: no %s sources", exposure)
             return None, None
+        if exposure is not None:
+            source_ids = [entry["id"] for entry in self._build_per_source_list(exposure=exposure)]
+        else:
+            active_docs = self.source.get("active_docs")
+            source_ids = [active_docs] if isinstance(active_docs, str) else list(active_docs)
+        # A retrieval that raises searched nothing; record every source failed
+        # unless the search returned and recorded its own outcome.
+        self.search_outcome = SearchOutcome.of(source_ids, source_ids)
         try:
             retriever = self.create_retriever(exposure=exposure)
             logger.info(
                 f"Pre-fetching docs with chunks={retriever.chunks}, doc_token_limit={retriever.doc_token_limit}"
             )
             docs = retriever.search(question)
+            self.search_outcome = search_outcome_of(retriever, source_ids)
             logger.info(f"Pre-fetch retrieved {len(docs) if docs else 0} documents")
 
             if not docs:
@@ -2083,12 +2617,15 @@ class StreamProcessor:
         from docsgpt.agents.tool_executor import ToolExecutor
 
         user = self.decoded_token.get("sub") if self.decoded_token else None
-        return ToolExecutor(
+        executor = ToolExecutor(
             user_api_key=self.agent_config.get("user_api_key"),
             user=user,
             decoded_token=self.decoded_token,
             agent_id=self.agent_id,
         )
+        # In-chat tools come from the chat's workspace (read by ToolExecutor).
+        executor.workspace_team_id = getattr(self, "workspace_team_id", None)
+        return executor
 
     def _enabled_tool_names(self) -> Optional[set]:
         """Resolve the tool names enabled for this turn, for ``tools.enabled`` gating.
@@ -2306,7 +2843,9 @@ class StreamProcessor:
             NOT_PENDING_MESSAGE,
             ContinuationNotPendingError,
             ContinuationService,
+            InvalidToolActionsError,
             answered_call_ids,
+            question_action_problem,
         )
         from docsgpt.agents.agent_creator import AgentCreator
         from docsgpt.agents.tool_executor import ToolExecutor
@@ -2322,6 +2861,8 @@ class StreamProcessor:
         if request_key:
             with db_readonly() as conn:
                 key_agent = AgentsRepository(conn).find_by_key(request_key)
+                # The key pauses while its owner is deactivated.
+                refuse_if_owner_deactivated(conn, key_agent)
         key_owner = (
             (key_agent.get("user_id") or key_agent.get("user")) if key_agent else None
         )
@@ -2333,6 +2874,8 @@ class StreamProcessor:
         if named_agent and not request_key:
             try:
                 self._get_agent_key(str(named_agent), self.initial_user_id)
+            except AgentPausedError:
+                raise
             except Exception as exc:
                 raise ValueError("This conversation can't be resumed with that agent") from exc
             request_public_link = bool(getattr(self, "public_link_usage", False))
@@ -2344,6 +2887,10 @@ class StreamProcessor:
         if self.initial_user_id is None and key_owner:
             self.initial_user_id = key_owner
             self.decoded_token = {"sub": key_owner}
+
+        # A team chat carries on only for someone still in its team; its
+        # in-chat tools stay the team's.
+        self.workspace_team_id = self._resume_workspace(conversation_id)
 
         cont_service = ContinuationService()
         state = claimed_state or cont_service.claim_state(
@@ -2368,6 +2915,22 @@ class StreamProcessor:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
             raise ValueError("This conversation belongs to a different agent")
 
+        # A turn an outside caller (key or link) paused stays paused while the
+        # agent's owner is deactivated; the claim goes back for later.
+        saved_config = state.get("agent_config") or {}
+        if saved_agent and (
+            saved_config.get("public_link_caller") or saved_config.get("external_api_caller")
+        ):
+            try:
+                with db_readonly() as conn:
+                    refuse_if_owner_deactivated(conn, AgentsRepository(conn).get_by_id(saved_agent))
+            except AgentPausedError:
+                try:
+                    cont_service.release_claim(conversation_id, self.initial_user_id)
+                except Exception:
+                    logger.warning("Failed to release a refused resume claim", exc_info=True)
+                raise
+
         # The actions must answer the calls this pause waits on. A stale tab
         # deciding a call its pause no longer has would otherwise resolve the
         # pause that is waiting now, every call in it denied for want of an
@@ -2383,6 +2946,15 @@ class StreamProcessor:
             except Exception:
                 logger.warning("Failed to release a refused resume claim", exc_info=True)
             raise ContinuationNotPendingError(NOT_PENDING_MESSAGE)
+        # Questions take an answer (or skipping them), approvals a decision,
+        # client calls a result; a mixed-up action is refused before anything runs.
+        problem = question_action_problem(state.get("pending_tool_calls"), tool_actions)
+        if problem:
+            try:
+                cont_service.release_claim(conversation_id, self.initial_user_id)
+            except Exception:
+                logger.warning("Failed to release a refused resume claim", exc_info=True)
+            raise InvalidToolActionsError(problem)
 
         messages = state["messages"]
         pending_tool_calls = state["pending_tool_calls"]
@@ -2437,6 +3009,15 @@ class StreamProcessor:
             api_write_allowlist=agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = conversation_id
+        # In-chat tools come from the chat's workspace (read by ToolExecutor).
+        tool_executor.workspace_team_id = getattr(self, "workspace_team_id", None)
+        # A turn that offered questions still does after its resume when the
+        # resuming client draws forms too; one that asked already can't again.
+        if offered_questions(agent_config.get("questions")):
+            tool_executor.offers_questions = self._client_draws_forms()
+        tool_executor.questions_asked = bool(agent_config.get("questions_asked")) or any(
+            is_awaiting_answer(call) for call in pending_tool_calls or []
+        )
         # Restore client tools so they stay available for subsequent LLM calls
         saved_client_tools = state.get("client_tools")
         if saved_client_tools:
@@ -2529,6 +3110,11 @@ class StreamProcessor:
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.tools = tool_schemas
+        # Who resumes reads the rest of the turn, as in a new one: nobody for a
+        # resume the key authenticates, whoever's token came with it.
+        resumer = original_token.get("sub") if isinstance(original_token, dict) else None
+        self._run_reader = "" if request_key else (resumer or "")
+        agent = self._answers_read_by_caller(agent)
         # The paused rounds' decisions, continued in the next round.
         self.decision_record.resume(agent_config.get("decisions"))
         agent.decision_record = self.decision_record
@@ -2557,6 +3143,8 @@ class StreamProcessor:
         self.request_id = agent_config.get("request_id")
         # The turn's calls from its earlier approval rounds, kept on the message.
         self.prior_tool_calls = list(agent_config.get("prior_tool_calls") or [])
+        prior_turn = agent_config.get("prior_turn")
+        self.prior_turn = dict(prior_turn) if isinstance(prior_turn, dict) else {}
         # The paused turn's values: a resume request does not resend them.
         self.passthrough = stored_passthrough(agent_config.get("passthrough")) or stored_passthrough(
             self.data.get("passthrough")
@@ -2771,6 +3359,13 @@ class StreamProcessor:
             api_write_allowlist=self.agent_config.get("api_write_allowlist"),
         )
         tool_executor.conversation_id = self.conversation_id
+        # In-chat tools come from the chat's workspace (read by ToolExecutor).
+        tool_executor.workspace_team_id = getattr(self, "workspace_team_id", None)
+        # A chat agent can ask the user clarifying questions only when the
+        # client draws them as forms (the web app); every other caller gets
+        # the turn without ``ask_user``, as before questions existed.
+        if str(agent_type or "").strip().lower() in QUESTION_AGENT_TYPES:
+            tool_executor.offers_questions = self._client_draws_forms()
         # Pass client-side tools so they get merged in get_tools()
         client_tools = self.data.get("client_tools")
         if client_tools:
@@ -2808,6 +3403,7 @@ class StreamProcessor:
                 False if override_used else prompt_requests_citations(raw_prompt)
             ),
             "sources_were_searched": self._has_active_docs(),
+            "search_outcome": getattr(self, "search_outcome", None),
             "decoded_token": self.decoded_token,
             "attachments": self.attachments,
             "json_schema": self.agent_config.get("json_schema"),
@@ -2891,5 +3487,35 @@ class StreamProcessor:
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
         agent.decision_record = self.decision_record
+        # The stream reuses the payer and limits the setup gate resolved instead of resolving them again.
+        agent.run_admission = getattr(self, "run_admission", None)
 
+        return self._answers_read_by_caller(agent)
+
+    def _answers_read_by_caller(self, agent: Any) -> Any:
+        """Have ``agent`` answer with this request's caller as the run's reader.
+
+        The run resolves its tools (and a workflow its nodes' refs) while the
+        answer streams, after the request that built it returned, so each step
+        of ``gen`` and ``gen_continuation`` runs as that reader
+        (``resource_access.read_by``). Without a reader (the agent was not
+        built through :meth:`build_agent` or a resume) nothing changes.
+
+        Args:
+            agent: The built agent.
+
+        Returns:
+            The same agent.
+        """
+        reader = getattr(self, "_run_reader", None)
+        if reader is None:
+            return agent
+        from docsgpt.api.user.resource_access import read_by
+
+        for name in ("gen", "gen_continuation"):
+            method = getattr(agent, name, None)
+            if callable(method):
+                setattr(agent, name, functools.wraps(method)(
+                    lambda *args, _method=method, **kwargs: read_by(reader, _method(*args, **kwargs))
+                ))
         return agent

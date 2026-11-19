@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 const {
   dispatch,
+  follow,
   service,
   view,
   connectors,
@@ -13,7 +14,14 @@ const {
   configModal,
   viewProps,
   changeModals,
+  folderState,
 } = vi.hoisted(() => ({
+  // The workspace's folder tree (`folders.tree`); undefined is unloaded.
+  folderState: {
+    items: undefined as unknown[] | undefined,
+    // The last load failed, with none before it.
+    failed: false,
+  },
   // The callbacks Convert to wiki and Enable GraphRAG were given.
   changeModals: {
     onConverted: null as null | (() => void),
@@ -82,7 +90,11 @@ const {
         </div>
       );
     },
-  dispatch: vi.fn(),
+  // Runs thunks, as the real store does; actions are only recorded.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any action
+  dispatch: vi.fn(function run(action: any): any {
+    return typeof action === 'function' ? action(run, () => ({})) : action;
+  }),
   service: {
     getConfig: vi.fn(),
     manageSync: vi.fn(),
@@ -90,7 +102,17 @@ const {
     syncConnector: vi.fn(),
     reingestSource: vi.fn(),
     getDirectoryStructure: vi.fn(),
+    // Where a linked source lives; none found by default.
+    getSourceWorkspace: vi.fn(async () => ({ ok: false, status: 404 })),
   },
+  // The follow into a linked source's workspace; resolves to whether the
+  // app switched.
+  follow: vi.fn(async (_workspace: unknown) => false),
+}));
+
+vi.mock('../conversation/followWorkspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../conversation/followWorkspace')>()),
+  followItemWorkspace: (workspace: unknown) => () => follow(workspace),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -110,6 +132,28 @@ vi.mock('react-redux', () => ({
         startedSyncs: connectors.startedSyncs,
       },
       notifications: { recentEvents: connectors.events },
+      // Personal: the page's workspace line and create buttons read it.
+      workspace: {
+        current: 'personal',
+        workspaces: [{ id: 'personal', kind: 'personal', name: 'Personal' }],
+        loaded: true,
+        loading: false,
+        epoch: 0,
+        lastReason: null,
+        latestRequestId: null,
+      },
+      folders: folderState.items
+        ? {
+            tree: {
+              items: folderState.items,
+              loaded: !folderState.failed,
+              loading: false,
+              failed: folderState.failed,
+              latestRequestId: null,
+              removedParents: {},
+            },
+          }
+        : undefined,
     }),
 }));
 
@@ -135,7 +179,30 @@ vi.mock('../preferences/preferenceApi', () => ({
   })),
 }));
 
-vi.mock('../components/Chunks', () => ({ default: view('chunks') }));
+// The chunk view also shows the folder crumbs it was handed (see
+// SourceFolderTrail), each a button that runs its crumb.
+vi.mock('../components/Chunks', async () => {
+  const { useSourceFolderTrail } =
+    await import('../components/tree/folderTrail');
+  const Base = view('chunks');
+  return {
+    default: (props: Parameters<typeof Base>[0]) => {
+      const trail = useSourceFolderTrail();
+      return (
+        <>
+          {Base(props)}
+          <nav data-testid="folder-trail">
+            {trail.map((crumb) => (
+              <button key={crumb.label} type="button" onClick={crumb.onSelect}>
+                {crumb.label}
+              </button>
+            ))}
+          </nav>
+        </>
+      );
+    },
+  };
+});
 vi.mock('../components/FileTree', () => ({ default: view('file-tree') }));
 vi.mock('../components/ConnectorTree', () => ({
   default: view('connector-tree'),
@@ -185,6 +252,7 @@ vi.mock('../upload/Upload', () => ({
 import { syncForgotten } from '../connectors/connectorsSlice';
 import type { Doc } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import Sources from './Sources';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -232,6 +300,20 @@ const mount = (
       </MemoryRouter>,
     );
   });
+
+/**
+ * Makes the mocked store apply the knowledge list read back, as the real
+ * slice does, and run thunks.
+ */
+const applyKnowledge = () => {
+  const apply = (action: unknown): unknown => {
+    if (typeof action === 'function') return action(apply, () => ({}));
+    const { type, payload } = action as { type?: string; payload?: unknown };
+    if (type === 'preference/setSourceDocs') knowledge.docs = payload;
+    return action;
+  };
+  dispatch.mockImplementation(apply);
+};
 
 /** Opens the menu behind a trigger; returns its item labels. */
 const openMenu = async (testId: string) => {
@@ -409,8 +491,13 @@ describe('Sources access', () => {
       [VIEW, TEST],
       null,
     ],
-    // No access fields: the caller's own.
-    ['no access fields', {}, FULL, false],
+    // No access fields: the caller's own, filed like any.
+    [
+      'no access fields',
+      {},
+      [VIEW, EDIT_CONFIG, TEST, CONVERT, SHARE, 'folders.moveToFolder', DELETE],
+      false,
+    ],
   ])('the card menu of %s', async (_, fields, expected, eye) => {
     await render(doc(fields));
     expect(await menuItems()).toEqual(expected);
@@ -1342,6 +1429,76 @@ describe('Sources citation link', () => {
     expect(viewOf('chunks')).toBeNull();
   });
 
+  // A pasted or bookmarked link to a source of another workspace goes there
+  // first; the source then opens from that workspace's lists.
+  describe('a source not in this workspace', () => {
+    beforeEach(() => {
+      service.getSourceWorkspace.mockClear();
+      follow.mockClear();
+    });
+    // Back to the defaults: no source found, no follow.
+    afterEach(() => {
+      service.getSourceWorkspace.mockImplementation(async () => ({
+        ok: false,
+        status: 404,
+      }));
+      follow.mockImplementation(async () => false);
+    });
+    const team = { kind: 'team', team_id: 't1' };
+
+    it("follows it into the source's workspace and keeps the link", async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(true);
+      await render('/settings/knowledge?source=src-t&chunk=c1&q=x');
+      expect(service.getSourceWorkspace).toHaveBeenCalledWith('src-t', null);
+      expect(follow).toHaveBeenCalledWith(team);
+      expect(where()).toBe('?source=src-t&chunk=c1&q=x');
+    });
+
+    it('drops the link quietly when the caller cannot see it', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: false,
+        status: 404,
+      } as never);
+      await render('/settings/knowledge?source=gone');
+      expect(follow).not.toHaveBeenCalled();
+      expect(where()).toBe('');
+      expect(viewOf('chunks')).toBeNull();
+    });
+
+    it('drops the link quietly when the app cannot go there', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(false);
+      await render('/settings/knowledge?source=src-t');
+      expect(follow).toHaveBeenCalledWith(team);
+      expect(where()).toBe('');
+    });
+
+    it('asks once, so a source still missing after the follow drops the link', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(true);
+      await render('/settings/knowledge?source=src-t');
+      expect(where()).toBe('?source=src-t');
+      // The team's lists come back without it.
+      knowledge.docs = [doc({ id: 'other' })];
+      await render('/settings/knowledge?source=src-t');
+      expect(service.getSourceWorkspace).toHaveBeenCalledTimes(1);
+      expect(where()).toBe('');
+    });
+  });
+
   it('shows the list for a source the caller cannot see', async () => {
     await render('/settings/knowledge?source=gone&chunk=c1&q=x');
     expect(viewOf('chunks')).toBeNull();
@@ -1376,13 +1533,7 @@ describe('Sources citation link', () => {
     });
 
     it('keeps the link while it indexes, then opens the source once listed', async () => {
-      // The store applies the list read back, as the real slice does.
-      dispatch.mockImplementation(
-        (action: { type?: string; payload?: unknown }) => {
-          if (action?.type === 'preference/setSourceDocs')
-            knowledge.docs = action.payload;
-        },
-      );
+      applyKnowledge();
       await render('/settings/knowledge?source=src-new');
       // Not listed yet: the list shows and the link waits.
       expect(viewOf('file-tree')).toBeNull();
@@ -1400,6 +1551,26 @@ describe('Sources citation link', () => {
       expect(getDocs).toHaveBeenCalledTimes(1);
       expect(viewOf('file-tree')).not.toBeNull();
       expect(where()).toBe('');
+    });
+
+    it('applies no list read for a workspace the app has left', async () => {
+      applyKnowledge();
+      let answer: ((docs: Doc[]) => void) | null = null;
+      vi.mocked(getDocs).mockReturnValue(
+        new Promise<Doc[]>((resolve) => (answer = resolve)),
+      );
+      knowledge.docs = [];
+      connectors.events = [ingest('source.ingest.completed')];
+      try {
+        await render('/settings/knowledge?source=src-new');
+        await vi.waitFor(() => expect(answer).not.toBeNull());
+        // The user switches workspace while the list is out.
+        setRequestWorkspace('t1', 1);
+        await act(async () => answer!([doc({ id: 'src-new' })]));
+        expect(knowledge.docs).toEqual([]);
+      } finally {
+        setRequestWorkspace('personal', 0);
+      }
     });
 
     it('drops the link when the first sync fails', async () => {
@@ -1454,13 +1625,7 @@ describe('Sources citation link', () => {
       });
       vi.setSystemTime(new Date(START));
       dispatch.mockReset();
-      // The store applies the list read back, as the real slice does.
-      dispatch.mockImplementation(
-        (action: { type?: string; payload?: unknown }) => {
-          if (action?.type === 'preference/setSourceDocs')
-            knowledge.docs = action.payload;
-        },
-      );
+      applyKnowledge();
       vi.mocked(getDocs).mockReset();
       vi.mocked(getDocs).mockResolvedValue([]);
       withConnection('connected', { id: 'conn-drive' });
@@ -1506,6 +1671,17 @@ describe('Sources citation link', () => {
       } as never);
       await render('/settings/knowledge?page=2', [doc()]);
       expect(pendingCard()).toBeUndefined();
+    });
+
+    // Indexing needs no one: it leads the list, not Needs attention.
+    it('leads the list outside Needs attention', async () => {
+      await render('/settings/knowledge', [doc()]);
+      expect(container.textContent).not.toContain(
+        'settings.sources.needsAttention',
+      );
+      expect(pendingCard()).toBeDefined();
+      await typeSearch('HAND');
+      expect(pendingCard()).toBeDefined();
     });
 
     it('shows while its name matches the search', async () => {
@@ -1637,10 +1813,807 @@ describe('Sources citation link', () => {
     const back = viewOf('chunks')!.querySelector('button')!;
     await act(async () => back.click());
     const open = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] > button',
+      // The card's stretched open button: the one plain button in it.
+      'button[aria-label="settings.sources.viewSource"], [data-slot="card"] button[aria-label]:not([data-slot])',
     );
     expect(open).not.toBeNull();
     await act(async () => open!.click());
     expect(viewOf('chunks')?.dataset.linked).toBe('');
+  });
+});
+
+describe('Sources filters and usage', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const KIND_COUNTS = {
+    all: 9,
+    files: 4,
+    websites: 2,
+    synced: 0,
+    wikis: 1,
+    shared: 1,
+  };
+  const USAGE_COUNTS = { all: 9, in_use: 3, unused: 6 };
+
+  beforeEach(() => {
+    localStorage.clear();
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [doc()],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: 1,
+      nextCursor: '',
+      kindCounts: KIND_COUNTS,
+      usageCounts: USAGE_COUNTS,
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+  const kindItems = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="toggle-group-item"]',
+      ),
+    );
+
+  it('sends the kind and usage in the address to the listing', async () => {
+    await mount(root, [doc()], {
+      entry: '/settings/knowledge?kind=websites&usage=in_use',
+    });
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'websites',
+      usage: 'in_use',
+      origin: 'own',
+    });
+  });
+
+  it("filters by kind with the server's counts, in the address, from page 1", async () => {
+    await mount(root, [doc()], { entry: '/settings/knowledge?page=2' });
+    // An empty kind is left out.
+    expect(
+      kindItems().map((item) => [
+        item.firstChild?.textContent,
+        item.querySelector('[data-slot="count"]')?.textContent,
+      ]),
+    ).toEqual([
+      ['settings.sources.kinds.all', '9'],
+      ['settings.sources.kinds.files', '4'],
+      ['settings.sources.kinds.websites', '2'],
+      ['settings.sources.kinds.wikis', '1'],
+    ]);
+    // The page toolbar's size.
+    expect(
+      container.querySelector('[data-slot="toggle-group"]')?.className,
+    ).toContain('p-0.75');
+    fetchPage.mockClear();
+    await act(async () =>
+      kindItems()
+        .find(
+          (item) =>
+            item.firstChild?.textContent === 'settings.sources.kinds.websites',
+        )!
+        .click(),
+    );
+    expect(where()).toBe('?kind=websites');
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+    expect(fetchPage.mock.calls[0][2]).toBe(1);
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'websites',
+      usage: 'all',
+      origin: 'own',
+    });
+  });
+
+  // One recipe per page: usage is the FilterSelect beside the kind track,
+  // and its default reads Any use, never a second All.
+  it('filters by usage with a pill Select that reads Any use', async () => {
+    await mount(root, [doc()]);
+    const trigger = container.querySelector<HTMLElement>(
+      '[data-slot="select-trigger"][aria-label="settings.usage.filterLabel"]',
+    )!;
+    expect(trigger).not.toBeNull();
+    expect(trigger.getAttribute('data-shape')).toBe('pill');
+    expect(trigger.textContent).toBe('settings.usage.filters.all');
+  });
+
+  it('says no match under a filter, with no way in', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [],
+      totalDocuments: 0,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+      kindCounts: { ...KIND_COUNTS, wikis: 0 },
+      usageCounts: USAGE_COUNTS,
+    });
+    await mount(root, [], { entry: '/settings/knowledge?kind=wikis' });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    expect(empty.querySelector('button')).toBeNull();
+  });
+
+  it('says which agents use a source on its card and in its delete confirm', async () => {
+    const used = doc({
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use'],
+      used_by: { agents: [{ id: 'a-1', name: 'Support bot' }], others: 1 },
+    });
+    await mount(root, [used]);
+    const card = container.querySelector('[data-slot="card"]')!;
+    expect(card.textContent).toContain('settings.usage.agents');
+    await openMenu('menu-button-src-1');
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.delete')!;
+    await act(async () => item.click());
+    expect(
+      document.querySelector('[role="dialog"] [data-slot="dialog-description"]')
+        ?.textContent,
+    ).toBe('settings.sources.deleteUsedBy');
+  });
+
+  it('keeps facts in the meta line and states in pills', async () => {
+    const shared = doc({
+      id: 'g',
+      name: 'Graph',
+      access: 'viewer',
+      ownership: 'team',
+      tokens: '0',
+      config: { kind: 'graphrag' },
+      ingestStatus: 'failed',
+    } as Partial<Doc>);
+    await mount(root, [shared]);
+    const card = container.querySelector('[data-slot="card"]')!;
+    const meta = Array.from(card.querySelectorAll('[data-slot="meta-item"]'));
+    // No "0" tokens; Graph and the role are facts, not pills.
+    expect(meta.map((item) => item.textContent)).toEqual([
+      'settings.sources.graphrag.badge',
+      'teamAccess.viewer',
+    ]);
+    expect(
+      Array.from(card.querySelectorAll('[data-slot="badge"]')).map(
+        (b) => b.textContent,
+      ),
+    ).toEqual(['settings.sources.ingestFailed']);
+  });
+});
+
+describe('Sources needs attention', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const failed = doc({ id: 'f', name: 'Failed', ingestStatus: 'failed' });
+  const running = doc({ id: 'p', name: 'Running', ingestStatus: 'processing' });
+  const paused = doc({ id: 'r', name: 'Paused', connectionId: 'conn-1' });
+  const fine = doc({ id: 'o', name: 'Fine' });
+
+  beforeEach(() => {
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed],
+      totalDocuments: 4,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    withConnection('reconnect_needed');
+    knowledge.docs = [running, fine, paused, failed];
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    knowledge.docs = undefined;
+    connectors.connections = [];
+  });
+
+  /** Each section's eyebrow and the sources it holds, in order. */
+  const sections = () =>
+    Array.from(container.querySelectorAll('section')).map((section) => [
+      section.querySelector('h2')?.textContent ?? null,
+      Array.from(
+        section.querySelectorAll<HTMLButtonElement>(
+          // The card's stretched open button (the controls carry a slot).
+          '[data-slot="card"] button[aria-label]:not([data-slot])',
+        ),
+      ).map((b) => b.getAttribute('aria-label')),
+    ]);
+
+  it('leads page 1 with failed and reconnect sources, listed once', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed, running],
+      totalDocuments: 4,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, failed, running]);
+    // Indexing needs no one, so a running source stays in the list.
+    expect(sections()).toEqual([
+      ['settings.sources.needsAttention2', ['Failed', 'Paused']],
+      ['settings.sources.allKnowledge2', ['Fine', 'Running']],
+    ]);
+  });
+
+  it.each([
+    ['on page 2', '/settings/knowledge?page=2'],
+    ['while filtered', '/settings/knowledge?kind=files'],
+  ])('is not shown %s', async (_, entry) => {
+    fetchPage.mockResolvedValue({
+      docs: [fine, failed],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: entry.includes('page=2') ? 2 : 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, failed], { entry });
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+  });
+
+  it('is not shown while searching, and the failed card stays in the list', async () => {
+    await mount(root, [fine, failed]);
+    await typeSearch('a');
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(
+      container.querySelector('button[aria-label="Failed"]'),
+    ).not.toBeNull();
+  });
+
+  // Page 1 lifts them into Needs attention; a later page has no such
+  // section, so its own cards stay in its grid instead of leaving it blank.
+  it('keeps attention cards in the grid on a later page', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [failed],
+      totalDocuments: 30,
+      totalPages: 3,
+      currentPage: 2,
+      nextCursor: '',
+    });
+    await mount(root, [failed], { entry: '/settings/knowledge?page=2' });
+    expect(
+      container.querySelector('button[aria-label="Failed"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain('settings.sources.noData');
+  });
+
+  // A team source the reader only uses: they can't reingest it, so it
+  // stays in the list rather than asking them to act.
+  it('leaves out a failed source the reader cannot edit', async () => {
+    const shared = doc({
+      id: 'v',
+      name: 'Shared',
+      ingestStatus: 'failed',
+      access: 'viewer',
+      allowed_actions: VIEWER,
+    });
+    connectors.connections = [];
+    knowledge.docs = [fine, shared];
+    fetchPage.mockResolvedValue({
+      docs: [fine, shared],
+      totalDocuments: 2,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    await mount(root, [fine, shared]);
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(
+      container.querySelector('button[aria-label="Shared"]'),
+    ).not.toBeNull();
+  });
+
+  // Needs attention reads the app's knowledge list, so a reingest reads it
+  // again: the source leaves the section even when it is off this page.
+  it('reads the knowledge list again after a reingest', async () => {
+    service.reingestSource.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+    await mount(root, [fine, failed]);
+    vi.mocked(getDocs).mockClear();
+    await openMenu('menu-button-f');
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((el) => el.textContent === 'settings.sources.reingest')!;
+    await act(async () => item.click());
+    expect(getDocs).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Sources list requests', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+  const page = (name: string) => ({
+    docs: [doc({ id: name, name })],
+    totalDocuments: 1,
+    totalPages: 1,
+    currentPage: 1,
+    nextCursor: '',
+  });
+
+  beforeEach(() => {
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  // A filter or search clicked while the previous page is loading: the
+  // older answer, arriving last, does not replace the newer one.
+  it('ignores a late answer to an older request', async () => {
+    let answerFirst: (value: ReturnType<typeof page>) => void = () => {};
+    fetchPage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+    );
+    fetchPage.mockResolvedValue(page('Newer'));
+    await mount(root, []);
+    await typeSearch('n');
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    await act(async () => answerFirst(page('Older')));
+    const pages = dispatch.mock.calls
+      .map(([action]) => action)
+      .filter((action) => action?.type === 'preference/setPaginatedDocuments')
+      .map((action) => action.payload.map((d: Doc) => d.name));
+    expect(pages).toEqual([['Newer']]);
+  });
+});
+
+describe('Sources toolbar', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+  const owned = doc({
+    id: 'a',
+    name: 'Alpha',
+    access: 'owner',
+    allowed_actions: [...OWNER, 'use'],
+  });
+
+  beforeEach(() => {
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    fetchPage.mockResolvedValue({
+      docs: [owned],
+      totalDocuments: 1,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+  });
+
+  it('offers New folder and Add knowledge: no Select mode, the card keeps its menu', async () => {
+    await mount(root, [owned]);
+    const labels = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(
+        '[data-slot="page-toolbar"] button',
+      ),
+    ).map((button) => button.textContent);
+    expect(labels).toEqual(['folders.newFolder', 'settings.sources.addSource']);
+    expect(container.querySelector('[role="checkbox"]')).toBeNull();
+    expect(
+      container.querySelector('[data-testid="menu-button-a"]'),
+    ).not.toBeNull();
+  });
+});
+
+describe('Sources folders', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const FOLDERS = [
+    {
+      id: 'f-car',
+      name: 'Carriers',
+      parent_id: null,
+      item_count: 3,
+      folder_count: 1,
+    },
+    { id: 'f-rate', name: 'Rate archive', parent_id: 'f-car', item_count: 4 },
+    { id: 'f-cus', name: 'Customs', parent_id: null, item_count: 0 },
+  ];
+  const CAR = { id: 'f-car', name: 'Carriers' };
+  const RATE = { id: 'f-rate', name: 'Rate archive' };
+  const tenders = doc({
+    id: 't',
+    name: 'Tenders',
+    folder_id: 'f-car',
+    folder_path: [CAR],
+  });
+  const sheet = doc({
+    id: 's',
+    name: 'Rate sheet',
+    folder_id: 'f-rate',
+    folder_path: [CAR, RATE],
+  });
+  const loose = doc({ id: 'l', name: 'Loose', folder_id: null });
+
+  const answer = (docs: Doc[], total = docs.length) =>
+    fetchPage.mockResolvedValue({
+      docs,
+      totalDocuments: total,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+
+  beforeEach(() => {
+    localStorage.clear();
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    uploadProps.mockReset();
+    answer([loose]);
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    folderState.items = FOLDERS;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    folderState.items = undefined;
+    folderState.failed = false;
+    knowledge.docs = undefined;
+    connectors.startedSyncs = [];
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+  const headings = () =>
+    Array.from(container.querySelectorAll('section h2')).map(
+      (h) => h.textContent,
+    );
+  const folderTiles = () =>
+    Array.from(container.querySelectorAll('[data-folder-tile]')).map(
+      (tile) => tile.querySelector('button')!.textContent,
+    );
+  /** The folder meta item on a source's card, by the source's name. */
+  const folderMetaOf = (name: string) => {
+    const card = container
+      .querySelector(`[aria-label="${name}"]`)!
+      .closest('[data-slot="card"]')!;
+    return (
+      card.querySelector('[data-slot="meta-item"][data-folder]')?.textContent ??
+      null
+    );
+  };
+  const button = (label: string) =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === label,
+    );
+  const searchLabel = () =>
+    container.querySelector('label[for="document-search-input"]')?.textContent;
+
+  it('lists the folders, then the sources in none, at the root', async () => {
+    await mount(root, [loose]);
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'root', direct: true },
+      origin: 'own',
+    });
+    // Top-level folders only, by name; the loose sources under Sources.
+    expect(folderTiles()).toEqual(['Carriers', 'Customs']);
+    expect(headings()).toEqual([
+      'settings.sources.sections.folders2',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(folderMetaOf('Loose')).toBeNull();
+  });
+
+  it('keeps one unheaded grid with no folders', async () => {
+    folderState.items = [];
+    await mount(root, [loose]);
+    expect(folderTiles()).toEqual([]);
+    expect(headings()).toEqual([]);
+  });
+
+  it('says the folders failed to load, with Retry, above the unfiled sources', async () => {
+    folderState.items = [];
+    folderState.failed = true;
+    await mount(root, [loose]);
+    // The root lists only sources in no folder: without the error the
+    // filed ones would vanish without a word.
+    expect(container.textContent).toContain('folders.errors.loadFailed');
+    expect(button('retry')).toBeDefined();
+    expect(container.textContent).toContain('Loose');
+  });
+
+  it('shows folders on page 1 only', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [loose],
+      totalDocuments: 40,
+      totalPages: 2,
+      currentPage: 2,
+      nextCursor: '',
+    });
+    await mount(root, [loose], { entry: '/settings/knowledge?page=2' });
+    expect(folderTiles()).toEqual([]);
+  });
+
+  it('opens a folder as a place: crumbs, a scoped toolbar and its contents', async () => {
+    knowledge.docs = [doc({ id: 'x', name: 'Broken', ingestStatus: 'failed' })];
+    answer([tenders]);
+    await mount(root, [tenders]);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-folder-tile="f-car"] button')!
+        .click(),
+    );
+    expect(where()).toBe('?folder=f-car');
+    expect(fetchPage.mock.lastCall![6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'f-car', direct: true },
+    });
+    const crumbs = container.querySelector('[data-slot="folder-crumb-row"]')!;
+    expect(crumbs.textContent).toContain('folders.root.source');
+    expect(crumbs.textContent).toContain('Carriers');
+    expect(
+      crumbs.querySelector('button[aria-label="folders.menuLabel"]'),
+    ).not.toBeNull();
+    expect(searchLabel()).toBe('folders.searchIn');
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="page-toolbar"] button',
+        ),
+      ).map((b) => b.textContent),
+    ).toEqual(['folders.newFolder', 'settings.sources.addSource']);
+    // Its own folders and sources; nothing from outside it.
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(headings()).toEqual([
+      'settings.sources.sections.folders1',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(folderMetaOf('Tenders')).toBeNull();
+  });
+
+  it('searches a folder and its subfolders, paths relative to it', async () => {
+    answer([tenders, sheet]);
+    await mount(root, [tenders, sheet], {
+      entry: '/settings/knowledge?folder=f-car',
+    });
+    await typeSearch('rate');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('rate');
+    expect(options).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'f-car', direct: false },
+    });
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(folderMetaOf('Rate sheet')).toBe('Rate archive');
+    expect(folderMetaOf('Tenders')).toBeNull();
+  });
+
+  it('offers Add knowledge in an empty folder, filing into it', async () => {
+    answer([], 0);
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-cus' });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('folders.emptyTitle');
+    expect(empty.textContent).toContain('settings.sources.folders.emptyHint');
+    const add = Array.from(empty.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.addSource',
+    )!;
+    await act(async () => add.click());
+    expect(uploadProps.mock.lastCall![0]).toMatchObject({ folderId: 'f-cus' });
+  });
+
+  it('offers to search all knowledge when nothing in the folder matches', async () => {
+    answer([], 0);
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-car' });
+    await typeSearch('tariff');
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    await act(async () =>
+      Array.from(empty.querySelectorAll('button'))
+        .find((b) => b.textContent === 'settings.sources.folders.searchAll')!
+        .click(),
+    );
+    expect(where()).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('#document-search-input')!
+        .value,
+    ).toBe('tariff');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('tariff');
+    expect(options).toEqual({ kind: 'all', usage: 'all', origin: 'own' });
+  });
+
+  it('searches every folder from the root: matching folders first, each source with its folder', async () => {
+    answer([sheet, loose]);
+    await mount(root, [sheet, loose]);
+    await typeSearch('rate');
+    expect(fetchPage.mock.lastCall![6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      origin: 'own',
+    });
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(
+      container.querySelector('[data-folder-tile="f-rate"]')!.textContent,
+    ).toContain('folders.inParent');
+    expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
+    expect(folderMetaOf('Loose')).toBeNull();
+  });
+
+  it('comes back to the root without the search it left there', async () => {
+    answer([sheet, loose]);
+    await mount(root, [sheet, loose]);
+    await typeSearch('rate');
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-folder-tile="f-rate"] button')!
+        .click(),
+    );
+    expect(where()).toBe('?folder=f-rate');
+    const crumbs = container.querySelector('[data-slot="folder-crumb-row"]')!;
+    await act(async () =>
+      Array.from(crumbs.querySelectorAll<HTMLButtonElement>('button'))
+        .find((b) => b.textContent === 'folders.root.source')!
+        .click(),
+    );
+    expect(where()).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('#document-search-input')!
+        .value,
+    ).toBe('');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('');
+    expect(options).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'root', direct: true },
+      origin: 'own',
+    });
+  });
+
+  it('goes flat under a filter at the root, with no folder tiles', async () => {
+    await mount(root, [sheet], { entry: '/settings/knowledge?kind=files' });
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'files',
+      usage: 'all',
+      origin: 'own',
+    });
+    expect(folderTiles()).toEqual([]);
+    expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
+  });
+
+  it('names the folder of a filed source that needs attention', async () => {
+    const failed = doc({
+      id: 'f',
+      name: 'Failed',
+      ingestStatus: 'failed',
+      allowed_actions: ['edit'],
+      folder_id: 'f-car',
+      folder_path: [CAR],
+    });
+    knowledge.docs = [failed, loose];
+    answer([loose], 1);
+    await mount(root, [loose]);
+    // The failed source isn't one of the root's own: Sources stays at 1.
+    expect(headings()).toEqual([
+      'settings.sources.needsAttention1',
+      'settings.sources.sections.folders2',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(folderMetaOf('Failed')).toBe('Carriers');
+  });
+
+  it('keeps the folder in a source opened inside it, and returns to it', async () => {
+    answer([tenders]);
+    await mount(root, [tenders], { entry: '/settings/knowledge?folder=f-car' });
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Tenders"]')!.click(),
+    );
+    const trail = container.querySelector('[data-testid="folder-trail"]')!;
+    expect(trail.textContent).toBe('Carriers');
+    await act(async () => trail.querySelector('button')!.click());
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+    expect(where()).toBe('?folder=f-car');
+    // The Knowledge crumb leaves the folder for the root.
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Tenders"]')!.click(),
+    );
+    await act(async () => button('VIEW BACK')!.click());
+    expect(where()).toBe('');
+  });
+
+  it('shows a sync started in a folder there, not at the root', async () => {
+    connectors.startedSyncs = [
+      {
+        id: 'sync-1',
+        name: 'Drive sync',
+        connectionId: 'conn-1',
+        startedAt: new Date().toISOString(),
+        folderId: 'f-car',
+      },
+    ];
+    knowledge.docs = [];
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-car' });
+    expect(container.textContent).toContain('Drive sync');
+    await act(async () => button('folders.root.source')!.click());
+    expect(where()).toBe('');
+    expect(container.textContent).not.toContain('Drive sync');
+  });
+
+  it('offers Move to folder after Share with team, before Delete', async () => {
+    const owned = doc({
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use', 'move_folder'],
+    });
+    answer([owned]);
+    await mount(root, [owned]);
+    const items = await openMenu('menu-button-src-1');
+    expect(items.slice(-3)).toEqual([
+      'settings.sources.shareWithTeam',
+      'folders.moveToFolder',
+      'settings.sources.delete',
+    ]);
+  });
+
+  it('leaves Move to folder out without move_folder', async () => {
+    const viewer = doc({ access: 'viewer', allowed_actions: VIEWER });
+    answer([viewer]);
+    await mount(root, [viewer]);
+    expect(await openMenu('menu-button-src-1')).not.toContain(
+      'folders.moveToFolder',
+    );
   });
 });

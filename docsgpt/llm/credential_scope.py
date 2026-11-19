@@ -39,6 +39,8 @@ ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com"
 #: The Gemini API endpoint the ``google-genai`` client is pinned to, so the
 #: SDK's ``GOOGLE_GEMINI_BASE_URL`` and Vertex AI switches never apply.
 GOOGLE_BASE_URL = "https://generativelanguage.googleapis.com/"
+#: The Gemini API version the client is pinned to.
+GOOGLE_API_VERSION = "v1beta"
 
 # Settings that hold an LLM provider credential. Every value set here is a
 # deployment credential, even when no endpoint claims it: such a key may not
