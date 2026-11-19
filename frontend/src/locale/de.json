@@ -981,9 +981,14 @@
     "title": "Agenten",
     "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
     "typeModal": {
+      "blankTitle": "Leer beginnen",
       "classicDescription": "Erstelle einen Standard-KI-Agenten mit einem Modell, Tools und Wissensquellen",
       "classicTitle": "Klassischer Agent",
+      "describeLabel": "Beschreibe den Agenten",
+      "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet",
       "description": "Wähle die Art des Agenten, den du erstellen möchtest",
+      "draftDescription": "Beginne leer oder beschreibe den Agenten, und DocsGPT entwirft ihn, damit du ihn prüfen kannst.",
+      "draftTitle": "Oder mit DocsGPT entwerfen",
       "title": "Neuen Agenten erstellen",
       "workflowDescription": "Entwirf komplexe mehrstufige Workflows mit verschiedenen Modellen, bedingter Logik und Zustandsverwaltung",
       "workflowTitle": "Workflow-Agent"

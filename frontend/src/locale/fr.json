@@ -1008,9 +1008,14 @@
     "title": "Agents",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "typeModal": {
+      "blankTitle": "Partir de zéro",
       "classicDescription": "Créez un agent IA standard avec un seul modèle, des outils et des sources de connaissances",
       "classicTitle": "Agent classique",
+      "describeLabel": "Décrivez l’agent",
+      "describePlaceholder": "Un agent sur notre site web qui répond aux questions sur la livraison",
       "description": "Choisissez le type d’agent à créer",
+      "draftDescription": "Partez de zéro, ou décrivez l’agent et DocsGPT le rédige pour que vous le relisiez.",
+      "draftTitle": "Ou rédigez-le avec DocsGPT",
       "title": "Créer un agent",
       "workflowDescription": "Concevez des workflows complexes en plusieurs étapes avec différents modèles, une logique conditionnelle et une gestion d’état",
       "workflowTitle": "Agent workflow"

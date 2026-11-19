@@ -980,9 +980,14 @@
     "title": "エージェント",
     "tryDifferentSearch": "別の検索語をお試しください",
     "typeModal": {
+      "blankTitle": "空の状態から始める",
       "classicDescription": "単一のモデル、ツール、ナレッジソースを持つ標準的な AI エージェントを作成します",
       "classicTitle": "クラシックエージェント",
+      "describeLabel": "エージェントについて説明",
+      "describePlaceholder": "当社のウェブサイトで配送に関する質問に答えるエージェント",
       "description": "作成するエージェントの種類を選択してください",
+      "draftDescription": "空の状態から始めるか、エージェントについて説明すると、DocsGPT が下書きを作成し、内容を確認できます。",
+      "draftTitle": "または DocsGPT で下書き",
       "title": "新しいエージェントを作成",
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します",
       "workflowTitle": "ワークフローエージェント"

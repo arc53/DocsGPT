@@ -1002,9 +1002,14 @@
     "title": "Agents",
     "tryDifferentSearch": "Try a different search term",
     "typeModal": {
+      "blankTitle": "Start blank",
       "classicDescription": "Create a standard AI agent with a single model, tools, and knowledge sources",
       "classicTitle": "Classic Agent",
+      "describeLabel": "Describe the agent",
+      "describePlaceholder": "An agent on our website that answers shipping questions",
       "description": "Choose the type of agent you want to create",
+      "draftDescription": "Start blank, or describe the agent and DocsGPT drafts it for you to review.",
+      "draftTitle": "Or draft it with DocsGPT",
       "title": "Create New Agent",
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management",
       "workflowTitle": "Workflow Agent"

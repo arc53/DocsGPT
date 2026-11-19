@@ -192,6 +192,7 @@ import {
   isSafetyUnset,
   topicName,
 } from './agentDraft';
+import { readDraftStart } from './draftStart';
 import { useAgentBuild } from './useAgentBuild';
 import { useAgentPromptView } from './useAgentPromptView';
 import {
@@ -1287,6 +1288,42 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     drafterConfig,
     drafterEnabled,
     agent.id,
+    t,
+  ]);
+
+  // Opened from the New agent modal with a description or a starting point:
+  // once the drafter's config is known, the drawer opens and the build
+  // starts from it. The router state that carried it is dropped either way,
+  // so a reload or Back doesn't start it again; with the drafter off (or a
+  // form that already has values) the form simply opens as it is.
+  const draftStartReadRef = useRef(false);
+  useEffect(() => {
+    if (draftStartReadRef.current || mode !== 'new') return;
+    const start = readDraftStart(location.state);
+    if (!start) return;
+    if (drafterConfig === null) return;
+    draftStartReadRef.current = true;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: null,
+    });
+    if (!drafterEnabled || !formEmpty || buildRef.current.guided) return;
+    setDrafterOpen(true);
+    const text =
+      start.text ??
+      (start.starter ? t(`drafter.starters.${start.starter}.title`) : null);
+    if (!text) return;
+    buildRef.current.start(start.starter);
+    drafterSessionRef.current.send(text);
+  }, [
+    mode,
+    location.state,
+    location.pathname,
+    location.search,
+    navigate,
+    drafterConfig,
+    drafterEnabled,
+    formEmpty,
     t,
   ]);
 

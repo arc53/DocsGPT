@@ -980,9 +980,14 @@
     "title": "智能体",
     "tryDifferentSearch": "请尝试不同的搜索词",
     "typeModal": {
+      "blankTitle": "从空白开始",
       "classicDescription": "创建一个使用单一模型、工具和知识来源的标准 AI 智能体",
       "classicTitle": "经典智能体",
+      "describeLabel": "描述这个智能体",
+      "describePlaceholder": "我们网站上回答配送问题的智能体",
       "description": "选择要创建的智能体类型",
+      "draftDescription": "从空白开始，或描述这个智能体，由 DocsGPT 起草后供你检查。",
+      "draftTitle": "或用 DocsGPT 起草",
       "title": "创建新智能体",
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流",
       "workflowTitle": "工作流智能体"

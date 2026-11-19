@@ -423,7 +423,7 @@ const nameInput = (root: ParentNode) =>
  *   root: The test's root.
  *   mode: The form's mode.
  *   options: `entries` and `initialIndex`, the router's history (the saved
- *     agent's address by default); `beside`, drawn next to the form in its
+ *     agent's address by default); `newEntries`, a new agent's history; `beside`, drawn next to the form in its
  *     route; `after`, drawn after the routes.
  */
 const mountForm = (
@@ -431,11 +431,13 @@ const mountForm = (
   mode: 'new' | 'edit' | 'draft' = 'new',
   {
     entries = ['/agents/edit/agent-1'],
+    newEntries,
     initialIndex,
     beside,
     after,
   }: {
     entries?: ComponentProps<typeof MemoryRouter>['initialEntries'];
+    newEntries?: ComponentProps<typeof MemoryRouter>['initialEntries'];
     initialIndex?: number;
     beside?: ReactNode;
     after?: ReactNode;
@@ -444,7 +446,7 @@ const mountForm = (
   act(async () => {
     root.render(
       mode === 'new' ? (
-        <MemoryRouter>
+        <MemoryRouter initialEntries={newEntries}>
           <NewAgent mode="new" />
           {after}
         </MemoryRouter>
@@ -2709,6 +2711,57 @@ describe('NewAgent drafter', () => {
     ).toBe(false);
     const items = await openToolbarMenu(container);
     expect(items[0].textContent).toBe('agents.form.sections.preview');
+  });
+
+  describe('opened from the New agent modal', () => {
+    const state = { value: undefined as unknown };
+    function StateProbe() {
+      state.value = useLocation().state;
+      return null;
+    }
+    const renderFrom = async (draftStart: unknown) => {
+      await mountForm(root, 'new', {
+        newEntries: [{ pathname: '/agents/manage/new', state: { draftStart } }],
+        after: <StateProbe />,
+      });
+    };
+
+    it('starts the build from a starting point, and drops the router state', async () => {
+      await renderFrom({ starter: 'helpdesk' });
+      expect(panel()).not.toBeNull();
+      expect(stream.requests).toHaveLength(1);
+      expect(stream.requests[0]).toMatchObject({
+        recipe: 'agent',
+        messages: [
+          { role: 'user', content: 'drafter.starters.helpdesk.title' },
+        ],
+        context: { agent_id: null, step: 'basics', starter: 'helpdesk' },
+      });
+      expect(state.value).toBeNull();
+    });
+
+    it('starts the build from a description', async () => {
+      await renderFrom({ text: 'Answers shipping questions' });
+      expect(stream.requests).toHaveLength(1);
+      expect(stream.requests[0]).toMatchObject({
+        messages: [{ role: 'user', content: 'Answers shipping questions' }],
+        context: { step: 'basics', starter: null },
+      });
+    });
+
+    it('opens the drawer and sends nothing when there is nothing to send', async () => {
+      await renderFrom({});
+      expect(panel()!.textContent).toContain('drafter.agent.build.intro');
+      expect(stream.requests).toHaveLength(0);
+    });
+
+    it('opens the plain form when the drafter is off', async () => {
+      drafter.config = { enabled: false, model: null, reason: null };
+      await renderFrom({ starter: 'helpdesk' });
+      expect(panel()).toBeNull();
+      expect(stream.requests).toHaveLength(0);
+      expect(state.value).toBeNull();
+    });
   });
 
   it('greets an empty new agent with the plan and starts at Basics', async () => {

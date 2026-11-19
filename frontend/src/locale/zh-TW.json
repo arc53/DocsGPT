@@ -980,9 +980,14 @@
     "title": "代理",
     "tryDifferentSearch": "請嘗試不同的搜尋詞",
     "typeModal": {
+      "blankTitle": "從空白開始",
       "classicDescription": "建立一個使用單一模型、工具和知識來源的標準 AI 代理",
       "classicTitle": "經典代理",
+      "describeLabel": "描述這個代理",
+      "describePlaceholder": "我們網站上回答配送問題的代理",
       "description": "選擇要建立的代理類型",
+      "draftDescription": "從空白開始，或描述這個代理，由 DocsGPT 起草後供你檢查。",
+      "draftTitle": "或用 DocsGPT 起草",
       "title": "建立新代理",
       "workflowDescription": "設計包含不同模型、條件邏輯和狀態管理的複雜多步驟工作流程",
       "workflowTitle": "工作流程代理"
