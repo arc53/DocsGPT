@@ -453,6 +453,44 @@ class TestAbsolutePersistIndex:
         conversation_service.update_compression_metadata.assert_not_called()
 
 
+    @patch(
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        return_value="openai",
+    )
+    @patch(
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        return_value="sk",
+    )
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
+    def test_the_turn_goes_on_with_the_new_summary_even_when_its_point_was_refused(
+        self, mock_settings, MockLLMCreator, _key, _provider, orchestrator, conversation_service,
+    ):
+        mock_settings.COMPRESSION_MODEL_OVERRIDE = None
+        llm = MagicMock()
+        llm.gen.return_value = "<summary>new</summary>"
+        MockLLMCreator.create_llm.return_value = llm
+        # The stored conversation still holds only the older point: the new
+        # one was refused (an edit replaced the turn meanwhile).
+        conversation_service.get_conversation.return_value = {
+            "queries": [{"prompt": "q0", "response": "r"}],
+            "compression_metadata": {"is_compressed": True, "compression_points": [
+                {"query_index": 0, "compressed_summary": "old", "compressed_token_count": 1}]},
+        }
+        synthetic = {
+            "queries": [{"prompt": "q0", "response": "r"}, {"prompt": "q1", "response": ""}],
+            "compression_metadata": {"is_compressed": False, "compression_points": []},
+        }
+
+        result = orchestrator.compress_mid_execution(
+            "conv1", "user1", "m", {"sub": "user1"}, current_conversation=synthetic,
+            persist_query_index=0, turn_index=1, turn_message_id="m1",
+        )
+
+        assert result.success and result.compressed_summary == "new"
+        assert result.recent_queries == []
+
+
 @pytest.mark.unit
 class TestUnusableSavedPoints:
     """A saved point with an empty summary (older versions wrote them) must

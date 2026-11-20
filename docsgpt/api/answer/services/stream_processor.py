@@ -3145,6 +3145,9 @@ class StreamProcessor:
         agent = AgentCreator.create_agent(agent_key, **agent_kwargs)
         agent.conversation_id = conversation_id
         agent.initial_user_id = self.initial_user_id
+        # The bound the turn began with; a state saved without one leaves the
+        # handler to bound the point by the rows still being answered.
+        agent.history_bound = agent_config.get("history_bound")
         agent.tools = tool_schemas
         # Who resumes reads the rest of the turn, as in a new one: nobody for a
         # resume the key authenticates, whoever's token came with it.

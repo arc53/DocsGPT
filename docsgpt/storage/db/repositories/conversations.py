@@ -1233,19 +1233,26 @@ class ConversationsRepository:
         ).fetchone()
         if deleted is None:
             return False
-        # A point made while this turn ran summarized its tool work. Points
-        # count rows in order: the turn was the row after those before it.
+        # Points count rows in order, so every row after this one moved down:
+        # a point reaching this row now covers one it never summarized, and a
+        # point made while this turn ran holds its tool work.
         conversation_id, position = str(deleted[0]), deleted[1]
-        turn_index = self._conn.execute(
+        row_index = self._conn.execute(
             text(
                 "SELECT count(*) FROM conversation_messages "
                 "WHERE conversation_id = CAST(:id AS uuid) AND position < :pos"
             ),
             {"id": conversation_id, "pos": position},
         ).scalar() or 0
+
+        def _reaches(value) -> bool:
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= row_index
+
         self._drop_compression_points(
             conversation_id,
-            lambda p: str(p.get("turn_message_id") or "") == message_id or p.get("turn_index") == turn_index,
+            lambda p: str(p.get("turn_message_id") or "") == message_id
+            or _reaches(p.get("query_index"))
+            or _reaches(p.get("turn_index")),
         )
         return True
 

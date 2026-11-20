@@ -174,3 +174,17 @@ class TestPruningCountsRowsNotPositions:
         repo.truncate_after(conv_id, keep_up_to=0)
 
         assert _points(repo, conv_id) == []
+
+
+class TestDeletingAnUnansweredRow:
+    def test_a_point_reaching_the_deleted_row_goes_and_an_earlier_one_stays(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 1)
+        row = repo.reserve_message(conv_id, prompt="wake", placeholder_response="", status="streaming")
+        repo.append_message(conv_id, {"prompt": "q2", "response": "a2"})
+        # Made while row 1 was still open: it covers rows 0-2.
+        _store(repo, conv_id, _point(0, "early"), _point(2, "late"))
+
+        assert repo.delete_in_flight_message(str(row["id"])) is True
+
+        # Row q2 is now at index 1, and the next message lands at index 2.
+        assert [p["compressed_summary"] for p in _points(repo, conv_id)] == ["early"]

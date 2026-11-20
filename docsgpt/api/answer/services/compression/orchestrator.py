@@ -301,52 +301,45 @@ class CompressionOrchestrator:
                 f"{queries_count}{on_top}"
             )
 
-            if not persist_point:
-                # For this turn only: the point is indexed against the
-                # conversation passed in, and nothing is stored.
+            if persist_point:
+                metadata = compression_service.compress_and_save(
+                    conversation_id,
+                    conversation,
+                    compress_up_to,
+                    start_index=start_index,
+                    persist_query_index=persist_query_index,
+                    turn_index=turn_index,
+                    turn_message_id=turn_message_id,
+                )
+            else:
+                # For this turn only: nothing is stored.
                 metadata = compression_service.compress_conversation(
                     conversation, compress_up_to, start_index=start_index
                 )
-                compressed_summary, recent_queries = compression_service.get_compressed_context(
-                    {
-                        **conversation,
-                        "compression_metadata": {
-                            "is_compressed": True,
-                            "compression_points": [metadata.to_dict()],
-                        },
-                    }
-                )
-                return CompressionResult.success_with_compression(
-                    compressed_summary, recent_queries, metadata
-                )
-
-            # Perform compression and save to DB
-            metadata = compression_service.compress_and_save(
-                conversation_id,
-                conversation,
-                compress_up_to,
-                start_index=start_index,
-                persist_query_index=persist_query_index,
-                turn_index=turn_index,
-                turn_message_id=turn_message_id,
-            )
 
             logger.info(
                 f"Compression successful - ratio: {metadata.compression_ratio:.1f}x, "
                 f"saved {metadata.original_token_count - metadata.compressed_token_count} tokens"
             )
 
-            # Reload under caller (conversation is owned by caller).
-            reload_user_id = caller_user_id
-            if reload_user_id is None and isinstance(decoded_token, dict):
-                reload_user_id = decoded_token.get("sub")
-            conversation = self.conversation_service.get_conversation(
-                conversation_id, user_id=reload_user_id
-            )
-
-            # Get compressed context
-            compressed_summary, recent_queries = (
-                compression_service.get_compressed_context(conversation)
+            # The context this turn goes on with is the summary just made over
+            # the conversation passed in, whether or not the point was stored
+            # (an edit may have replaced the turn meanwhile and refused it).
+            compressed_summary, recent_queries = compression_service.get_compressed_context(
+                {
+                    **conversation,
+                    "compression_metadata": {
+                        "is_compressed": True,
+                        "compression_points": [
+                            {
+                                "query_index": compress_up_to,
+                                "compressed_summary": getattr(metadata, "compressed_summary", None),
+                                "compressed_token_count": getattr(metadata, "compressed_token_count", None),
+                                "original_token_count": getattr(metadata, "original_token_count", None),
+                            }
+                        ],
+                    },
+                }
             )
 
             return CompressionResult.success_with_compression(
