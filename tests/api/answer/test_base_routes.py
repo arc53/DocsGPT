@@ -447,7 +447,7 @@ class TestCompleteStreamCompressionMetadata:
             resource.conversation_service.update_compression_metadata.assert_called_once_with(
                 "conv123", {"ratio": 2.5}
             )
-            resource.conversation_service.append_compression_message.assert_called_once()
+            assert not resource.conversation_service.append_compression_message.called
             assert mock_agent.compression_saved is True
             end_chunks = [s for s in stream if '"type": "end"' in s]
             assert len(end_chunks) == 1

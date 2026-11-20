@@ -353,6 +353,22 @@ class TestAbsolutePersistIndex:
         metadata = svc.compress_conversation(conv, compress_up_to_index=1, persist_query_index=19)
 
         assert metadata.query_index == 19
+        assert "turn_index" not in metadata.to_dict()
+
+    def test_mid_turn_point_records_the_turn_it_summarized_the_tool_work_of(self):
+        llm = MagicMock()
+        llm.gen.return_value = "<summary>new</summary>"
+        svc = CompressionService(llm=llm, model_id="m")
+        svc.prompt_builder = MagicMock(version="v1.0")
+        svc.prompt_builder.build_prompt.return_value = [{"role": "user", "content": "p"}]
+        conv = {"queries": [{"prompt": "q18", "response": "r"}, {"prompt": "q19", "response": ""}]}
+
+        metadata = svc.compress_conversation(
+            conv, compress_up_to_index=1, persist_query_index=18, turn_index=19
+        )
+
+        assert metadata.to_dict()["query_index"] == 18
+        assert metadata.to_dict()["turn_index"] == 19
 
     @patch(
         "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
@@ -392,13 +408,14 @@ class TestAbsolutePersistIndex:
 
         result = orchestrator.compress_mid_execution(
             "conv1", "user1", "m", {"sub": "user1"}, current_conversation=synthetic,
-            persist_query_index=19,
+            persist_query_index=19, turn_index=20,
         )
 
         assert result.success and result.compression_performed
         args, kwargs = svc.compress_and_save.call_args
         assert kwargs["start_index"] == 0          # every synthetic query is newer than the summary
         assert kwargs["persist_query_index"] == 19  # indexed against the database conversation
+        assert kwargs["turn_index"] == 20
 
 
 @pytest.mark.unit

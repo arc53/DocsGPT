@@ -119,6 +119,13 @@ function contentEndDistance(
   return vp.scrollHeight - spacer - vp.scrollTop - vp.clientHeight;
 }
 
+function findLastShownIndex(queries: Query[]): number {
+  for (let index = queries.length - 1; index >= 0; index -= 1) {
+    if (!queries[index].compressionSummary) return index;
+  }
+  return queries.length - 1;
+}
+
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
 // Below DEFAULT_BUBBLE_MARGIN so a question groups with its own answer.
@@ -156,7 +163,10 @@ export default function ConversationMessages({
   );
 
   const hasMessages = queries.length > 0;
-  const lastQuery = queries[queries.length - 1];
+  // A stored compression summary is not shown, so the last message is the
+  // last one that is.
+  const lastIndex = findLastShownIndex(queries);
+  const lastQuery = queries[lastIndex];
   const lastTurnContentLength =
     (lastQuery?.thought?.length ?? 0) + (lastQuery?.response?.length ?? 0);
   const stickToBottomRef = useRef(true);
@@ -374,7 +384,7 @@ export default function ConversationMessages({
     : 'w-full max-w-290 px-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12';
 
   const renderResponseView = (query: Query, index: number) => {
-    const isLastMessage = index === queries.length - 1;
+    const isLastMessage = index === lastIndex;
     const bubbleMargin = DEFAULT_BUBBLE_MARGIN;
 
     // Error first; reconciler-failed rows may carry partial thought/
@@ -493,8 +503,7 @@ export default function ConversationMessages({
       // the run id alone is enough to render its produced artifacts.
       query.workflow_run_id;
     if (hasContent) {
-      const isCurrentlyStreaming =
-        status === 'loading' && index === queries.length - 1;
+      const isCurrentlyStreaming = status === 'loading' && index === lastIndex;
       return (
         <Fragment key={`${index}-ANSWER`}>
           {query.notice ? (
@@ -536,7 +545,7 @@ export default function ConversationMessages({
       );
     }
 
-    if (status === 'loading' && index === queries.length - 1) {
+    if (status === 'loading' && index === lastIndex) {
       return (
         <div
           className={cn(
@@ -602,6 +611,7 @@ export default function ConversationMessages({
           >
             {headerContent}
             {queries.map((query, index) => {
+              if (query.compressionSummary) return null;
               const responseView = renderResponseView(query, index);
               return (
                 <Fragment key={`${index}-query-fragment`}>
@@ -635,11 +645,7 @@ export default function ConversationMessages({
                   {responseView && (
                     <MessageScrollerItem
                       messageId={`a-${index}`}
-                      ref={
-                        index === queries.length - 1
-                          ? setStreamingAnswer
-                          : undefined
-                      }
+                      ref={index === lastIndex ? setStreamingAnswer : undefined}
                     >
                       {responseView}
                     </MessageScrollerItem>

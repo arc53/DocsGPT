@@ -29,6 +29,16 @@ from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
 logger = logging.getLogger(__name__)
 
+# A compression summary row an earlier version stored (alias ``m``): marked in
+# its metadata, or, written before the marker, the bare label with nothing
+# else on the row. Mirrors ``compression.types.is_compression_summary_row``.
+_COMPRESSION_SUMMARY_ROW_SQL = (
+    "(COALESCE(m.message_metadata->>'compression_summary', '') = 'true' "
+    "OR (m.prompt IS NOT DISTINCT FROM '[Context Compression Summary]' "
+    "AND COALESCE(m.tool_calls, '[]'::jsonb) = '[]'::jsonb "
+    "AND COALESCE(m.message_metadata, '{}'::jsonb) = '{}'::jsonb))"
+)
+
 
 class MessageUpdateOutcome(str, Enum):
     """Discriminated result of ``update_message_by_id``.
@@ -471,11 +481,13 @@ class ConversationsRepository:
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
                 "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
+                f"      AND NOT {_COMPRESSION_SUMMARY_ROW_SQL} "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
                 "      AND m.response ILIKE :pattern ESCAPE '\\' "
+                f"      AND NOT {_COMPRESSION_SUMMARY_ROW_SQL} "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
@@ -604,6 +616,55 @@ class ConversationsRepository:
             {"id": conversation_id, "user_id": user_id, "meta": json.dumps(metadata)},
         )
         return result.rowcount > 0
+
+    def prune_compression_points(self, conversation_id: str, keep_up_to: int) -> int:
+        """Drop compression points that cover a message past position ``keep_up_to``.
+
+        A point covers the rows up to its ``query_index`` and, for a mid-turn
+        point, the tool work of the turn at ``turn_index``. Once those rows are
+        deleted or rewritten, its summary describes messages that are gone.
+
+        Args:
+            conversation_id: Conversation whose points are checked.
+            keep_up_to: Highest position whose messages are still current.
+
+        Returns:
+            Number of points removed.
+        """
+        if not looks_like_uuid(conversation_id):
+            return 0
+        row = self._conn.execute(
+            text(
+                "SELECT compression_metadata FROM conversations "
+                "WHERE id = CAST(:id AS uuid) FOR UPDATE"
+            ),
+            {"id": conversation_id},
+        ).fetchone()
+        metadata = row[0] if row is not None else None
+        points = metadata.get("compression_points") if isinstance(metadata, dict) else None
+        if not isinstance(points, list) or not points:
+            return 0
+
+        def _past(value) -> bool:
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value > keep_up_to
+
+        kept = [
+            p
+            for p in points
+            if not (isinstance(p, dict) and (_past(p.get("query_index")) or _past(p.get("turn_index"))))
+        ]
+        removed = len(points) - len(kept)
+        if not removed:
+            return 0
+        updated = {**metadata, "compression_points": kept, "is_compressed": bool(kept)}
+        self._conn.execute(
+            text(
+                "UPDATE conversations SET compression_metadata = CAST(:meta AS jsonb), "
+                "updated_at = now() WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": conversation_id, "meta": json.dumps(updated, cls=PGNativeJSONEncoder)},
+        )
+        return removed
 
     def set_compression_flags(
         self,
@@ -1552,6 +1613,7 @@ class ConversationsRepository:
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
+        self.prune_compression_points(conversation_id, keep_up_to)
         return result.rowcount
 
     def was_superseded(self, message_id: str) -> bool:

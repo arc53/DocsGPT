@@ -17,10 +17,6 @@ from docsgpt import tracing
 from docsgpt.activity.flags import cancel_streams
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.api.answer.services.compression.types import (
-    COMPRESSION_SUMMARY_MARKER,
-    COMPRESSION_SUMMARY_PROMPT,
-)
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
@@ -250,6 +246,8 @@ class ConversationService:
                 conv_pg_id = str(conv["id"])
                 repo.update_message_at(conv_pg_id, index, message_payload)
                 repo.truncate_after(conv_pg_id, index)
+                # The row at ``index`` was rewritten: a point covering it is stale.
+                repo.prune_compression_points(conv_pg_id, keep_up_to=index - 1)
             cancel_streams(repo.retired_message_ids)
             return conversation_id
         elif conversation_id:
@@ -750,44 +748,6 @@ class ConversationService:
                 f"Error updating compression metadata: {str(e)}", exc_info=True
             )
             raise
-
-    def append_compression_message(
-        self, conversation_id: str, compression_metadata: Dict[str, Any]
-    ) -> None:
-        """Append a synthetic compression summary message to the conversation."""
-        try:
-            summary = compression_metadata.get("compressed_summary", "")
-            if not summary:
-                return
-            timestamp = compression_metadata.get(
-                "timestamp", datetime.now(timezone.utc)
-            )
-
-            with db_session() as conn:
-                repo = ConversationsRepository(conn)
-                conv = repo.get_by_legacy_id(conversation_id)
-                conv_pg_id = (
-                    str(conv["id"]) if conv is not None else conversation_id
-                )
-                repo.append_message(conv_pg_id, {
-                    "prompt": COMPRESSION_SUMMARY_PROMPT,
-                    # Durable marker: replay filters on this, not on the label.
-                    "metadata": {COMPRESSION_SUMMARY_MARKER: True},
-                    "response": summary,
-                    "thought": "",
-                    "sources": [],
-                    "tool_calls": [],
-                    "attachments": [],
-                    "model_id": compression_metadata.get("model_used"),
-                    "timestamp": timestamp,
-                })
-            logger.info(
-                f"Appended compression summary to conversation {conversation_id}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Error appending compression summary: {str(e)}", exc_info=True
-            )
 
     def get_compression_metadata(
         self, conversation_id: str

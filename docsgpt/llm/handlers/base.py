@@ -1014,6 +1014,29 @@ class LLMHandler(ABC):
         return [*messages[:index], stub, *messages[index + 1:]], turn
 
     @staticmethod
+    def _in_flight_message_id(agent) -> Optional[str]:
+        """The id of the row this turn's answer will be written to, when reserved."""
+        message_id = getattr(getattr(agent, "tool_executor", None), "message_id", None)
+        return str(message_id) if isinstance(message_id, str) and message_id else None
+
+    @staticmethod
+    def _is_in_flight_row(query: Any, in_flight_id: Optional[str]) -> bool:
+        """Whether a saved row is still being answered: this turn's, or any pending or streaming one."""
+        if not isinstance(query, dict):
+            return False
+        if in_flight_id and str(query.get("id") or "") == in_flight_id:
+            return True
+        return query.get("status") in ("pending", "streaming")
+
+    @classmethod
+    def _last_settled_index(cls, queries: List[Dict], in_flight_id: Optional[str]) -> int:
+        """Index of the last saved row that is not being answered; -1 when there is none."""
+        index = len(queries) - 1
+        while index >= 0 and cls._is_in_flight_row(queries[index], in_flight_id):
+            index -= 1
+        return index
+
+    @staticmethod
     def _nothing_to_summarize(conversation: Optional[Dict]) -> bool:
         """The synthetic conversation holds only the stubbed current turn."""
         queries = (conversation or {}).get("queries") or []
@@ -1174,16 +1197,21 @@ class LLMHandler(ABC):
             )
 
             persist_query_index = None
+            turn_index = None
+            in_flight_id = self._in_flight_message_id(agent)
             if conversation:
                 # Merge current in-flight messages (including tool calls).
                 # The synthetic conversation holds only the turns replayed
                 # this turn plus the in-flight one, so the summary already in
                 # the system prompt rides along as its latest point, and the
                 # persisted point is indexed against the SAVED conversation,
-                # not this shortened list.
-                saved_count = len(conversation.get("queries") or [])
-                if saved_count:
-                    persist_query_index = saved_count - 1
+                # not this shortened list. It stops before this turn's own
+                # row: the answer is not written yet, so the next turn must
+                # replay the row rather than treat it as summarized.
+                saved = conversation.get("queries") or []
+                if saved:
+                    persist_query_index = self._last_settled_index(saved, in_flight_id)
+                    turn_index = persist_query_index + 1
                 conversation_from_msgs = self._build_conversation_from_messages(summarizable)
                 if self._nothing_to_summarize(conversation_from_msgs):
                     logger.info(
@@ -1213,6 +1241,7 @@ class LLMHandler(ABC):
                 decoded_token=getattr(agent, "decoded_token", {}),
                 current_conversation=conversation,
                 persist_query_index=persist_query_index,
+                turn_index=turn_index,
             )
 
             if not result.success:
@@ -1243,17 +1272,10 @@ class LLMHandler(ABC):
                     f"saved {result.metadata.original_token_count - result.metadata.compressed_token_count} tokens"
                 )
 
-            # Also store the compression summary as a visible message
-            if result.metadata:
-                conversation_service.append_compression_message(
-                    agent.conversation_id, result.metadata.to_dict()
-                )
-
             # Update agent's compressed summary for downstream persistence.
-            # ``compress_mid_execution`` already wrote the compression point
-            # and the row above is the visible summary, so this IS saved —
-            # leaving the flag False made the route persist both again
-            # (prod: every mid-execution compression stored twice).
+            # ``compress_mid_execution`` already wrote the compression point,
+            # so this IS saved — leaving the flag False made the route persist
+            # it again (prod: every mid-execution compression stored twice).
             agent.compressed_summary = result.compressed_summary
             agent.compression_metadata = result.metadata.to_dict() if result.metadata else None
             agent.compression_saved = True
@@ -1263,11 +1285,17 @@ class LLMHandler(ABC):
             agent.context_limit_reached = False
             agent.current_token_count = 0
 
-            # Rebuild messages
+            # Rebuild messages. This turn's own row is in the recent queries
+            # now, but its message is restored below, verbatim.
+            recent_queries = [
+                q
+                for q in result.recent_queries or []
+                if not self._is_in_flight_row(q, in_flight_id)
+            ]
             rebuilt_messages = self._rebuild_messages_after_compression(
                 messages,
                 result.compressed_summary,
-                result.recent_queries,
+                recent_queries,
                 include_current_execution=False,
                 include_tool_calls=False,
             )

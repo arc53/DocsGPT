@@ -1116,60 +1116,6 @@ class TestCompressionMetadata:
         ), pytest.raises(RuntimeError):
             ConversationService().update_compression_metadata("abc", {})
 
-    def test_append_compression_message_skips_empty_summary(self, pg_conn):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        with _patch_db(pg_conn):
-            ConversationService().append_compression_message(
-                "any-id", {"compressed_summary": ""}
-            )
-
-    def test_append_compression_message_appends_summary(self, pg_conn):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-        from docsgpt.storage.db.repositories.conversations import (
-            ConversationsRepository,
-        )
-
-        user = "u-append-cs"
-        repo = ConversationsRepository(pg_conn)
-        conv = repo.create(user, name="c")
-        conv_id = str(conv["id"])
-
-        with _patch_db(pg_conn):
-            ConversationService().append_compression_message(
-                conv_id,
-                {
-                    "compressed_summary": "A summary",
-                    "timestamp": datetime.now(timezone.utc),
-                    "model_used": "gpt-4",
-                },
-            )
-
-        messages = repo.get_messages(conv_id)
-        assert any(m["response"] == "A summary" for m in messages)
-
-    def test_append_compression_message_swallows_error(self):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        @contextmanager
-        def _broken():
-            raise RuntimeError("boom")
-            yield
-
-        with patch(
-            "docsgpt.api.answer.services.conversation_service.db_session",
-            _broken,
-        ):
-            ConversationService().append_compression_message(
-                "abc", {"compressed_summary": "x"}
-            )
-
     def test_get_compression_metadata_returns_none_for_missing(
         self, pg_conn,
     ):

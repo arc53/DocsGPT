@@ -140,6 +140,7 @@ export function mapServerQueryToClient(raw: any): Query {
     lastHeartbeatAt: raw?.last_heartbeat_at ?? undefined,
   };
 
+  if (raw?.compression_summary) query.compressionSummary = true;
   const wake = wakeFromMetadata(metadata);
   if (wake) query.wake = wake;
   const jobArtifacts = readJobArtifacts(metadata.job_artifacts);
@@ -475,7 +476,7 @@ async function answerQuestion(
     if (USE_V1_API && agentKey) {
       // Build history from prior queries for v1 format
       const v1History = state.conversation.queries
-        .filter((q) => q.response)
+        .filter((q) => q.response && !q.compressionSummary)
         .map((q) => ({ prompt: q.prompt, response: q.response || '' }));
 
       await handleV1ChatCompletionStreaming(

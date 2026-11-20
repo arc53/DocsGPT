@@ -1,12 +1,5 @@
-"""Mid-execution compression must persist once, break the Responses chain,
-and treat an empty summary as a failure.
-
-Background (prod 2026-09-01): the DB path wrote the compression point and the
-summary row, then left ``compression_saved`` False so the route wrote both
-again; and the rebuilt four-message input was still sent with
-``previous_response_id``, so Azure prepended the uncompressed transcript
-(236k input tokens for four local messages).
-"""
+"""Mid-execution compression must persist once, write no message row, break
+the Responses chain, and treat an empty summary as a failure."""
 
 from typing import Any, Dict, Generator
 from unittest.mock import Mock, patch
@@ -87,9 +80,9 @@ def test_db_path_persists_once_and_breaks_chain():
     (success, messages), conv_service = _run(_Handler(), agent, _result())
 
     assert success is True and messages
-    # The orchestrator's compress_and_save already wrote the point; the
-    # handler wrote the visible row. The route must not write either again.
-    conv_service.append_compression_message.assert_called_once()
+    # The orchestrator's compress_and_save already wrote the point. No summary
+    # row goes into the conversation, and the route must not write it again.
+    assert [call[0] for call in conv_service.method_calls] == ["get_conversation"]
     assert agent.compression_saved is True
     # The rebuilt messages are the whole context now: forget the chain so
     # the next call is not prepended with the uncompressed transcript.
@@ -105,7 +98,7 @@ def test_empty_summary_is_a_failure_not_a_success():
         _Handler(), agent, _result(compressed=0, original=1000, summary="")
     )
     assert success is False and messages is None
-    conv_service.append_compression_message.assert_not_called()
+    assert [call[0] for call in conv_service.method_calls] == ["get_conversation"]
     agent.llm.start_responses_turn.assert_not_called()
 
 
@@ -216,3 +209,95 @@ def test_in_memory_path_carries_the_current_summary():
     assert success is True
     sent = svc.compress_conversation.call_args[0][0]
     assert sent["compression_metadata"]["compression_points"][-1]["compressed_summary"] == PRIOR
+
+
+# ── the in-flight turn stays out of the persisted point ─────────────────────
+
+
+def _settled(n):
+    return [{"id": f"m{i}", "prompt": f"q{i}", "response": "r", "status": "complete"} for i in range(n)]
+
+
+@pytest.mark.unit
+def test_point_stops_before_the_reserved_row_of_this_turn():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = "m3"
+    db_conversation = {"queries": [*_settled(3), {"id": "m3", "prompt": "q3", "response": "", "status": "streaming"}]}
+    synthetic = {"queries": [{"prompt": "q2", "response": "r"}, {"prompt": "q3", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    # The answer of row 3 is not written yet: the next turn must replay it.
+    assert kwargs["persist_query_index"] == 2
+    assert kwargs["turn_index"] == 3
+
+
+@pytest.mark.unit
+def test_an_unknown_reserved_id_falls_back_to_the_row_status():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = None
+    db_conversation = {"queries": [*_settled(2), {"id": "m2", "prompt": "q2", "response": "", "status": "pending"}]}
+    synthetic = {"queries": [{"prompt": "q2", "response": ""}, {"prompt": "x", "response": "y"}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    assert kwargs["persist_query_index"] == 1
+    assert kwargs["turn_index"] == 2
+
+
+@pytest.mark.unit
+def test_first_turn_point_covers_no_saved_row():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = "m0"
+    db_conversation = {"queries": [{"id": "m0", "prompt": "q0", "response": "", "status": "streaming"}]}
+    synthetic = {"queries": [{"prompt": "x", "response": "y"}, {"prompt": "q0", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    assert kwargs["persist_query_index"] == -1
+    assert kwargs["turn_index"] == 0
+
+
+@pytest.mark.unit
+def test_rebuild_leaves_the_in_flight_row_out_of_the_history():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = "m1"
+    in_flight = {"id": "m1", "prompt": "q1", "response": "", "status": "streaming"}
+    db_conversation = {"queries": [*_settled(1), in_flight]}
+    result = _result()
+    result.recent_queries = [in_flight]
+    conv_service = Mock()
+    conv_service.get_conversation.return_value = db_conversation
+    orchestrator = Mock()
+    orchestrator.compress_mid_execution.return_value = result
+    handler = _Handler()
+    with patch(
+        "docsgpt.api.answer.services.compression.CompressionOrchestrator",
+        return_value=orchestrator,
+    ), patch(
+        "docsgpt.api.answer.services.conversation_service.ConversationService",
+        return_value=conv_service,
+    ), patch.object(
+        handler, "_build_conversation_from_messages",
+        return_value={"queries": [{"prompt": "q0", "response": "r"}, {"prompt": "q1", "response": ""}],
+                      "compression_metadata": {"is_compressed": False, "compression_points": []}},
+    ), patch.object(
+        handler, "_rebuild_messages_after_compression",
+        return_value=[{"role": "system", "content": "rebuilt"}],
+    ) as rebuild:
+        success, _ = handler._perform_mid_execution_compression(agent, [{"role": "user", "content": "q1"}])
+
+    assert success is True
+    # The turn's own message is restored after the summary; the row must not
+    # come back as a history turn too.
+    assert rebuild.call_args.args[2] == []

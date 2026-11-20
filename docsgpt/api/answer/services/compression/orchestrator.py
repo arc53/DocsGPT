@@ -172,6 +172,7 @@ class CompressionOrchestrator:
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
         keep_recent_tokens: Optional[int] = None,
+        turn_index: Optional[int] = None,
     ) -> CompressionResult:
         """
         Perform the actual compression operation.
@@ -185,6 +186,8 @@ class CompressionOrchestrator:
             model_user_id: BYOM-resolution scope (model owner)
             keep_recent_tokens: Leave the newest queries that fit in this many
                 tokens out of the summary; None summarizes up to the latest.
+            turn_index: The in-flight turn a mid-turn point summarizes the
+                tool work of.
 
         Returns:
             CompressionResult
@@ -300,6 +303,7 @@ class CompressionOrchestrator:
                 compress_up_to,
                 start_index=start_index,
                 persist_query_index=persist_query_index,
+                turn_index=turn_index,
             )
 
             logger.info(
@@ -374,6 +378,7 @@ class CompressionOrchestrator:
         current_conversation: Optional[Dict[str, Any]] = None,
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
+        turn_index: Optional[int] = None,
     ) -> CompressionResult:
         """
         Perform compression during tool execution.
@@ -388,6 +393,9 @@ class CompressionOrchestrator:
                 shared-agent dispatch this is the agent owner; defaults
                 to ``user_id`` so built-in / caller-owned models are
                 unaffected.
+            persist_query_index: Last settled row the point covers.
+            turn_index: Position of the in-flight turn whose tool work the
+                summary holds.
 
         Returns:
             CompressionResult
@@ -416,6 +424,7 @@ class CompressionOrchestrator:
                 user_id=user_id,
                 model_user_id=model_user_id,
                 persist_query_index=persist_query_index,
+                turn_index=turn_index,
             )
 
         except Exception as e:

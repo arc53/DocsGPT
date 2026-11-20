@@ -2062,15 +2062,12 @@ class BaseAnswerResource:
                         status="failed" if errored_empty else "complete",
                         **team_kwargs,
                     )
-                # Persist compression metadata/summary if it exists and wasn't saved mid-execution
+                # Persist the compression point if it wasn't saved mid-execution
                 compression_meta = getattr(agent, "compression_metadata", None)
                 compression_saved = getattr(agent, "compression_saved", False)
                 if conversation_id and compression_meta and not compression_saved:
                     try:
                         self.conversation_service.update_compression_metadata(
-                            conversation_id, compression_meta
-                        )
-                        self.conversation_service.append_compression_message(
                             conversation_id, compression_meta
                         )
                         agent.compression_saved = True
@@ -2257,9 +2254,6 @@ class BaseAnswerResource:
                     if conversation_id and compression_meta and not compression_saved:
                         try:
                             self.conversation_service.update_compression_metadata(
-                                conversation_id, compression_meta
-                            )
-                            self.conversation_service.append_compression_message(
                                 conversation_id, compression_meta
                             )
                             agent.compression_saved = True

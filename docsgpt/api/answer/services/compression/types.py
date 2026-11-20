@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-# The visible summary row appended after a compression. These rows are
-# display-only: their content already reaches the model through the system
-# prompt (``compressed_summary``), so history replay skips them. New rows carry
-# ``metadata[COMPRESSION_SUMMARY_MARKER]``; the prompt text is the display label.
+# Earlier versions appended a summary row to the conversation after each
+# mid-turn compression. None are written now, but stored ones remain: history
+# replay, the chat view, shared links and search leave them out. Rows from
+# after the marker existed carry ``metadata[COMPRESSION_SUMMARY_MARKER]``.
 COMPRESSION_SUMMARY_PROMPT = "[Context Compression Summary]"
 COMPRESSION_SUMMARY_MARKER = "compression_summary"
 
@@ -43,7 +43,7 @@ def latest_usable_compression_point(points: Any) -> Optional[Dict[str, Any]]:
 
 
 def is_compression_summary_row(query: Any) -> bool:
-    """True for the visible summary row written by ``append_compression_message``.
+    """True for a summary row stored by an earlier version.
 
     Rows written since the marker exists are recognised by it alone. Rows
     written before it are recognised by the label only when nothing marks them
@@ -74,10 +74,13 @@ class CompressionMetadata:
     compression_ratio: float
     model_used: str
     compression_prompt_version: str
+    # Mid-turn points: position of the turn whose tool work the summary holds.
+    # Its question and answer stay out of the point, so they are replayed.
+    turn_index: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for DB storage."""
-        return {
+        data = {
             "timestamp": self.timestamp,
             "query_index": self.query_index,
             "compressed_summary": self.compressed_summary,
@@ -87,6 +90,9 @@ class CompressionMetadata:
             "model_used": self.model_used,
             "compression_prompt_version": self.compression_prompt_version,
         }
+        if self.turn_index is not None:
+            data["turn_index"] = self.turn_index
+        return data
 
 
 @dataclass

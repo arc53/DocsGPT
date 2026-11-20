@@ -514,6 +514,27 @@ describe('workflow step progress', () => {
   });
 });
 
+describe('mapServerQueryToClient compression summary', () => {
+  it('marks a row the server flags as a stored compression summary', () => {
+    const query = mapServerQueryToClient({
+      prompt: '[Context Compression Summary]',
+      response: 's',
+      status: 'complete',
+      compression_summary: true,
+    });
+    expect(query.compressionSummary).toBe(true);
+  });
+
+  it('leaves other rows unmarked', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'a',
+      status: 'complete',
+    });
+    expect(query.compressionSummary).toBeUndefined();
+  });
+});
+
 describe('mapServerQueryToClient feedback', () => {
   // The API stores feedback lowercase (analytics counts 'like'/'dislike'),
   // while the thumbs compare against the FEEDBACK union.
