@@ -1,3 +1,4 @@
+import copy
 import datetime
 import hashlib
 import io
@@ -527,7 +528,11 @@ def _sync_generation(source: dict) -> Optional[str]:
             manifest = json.loads(manifest)
         except ValueError:
             return None
-    generation = manifest.get("generation") if isinstance(manifest, dict) else None
+    if not isinstance(manifest, dict) or manifest.get("writing"):
+        # A request is changing the files right now (or died doing so): what
+        # this run reads may be part of the change, and must not be vouched for.
+        return None
+    generation = manifest.get("generation")
     return generation if isinstance(generation, str) and generation else None
 
 
@@ -558,15 +563,20 @@ def _record_sync_manifest(source_id: str, user: str, sync_manifest: Any) -> None
         logging.error(f"Error recording the uploaded files of source {source_id}: {e}", exc_info=True)
 
 
-def _mark_sync_indexed(source_id: str, generation: Optional[str]) -> None:
-    """Mark the index current for ``generation``; a failure only costs the next sync a reingest."""
+def _mark_sync_indexed(source_id: str, generation: Optional[str]) -> bool:
+    """Mark the index current for ``generation``; a failure only costs the next sync a reingest.
+
+    Returns:
+        bool: Whether the mark was set: the index reflects the stored files as a sync left them.
+    """
     if not generation:
-        return
+        return False
     try:
         with db_session() as conn:
-            SourcesRepository(conn).mark_sync_indexed(source_id, generation)
+            return SourcesRepository(conn).mark_sync_indexed(source_id, generation)
     except Exception as e:
         logging.error(f"Error marking the index current for source {source_id}: {e}", exc_info=True)
+        return False
 
 
 def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
@@ -589,6 +599,43 @@ def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
         elif isinstance(node, dict):
             files.update(_structure_files(node, path))
     return files
+
+
+def _structure_with_pending(old: Any, new: Any, added: List[str], modified: List[str]) -> dict:
+    """A ``directory_structure`` that says which files a reingest is about to re-chunk.
+
+    The files a run adds are listed (as the new structure has them) and the
+    ones it edits stay listed, all without a ``sha256``. A file stored
+    without a hash counts as edited, so if the run dies between changing the
+    chunks and saving the final structure, the next run deletes whatever
+    chunks those files have and embeds them again.
+
+    Args:
+        old: The source's saved ``directory_structure``.
+        new: The structure of the files as they are now.
+        added: Paths in ``new`` only.
+        modified: Paths in both whose content changed.
+
+    Returns:
+        A copy of ``old`` with those entries pending; ``old`` and ``new`` are not changed.
+    """
+    pending = copy.deepcopy(old) if isinstance(old, dict) else {}
+    new_files = _structure_files(new)
+    for rel_path in [*added, *modified]:
+        parts = rel_path.split(os.sep)
+        node = pending
+        for part in parts[:-1]:
+            child = node.get(part)
+            if not isinstance(child, dict) or ("type" in child and "size_bytes" in child):
+                child = node[part] = {}
+            node = child
+        entry = node.get(parts[-1])
+        if not (isinstance(entry, dict) and "type" in entry and "size_bytes" in entry):
+            entry = dict(new_files.get(rel_path) or {})
+        entry = {key: value for key, value in entry.items() if key != "sha256"}
+        if "type" in entry and "size_bytes" in entry:
+            node[parts[-1]] = entry
+    return pending
 
 
 def _file_content_changed(old: dict, new: dict) -> bool:
@@ -1145,8 +1192,11 @@ def ingest_worker(
             if folder_id:
                 file_data["folder_id"] = folder_id
             upload_index(vector_store_path, file_data)
-            # A file that could not be read was not indexed: without a record
-            # the source's first sync uploads the files and indexes them all.
+            # A file that could not be read or parsed was not indexed: without
+            # a record the source's first sync uploads the files and indexes
+            # them all.
+            if getattr(reader, "failed_files", None):
+                read_all = False
             _record_sync_manifest(source_id_for_events, user, sync_manifest if read_all else None)
             _publish_source_event(
                 user,
@@ -1338,9 +1388,11 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            # A file that could not be read is missing from the scan below:
-            # the run can still finish, but must not mark the index current.
-            scanned_all = _download_source_files_to_dir(storage, source_file_path, temp_dir)
+            # A stored file that could not be read would look removed in the
+            # scan below, and its chunks would be deleted: stop before the
+            # index changes, and let a later run try again.
+            if not _download_source_files_to_dir(storage, source_file_path, temp_dir):
+                raise RuntimeError("Could not read every stored file of the source; the index was left as it was")
 
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
@@ -1350,12 +1402,16 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 file_metadata=metadata_from_filename,
             )
             reader.load_data()
+            # A file that failed to parse is not in the index: the run goes
+            # on, but must not mark the index current.
+            scanned_all = not getattr(reader, "failed_files", None)
             directory_structure = reader.directory_structure
             logging.info(
                 f"Directory structure built with token counts: {directory_structure}"
             )
 
             rechunk = False
+            index_current = False
             # Whether the stored files were compared with the indexed ones;
             # when that failed, "no changes" says nothing about the index.
             compared = False
@@ -1403,8 +1459,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             try:
                 if not added_files and not removed_files and not modified_files:
                     logging.info("No changes detected.")
-                    if compared and scanned_all:
-                        _mark_sync_indexed(source_id, files_generation)
+                    index_current = compared and scanned_all and _mark_sync_indexed(source_id, files_generation)
                     _publish_source_event(
                         user, actor_id,
                         "source.ingest.completed",
@@ -1426,6 +1481,10 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         "added_files": [],
                         "removed_files": [],
                         "modified_files": [],
+                        # Whether the index is known to hold the files as a
+                        # sync left them; a client keeps no "up to date"
+                        # record of its own otherwise.
+                        "index_current": index_current,
                     }
 
                 vector_store = VectorCreator.create_vectorstore(
@@ -1439,14 +1498,30 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     meta={"current": 40, "status": "Processing file changes"},
                 )
 
-                # 1) Delete chunks of removed files, and of edited files
-                # before their new content is embedded
+                # Before any chunk changes, record which files are about to:
+                # if this run dies part way, the next one rebuilds their
+                # chunks instead of trusting hashes the index no longer matches.
+                with db_session() as conn:
+                    SourcesRepository(conn).update(
+                        source_id, user,
+                        {
+                            "directory_structure": _structure_with_pending(
+                                old_directory_structure, directory_structure, added_files, modified_files,
+                            )
+                        },
+                    )
+
+                # 1) Delete chunks of removed files, of edited files before
+                # their new content is embedded, and any an earlier run that
+                # died left for the files being added
                 deleted = 0
                 # Files whose chunks may not match their content after this run.
                 # They are stored without a hash, so the next reingest counts
                 # them as edited and rebuilds their chunks.
                 unsynced: set = set()
-                stale_files = set(removed_files) | set(modified_files)
+                # Files with a chunk that could not be deleted.
+                undeleted: set = set()
+                stale_files = set(removed_files) | set(modified_files) | set(added_files)
                 if stale_files:
                     try:
                         for ch in vector_store.get_chunks() or []:
@@ -1469,8 +1544,9 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                         logging.error(
                                             f"Failed deleting chunk {cid}: {de}"
                                         )
+                                        undeleted.add(source_file)
                         logging.info(
-                            f"Deleted {deleted} chunks from {len(stale_files)} removed or edited files"
+                            f"Deleted {deleted} chunks of {len(stale_files)} removed, edited or added files"
                         )
                     except Exception as e:
                         logging.error(
@@ -1588,6 +1664,16 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         )
                         unsynced.update(files_to_embed)
 
+                if undeleted:
+                    inner_warnings.append(f"chunks of {len(undeleted)} files could not be deleted")
+                    unsynced.update(undeleted)
+                    # A removed file is no longer in the structure; keep it
+                    # listed, without a hash, so the next run finds it removed
+                    # again and deletes the chunks that are left.
+                    directory_structure = _structure_with_pending(
+                        directory_structure, old_directory_structure,
+                        sorted(undeleted & set(removed_files)), [],
+                    )
                 new_entries = _structure_files(directory_structure)
                 for rel_path in unsynced:
                     new_entries.get(rel_path, {}).pop("sha256", None)
@@ -1613,7 +1699,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         if rechunk and not inner_warnings:
                             repo.remove_metadata_key(source_id, user, "rechunk_pending")
                         if not inner_warnings and scanned_all:
-                            repo.mark_sync_indexed(source_id, files_generation)
+                            index_current = repo.mark_sync_indexed(source_id, files_generation)
                 except Exception as e:
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True
@@ -1654,6 +1740,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     "modified_files": modified_files,
                     "chunks_added": added,
                     "chunks_deleted": deleted,
+                    "index_current": index_current,
                 }
             except Exception as e:
                 logging.error(

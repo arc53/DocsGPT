@@ -635,8 +635,9 @@ class SourcesRepository:
         """Record that the index was built from the files of ``generation``.
 
         Sets ``sync_manifest.indexed_generation``, and only while the
-        manifest's generation is still ``generation``: files changed since the
-        reingest read them leave the index marked stale.
+        manifest's generation is still ``generation`` and no request is
+        changing the files (``writing``): files changed since the reingest
+        read them leave the index marked stale.
 
         Args:
             source_id: The source's UUID.
@@ -652,7 +653,8 @@ class SourcesRepository:
             text(
                 "UPDATE sources SET sync_manifest = jsonb_set(sync_manifest, '{indexed_generation}', "
                 "to_jsonb(CAST(:generation AS text))) "
-                "WHERE id = CAST(:sid AS uuid) AND sync_manifest ->> 'generation' = :generation"
+                "WHERE id = CAST(:sid AS uuid) AND sync_manifest ->> 'generation' = :generation "
+                "AND COALESCE(sync_manifest ->> 'writing', 'false') <> 'true'"
             ),
             {"sid": str(source_id), "generation": generation},
         )

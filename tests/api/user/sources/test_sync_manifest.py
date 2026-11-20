@@ -101,7 +101,7 @@ class TestParseManifest:
 class TestLoadState:
     def test_nothing_recorded(self):
         assert sm.load_state(None) == {
-            "version": 1, "generation": None, "indexed_generation": None, "files": {},
+            "version": 1, "generation": None, "indexed_generation": None, "writing": False, "files": {},
         }
 
     def test_reads_json_text(self):
@@ -125,6 +125,15 @@ class TestLoadState:
             "ok.md": {"path": "ok.md", "sha256": A},
             "nohash.md": {"path": "nohash.md", "sha256": None},
         }
+
+    def test_an_index_is_not_current_while_files_are_being_written(self):
+        state = _state(generation="g", indexed="g")
+        assert sm.index_is_current(state)
+
+        assert not sm.index_is_current({**state, "writing": True})
+        assert sm.load_state({"version": 1, "generation": "g", "writing": True, "files": {}})["writing"] is True
+        # Anything but a real true is not writing.
+        assert sm.load_state({"version": 1, "generation": "g", "writing": "yes", "files": {}})["writing"] is False
 
     def test_index_is_current_only_when_generations_match(self):
         assert sm.index_is_current(_state(generation="g", indexed="g"))
@@ -355,6 +364,18 @@ class TestStates:
         assert after["files"] == {
             "old.md": {"path": "old.md", "sha256": A}, "a.md": {"path": "a.md", "sha256": A},
         }
+
+    def test_a_change_is_writing_until_it_says_it_is_done(self):
+        state, plan = self._plan()
+
+        before = sm.state_before_writes(state, plan, "g2")
+        after = sm.state_after_writes(before, plan, "g2")
+        done = sm.state_touched(after, set(), "g3", writing=False)
+
+        assert before["writing"] is True and after["writing"] is True
+        assert done["writing"] is False and done["generation"] == "g3"
+        assert done["files"] == after["files"]
+        assert sm.state_touched(state, set(), "g2")["writing"] is True
 
     def test_touched_drops_the_hash_of_written_paths_and_moves_the_generation(self):
         state = _state({"a.md": {"path": "x/a.md", "sha256": A}, "b.md": {"path": "b.md", "sha256": B}})

@@ -2237,6 +2237,104 @@ class TestManageSourceFilesManifestSync:
         assert removed.status_code == 409 and removed_dir.status_code == 409
         assert self._stored(root) == {"a.md": b"a", "docs/b.md": b"b"}
 
+    def test_a_finished_request_leaves_the_record_not_writing(self, app, pg_conn, tmp_path):
+        src, _ = self._seed(pg_conn, tmp_path)
+
+        self._full(app, pg_conn, tmp_path, src, {"a.md": b"a"})
+        assert self._state(pg_conn, src)["writing"] is False
+        self._post(app, pg_conn, tmp_path, src, {"operation": "add", "file": [(io.BytesIO(b"x"), "b.md")]})
+        assert self._state(pg_conn, src)["writing"] is False
+        self._post(app, pg_conn, tmp_path, src, {"operation": "remove", "file_paths": json.dumps(["b.md"])})
+        assert self._state(pg_conn, src)["writing"] is False
+
+    def test_a_request_that_died_while_writing_cannot_be_vouched_for(self, app, pg_conn, tmp_path):
+        """It moved the generation and wrote some files; a reingest that read them then must not mark the index."""
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+        from docsgpt.storage.local import LocalStorage
+
+        src, root = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"a.md": b"a", "b.md": b"b"})
+        self._mark_indexed(pg_conn, src)
+
+        class Dying(LocalStorage):
+            def delete_file(self, path):
+                raise SystemError("process killed")
+
+        died, _ = self._sync(app, pg_conn, tmp_path, src, {"a.md": b"a"}, storage=Dying(base_dir=str(tmp_path)))
+        assert died.status_code == 500
+        state = self._state(pg_conn, src)
+        assert state["writing"] is True
+        # A reingest running now read the row with this generation.
+        assert SourcesRepository(pg_conn).mark_sync_indexed(str(src["id"]), state["generation"]) is False
+
+        # The next sync finishes the job, says so, and reingests.
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, {"a.md": b"a"})
+        assert response.json["status"] == "synced" and response.json["removed_files"] == ["b.md"]
+        assert self._state(pg_conn, src)["writing"] is False
+        apply_async.assert_called_once()
+
+    def test_a_sync_with_nothing_to_do_still_clears_a_dead_requests_writing_mark(self, app, pg_conn, tmp_path):
+        from docsgpt.api.user.sources import sync_manifest
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        src, _ = self._seed(pg_conn, tmp_path)
+        tree = {"a.md": b"a"}
+        self._full(app, pg_conn, tmp_path, src, tree)
+        self._mark_indexed(pg_conn, src)
+        state = self._state(pg_conn, src)
+        # An ``add`` died after its first note and before writing anything.
+        SourcesRepository(pg_conn).update(str(src["id"]), self.USER, {
+            "sync_manifest": sync_manifest.state_touched(state, set(), "dead"),
+        })
+
+        response, apply_async = self._sync(app, pg_conn, tmp_path, src, tree)
+
+        assert response.json["status"] == "synced" and response.json["uploaded"] == 0
+        apply_async.assert_called_once()
+        after = self._state(pg_conn, src)
+        assert after["writing"] is False and after["generation"] not in ("dead", state["generation"])
+
+    def test_a_complete_sync_drops_entries_an_unfinished_one_left(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path)
+        tree = {"a.md": b"a"}
+        self._full(app, pg_conn, tmp_path, src, tree)
+        # Another client started on a bigger tree and never came back.
+        other = {"a.md": b"a", "b.md": b"b", "c.md": b"c"}
+        partial, _ = self._sync(app, pg_conn, tmp_path, src, other, send=["b.md"])
+        assert partial.json["status"] == "needs_files"
+        assert "b.md" in self._state(pg_conn, src)["files"]
+
+        response, _ = self._sync(app, pg_conn, tmp_path, src, tree)
+
+        assert response.json["status"] == "synced" and response.json["removed_files"] == ["b.md"]
+        assert list(self._state(pg_conn, src)["files"]) == ["a.md"]
+        assert self._stored(root) == tree
+
+    def test_folders_a_sync_emptied_are_removed(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"docs/deep/a.md": b"a", "keep/b.md": b"b", "keep/c.md": b"c"})
+
+        self._full(app, pg_conn, tmp_path, src, {"keep/b.md": b"b"})
+
+        assert not (root / "docs").exists() and (root / "keep").is_dir()
+        # A file can now take the name the folder had.
+        response, _ = self._full(app, pg_conn, tmp_path, src, {"keep/b.md": b"b", "docs": b"now a file"})
+        assert response.json["status"] == "synced"
+        assert self._stored(root) == {"keep/b.md": b"b", "docs": b"now a file"}
+
+    def test_a_manifest_over_its_limit_is_413_naming_that_limit(self, app, pg_conn, tmp_path):
+        from docsgpt.api.user.sources import upload
+
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+
+        with patch.object(upload, "_MANIFEST_MAX_BYTES", 64):
+            response, apply_async = self._sync(app, pg_conn, tmp_path, src, {f"{i}.md": b"x" for i in range(5)})
+
+        assert response.status_code == 413 and response.json["code"] == "manifest_too_large"
+        assert "Manifest" in response.json["message"]
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
     def test_sync_manifest_without_a_manifest_is_400(self, app, pg_conn, tmp_path):
         src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
 
@@ -2279,13 +2377,23 @@ class TestSourceFilesLock:
                     open_now -= 1
 
         source_id = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
-        with patch.object(upload, "db_session", session), patch.object(upload.time, "sleep") as sleep:
+        clock = [0.0]
+
+        def sleep(_seconds):
+            # The waiter gave its connection back before sleeping; the next
+            # look at the clock is past its deadline.
+            assert open_now == 1
+            clock[0] += 60
+
+        with patch.object(upload, "db_session", session):
             with upload._source_files_lock(source_id):
-                sleep.side_effect = lambda _s: (_ for _ in ()).throw(AssertionError(open_now)) if open_now != 1 else None
-                with pytest.raises(upload.SourceFilesBusy):
-                    with upload._source_files_lock(source_id, wait_seconds=0.05):
-                        pass
-                assert sleep.called
+                with patch.object(upload.time, "monotonic", lambda: clock[0]), patch.object(
+                    upload.time, "sleep", side_effect=sleep,
+                ) as slept:
+                    with pytest.raises(upload.SourceFilesBusy):
+                        with upload._source_files_lock(source_id, wait_seconds=30):
+                            pass
+                assert slept.call_count == 1
         # The holder's connection plus one try at a time, never a queue of waiters'.
         assert most == 2 and open_now == 0
 

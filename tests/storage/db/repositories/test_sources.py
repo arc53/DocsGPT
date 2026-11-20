@@ -319,6 +319,17 @@ class TestMarkSyncIndexed:
         assert repo.mark_sync_indexed(sid, "g1") is False
         assert repo.get(sid, "u")["sync_manifest"]["indexed_generation"] is None
 
+    def test_a_record_being_written_is_left_alone(self, pg_conn):
+        repo, sid = self._source(pg_conn)
+        manifest = repo.get(sid, "u")["sync_manifest"]
+        repo.update(sid, "u", {"sync_manifest": {**manifest, "writing": True}})
+
+        assert repo.mark_sync_indexed(sid, "g1") is False
+        assert repo.get(sid, "u")["sync_manifest"]["indexed_generation"] is None
+
+        repo.update(sid, "u", {"sync_manifest": {**manifest, "writing": False}})
+        assert repo.mark_sync_indexed(sid, "g1") is True
+
     def test_no_manifest_or_generation_does_nothing(self, pg_conn):
         repo = _repo(pg_conn)
         src = repo.create("docs", user_id="u")

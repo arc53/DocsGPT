@@ -800,6 +800,29 @@ def _stored_files(storage, source_file_path: str) -> dict[str, str]:
     return stored
 
 
+def _remove_empty_folders(storage, source_file_path: str, removed: list[str]) -> None:
+    """Remove the folders a sync's deletions left empty.
+
+    Local storage keeps a folder after its last file is gone, and a later
+    file of that name could then never be written there. A store without
+    real folders has none to remove.
+
+    Args:
+        storage: The file storage.
+        source_file_path: The source's folder in storage.
+        removed: The removed files, relative to the source.
+    """
+    folders = set()
+    for rel_path in removed:
+        parts = rel_path.split("/")[:-1]
+        folders.update("/".join(parts[:depth]) for depth in range(1, len(parts) + 1))
+    # Deepest first, so a folder emptied by removing its subfolder goes too.
+    for folder in sorted(folders, key=lambda path: path.count("/"), reverse=True):
+        full_path = f"{source_file_path}/{folder}"
+        if storage.is_directory(full_path) and not storage.list_files(full_path):
+            storage.remove_directory(full_path)
+
+
 def _file_sha256(path: str) -> str:
     """The SHA-256 of a local file, as lowercase hex."""
     digest = hashlib.sha256()
@@ -814,7 +837,7 @@ def _allocate_stored_path(client_path: str, folder_names: dict[str, str], taken:
     return _unique_file_path(_safe_relative_upload_path(client_path, folder_names), taken)
 
 
-def _note_files_changing(source_id: str, owner: str, written: Container[str] = ()) -> None:
+def _note_files_changing(source_id: str, owner: str, written: Container[str] = (), done: bool = False) -> None:
     """Record that a source's stored files are about to change outside a sync.
 
     Moves the ``sync_manifest`` generation, so the index counts as stale until
@@ -823,14 +846,16 @@ def _note_files_changing(source_id: str, owner: str, written: Container[str] = (
     what it stored there before. A source no sync has touched has no record
     and is left alone.
 
-    Called again once the change is done: a reingest that read the record
-    while the files were changing saw only part of the change, and the second
-    move keeps it from marking the index current.
+    Called again with ``done`` once the change is over. In between the record
+    says ``writing``: a reingest that reads it then saw only part of the
+    change and does not mark the index current, also when the request died
+    before saying it was done.
 
     Args:
         source_id: The source's UUID.
         owner: The source's owner.
         written: Stored paths (relative to the source) about to be written.
+        done: The change is over.
     """
     with db_session() as conn:
         repo = SourcesRepository(conn)
@@ -840,7 +865,11 @@ def _note_files_changing(source_id: str, owner: str, written: Container[str] = (
         state = sync_manifest.load_state(row.get("sync_manifest"))
         repo.update(
             source_id, owner,
-            {"sync_manifest": sync_manifest.state_touched(state, written, sync_manifest.new_generation())},
+            {
+                "sync_manifest": sync_manifest.state_touched(
+                    state, written, sync_manifest.new_generation(), writing=not done,
+                )
+            },
         )
 
 
@@ -1015,6 +1044,12 @@ def _apply_sync(
             if changing:
                 state = sync_manifest.state_after_writes(state, plan, generation)
                 fields["sync_manifest"] = state
+            elif plan.complete and state["files"] != plan.files:
+                # Nothing to store or remove, but the record still lists
+                # paths an earlier, unfinished sync left: only the manifest's
+                # files are the source's.
+                state = {**state, "files": {path: dict(entry) for path, entry in plan.files.items()}}
+                fields["sync_manifest"] = state
             if plan.complete:
                 fields["file_name_map"] = file_name_map(plan)
             if fields:
@@ -1028,8 +1063,11 @@ def _apply_sync(
                 if storage.delete_file(present[rel_path]) is False and storage.file_exists(present[rel_path]):
                     raise OSError(f"Could not remove {present[rel_path]} from storage")
                 removed.append((rel_path, client_paths.get(rel_path, rel_path)))
-        if changing:
-            _note_files_changing(source_id, owner)
+            _remove_empty_folders(storage, source_file_path, [rel_path for rel_path, _ in removed])
+        if changing or state["writing"]:
+            # Done; also on behalf of a request that died before saying so
+            # (this one holds the lock, so nothing else is writing).
+            _note_files_changing(source_id, owner, done=True)
     reingest = plan.complete and (changing or not sync_manifest.index_is_current(state))
     return plan, removed, reingest
 
@@ -1654,7 +1692,8 @@ class ManageSourceFiles(Resource):
                 "manifest": fields.Raw(
                     required=False,
                     description=(
-                        "For sync_manifest, as a file part: JSON {\"version\": 1, \"files\": [{\"path\", \"sha256\"}]} "
+                        "For sync_manifest, as a file part: JSON "
+                        "{\"version\": 1, \"files\": [{\"path\": \"guide/intro.md\", \"sha256\": \"<64 lowercase hex>\"}]} "
                         "listing the whole file set. The reply names the paths the source lacks (status "
                         "'needs_files'); only those are uploaded, each file part named after its sha256."
                     ),
@@ -1859,7 +1898,7 @@ class ManageSourceFiles(Resource):
                                 )
                                 file_name_map[relative_key] = original_filename
                                 map_updated = True
-                        _note_files_changing(resolved_source_id, owner)
+                        _note_files_changing(resolved_source_id, owner, done=True)
 
                 if map_updated:
                     with db_session() as conn:
@@ -1964,11 +2003,25 @@ class ManageSourceFiles(Resource):
                     if by_manifest:
                         # The client lists its files and uploads only the
                         # ones the source lacks; see ``sync_manifest``.
-                        raw_manifest: Any = (
-                            read_upload_limited(manifest_part, _MANIFEST_MAX_BYTES)
-                            if manifest_part is not None
-                            else request.form.get("manifest")
-                        )
+                        raw_manifest: Any = request.form.get("manifest")
+                        if manifest_part is not None:
+                            try:
+                                raw_manifest = read_upload_limited(manifest_part, _MANIFEST_MAX_BYTES)
+                            except UploadTooLargeError:
+                                if scoped_key:
+                                    _release_claim(scoped_key)
+                                return make_response(
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "code": "manifest_too_large",
+                                            "message": upload_limit_message(_MANIFEST_MAX_BYTES).replace(
+                                                "File", "Manifest", 1
+                                            ),
+                                        }
+                                    ),
+                                    413,
+                                )
                         upload = _ManifestUpload(temp_dir)
                         upload.stage(raw_manifest, files)
 
@@ -2139,7 +2192,7 @@ class ManageSourceFiles(Resource):
                         if file_path in file_name_map:
                             file_name_map.pop(file_path, None)
                             map_updated = True
-                    _note_files_changing(resolved_source_id, owner)
+                    _note_files_changing(resolved_source_id, owner, done=True)
 
                 if map_updated and isinstance(file_name_map, dict):
                     with db_session() as conn:
@@ -2242,7 +2295,7 @@ class ManageSourceFiles(Resource):
                 with _source_files_lock(resolved_source_id):
                     _note_files_changing(resolved_source_id, owner)
                     success = storage.remove_directory(full_directory_path)
-                    _note_files_changing(resolved_source_id, owner)
+                    _note_files_changing(resolved_source_id, owner, done=True)
 
                 if not success:
                     current_app.logger.error(

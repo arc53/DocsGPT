@@ -10,6 +10,7 @@ was written:
       "version": 1,
       "generation": "5c1f…",
       "indexed_generation": "5c1f…",
+      "writing": false,
       "files": {"guide/введение.md": {"path": "guide/6a0f….md", "sha256": "9b2e…"}}
     }
 
@@ -23,12 +24,12 @@ Two rules keep the record honest:
   overwritten. A request that dies part way leaves entries without a hash,
   which the next sync uploads again.
 * ``generation`` changes every time the stored files are about to change,
-  and again once they have changed (a reingest that started in between read
-  only part of the change). A
-  reingest that read the files at generation ``g`` sets
-  ``indexed_generation`` to ``g`` when it finishes cleanly, and only if the
-  generation is still ``g``. The index is current exactly when the two are
-  equal.
+  and again once they have changed; ``writing`` is true in between, and
+  stays true if the request died there. A reingest that read the files at
+  generation ``g``, with ``writing`` false, sets ``indexed_generation`` to
+  ``g`` when it finishes cleanly, and only if the record still says ``g``
+  and not ``writing``. The index is current exactly when the two
+  generations are equal and nothing is being written.
 
 The functions here are pure (no storage, no database): ``upload.py`` runs the
 plan they return.
@@ -247,13 +248,18 @@ def load_state(raw: Any) -> dict:
         "version": MANIFEST_VERSION,
         "generation": generation if isinstance(generation, str) and generation else None,
         "indexed_generation": indexed if isinstance(indexed, str) and indexed else None,
+        "writing": raw.get("writing") is True,
         "files": files,
     }
 
 
 def index_is_current(state: dict) -> bool:
     """Whether the last clean reingest read the files as they are now."""
-    return bool(state.get("generation")) and state.get("generation") == state.get("indexed_generation")
+    return (
+        not state.get("writing")
+        and bool(state.get("generation"))
+        and state.get("generation") == state.get("indexed_generation")
+    )
 
 
 def _folder_names(files: dict[str, dict[str, Optional[str]]], paths: Iterable[str]) -> dict[str, str]:
@@ -415,6 +421,7 @@ def state_before_writes(state: dict, plan: SyncPlan, generation: str) -> dict:
         "version": MANIFEST_VERSION,
         "generation": generation,
         "indexed_generation": state.get("indexed_generation"),
+        "writing": True,
         "files": files,
     }
 
@@ -446,20 +453,24 @@ def state_after_writes(state: dict, plan: SyncPlan, generation: str) -> dict:
         "version": MANIFEST_VERSION,
         "generation": state.get("generation") or generation,
         "indexed_generation": state.get("indexed_generation"),
+        # Still true: the request has files to remove, and says when it is done.
+        "writing": bool(state.get("writing")),
         "files": files,
     }
 
 
-def state_touched(state: dict, written: Iterable[str], generation: str) -> dict:
-    """The record after a change made outside a sync (files added or removed by hand).
+def state_touched(state: dict, written: Iterable[str], generation: str, writing: bool = True) -> dict:
+    """The record around a change to the stored files: before it starts, and once it is done.
 
     Args:
         state: The source's record.
         written: Stored paths about to be written.
         generation: A new generation.
+        writing: ``True`` before the change, ``False`` once it is done.
 
     Returns:
-        The record with the new generation and no hash for the written paths.
+        The record with the new generation, ``writing`` as given, and no
+        hash for the written paths.
     """
     written = set(written)
     files = {}
@@ -472,5 +483,6 @@ def state_touched(state: dict, written: Iterable[str], generation: str) -> dict:
         "version": MANIFEST_VERSION,
         "generation": generation,
         "indexed_generation": state.get("indexed_generation"),
+        "writing": writing,
         "files": files,
     }
