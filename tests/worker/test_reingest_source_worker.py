@@ -522,3 +522,86 @@ class TestReingestDetectsEditedFiles:
 
         assert second["modified_files"] == ["a.md"]
         assert "old-a" not in [c["doc_id"] for c in chunk_store]
+
+
+def _with_manifest(pg_conn, src, generation="g1", indexed=None):
+    SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"sync_manifest": {
+        "version": 1, "generation": generation, "indexed_generation": indexed, "files": {},
+    }})
+
+
+def _manifest(pg_conn, src):
+    return SourcesRepository(pg_conn).get(str(src["id"]), "alice")["sync_manifest"]
+
+
+@pytest.mark.unit
+class TestReingestMarksTheIndexCurrent:
+    """A clean reingest records the ``sync_manifest`` generation it read the files at."""
+
+    def test_no_changes_marks_the_index_current(self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store):
+        stored_files.update({"a.md": b"alpha"})
+        src = _hashed_source(pg_conn, dict(stored_files))
+        _with_manifest(pg_conn, src)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "no_changes"
+        assert _manifest(pg_conn, src)["indexed_generation"] == "g1"
+
+    def test_a_completed_run_marks_the_index_current(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed"
+        manifest = _manifest(pg_conn, src)
+        assert manifest["indexed_generation"] == "g1" and manifest["generation"] == "g1"
+
+    def test_files_changed_during_the_run_keep_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store, monkeypatch,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        real_download = worker._download_source_files_to_dir
+
+        def download_then_sync(*args, **kwargs):
+            real_download(*args, **kwargs)
+            # A sync stores new files while this run is reading the old ones.
+            _with_manifest(pg_conn, src, generation="g2")
+
+        monkeypatch.setattr(worker, "_download_source_files_to_dir", download_then_sync)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed"
+        manifest = _manifest(pg_conn, src)
+        assert manifest["generation"] == "g2" and manifest["indexed_generation"] is None
+
+    def test_a_run_with_a_failed_embedding_keeps_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore().add_chunk.side_effect = RuntimeError("embedding service down")
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+    def test_a_source_no_sync_touched_gets_no_manifest(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        stored_files.update({"a.md": b"alpha"})
+        src = _hashed_source(pg_conn, dict(stored_files))
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert _manifest(pg_conn, src) is None

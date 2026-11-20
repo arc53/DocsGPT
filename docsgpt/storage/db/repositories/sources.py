@@ -17,7 +17,7 @@ _SCALAR_COLUMNS = {
     "name", "type", "retriever", "sync_frequency", "tokens", "file_path",
     "language", "model", "date",
 }
-_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "config"}
+_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "sync_manifest", "config"}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
 
 # Whitelist for sort columns exposed via ``list_for_user``. Anything not in
@@ -630,6 +630,33 @@ class SourcesRepository:
             .values(**values)
         )
         self._conn.execute(stmt)
+
+    def mark_sync_indexed(self, source_id: str, generation: Optional[str]) -> bool:
+        """Record that the index was built from the files of ``generation``.
+
+        Sets ``sync_manifest.indexed_generation``, and only while the
+        manifest's generation is still ``generation``: files changed since the
+        reingest read them leave the index marked stale.
+
+        Args:
+            source_id: The source's UUID.
+            generation: The ``sync_manifest.generation`` the reingest read
+                before it looked at the files; ``None`` does nothing.
+
+        Returns:
+            bool: Whether the mark was set.
+        """
+        if not generation or not looks_like_uuid(str(source_id)):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE sources SET sync_manifest = jsonb_set(sync_manifest, '{indexed_generation}', "
+                "to_jsonb(CAST(:generation AS text))) "
+                "WHERE id = CAST(:sid AS uuid) AND sync_manifest ->> 'generation' = :generation"
+            ),
+            {"sid": str(source_id), "generation": generation},
+        )
+        return result.rowcount > 0
 
     def set_metadata_key(self, source_id: str, user_id: str, key: str, value: Any) -> bool:
         """Set one top-level key of ``metadata``, keeping the others.

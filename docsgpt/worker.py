@@ -519,6 +519,50 @@ def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
     return structure
 
 
+def _sync_generation(source: dict) -> Optional[str]:
+    """The ``sync_manifest`` generation of a source row; ``None`` when no sync has run on it."""
+    manifest = source.get("sync_manifest")
+    if isinstance(manifest, str):
+        try:
+            manifest = json.loads(manifest)
+        except ValueError:
+            return None
+    generation = manifest.get("generation") if isinstance(manifest, dict) else None
+    return generation if isinstance(generation, str) and generation else None
+
+
+def _record_sync_manifest(source_id: str, user: str, sync_manifest: Any) -> None:
+    """Store the record of the files a new source was ingested from.
+
+    Written once the index holds those files, so the record's "index is
+    current" is true. A failure only costs the source's first sync an upload
+    of every file.
+
+    Args:
+        source_id: The source's id.
+        user: The source's owner.
+        sync_manifest: The record the upload built, or ``None``.
+    """
+    if not isinstance(sync_manifest, dict) or not looks_like_uuid(str(source_id)):
+        return
+    try:
+        with db_session() as conn:
+            SourcesRepository(conn).update(str(source_id), user, {"sync_manifest": sync_manifest})
+    except Exception as e:
+        logging.error(f"Error recording the uploaded files of source {source_id}: {e}", exc_info=True)
+
+
+def _mark_sync_indexed(source_id: str, generation: Optional[str]) -> None:
+    """Mark the index current for ``generation``; a failure only costs the next sync a reingest."""
+    if not generation:
+        return
+    try:
+        with db_session() as conn:
+            SourcesRepository(conn).mark_sync_indexed(source_id, generation)
+    except Exception as e:
+        logging.error(f"Error marking the index current for source {source_id}: {e}", exc_info=True)
+
+
 def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
     """Every file entry of a ``directory_structure``, keyed by its path relative to the source.
 
@@ -845,6 +889,7 @@ def ingest_worker(
     copy_files=None,
     folder_id=None,
     actor_id=None,
+    sync_manifest=None,
 ):
     """
     Ingest and process documents.
@@ -1082,6 +1127,7 @@ def ingest_worker(
             if folder_id:
                 file_data["folder_id"] = folder_id
             upload_index(vector_store_path, file_data)
+            _record_sync_manifest(source_id_for_events, user, sync_manifest)
             _publish_source_event(
                 user,
                 actor_id,
@@ -1262,6 +1308,10 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
         file_name_map = _normalize_file_name_map(source.get("file_name_map"))
+        # The generation of the stored files as a sync last left them, read
+        # before the files are: a clean run marks the index current for it,
+        # and a change made meanwhile (a new generation) keeps it stale.
+        files_generation = _sync_generation(source)
 
         self.update_state(
             state="PROGRESS", meta={"current": 20, "status": "Scanning current files"}
@@ -1327,6 +1377,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             try:
                 if not added_files and not removed_files and not modified_files:
                     logging.info("No changes detected.")
+                    _mark_sync_indexed(source_id, files_generation)
                     _publish_source_event(
                         user, actor_id,
                         "source.ingest.completed",
@@ -1534,6 +1585,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         )
                         if rechunk and not inner_warnings:
                             repo.remove_metadata_key(source_id, user, "rechunk_pending")
+                        if not inner_warnings:
+                            repo.mark_sync_indexed(source_id, files_generation)
                 except Exception as e:
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True

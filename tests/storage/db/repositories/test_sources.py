@@ -294,6 +294,41 @@ class TestCountForUser:
         assert count == len(listed) == 2
 
 
+class TestMarkSyncIndexed:
+    def _source(self, pg_conn, generation="g1"):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+        repo.update(str(src["id"]), "u", {"sync_manifest": {
+            "version": 1, "generation": generation, "indexed_generation": None,
+            "files": {"a.md": {"path": "a.md", "sha256": "0" * 64}},
+        }})
+        return repo, str(src["id"])
+
+    def test_sets_the_indexed_generation_and_keeps_the_rest(self, pg_conn):
+        repo, sid = self._source(pg_conn)
+
+        assert repo.mark_sync_indexed(sid, "g1") is True
+
+        manifest = repo.get(sid, "u")["sync_manifest"]
+        assert manifest["indexed_generation"] == "g1"
+        assert manifest["files"] == {"a.md": {"path": "a.md", "sha256": "0" * 64}}
+
+    def test_another_generation_is_left_alone(self, pg_conn):
+        repo, sid = self._source(pg_conn, generation="g2")
+
+        assert repo.mark_sync_indexed(sid, "g1") is False
+        assert repo.get(sid, "u")["sync_manifest"]["indexed_generation"] is None
+
+    def test_no_manifest_or_generation_does_nothing(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+
+        assert repo.mark_sync_indexed(str(src["id"]), "g1") is False
+        assert repo.mark_sync_indexed(str(src["id"]), None) is False
+        assert repo.mark_sync_indexed("not-a-uuid", "g1") is False
+        assert repo.get(str(src["id"]), "u")["sync_manifest"] is None
+
+
 class TestUpdate:
     def test_updates_name(self, pg_conn):
         repo = _repo(pg_conn)
