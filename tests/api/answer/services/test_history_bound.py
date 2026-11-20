@@ -29,3 +29,24 @@ class TestHistoryBound:
 
     def test_an_empty_conversation(self):
         assert _processor(-1)._history_bound({"queries": []}) == -1
+
+
+@pytest.mark.unit
+def test_a_new_conversation_holds_no_saved_row():
+    from unittest.mock import patch
+
+    processor = StreamProcessor.__new__(StreamProcessor)
+    processor.conversation_id = None
+    processor.initial_user_id = None
+    processor.history_bound = None
+    processor.data = {"history": "[]"}
+    processor.model_id = "m"
+    processor.model_user_id = None
+    with patch.object(StreamProcessor, "_with_request_earlier_attachments", return_value=[]), patch.object(
+        StreamProcessor, "_ensure_turn_fits"
+    ), patch.object(StreamProcessor, "_context_window_limit", return_value=None), patch.object(
+        StreamProcessor, "_within_history_limit", side_effect=lambda history: history
+    ):
+        processor._load_conversation_history()
+
+    assert processor.history_bound == -1

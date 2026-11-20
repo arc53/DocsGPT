@@ -423,3 +423,22 @@ def test_the_point_is_stored_only_for_a_turn_whose_row_is_saved():
     agent.tool_executor.message_id = "m9"
     _, orchestrator = _run_with(_Handler(), agent, _result(), saved, synthetic)
     assert orchestrator.compress_mid_execution.call_args.kwargs["persist_point"] is False
+
+
+@pytest.mark.unit
+def test_a_new_chats_first_turn_stores_its_point():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = "m0"
+    # A new conversation: no saved row was in the turn's history.
+    agent.history_bound = -1
+    db_conversation = {"queries": [{"id": "m0", "prompt": "q0", "response": "", "status": "streaming"}]}
+    synthetic = {"queries": [{"prompt": "x", "response": "y"}, {"prompt": "q0", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    assert kwargs["persist_point"] is True
+    assert kwargs["persist_query_index"] == -1
+    assert kwargs["turn_index"] == 0

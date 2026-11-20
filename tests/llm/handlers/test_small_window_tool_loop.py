@@ -180,6 +180,23 @@ class TestBudgetBelowTheModelWindow:
         assert agent.context_limit_reached is True
 
 
+class TestCompressionThatStaysOverTheModelWindow:
+    def test_tools_stop_when_the_rebuilt_context_is_still_past_the_model_threshold(self):
+        llm = _ReadingLLM()
+        agent = _agent(llm, limit_after=0)
+        agent._over_model_threshold = lambda messages: True
+        handler = _ScriptHandler()
+        rebuilt = [{"role": "system", "content": "summary"}, {"role": "user", "content": "q"}]
+        with patch("docsgpt.core.settings.settings.ENABLE_CONVERSATION_COMPRESSION", True), patch.object(
+            handler, "_perform_mid_execution_compression", return_value=(True, rebuilt)
+        ) as compress:
+            _drain(handler.handle_tool_calls(agent, _reads(2).tool_calls, {}, [{"role": "system", "content": "s"}]))
+        compress.assert_called_once()
+        assert agent.executed == []
+        assert agent.context_limit_reached is True
+        assert agent._compression_exhausted is True
+
+
 class TestRoomForEachRead:
     def test_the_executor_is_told_the_room_before_each_call(self):
         llm = _ReadingLLM()

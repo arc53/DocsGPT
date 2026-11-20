@@ -978,6 +978,8 @@ class StreamProcessor:
                 ]
             self.history_bound = self._history_bound(conversation)
         else:
+            # A new conversation: no saved row is in this turn's history.
+            self.history_bound = -1
             self.earlier_attachments = self._with_request_earlier_attachments([])
             self._ensure_turn_fits()
             sent = json.loads(self.data.get("history", "[]"))

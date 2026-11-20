@@ -1668,6 +1668,18 @@ class LLMHandler(ABC):
                             # Proceed to execute the current tool call with the reduced context
                         else:
                             logger.warning("Mid-execution compression attempted but failed. Skipping remaining tools.")
+                        if compression_successful:
+                            over_model_after = getattr(agent, "_over_model_threshold", None)
+                            if callable(over_model_after) and over_model_after(updated_messages) is True:
+                                # Smaller, yet still past the model's own threshold:
+                                # the turn answers with what it has, as when a
+                                # compression cannot reduce it.
+                                logger.warning(
+                                    "Context still past the model threshold after compression; "
+                                    "skipping remaining tools."
+                                )
+                                agent._compression_exhausted = True
+                                compression_successful = False
                     except Exception as e:
                         if is_budget_exhausted(e):
                             raise
