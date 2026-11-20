@@ -104,3 +104,35 @@ class TestSearchSkipsStoredSummaryRows:
         repo.append_message(conv_id, {"prompt": "where is the zebra", "response": "a zebra answer"})
 
         assert [str(c["id"]) for c in repo.search_for_user("u", "zebra")] == [conv_id]
+
+
+class TestMidTurnPointNeedsItsTurn:
+    def test_point_is_stored_while_its_turn_row_exists(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 1)
+        row = repo.reserve_message(conv_id, prompt="q1", placeholder_response="", status="streaming")
+        point = {**_point(0, "mid", turn_index=1), "turn_message_id": str(row["id"])}
+
+        assert repo.append_compression_point(conv_id, point, max_points=3) is True
+        assert [p["compressed_summary"] for p in _points(repo, conv_id)] == ["mid"]
+
+    def test_point_of_a_replaced_turn_is_not_stored(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 1)
+        row = repo.reserve_message(conv_id, prompt="q1", placeholder_response="", status="streaming")
+        # The user edits the turn while its stream is still compressing.
+        repo.truncate_after(conv_id, keep_up_to=0)
+        point = {**_point(0, "late", turn_index=1), "turn_message_id": str(row["id"])}
+
+        assert repo.append_compression_point(conv_id, point, max_points=3) is False
+        assert _points(repo, conv_id) == []
+
+    def test_deleting_an_unanswered_turn_drops_its_point(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 2)
+        row = repo.reserve_message(conv_id, prompt="wake", placeholder_response="", status="streaming")
+        _store(
+            repo, conv_id,
+            _point(0, "pre"),
+            {**_point(1, "mid", turn_index=2), "turn_message_id": str(row["id"])},
+        )
+
+        assert repo.delete_in_flight_message(str(row["id"])) is True
+        assert [p["compressed_summary"] for p in _points(repo, conv_id)] == ["pre"]

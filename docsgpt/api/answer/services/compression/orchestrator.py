@@ -173,6 +173,7 @@ class CompressionOrchestrator:
         persist_query_index: Optional[int] = None,
         keep_recent_tokens: Optional[int] = None,
         turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
     ) -> CompressionResult:
         """
         Perform the actual compression operation.
@@ -188,6 +189,7 @@ class CompressionOrchestrator:
                 tokens out of the summary; None summarizes up to the latest.
             turn_index: The in-flight turn a mid-turn point summarizes the
                 tool work of.
+            turn_message_id: That turn's row id.
 
         Returns:
             CompressionResult
@@ -304,6 +306,7 @@ class CompressionOrchestrator:
                 start_index=start_index,
                 persist_query_index=persist_query_index,
                 turn_index=turn_index,
+                turn_message_id=turn_message_id,
             )
 
             logger.info(
@@ -379,6 +382,7 @@ class CompressionOrchestrator:
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
         turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
     ) -> CompressionResult:
         """
         Perform compression during tool execution.
@@ -396,6 +400,7 @@ class CompressionOrchestrator:
             persist_query_index: Last settled row the point covers.
             turn_index: Position of the in-flight turn whose tool work the
                 summary holds.
+            turn_message_id: That turn's row id.
 
         Returns:
             CompressionResult
@@ -425,6 +430,7 @@ class CompressionOrchestrator:
                 model_user_id=model_user_id,
                 persist_query_index=persist_query_index,
                 turn_index=turn_index,
+                turn_message_id=turn_message_id,
             )
 
         except Exception as e:

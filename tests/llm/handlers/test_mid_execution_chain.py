@@ -1,5 +1,5 @@
-"""Mid-execution compression must persist once, write no message row, break
-the Responses chain, and treat an empty summary as a failure."""
+"""Mid-execution compression must persist one point, write no message row,
+break the Responses chain, and treat an empty summary as a failure."""
 
 from typing import Any, Dict, Generator
 from unittest.mock import Mock, patch
@@ -80,10 +80,9 @@ def test_db_path_persists_once_and_breaks_chain():
     (success, messages), conv_service = _run(_Handler(), agent, _result())
 
     assert success is True and messages
-    # The orchestrator's compress_and_save already wrote the point. No summary
-    # row goes into the conversation, and the route must not write it again.
+    # The orchestrator's compress_and_save wrote the point; no summary row
+    # goes into the conversation.
     assert [call[0] for call in conv_service.method_calls] == ["get_conversation"]
-    assert agent.compression_saved is True
     # The rebuilt messages are the whole context now: forget the chain so
     # the next call is not prepended with the uncompressed transcript.
     agent.llm.start_responses_turn.assert_called_once()
@@ -301,3 +300,55 @@ def test_rebuild_leaves_the_in_flight_row_out_of_the_history():
     # The turn's own message is restored after the summary; the row must not
     # come back as a history turn too.
     assert rebuild.call_args.args[2] == []
+
+
+@pytest.mark.unit
+def test_a_settled_row_after_the_reserved_row_stays_replayed():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = "m2"
+    # A scheduled answer was appended while this turn (row 2) still ran.
+    db_conversation = {"queries": [*_settled(2), {"id": "m2", "prompt": "q2", "response": "", "status": "streaming"},
+                                   {"id": "m3", "prompt": "scheduled", "response": "r", "status": "complete"}]}
+    synthetic = {"queries": [{"prompt": "q1", "response": "r"}, {"prompt": "q2", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    assert kwargs["persist_query_index"] == 1
+    assert kwargs["turn_index"] == 2
+    assert kwargs["turn_message_id"] == "m2"
+
+
+@pytest.mark.unit
+def test_an_earlier_unanswered_row_is_not_summarized():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = "m2"
+    # Another tab's turn (row 1) is still being answered.
+    db_conversation = {"queries": [*_settled(1), {"id": "m1", "prompt": "q1", "response": "", "status": "pending"},
+                                   {"id": "m2", "prompt": "q2", "response": "", "status": "streaming"}]}
+    synthetic = {"queries": [{"prompt": "q0", "response": "r"}, {"prompt": "q2", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    assert kwargs["persist_query_index"] == 0
+    assert kwargs["turn_index"] == 2
+
+
+@pytest.mark.unit
+def test_a_conversation_without_rows_puts_the_turn_first():
+    agent = _agent()
+    agent.compressed_summary = None
+    agent.tool_executor.message_id = None
+    synthetic = {"queries": [{"prompt": "x", "response": "y"}, {"prompt": "q0", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), {"queries": []}, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    assert kwargs["persist_query_index"] == -1
+    assert kwargs["turn_index"] == 0

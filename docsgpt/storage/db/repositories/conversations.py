@@ -631,6 +631,16 @@ class ConversationsRepository:
         Returns:
             Number of points removed.
         """
+
+        def _past(value) -> bool:
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value > keep_up_to
+
+        return self._drop_compression_points(
+            conversation_id, lambda p: _past(p.get("query_index")) or _past(p.get("turn_index"))
+        )
+
+    def _drop_compression_points(self, conversation_id: str, stale) -> int:
+        """Remove the compression points ``stale`` matches; clear ``is_compressed`` when none remain."""
         if not looks_like_uuid(conversation_id):
             return 0
         row = self._conn.execute(
@@ -644,15 +654,7 @@ class ConversationsRepository:
         points = metadata.get("compression_points") if isinstance(metadata, dict) else None
         if not isinstance(points, list) or not points:
             return 0
-
-        def _past(value) -> bool:
-            return isinstance(value, (int, float)) and not isinstance(value, bool) and value > keep_up_to
-
-        kept = [
-            p
-            for p in points
-            if not (isinstance(p, dict) and (_past(p.get("query_index")) or _past(p.get("turn_index"))))
-        ]
+        kept = [p for p in points if not (isinstance(p, dict) and stale(p))]
         removed = len(points) - len(kept)
         if not removed:
             return 0
@@ -738,6 +740,12 @@ class ConversationsRepository:
         # (NULL comparisons are false), so it is always appended.
         dup_index = point.get("query_index")
         dup_summary = point.get("compressed_summary")
+        # A mid-turn point is not stored once its turn's row is gone: an edit
+        # or retry replaced the turn while its stream was still compressing.
+        turn_message_id = point.get("turn_message_id")
+        if turn_message_id is not None and not looks_like_uuid(str(turn_message_id)):
+            turn_message_id = None
+        turn_message_id = None if turn_message_id is None else str(turn_message_id)
         result = self._conn.execute(
             text(
                 """
@@ -775,6 +783,14 @@ class ConversationsRepository:
                     END,
                     updated_at = now()
                 WHERE id = CAST(:id AS uuid)
+                  AND (
+                      CAST(:turn_message_id AS text) IS NULL
+                      OR EXISTS (
+                          SELECT 1 FROM conversation_messages
+                          WHERE id = CAST(:turn_message_id AS uuid)
+                            AND conversation_id = CAST(:id AS uuid)
+                      )
+                  )
                 """
             ),
             {
@@ -783,6 +799,7 @@ class ConversationsRepository:
                 "max_points": int(max_points),
                 "dup_index": None if dup_index is None else str(dup_index),
                 "dup_summary": None if dup_summary is None else str(dup_summary),
+                "turn_message_id": turn_message_id,
             },
         )
         return result.rowcount > 0
@@ -1178,14 +1195,23 @@ class ConversationsRepository:
         """
         if not looks_like_uuid(message_id):
             return False
-        result = self._conn.execute(
+        deleted = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid) "
-                "AND status IN ('pending', 'streaming')"
+                "AND status IN ('pending', 'streaming') "
+                "RETURNING conversation_id, position"
             ),
             {"id": message_id},
+        ).fetchone()
+        if deleted is None:
+            return False
+        # A point made while this turn ran summarized its tool work.
+        conversation_id, position = str(deleted[0]), deleted[1]
+        self._drop_compression_points(
+            conversation_id,
+            lambda p: str(p.get("turn_message_id") or "") == message_id or p.get("turn_index") == position,
         )
-        return (result.rowcount or 0) > 0
+        return True
 
     def update_message_by_id(
         self, message_id: str, fields: dict,

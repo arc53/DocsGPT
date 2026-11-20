@@ -1029,12 +1029,32 @@ class LLMHandler(ABC):
         return query.get("status") in ("pending", "streaming")
 
     @classmethod
-    def _last_settled_index(cls, queries: List[Dict], in_flight_id: Optional[str]) -> int:
-        """Index of the last saved row that is not being answered; -1 when there is none."""
-        index = len(queries) - 1
-        while index >= 0 and cls._is_in_flight_row(queries[index], in_flight_id):
-            index -= 1
-        return index
+    def _turn_position(cls, queries: List[Dict], in_flight_id: Optional[str]) -> tuple[int, int]:
+        """Where this turn sits among the saved rows: ``(last row a summary may cover, its own position)``.
+
+        Its own position is its reserved row when that row's id is saved, else
+        the first of the trailing rows still being answered, or the next free
+        position. A summary covers no row that is still being answered, so the
+        first answer is the summary's bound; the rows between it and the turn
+        are replayed.
+        """
+        turn = next(
+            (
+                index
+                for index, query in enumerate(queries)
+                if in_flight_id and isinstance(query, dict) and str(query.get("id") or "") == in_flight_id
+            ),
+            None,
+        )
+        if turn is None:
+            turn = len(queries)
+            while turn > 0 and cls._is_in_flight_row(queries[turn - 1], in_flight_id):
+                turn -= 1
+        first_unsettled = next(
+            (index for index, query in enumerate(queries[:turn]) if cls._is_in_flight_row(query, in_flight_id)),
+            turn,
+        )
+        return first_unsettled - 1, turn
 
     @staticmethod
     def _nothing_to_summarize(conversation: Optional[Dict]) -> bool:
@@ -1208,10 +1228,9 @@ class LLMHandler(ABC):
                 # not this shortened list. It stops before this turn's own
                 # row: the answer is not written yet, so the next turn must
                 # replay the row rather than treat it as summarized.
-                saved = conversation.get("queries") or []
-                if saved:
-                    persist_query_index = self._last_settled_index(saved, in_flight_id)
-                    turn_index = persist_query_index + 1
+                persist_query_index, turn_index = self._turn_position(
+                    conversation.get("queries") or [], in_flight_id
+                )
                 conversation_from_msgs = self._build_conversation_from_messages(summarizable)
                 if self._nothing_to_summarize(conversation_from_msgs):
                     logger.info(
@@ -1242,6 +1261,7 @@ class LLMHandler(ABC):
                 current_conversation=conversation,
                 persist_query_index=persist_query_index,
                 turn_index=turn_index,
+                turn_message_id=in_flight_id,
             )
 
             if not result.success:
@@ -1272,13 +1292,8 @@ class LLMHandler(ABC):
                     f"saved {result.metadata.original_token_count - result.metadata.compressed_token_count} tokens"
                 )
 
-            # Update agent's compressed summary for downstream persistence.
-            # ``compress_mid_execution`` already wrote the compression point,
-            # so this IS saved — leaving the flag False made the route persist
-            # it again (prod: every mid-execution compression stored twice).
+            # ``compress_mid_execution`` already wrote the compression point.
             agent.compressed_summary = result.compressed_summary
-            agent.compression_metadata = result.metadata.to_dict() if result.metadata else None
-            agent.compression_saved = True
             self._reset_responses_chain(agent, result.metadata)
 
             # Reset the context limit flag so tools can continue
@@ -1435,9 +1450,8 @@ class LLMHandler(ABC):
             )
 
             agent.compressed_summary = compressed_summary
-            agent.compression_metadata = metadata.to_dict()
-            # Nothing reached the DB on this path; the route persists once.
-            agent.compression_saved = False
+            # Not persisted: the point is indexed against the synthetic
+            # conversation, not the saved one, so it holds for this turn only.
             self._reset_responses_chain(agent, metadata)
             agent.context_limit_reached = False
             agent.current_token_count = 0

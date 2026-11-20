@@ -405,22 +405,21 @@ class TestCheckUsageStringBooleans:
     pass
 
 @pytest.mark.unit
-class TestCompleteStreamCompressionMetadata:
-    """Cover lines 307-319 (compression metadata persistence in complete_stream)."""
-
-    def test_compression_metadata_persisted(self, mock_mongo_db, flask_app):
+class TestCompleteStreamCompression:
+    def test_a_new_chat_hands_its_conversation_to_the_agent_and_stores_no_point(
+        self, mock_mongo_db, flask_app
+    ):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()
-            mock_agent.gen.return_value = iter(
-                [
-                    {"answer": "compressed answer"},
-                ]
-            )
-            mock_agent.compression_metadata = {"ratio": 2.5}
-            mock_agent.compression_saved = False
+            mock_agent.gen.return_value = iter([{"answer": "compressed answer"}])
+            # A new chat: the agent has no conversation until the reservation.
+            mock_agent.conversation_id = None
+            # Left by an in-memory compression: indexed against a synthetic
+            # conversation, so the route must not store it.
+            mock_agent.compression_metadata = {"query_index": 0}
             mock_agent.tool_calls = []
 
             resource.conversation_service = MagicMock()
@@ -443,51 +442,10 @@ class TestCompleteStreamCompressionMetadata:
                 )
             )
 
-            # Verify compression metadata was persisted
-            resource.conversation_service.update_compression_metadata.assert_called_once_with(
-                "conv123", {"ratio": 2.5}
-            )
+            # A compression during the turn can load the conversation it is in.
+            assert mock_agent.conversation_id == "conv123"
+            assert not resource.conversation_service.update_compression_metadata.called
             assert not resource.conversation_service.append_compression_message.called
-            assert mock_agent.compression_saved is True
-            end_chunks = [s for s in stream if '"type": "end"' in s]
-            assert len(end_chunks) == 1
-
-    def test_compression_metadata_error_handled(self, mock_mongo_db, flask_app):
-        """Cover lines 318-322: compression metadata persistence error."""
-        from docsgpt.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-            mock_agent.gen.return_value = iter([{"answer": "answer"}])
-            mock_agent.compression_metadata = {"ratio": 2.5}
-            mock_agent.compression_saved = False
-            mock_agent.tool_calls = []
-
-            resource.conversation_service = MagicMock()
-            resource.conversation_service.save_conversation.return_value = "conv123"
-            resource.conversation_service.save_user_question.return_value = {
-                "conversation_id": "conv123",
-                "message_id": "msg123",
-                "request_id": "req123",
-            }
-            resource.conversation_service.update_compression_metadata.side_effect = (
-                Exception("db error")
-            )
-
-            stream = list(
-                resource.complete_stream(
-                    question="Q",
-                    agent=mock_agent,
-                    conversation_id=None,
-                    user_api_key=None,
-                    decoded_token={"sub": "u"},
-                    should_persist=True,
-                    model_id="gpt-4",
-                )
-            )
-
-            # Stream should still complete despite compression error
             end_chunks = [s for s in stream if '"type": "end"' in s]
             assert len(end_chunks) == 1
 

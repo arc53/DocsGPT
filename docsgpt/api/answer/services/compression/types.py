@@ -74,9 +74,11 @@ class CompressionMetadata:
     compression_ratio: float
     model_used: str
     compression_prompt_version: str
-    # Mid-turn points: position of the turn whose tool work the summary holds.
-    # Its question and answer stay out of the point, so they are replayed.
+    # Mid-turn points: position and row id of the turn whose tool work the
+    # summary holds. Its question and answer stay out of the point, so they
+    # are replayed; the point is not stored once that row is gone.
     turn_index: Optional[int] = None
+    turn_message_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for DB storage."""
@@ -92,6 +94,8 @@ class CompressionMetadata:
         }
         if self.turn_index is not None:
             data["turn_index"] = self.turn_index
+        if self.turn_message_id:
+            data["turn_message_id"] = self.turn_message_id
         return data
 
 

@@ -1328,6 +1328,10 @@ class BaseAnswerResource:
                 logger.debug(
                     "Could not set tool_executor.conversation_id post-reserve",
                 )
+        # A compression during the turn loads the conversation by this id; left
+        # unset in a new chat, it fell back to a point it could not index.
+        if conversation_id and not getattr(agent, "conversation_id", None):
+            agent.conversation_id = str(conversation_id)
         # A slow tool call in this turn may be handed off to a background job.
         # A resumed round with no row of its own (the first /v1 pause finalized
         # it) has nothing to report back to: its jobs are poll-only.
@@ -2062,23 +2066,6 @@ class BaseAnswerResource:
                         status="failed" if errored_empty else "complete",
                         **team_kwargs,
                     )
-                # Persist the compression point if it wasn't saved mid-execution
-                compression_meta = getattr(agent, "compression_metadata", None)
-                compression_saved = getattr(agent, "compression_saved", False)
-                if conversation_id and compression_meta and not compression_saved:
-                    try:
-                        self.conversation_service.update_compression_metadata(
-                            conversation_id, compression_meta
-                        )
-                        agent.compression_saved = True
-                        logger.info(
-                            f"Persisted compression metadata for conversation {conversation_id}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to persist compression metadata: {str(e)}",
-                            exc_info=True,
-                        )
             else:
                 conversation_id = None
             # Resume finished cleanly; drop the continuation row.
@@ -2249,22 +2236,6 @@ class BaseAnswerResource:
                         # No journal row to gate, but flag the save as
                         # successful for symmetry with the WAL path.
                         finalized_complete = True
-                    compression_meta = getattr(agent, "compression_metadata", None)
-                    compression_saved = getattr(agent, "compression_saved", False)
-                    if conversation_id and compression_meta and not compression_saved:
-                        try:
-                            self.conversation_service.update_compression_metadata(
-                                conversation_id, compression_meta
-                            )
-                            agent.compression_saved = True
-                            logger.info(
-                                f"Persisted compression metadata for conversation {conversation_id} (partial stream)"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to persist compression metadata (partial stream): {str(e)}",
-                                exc_info=True,
-                            )
                 except Exception as e:
                     logger.error(
                         f"Error saving partial response: {str(e)}", exc_info=True

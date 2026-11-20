@@ -56,6 +56,7 @@ class CompressionService:
         start_index: int = 0,
         persist_query_index: Optional[int] = None,
         turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
     ) -> CompressionMetadata:
         """
         Compress conversation history up to specified index.
@@ -71,6 +72,7 @@ class CompressionService:
                 saved conversation's. Defaults to ``compress_up_to_index``.
             turn_index: Position of the in-flight turn whose tool work a
                 mid-turn summary holds; recorded on the point.
+            turn_message_id: That turn's row id; recorded on the point.
 
         Returns:
             CompressionMetadata with compression details
@@ -212,6 +214,7 @@ class CompressionService:
                 model_used=self.model_id,
                 compression_prompt_version=self.prompt_builder.version,
                 turn_index=turn_index,
+                turn_message_id=turn_message_id,
             )
 
             return compression_metadata
@@ -228,6 +231,7 @@ class CompressionService:
         start_index: int = 0,
         persist_query_index: Optional[int] = None,
         turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
     ) -> CompressionMetadata:
         """
         Compress conversation and save to database.
@@ -255,6 +259,7 @@ class CompressionService:
             start_index=start_index,
             persist_query_index=persist_query_index,
             turn_index=turn_index,
+            turn_message_id=turn_message_id,
         )
 
         # Save to database

@@ -22,9 +22,9 @@ from docsgpt.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
 )
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
-from docsgpt.api.answer.services.compression.types import CompressionResult
-from docsgpt.api.answer.services.conversation_service import (
+from docsgpt.api.answer.services.compression.types import (
     COMPRESSION_SUMMARY_PROMPT,
+    CompressionResult,
 )
 
 EPOCH = "2026-09-03T09:00:00+00:00"
@@ -364,11 +364,13 @@ class TestAbsolutePersistIndex:
         conv = {"queries": [{"prompt": "q18", "response": "r"}, {"prompt": "q19", "response": ""}]}
 
         metadata = svc.compress_conversation(
-            conv, compress_up_to_index=1, persist_query_index=18, turn_index=19
+            conv, compress_up_to_index=1, persist_query_index=18, turn_index=19,
+            turn_message_id="m19",
         )
 
         assert metadata.to_dict()["query_index"] == 18
         assert metadata.to_dict()["turn_index"] == 19
+        assert metadata.to_dict()["turn_message_id"] == "m19"
 
     @patch(
         "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",

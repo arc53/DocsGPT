@@ -36,6 +36,7 @@ import {
   Status,
   TERMINATED_RESPONSE_PLACEHOLDER,
 } from './conversationModels';
+import { lastShownIndex } from './shownQueries';
 import { curatedErrorText } from './curatedError';
 import WorkspaceMismatchAction from './WorkspaceMismatchAction';
 import StreamingStatusLine from './StreamingStatusLine';
@@ -119,13 +120,6 @@ function contentEndDistance(
   return vp.scrollHeight - spacer - vp.scrollTop - vp.clientHeight;
 }
 
-function findLastShownIndex(queries: Query[]): number {
-  for (let index = queries.length - 1; index >= 0; index -= 1) {
-    if (!queries[index].compressionSummary) return index;
-  }
-  return queries.length - 1;
-}
-
 const DEFAULT_BUBBLE_MARGIN = 'mb-7';
 const FIRST_QUESTION_BUBBLE_MARGIN_TOP = 'mt-5';
 // Below DEFAULT_BUBBLE_MARGIN so a question groups with its own answer.
@@ -165,7 +159,7 @@ export default function ConversationMessages({
   const hasMessages = queries.length > 0;
   // A stored compression summary is not shown, so the last message is the
   // last one that is.
-  const lastIndex = findLastShownIndex(queries);
+  const lastIndex = lastShownIndex(queries);
   const lastQuery = queries[lastIndex];
   const lastTurnContentLength =
     (lastQuery?.thought?.length ?? 0) + (lastQuery?.response?.length ?? 0);
