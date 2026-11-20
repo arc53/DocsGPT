@@ -353,3 +353,35 @@ class TestUserIdForwardCompat:
         assert len(reg.get_all_models(user_id="alice")) > 0
         assert len(reg.get_enabled_models(user_id="alice")) > 0
         assert reg.model_exists("gpt-5.5", user_id="alice") is True
+
+
+@pytest.mark.unit
+class TestSendReasoningContent:
+    """``send_reasoning_content``: whether stored thoughts go back as ``reasoning_content``."""
+
+    def test_defaults_to_sending_it(self, tmp_path) -> None:
+        (tmp_path / "bare.yaml").write_text(
+            "provider: openai_compatible\napi_key_env: BARE_KEY\nbase_url: https://example.test/v1\n"
+            "models:\n  - id: bare-model\n"
+        )
+        (catalog,) = load_model_yamls([tmp_path])
+        assert catalog.models[0].capabilities.send_reasoning_content is True
+
+    def test_a_model_overrides_the_catalog_default(self, tmp_path) -> None:
+        (tmp_path / "mixed.yaml").write_text(
+            "provider: openai_compatible\napi_key_env: MIXED_KEY\nbase_url: https://example.test/v1\n"
+            "defaults:\n  send_reasoning_content: false\n"
+            "models:\n  - id: refuses\n  - id: accepts\n    send_reasoning_content: true\n"
+        )
+        (catalog,) = load_model_yamls([tmp_path])
+        caps = {m.id: m.capabilities.send_reasoning_content for m in catalog.models}
+        assert caps == {"refuses": False, "accepts": True}
+
+    def test_the_mistral_example_turns_it_off(self, tmp_path) -> None:
+        # Mistral refuses an assistant message carrying reasoning_content, so
+        # a copy of the example must work as it stands.
+        example = BUILTIN_MODELS_DIR / "examples" / "mistral.yaml.example"
+        (tmp_path / "mistral.yaml").write_text(example.read_text())
+        (catalog,) = load_model_yamls([tmp_path])
+        assert catalog.models
+        assert all(m.capabilities.send_reasoning_content is False for m in catalog.models)
