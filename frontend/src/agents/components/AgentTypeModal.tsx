@@ -1,4 +1,4 @@
-import { Bot, WandSparkles, Workflow } from 'lucide-react';
+import { ArrowRight, Bot, WandSparkles, Workflow } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -14,9 +14,15 @@ import {
   TooltipTrigger,
 } from '../../components/ui/tooltip';
 import { DRAFTER_USER_MESSAGE_CHARS } from '../../drafter/drafterApi';
-import { FEATURED_STARTERS } from '../../drafter/starters';
+import {
+  DRAFTER_STARTERS,
+  FEATURED_STARTERS,
+  HAS_MORE_STARTERS,
+} from '../../drafter/starters';
+import { TemplatePicker } from '../../drafter/TemplatePicker';
 import { useDrafterConfigFor } from '../../drafter/useDrafterConfig';
 import { selectToken } from '../../preferences/preferenceSlice';
+import { formatCount } from '../../utils/dateTimeUtils';
 import { type DraftStart, draftStartState } from '../draftStart';
 import { agentNewPath } from '../paths';
 
@@ -45,9 +51,13 @@ export default function AgentTypeModal({
   const token = useSelector(selectToken);
   const drafting = useDrafterConfigFor(token, isOpen)?.enabled === true;
   const [text, setText] = useState('');
+  // The Templates step, reached by All templates while there are more
+  // templates than the featured chips.
+  const [browsing, setBrowsing] = useState(false);
 
   const close = () => {
     setText('');
+    setBrowsing(false);
     onClose();
   };
 
@@ -91,6 +101,23 @@ export default function AgentTypeModal({
         description={t('agents.typeModal.description')}
       >
         <div className="flex flex-col gap-4">{blank}</div>
+      </Modal>
+    );
+
+  if (browsing)
+    return (
+      <Modal
+        open={isOpen}
+        onOpenChange={(o) => !o && close()}
+        size="xl"
+        onBack={() => setBrowsing(false)}
+        title={t('drafter.templates.title')}
+        description={t('drafter.templates.description', {
+          count: DRAFTER_STARTERS.length,
+          formatted: formatCount(DRAFTER_STARTERS.length),
+        })}
+      >
+        <TemplatePicker onPick={(starter) => draft({ starter })} />
       </Modal>
     );
 
@@ -184,6 +211,18 @@ export default function AgentTypeModal({
                 {t(`drafter.starters.${key}.short`)}
               </Button>
             ))}
+            {HAS_MORE_STARTERS && (
+              <Button
+                type="button"
+                variant="link"
+                size="inline"
+                className="ml-1"
+                onClick={() => setBrowsing(true)}
+              >
+                {t('drafter.templates.showAll')}
+                <ArrowRight />
+              </Button>
+            )}
           </div>
         </div>
       </div>

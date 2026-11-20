@@ -2133,6 +2133,22 @@
     "stop": "停止",
     "stoppedDescription": "このターンを停止しました。フォームは変更されていません。",
     "suggestionsLabel": "始め方の例",
+    "templates": {
+      "categories": {
+        "all": "すべて",
+        "customerSupport": "カスタマーサポート",
+        "internal": "社内",
+        "research": "リサーチ"
+      },
+      "categoriesLabel": "テンプレートのカテゴリ",
+      "description_one": "{{formatted}} 件のテンプレート。選ぶと DocsGPT が一緒に作ります。",
+      "description_other": "{{formatted}} 件のテンプレート。選ぶと DocsGPT が一緒に作ります。",
+      "empty": "一致するテンプレートはありません",
+      "search": "テンプレートを検索",
+      "showAll": "すべてのテンプレート",
+      "showMore": "さらに表示",
+      "title": "テンプレート"
+    },
     "title": "DocsGPT で下書き",
     "topics": {
       "add_other": "{{formatted}} 件のトピックを追加",

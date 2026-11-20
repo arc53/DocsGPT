@@ -2287,6 +2287,24 @@
     "stop": "Остановить",
     "stoppedDescription": "Вы остановили этот ход. Форма не изменилась.",
     "suggestionsLabel": "С чего начать",
+    "templates": {
+      "categories": {
+        "all": "Все",
+        "customerSupport": "Поддержка клиентов",
+        "internal": "Внутренние",
+        "research": "Исследования"
+      },
+      "categoriesLabel": "Категории шаблонов",
+      "description_few": "{{formatted}} шаблона. Выберите один, и DocsGPT соберёт его вместе с вами.",
+      "description_many": "{{formatted}} шаблонов. Выберите один, и DocsGPT соберёт его вместе с вами.",
+      "description_one": "{{formatted}} шаблон. Выберите один, и DocsGPT соберёт его вместе с вами.",
+      "description_other": "{{formatted}} шаблона. Выберите один, и DocsGPT соберёт его вместе с вами.",
+      "empty": "Подходящих шаблонов нет",
+      "search": "Поиск шаблонов",
+      "showAll": "Все шаблоны",
+      "showMore": "Показать ещё",
+      "title": "Шаблоны"
+    },
     "title": "Черновик с DocsGPT",
     "topics": {
       "add_few": "Добавить {{formatted}} темы",

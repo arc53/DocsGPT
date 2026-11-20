@@ -2133,6 +2133,22 @@
     "stop": "停止",
     "stoppedDescription": "你停止了本轮。表单没有变化。",
     "suggestionsLabel": "开始方式",
+    "templates": {
+      "categories": {
+        "all": "全部",
+        "customerSupport": "客户支持",
+        "internal": "内部",
+        "research": "研究"
+      },
+      "categoriesLabel": "模板类别",
+      "description_one": "{{formatted}} 个模板。选择一个，DocsGPT 会和你一起构建。",
+      "description_other": "{{formatted}} 个模板。选择一个，DocsGPT 会和你一起构建。",
+      "empty": "没有匹配的模板",
+      "search": "搜索模板",
+      "showAll": "全部模板",
+      "showMore": "显示更多",
+      "title": "模板"
+    },
     "title": "用 DocsGPT 起草",
     "topics": {
       "add_other": "添加 {{formatted}} 个主题",

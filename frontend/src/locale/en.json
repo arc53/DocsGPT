@@ -2170,6 +2170,22 @@
     "stop": "Stop",
     "stoppedDescription": "You stopped this turn. Nothing in the form changed.",
     "suggestionsLabel": "Ways to start",
+    "templates": {
+      "categories": {
+        "all": "All",
+        "customerSupport": "Customer support",
+        "internal": "Internal",
+        "research": "Research"
+      },
+      "categoriesLabel": "Template categories",
+      "description_one": "{{formatted}} template. Pick one and DocsGPT builds it with you.",
+      "description_other": "{{formatted}} templates. Pick one and DocsGPT builds it with you.",
+      "empty": "No templates match",
+      "search": "Search templates",
+      "showAll": "All templates",
+      "showMore": "Show more",
+      "title": "Templates"
+    },
     "title": "Draft with DocsGPT",
     "topics": {
       "add_one": "Add {{formatted}} topic",

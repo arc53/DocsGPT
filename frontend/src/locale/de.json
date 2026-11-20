@@ -2149,6 +2149,22 @@
     "stop": "Stoppen",
     "stoppedDescription": "Du hast diesen Durchlauf gestoppt. Im Formular hat sich nichts geändert.",
     "suggestionsLabel": "Möglichkeiten zum Einstieg",
+    "templates": {
+      "categories": {
+        "all": "Alle",
+        "customerSupport": "Kundensupport",
+        "internal": "Intern",
+        "research": "Recherche"
+      },
+      "categoriesLabel": "Vorlagenkategorien",
+      "description_one": "{{formatted}} Vorlage. Wähle eine aus, und DocsGPT baut sie mit dir.",
+      "description_other": "{{formatted}} Vorlagen. Wähle eine aus, und DocsGPT baut sie mit dir.",
+      "empty": "Keine passenden Vorlagen",
+      "search": "Vorlagen durchsuchen",
+      "showAll": "Alle Vorlagen",
+      "showMore": "Mehr anzeigen",
+      "title": "Vorlagen"
+    },
     "title": "Mit DocsGPT entwerfen",
     "topics": {
       "add_one": "{{formatted}} Thema hinzufügen",

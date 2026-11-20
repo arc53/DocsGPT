@@ -11,6 +11,25 @@ const drafter = vi.hoisted(() => ({
   wanted: [] as boolean[],
 }));
 vi.mock('react-redux', () => ({ useSelector: () => 'token' }));
+
+// Today's three templates, or a fourth beyond the featured ones.
+const templates = vi.hoisted(() => ({ more: false }));
+vi.mock('../../drafter/starters', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../drafter/starters')>();
+  const extra = [
+    ...real.DRAFTER_STARTERS,
+    { ...real.DRAFTER_STARTERS[0], key: 'orders' },
+  ];
+  return {
+    ...real,
+    get DRAFTER_STARTERS() {
+      return templates.more ? extra : real.DRAFTER_STARTERS;
+    },
+    get HAS_MORE_STARTERS() {
+      return templates.more;
+    },
+  };
+});
 vi.mock('../../drafter/useDrafterConfig', () => ({
   useDrafterConfigFor: (_token: string | null, wanted = true) => {
     drafter.wanted.push(wanted);
@@ -31,6 +50,7 @@ describe('AgentTypeModal', () => {
     navigate.mockReset();
     drafter.config = null;
     drafter.wanted = [];
+    templates.more = false;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -241,6 +261,81 @@ describe('AgentTypeModal', () => {
       await act(async () => chips()[1].click());
       expect(navigate.mock.calls[0][1]).toEqual({
         state: { draftStart: { starter: 'helpdesk' } },
+      });
+    });
+
+    it('offers no All templates while the three chips are all of them', async () => {
+      await render();
+      expect(byText('drafter.templates.showAll')).toBeUndefined();
+    });
+
+    describe('with more templates than the chips', () => {
+      beforeEach(() => {
+        templates.more = true;
+      });
+
+      const rows = () =>
+        Array.from(
+          document.body.querySelectorAll<HTMLButtonElement>(
+            '[data-suggestion]',
+          ),
+        );
+      const openTemplates = async () => {
+        await render();
+        await act(async () => byText('drafter.templates.showAll').click());
+      };
+
+      it('opens every template as a step, and Back returns', async () => {
+        await openTemplates();
+        expect(document.body.textContent).toContain('drafter.templates.title');
+        expect(document.body.textContent).toContain(
+          'drafter.templates.description',
+        );
+        expect(document.body.querySelector('textarea')).toBeNull();
+        expect(rows().map((row) => row.dataset.suggestion)).toEqual([
+          'website',
+          'helpdesk',
+          'research',
+          'orders',
+        ]);
+        const back = document.body.querySelector<HTMLButtonElement>(
+          'button[aria-label="sidePanel.back"]',
+        )!;
+        await act(async () => back.click());
+        expect(describeBox()).not.toBeNull();
+      });
+
+      it('searches the templates', async () => {
+        await openTemplates();
+        const input = document.body.querySelector<HTMLInputElement>('input')!;
+        const setter = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          'value',
+        )!.set!;
+        await act(async () => {
+          setter.call(input, 'orders.title');
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        expect(rows().map((row) => row.dataset.suggestion)).toEqual(['orders']);
+      });
+
+      it('starts the picked template and closes', async () => {
+        const onClose = await render();
+        await act(async () => byText('drafter.templates.showAll').click());
+        await act(async () => rows()[3].click());
+        expect(navigate.mock.calls[0][1]).toEqual({
+          state: { draftStart: { starter: 'orders' } },
+        });
+        expect(onClose).toHaveBeenCalled();
+      });
+
+      it('opens on the first step again after closing', async () => {
+        await openTemplates();
+        const close = document.body.querySelector<HTMLButtonElement>(
+          'button[aria-label="close"]',
+        )!;
+        await act(async () => close.click());
+        expect(describeBox()).not.toBeNull();
       });
     });
   });

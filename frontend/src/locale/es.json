@@ -2218,6 +2218,23 @@
     "stop": "Detener",
     "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado.",
     "suggestionsLabel": "Formas de empezar",
+    "templates": {
+      "categories": {
+        "all": "Todas",
+        "customerSupport": "Atención al cliente",
+        "internal": "Interno",
+        "research": "Investigación"
+      },
+      "categoriesLabel": "Categorías de plantillas",
+      "description_many": "{{formatted}} de plantillas. Elige una y DocsGPT la construye contigo.",
+      "description_one": "{{formatted}} plantilla. Elige una y DocsGPT la construye contigo.",
+      "description_other": "{{formatted}} plantillas. Elige una y DocsGPT la construye contigo.",
+      "empty": "Ninguna plantilla coincide",
+      "search": "Buscar plantillas",
+      "showAll": "Todas las plantillas",
+      "showMore": "Mostrar más",
+      "title": "Plantillas"
+    },
     "title": "Redactar con DocsGPT",
     "topics": {
       "add_many": "Añadir {{formatted}} temas",

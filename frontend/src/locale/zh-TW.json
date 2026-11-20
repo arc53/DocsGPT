@@ -2133,6 +2133,22 @@
     "stop": "停止",
     "stoppedDescription": "你停止了這一輪。表單沒有變更。",
     "suggestionsLabel": "開始方式",
+    "templates": {
+      "categories": {
+        "all": "全部",
+        "customerSupport": "客戶支援",
+        "internal": "內部",
+        "research": "研究"
+      },
+      "categoriesLabel": "範本類別",
+      "description_one": "{{formatted}} 個範本。選擇一個，DocsGPT 會和你一起建置。",
+      "description_other": "{{formatted}} 個範本。選擇一個，DocsGPT 會和你一起建置。",
+      "empty": "沒有符合的範本",
+      "search": "搜尋範本",
+      "showAll": "全部範本",
+      "showMore": "顯示更多",
+      "title": "範本"
+    },
     "title": "用 DocsGPT 起草",
     "topics": {
       "add_other": "加入 {{formatted}} 個主題",

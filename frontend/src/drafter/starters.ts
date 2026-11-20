@@ -11,10 +11,19 @@ import type { Question } from '../components/QuestionCards';
  */
 export type DrafterStarter = 'website' | 'helpdesk' | 'research';
 
-export const DRAFTER_STARTERS: { key: DrafterStarter; Icon: LucideIcon }[] = [
-  { key: 'website', Icon: Globe },
-  { key: 'helpdesk', Icon: LifeBuoy },
-  { key: 'research', Icon: FileSearch },
+/** The kinds the Templates step filters by: `drafter.templates.categories.<id>`. */
+export type TemplateCategory = 'customerSupport' | 'internal' | 'research';
+
+export type DrafterStarterEntry = {
+  key: DrafterStarter;
+  Icon: LucideIcon;
+  category: TemplateCategory;
+};
+
+export const DRAFTER_STARTERS: DrafterStarterEntry[] = [
+  { key: 'website', Icon: Globe, category: 'customerSupport' },
+  { key: 'helpdesk', Icon: LifeBuoy, category: 'internal' },
+  { key: 'research', Icon: FileSearch, category: 'research' },
 ];
 
 /** How many starting points the New agent modal and the drawer offer. */

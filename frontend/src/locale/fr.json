@@ -2218,6 +2218,23 @@
     "stop": "Arrêter",
     "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé.",
     "suggestionsLabel": "Pour commencer",
+    "templates": {
+      "categories": {
+        "all": "Tous",
+        "customerSupport": "Support client",
+        "internal": "Interne",
+        "research": "Recherche"
+      },
+      "categoriesLabel": "Catégories de modèles",
+      "description_many": "{{formatted}} de modèles. Choisissez-en un et DocsGPT le construit avec vous.",
+      "description_one": "{{formatted}} modèle. Choisissez-en un et DocsGPT le construit avec vous.",
+      "description_other": "{{formatted}} modèles. Choisissez-en un et DocsGPT le construit avec vous.",
+      "empty": "Aucun modèle ne correspond",
+      "search": "Rechercher des modèles",
+      "showAll": "Tous les modèles",
+      "showMore": "Afficher plus",
+      "title": "Modèles"
+    },
     "title": "Rédiger avec DocsGPT",
     "topics": {
       "add_many": "Ajouter {{formatted}} sujets",
