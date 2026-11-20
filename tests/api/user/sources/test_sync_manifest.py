@@ -70,6 +70,7 @@ class TestParseManifest:
         '{"version": 2, "files": [{"path": "a", "sha256": "%s"}]}' % A,
         '{"version": 1, "files": []}',
         '{"version": 1, "files": ["a.md"]}',
+        "[" * 100_000,
     ])
     def test_refuses_the_wrong_shape(self, raw):
         with pytest.raises(sm.ManifestError):
@@ -77,13 +78,13 @@ class TestParseManifest:
 
     @pytest.mark.parametrize("path", [
         "", "/abs.md", "../up.md", "a/../b.md", "a//b.md", "./a.md", "a\\b.md", "a/", "a\nb.md", "a\x00.md",
-        "x" * 1025, 5, None,
+        "x" * 1025, "half\udc80.md", "docs/" + "n" * 201 + ".md", "д" * 101, 5, None,
     ])
     def test_refuses_a_path_not_in_normal_form(self, path):
         with pytest.raises(sm.ManifestError):
             sm.parse_manifest({"version": 1, "files": [{"path": path, "sha256": A}]}, 10)
 
-    @pytest.mark.parametrize("digest", ["", "abc", A.upper(), A + "0", None, 7])
+    @pytest.mark.parametrize("digest", ["", "abc", A.upper(), A + "0", A + "\n", None, 7])
     def test_refuses_a_bad_hash(self, digest):
         with pytest.raises(sm.ManifestError):
             sm.parse_manifest({"version": 1, "files": [{"path": "a.md", "sha256": digest}]}, 10)
@@ -231,12 +232,56 @@ class TestPlanSync:
         assert plan.writes == [("docs", "docs_2")]
         assert plan.deletes == ["docs/a.md"]
 
+    def test_a_recorded_file_whose_place_a_folder_took_gets_a_new_place(self):
+        # "docs" was a file; it was removed by hand and docs/a.md added.
+        state = _state({"docs": {"path": "docs", "sha256": A}})
+
+        plan = sm.plan_sync(state, {"docs/a.md"}, _manifest({"docs": A}), {"docs"}, _allocate)
+
+        assert plan.writes == [("docs", "docs_2")]
+        assert plan.deletes == ["docs/a.md"]
+
+    def test_a_recorded_file_whose_folder_became_a_file_gets_a_new_place(self):
+        state = _state({"docs/a.md": {"path": "docs/a.md", "sha256": A}})
+
+        plan = sm.plan_sync(state, {"docs"}, _manifest({"docs/a.md": A}), {"docs/a.md"}, _allocate)
+
+        assert plan.writes == [("docs/a.md", "docs_2/a.md")]
+
+    def test_a_folder_moved_aside_is_kept_for_its_files_and_from_other_folders(self):
+        # A leftover file "docs" moves the client folder "docs" to "docs_2";
+        # the client folder really named "docs_2" must not share it.
+        plan = sm.plan_sync(
+            sm.load_state(None), {"docs"},
+            _manifest({"docs/a.md": A, "docs/b.md": B, "docs_2/c.md": C}),
+            {"docs/a.md", "docs/b.md", "docs_2/c.md"}, _allocate,
+        )
+
+        stored = dict(plan.writes)
+        assert stored["docs/a.md"] == "docs_2/a.md" and stored["docs/b.md"] == "docs_2/b.md"
+        assert stored["docs_2/c.md"].split("/")[0] not in ("docs", "docs_2")
+        assert len(set(stored.values())) == 3
+
     def test_an_upload_of_a_kept_file_is_not_written_again(self):
         state = _state({"a.md": {"path": "a.md", "sha256": A}})
 
         plan = sm.plan_sync(state, {"a.md"}, _manifest({"a.md": A}), {"a.md"}, _allocate)
 
         assert plan.kept == ["a.md"] and not plan.writes
+
+    def test_two_manifest_files_recorded_at_one_stored_path_do_not_share_it(self):
+        """``My_Docs/a.md`` took over the stored file of ``My Docs/a.md``; now both are listed."""
+        state = _state({
+            "My Docs/a.md": {"path": "My_Docs/a.md", "sha256": None},
+            "My_Docs/a.md": {"path": "My_Docs/a.md", "sha256": B},
+        })
+        tree = _manifest({"My Docs/a.md": A, "My_Docs/a.md": B})
+
+        plan = sm.plan_sync(state, {"My_Docs/a.md"}, tree, {"My Docs/a.md"}, _allocate)
+
+        assert plan.kept == ["My_Docs/a.md"]
+        assert plan.writes == [("My Docs/a.md", "My_Docs_2/a.md")]
+        assert not plan.deletes
 
 
 class TestStates:
@@ -261,6 +306,17 @@ class TestStates:
         }
         # The state it was built from is untouched.
         assert state["files"]["edit.md"]["sha256"] == A
+
+    def test_before_writes_forgets_another_path_recorded_at_a_written_stored_path(self):
+        state = _state({"My Docs/a.md": {"path": "My_Docs/a.md", "sha256": A}})
+        plan = sm.plan_sync(
+            state, {"My_Docs/a.md"}, _manifest({"My_Docs/a.md": B, "other.md": C}), {"My_Docs/a.md"}, _allocate,
+        )
+        assert plan.writes == [("My_Docs/a.md", "My_Docs/a.md")]
+
+        before = sm.state_before_writes(state, plan, "g2")
+
+        assert before["files"]["My Docs/a.md"] == {"path": "My_Docs/a.md", "sha256": None}
 
     def test_after_writes_records_the_manifest(self):
         state, plan = self._plan()

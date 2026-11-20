@@ -605,3 +605,84 @@ class TestReingestMarksTheIndexCurrent:
         worker.reingest_source_worker(task_self, str(src["id"]), "alice")
 
         assert _manifest(pg_conn, src) is None
+
+
+    def test_a_run_that_could_not_compare_the_files_keeps_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store, monkeypatch,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        monkeypatch.setattr(worker, "_structure_files", MagicMock(side_effect=RuntimeError("bad structure")))
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "no_changes"
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+
+@pytest.mark.unit
+class TestRecordSyncManifest:
+    """``ingest_worker`` stores the upload's record only on a source that has none."""
+
+    RECORD = {"version": 1, "generation": "up", "indexed_generation": "up", "files": {
+        "a.md": {"path": "a.md", "sha256": _sha(b"alpha")},
+    }}
+
+    def test_a_new_source_gets_the_record(self, pg_conn, patch_worker_db):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+
+        worker._record_sync_manifest(str(src["id"]), "alice", self.RECORD)
+
+        assert _manifest(pg_conn, src) == self.RECORD
+
+    def test_an_ingest_run_again_does_not_replace_what_a_sync_recorded(self, pg_conn, patch_worker_db):
+        """A redelivered ingest must not bring back the hashes of files a sync has since replaced."""
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        _with_manifest(pg_conn, src, generation="g2")
+
+        worker._record_sync_manifest(str(src["id"]), "alice", self.RECORD)
+
+        assert _manifest(pg_conn, src)["generation"] == "g2"
+
+
+@pytest.mark.unit
+class TestIncompleteScanKeepsTheIndexStale:
+    """A stored file that could not be read is missing from the scan: the run must not vouch for the index."""
+
+    def _failing(self, stored_files, name):
+        storage = worker.StorageCreator.get_storage()
+        real = storage.get_file.side_effect
+
+        def get_file(path):
+            if path.endswith(name):
+                raise OSError("storage hiccup")
+            return real(path)
+
+        storage.get_file.side_effect = get_file
+
+    def test_no_changes_seen_through_a_failed_download(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha", "b.md": b"beta"})
+        _with_manifest(pg_conn, src)
+        self._failing(stored_files, "b.md")
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "no_changes"
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+    def test_a_completed_run_with_a_failed_download(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited", "b.md": b"beta"})
+        _with_manifest(pg_conn, src)
+        self._failing(stored_files, "b.md")
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed"
+        assert _manifest(pg_conn, src)["indexed_generation"] is None

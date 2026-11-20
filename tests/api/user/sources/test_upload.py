@@ -1653,7 +1653,7 @@ class TestManageSourceFilesManifestSync:
             "version": 1,
             "files": [{"path": path, "sha256": self._sha(data)} for path, data in tree.items()],
         })
-        data = {"operation": "sync"}
+        data = {"operation": "sync_manifest"}
         if as_field:
             data["manifest"] = manifest
         else:
@@ -1986,7 +1986,7 @@ class TestManageSourceFilesManifestSync:
     def test_a_bad_manifest_is_400_and_changes_nothing(self, app, pg_conn, tmp_path, manifest):
         src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
 
-        response, apply_async = self._post(app, pg_conn, tmp_path, src, {"operation": "sync", "manifest": manifest})
+        response, apply_async = self._post(app, pg_conn, tmp_path, src, {"operation": "sync_manifest", "manifest": manifest})
 
         assert response.status_code == 400 and response.json["code"] == "bad_manifest"
         assert self._stored(root) == {"keep.md": b"same"}
@@ -1997,7 +1997,7 @@ class TestManageSourceFilesManifestSync:
         manifest = json.dumps({"version": 1, "files": [{"path": "a.md", "sha256": self._sha(b"a")}]})
 
         response, _ = self._post(app, pg_conn, tmp_path, src, {
-            "operation": "sync", "manifest": manifest, "file": [(io.BytesIO(b"other"), self._sha(b"other"))],
+            "operation": "sync_manifest", "manifest": manifest, "file": [(io.BytesIO(b"other"), self._sha(b"other"))],
         })
 
         assert response.status_code == 400 and response.json["code"] == "bad_manifest"
@@ -2008,7 +2008,7 @@ class TestManageSourceFilesManifestSync:
         manifest = json.dumps({"version": 1, "files": [{"path": "a.md", "sha256": self._sha(b"a")}]})
 
         response, _ = self._post(app, pg_conn, tmp_path, src, {
-            "operation": "sync", "manifest": manifest, "file": [(io.BytesIO(b"changed"), self._sha(b"a"))],
+            "operation": "sync_manifest", "manifest": manifest, "file": [(io.BytesIO(b"changed"), self._sha(b"a"))],
         })
 
         assert response.status_code == 400 and response.json["code"] == "bad_manifest"
@@ -2071,8 +2071,224 @@ class TestManageSourceFilesManifestSync:
         assert response.json["removed_files"] == ["old.md"]
         assert neighbour.read_bytes() == b"theirs"
 
+    def test_a_file_written_over_another_paths_stored_file_is_not_trusted_for_it(self, app, pg_conn, tmp_path):
+        """A renamed path can take over the stored file of the old one; the old record must stop vouching for it."""
+        src, root = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"My Docs/a.md": b"one"})
+        assert self._stored(root) == {"My_Docs/a.md": b"one"}
+
+        # The folder is renamed and the file edited; the sync stops half way.
+        half, _ = self._sync(
+            app, pg_conn, tmp_path, src, {"My_Docs/a.md": b"two", "other.md": b"x"}, send=["My_Docs/a.md"],
+        )
+        assert half.json["status"] == "needs_files"
+        assert self._stored(root) == {"My_Docs/a.md": b"two"}
+
+        # The client goes back to the old tree: its file is no longer stored.
+        back, _ = self._sync(app, pg_conn, tmp_path, src, {"My Docs/a.md": b"one"})
+
+        assert back.json["status"] == "needs_files" and back.json["needed"] == ["My Docs/a.md"]
+
+    def test_two_paths_recorded_at_one_stored_file_end_up_apart(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"My Docs/a.md": b"one"})
+        self._sync(app, pg_conn, tmp_path, src, {"My_Docs/a.md": b"two", "other.md": b"x"}, send=["My_Docs/a.md"])
+        tree = {"My Docs/a.md": b"one", "My_Docs/a.md": b"two"}
+
+        response, _ = self._full(app, pg_conn, tmp_path, src, tree)
+
+        assert response.json["status"] == "synced"
+        assert sorted(self._stored(root).values()) == [b"one", b"two"]
+        state = self._state(pg_conn, src)
+        for client_path, data in tree.items():
+            assert (root / state["files"][client_path]["path"]).read_bytes() == data
+
+    def test_add_into_a_folder_written_with_a_slash_drops_the_hash(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path)
+        tree = {"docs/a.md": b"a"}
+        self._full(app, pg_conn, tmp_path, src, tree)
+
+        added, _ = self._post(app, pg_conn, tmp_path, src, {
+            "operation": "add", "parent_dir": "docs/", "file": [(io.BytesIO(b"by hand"), "a.md")],
+        })
+
+        assert added.status_code == 200
+        assert self._stored(root) == {"docs/a.md": b"by hand"}
+        assert self._state(pg_conn, src)["files"]["docs/a.md"]["sha256"] is None
+        asked, _ = self._sync(app, pg_conn, tmp_path, src, tree)
+        assert asked.json["needed"] == ["docs/a.md"]
+
+    def _generation_seen_while_saving(self, pg_conn, tmp_path, src):
+        """A storage that notes the record's generation at each write, as a reingest starting then would."""
+        from docsgpt.storage.local import LocalStorage
+
+        seen = []
+        state = self._state
+
+        class Watching(LocalStorage):
+            def save_file(self, file_data, path, **kwargs):
+                seen.append(state(pg_conn, src)["generation"])
+                return super().save_file(file_data, path, **kwargs)
+
+        return Watching(base_dir=str(tmp_path)), seen
+
+    def test_a_reingest_that_started_while_a_sync_wrote_cannot_mark_the_index_current(self, app, pg_conn, tmp_path):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        src, _ = self._seed(pg_conn, tmp_path)
+        storage, seen = self._generation_seen_while_saving(pg_conn, tmp_path, src)
+        tree = {"a.md": b"a", "b.md": b"b"}
+
+        response, _ = self._sync(app, pg_conn, tmp_path, src, tree, send=tree, storage=storage)
+
+        assert response.json["status"] == "synced" and seen[0]
+        # That reingest read only some of the files.
+        assert not SourcesRepository(pg_conn).mark_sync_indexed(str(src["id"]), seen[0])
+        assert self._state(pg_conn, src)["indexed_generation"] is None
+
+    def test_a_reingest_that_started_while_files_were_added_cannot_mark_the_index_current(
+        self, app, pg_conn, tmp_path,
+    ):
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        src, _ = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"a.md": b"a"})
+        storage, seen = self._generation_seen_while_saving(pg_conn, tmp_path, src)
+
+        added, _ = self._post(app, pg_conn, tmp_path, src, {
+            "operation": "add", "file": [(io.BytesIO(b"b"), "b.md"), (io.BytesIO(b"c"), "c.md")],
+        }, storage=storage)
+
+        assert added.status_code == 200 and seen[0]
+        assert not SourcesRepository(pg_conn).mark_sync_indexed(str(src["id"]), seen[0])
+
+    def test_a_path_with_a_lone_surrogate_is_a_bad_manifest(self, app, pg_conn, tmp_path):
+        """Postgres cannot store one in JSONB; without the check the request is a 500."""
+        src, root = self._seed(pg_conn, tmp_path)
+        manifest = '{"version": 1, "files": [{"path": "bad\\udc80name.md", "sha256": "%s"}]}' % self._sha(b"a")
+
+        response, _ = self._post(app, pg_conn, tmp_path, src, {
+            "operation": "sync_manifest", "manifest": (io.BytesIO(manifest.encode()), "manifest.json"),
+            "file": [(io.BytesIO(b"a"), self._sha(b"a"))],
+        })
+
+        assert response.status_code == 400 and response.json["code"] == "bad_manifest"
+        assert self._stored(root) == {}
+
+
+    def test_a_file_storage_could_not_remove_is_not_reported_removed(self, app, pg_conn, tmp_path):
+        from docsgpt.storage.local import LocalStorage
+
+        src, root = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"a.md": b"a", "b.md": b"b"})
+        self._mark_indexed(pg_conn, src)
+
+        class Refusing(LocalStorage):
+            def delete_file(self, path):
+                return False
+
+        response, apply_async = self._sync(
+            app, pg_conn, tmp_path, src, {"a.md": b"a"}, storage=Refusing(base_dir=str(tmp_path)),
+        )
+
+        assert response.status_code == 500
+        apply_async.assert_not_called()
+        assert "b.md" in self._stored(root)
+        # The index counts as stale, so the next sync removes it and reingests.
+        retry, apply_async = self._sync(app, pg_conn, tmp_path, src, {"a.md": b"a"})
+        assert retry.json["status"] == "synced" and retry.json["removed_files"] == ["b.md"]
+        apply_async.assert_called_once()
+
+    def test_a_file_already_gone_counts_as_removed(self, app, pg_conn, tmp_path):
+        from docsgpt.storage.local import LocalStorage
+
+        src, root = self._seed(pg_conn, tmp_path)
+        self._full(app, pg_conn, tmp_path, src, {"a.md": b"a", "b.md": b"b"})
+
+        class Racing(LocalStorage):
+            def delete_file(self, path):
+                super().delete_file(path)
+                return False
+
+        response, _ = self._sync(
+            app, pg_conn, tmp_path, src, {"a.md": b"a"}, storage=Racing(base_dir=str(tmp_path)),
+        )
+
+        assert response.status_code == 200 and response.json["removed_files"] == ["b.md"]
+
+    def test_removals_hold_the_files_lock(self, app, pg_conn, tmp_path):
+        from docsgpt.api.user.sources import upload
+
+        src, root = self._seed(pg_conn, tmp_path, {"a.md": b"a", "docs/b.md": b"b"})
+
+        @contextmanager
+        def busy(source_id, wait_seconds=0):
+            raise upload.SourceFilesBusy(source_id)
+            yield
+
+        with patch.object(upload, "_source_files_lock", busy):
+            removed, _ = self._post(app, pg_conn, tmp_path, src, {
+                "operation": "remove", "file_paths": json.dumps(["a.md"]),
+            })
+            removed_dir, _ = self._post(app, pg_conn, tmp_path, src, {
+                "operation": "remove_directory", "directory_path": "docs",
+            })
+
+        assert removed.status_code == 409 and removed_dir.status_code == 409
+        assert self._stored(root) == {"a.md": b"a", "docs/b.md": b"b"}
+
+    def test_sync_manifest_without_a_manifest_is_400(self, app, pg_conn, tmp_path):
+        src, root = self._seed(pg_conn, tmp_path, {"keep.md": b"same"})
+
+        response, apply_async = self._post(app, pg_conn, tmp_path, src, {
+            "operation": "sync_manifest", "file": [(io.BytesIO(b"a"), self._sha(b"a"))],
+        })
+
+        assert response.status_code == 400 and response.json["code"] == "bad_manifest"
+        assert self._stored(root) == {"keep.md": b"same"}
+        apply_async.assert_not_called()
+
+    def test_a_plain_sync_ignores_a_manifest_part(self, app, pg_conn, tmp_path):
+        """``sync`` stays the whole-upload operation older clients know, whatever else the request carries."""
+        src, root = self._seed(pg_conn, tmp_path, {"old.md": b"old"})
+        manifest = json.dumps({"version": 1, "files": [{"path": "a.md", "sha256": self._sha(b"a")}]})
+
+        response, _ = self._post(app, pg_conn, tmp_path, src, {
+            "operation": "sync", "manifest": (io.BytesIO(manifest.encode()), "manifest.json"),
+            "file": [(io.BytesIO(b"whole"), "whole.md")],
+        })
+
+        assert response.status_code == 200 and response.json["status"] == "synced"
+        assert self._stored(root) == {"whole.md": b"whole"}
 
 class TestSourceFilesLock:
+    def test_a_waiter_holds_no_connection_between_tries(self, pg_engine):
+        from docsgpt.api.user.sources import upload
+
+        open_now, most = 0, 0
+
+        @contextmanager
+        def session():
+            nonlocal open_now, most
+            with pg_engine.begin() as conn:
+                open_now += 1
+                most = max(most, open_now)
+                try:
+                    yield conn
+                finally:
+                    open_now -= 1
+
+        source_id = "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+        with patch.object(upload, "db_session", session), patch.object(upload.time, "sleep") as sleep:
+            with upload._source_files_lock(source_id):
+                sleep.side_effect = lambda _s: (_ for _ in ()).throw(AssertionError(open_now)) if open_now != 1 else None
+                with pytest.raises(upload.SourceFilesBusy):
+                    with upload._source_files_lock(source_id, wait_seconds=0.05):
+                        pass
+                assert sleep.called
+        # The holder's connection plus one try at a time, never a queue of waiters'.
+        assert most == 2 and open_now == 0
+
     def test_a_second_holder_waits_then_gives_up(self, pg_engine):
         from docsgpt.api.user.sources import upload
 

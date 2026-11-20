@@ -536,7 +536,9 @@ def _record_sync_manifest(source_id: str, user: str, sync_manifest: Any) -> None
 
     Written once the index holds those files, so the record's "index is
     current" is true. A failure only costs the source's first sync an upload
-    of every file.
+    of every file. A source that already has a record keeps it: an ingest
+    that runs again (a redelivered task) after a sync changed the files must
+    not bring back the hashes of the files it was first given.
 
     Args:
         source_id: The source's id.
@@ -547,7 +549,11 @@ def _record_sync_manifest(source_id: str, user: str, sync_manifest: Any) -> None
         return
     try:
         with db_session() as conn:
-            SourcesRepository(conn).update(str(source_id), user, {"sync_manifest": sync_manifest})
+            repo = SourcesRepository(conn)
+            row = repo.get_for_update(str(source_id), user)
+            if row is None or row.get("sync_manifest"):
+                return
+            repo.update(str(source_id), user, {"sync_manifest": sync_manifest})
     except Exception as e:
         logging.error(f"Error recording the uploaded files of source {source_id}: {e}", exc_info=True)
 
@@ -595,10 +601,17 @@ def _file_content_changed(old: dict, new: dict) -> bool:
     return bool(new_hash) and old.get("sha256") != new_hash
 
 
-def _download_source_files_to_dir(storage, source_file_path, temp_dir):
-    """Mirror a source's stored files into ``temp_dir``, preserving structure."""
+def _download_source_files_to_dir(storage, source_file_path, temp_dir) -> bool:
+    """Mirror a source's stored files into ``temp_dir``, preserving structure.
+
+    Returns:
+        bool: Whether every stored file was copied. A file that could not be
+        read is logged and left out, so what the caller then scans is not the
+        whole source.
+    """
+    complete = True
     if not storage.is_directory(source_file_path):
-        return
+        return complete
     for storage_file_path in storage.list_files(source_file_path):
         if storage.is_directory(storage_file_path):
             continue
@@ -611,7 +624,9 @@ def _download_source_files_to_dir(storage, source_file_path, temp_dir):
                 f.write(file_data.read())
         except Exception as e:
             logging.error(f"Error downloading file {storage_file_path}: {e}")
+            complete = False
             continue
+    return complete
 
 
 # Define a function to generate a random string of a given length.
@@ -983,6 +998,8 @@ def ingest_worker(
             finally:
                 original.close()
 
+        # Whether every uploaded file reached the reader; see ``_record_sync_manifest``.
+        read_all = True
         with tempfile.TemporaryDirectory() as temp_dir:
             os.makedirs(temp_dir, exist_ok=True)
 
@@ -1010,6 +1027,7 @@ def ingest_worker(
                         logging.error(
                             f"Error downloading file {storage_file_path}: {e}"
                         )
+                        read_all = False
                         continue
             else:
                 # Handle single file case
@@ -1127,7 +1145,9 @@ def ingest_worker(
             if folder_id:
                 file_data["folder_id"] = folder_id
             upload_index(vector_store_path, file_data)
-            _record_sync_manifest(source_id_for_events, user, sync_manifest)
+            # A file that could not be read was not indexed: without a record
+            # the source's first sync uploads the files and indexes them all.
+            _record_sync_manifest(source_id_for_events, user, sync_manifest if read_all else None)
             _publish_source_event(
                 user,
                 actor_id,
@@ -1318,7 +1338,9 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            _download_source_files_to_dir(storage, source_file_path, temp_dir)
+            # A file that could not be read is missing from the scan below:
+            # the run can still finish, but must not mark the index current.
+            scanned_all = _download_source_files_to_dir(storage, source_file_path, temp_dir)
 
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
@@ -1334,6 +1356,9 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             )
 
             rechunk = False
+            # Whether the stored files were compared with the indexed ones;
+            # when that failed, "no changes" says nothing about the index.
+            compared = False
             try:
                 old_directory_structure = source.get("directory_structure") or {}
                 if isinstance(old_directory_structure, str):
@@ -1366,6 +1391,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
 
                 if modified_files:
                     logging.info(f"Files edited since last ingest: {modified_files}")
+                compared = True
 
             except Exception as e:
                 logging.error(
@@ -1377,7 +1403,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             try:
                 if not added_files and not removed_files and not modified_files:
                     logging.info("No changes detected.")
-                    _mark_sync_indexed(source_id, files_generation)
+                    if compared and scanned_all:
+                        _mark_sync_indexed(source_id, files_generation)
                     _publish_source_event(
                         user, actor_id,
                         "source.ingest.completed",
@@ -1585,7 +1612,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         )
                         if rechunk and not inner_warnings:
                             repo.remove_metadata_key(source_id, user, "rechunk_pending")
-                        if not inner_warnings:
+                        if not inner_warnings and scanned_all:
                             repo.mark_sync_indexed(source_id, files_generation)
                 except Exception as e:
                     logging.error(

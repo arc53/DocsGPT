@@ -22,7 +22,9 @@ Two rules keep the record honest:
   source's files lock was held, and is cleared *before* a stored file is
   overwritten. A request that dies part way leaves entries without a hash,
   which the next sync uploads again.
-* ``generation`` changes every time the stored files are about to change. A
+* ``generation`` changes every time the stored files are about to change,
+  and again once they have changed (a reingest that started in between read
+  only part of the change). A
   reingest that read the files at generation ``g`` sets
   ``indexed_generation`` to ``g`` when it finishes cleanly, and only if the
   generation is still ``g``. The index is current exactly when the two are
@@ -48,11 +50,24 @@ MANIFEST_VERSION = 1
 #: Longest path a manifest entry may name, in characters.
 MAX_PATH_CHARS = 1024
 
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+#: Longest folder or file name in a manifest path, in UTF-8 bytes: one that
+#: file systems, and a temporary name built from it, can still hold.
+MAX_PART_BYTES = 200
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
 
 
 class ManifestError(ValueError):
-    """A client's manifest cannot be used; the message is safe to return."""
+    """A client's manifest cannot be used.
+
+    Attributes:
+        public_message: What is wrong, in words that are safe to return to
+            the client: it never quotes the input.
+    """
+
+    def __init__(self, public_message: str) -> None:
+        super().__init__(public_message)
+        self.public_message = public_message
 
 
 @dataclass(frozen=True)
@@ -144,7 +159,8 @@ def parse_manifest(raw: Any, max_files: int) -> list[ManifestEntry]:
     Raises:
         ManifestError: Not JSON, the wrong shape, an unknown version, no
             files, too many, a path that is not already in normal form
-            (see ``normalize_path``), a repeated path or a bad hash.
+            (see ``normalize_path``) or not valid Unicode, a repeated path
+            or a bad hash.
     """
     if isinstance(raw, (bytes, bytearray)):
         try:
@@ -154,7 +170,8 @@ def parse_manifest(raw: Any, max_files: int) -> list[ManifestEntry]:
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
-        except ValueError as err:
+        except (ValueError, RecursionError) as err:
+            # RecursionError: JSON nested too deep to be a manifest.
             raise ManifestError("The manifest is not valid JSON") from err
     if not isinstance(raw, dict) or not isinstance(raw.get("files"), list):
         raise ManifestError('The manifest must be an object with a "files" list')
@@ -175,11 +192,16 @@ def parse_manifest(raw: Any, max_files: int) -> list[ManifestEntry]:
             raise ManifestError(f"A manifest path must be 1 to {MAX_PATH_CHARS} characters")
         if any(ord(char) < 0x20 or ord(char) == 0x7F for char in path):
             raise ManifestError("A manifest path cannot contain control characters")
+        if any(0xD800 <= ord(char) <= 0xDFFF for char in path):
+            # A lone surrogate (half a character): JSONB cannot store one.
+            raise ManifestError("A manifest path must be valid Unicode text")
+        if any(len(part.encode("utf-8")) > MAX_PART_BYTES for part in path.split("/")):
+            raise ManifestError(f"A folder or file name in a manifest path cannot be over {MAX_PART_BYTES} bytes")
         if normalize_path(path) != path:
             raise ManifestError(
                 'A manifest path must be relative, use "/" and have no empty, "." or ".." parts'
             )
-        if not isinstance(digest, str) or not _SHA256.match(digest):
+        if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             raise ManifestError("A manifest sha256 must be 64 lowercase hex characters")
         if path in seen:
             raise ManifestError("A manifest path is listed twice")
@@ -216,7 +238,7 @@ def load_state(raw: Any) -> dict:
             stored_path, digest = entry.get("path"), entry.get("sha256")
             if not isinstance(stored_path, str) or not stored_path:
                 continue
-            if not (isinstance(digest, str) and _SHA256.match(digest)):
+            if not (isinstance(digest, str) and _SHA256.fullmatch(digest)):
                 digest = None
             files[path] = {"path": stored_path, "sha256": digest}
     generation = raw.get("generation")
@@ -256,6 +278,20 @@ def _folder_names(files: dict[str, dict[str, Optional[str]]], paths: Iterable[st
     return names
 
 
+def _reserve_folders(folder_names: dict[str, str], client_path: str, stored_path: str) -> None:
+    """Make the folders a file was stored in the ones its client folders map to.
+
+    An allocation can move a file out of the folder first chosen for it (a
+    leftover file had that name); the next file of the same client folder
+    must follow it there, and another client folder must not be given it.
+    """
+    client_parts, stored_parts = client_path.split("/"), stored_path.split("/")
+    if len(client_parts) != len(stored_parts):
+        return
+    for depth in range(1, len(client_parts)):
+        folder_names["/".join(client_parts[:depth])] = "/".join(stored_parts[:depth])
+
+
 def _blocked(stored_path: str, stale: set[str]) -> bool:
     """Whether a stale stored file is a folder of ``stored_path``, or ``stored_path`` a folder of one."""
     parts = stored_path.split("/")
@@ -279,7 +315,10 @@ def plan_sync(
     (one upload serves every file with its content). Otherwise it is
     *written* if this request uploaded it, and *needed* if not. A file the record knows keeps its stored
     path; a new one gets a path from ``allocate``, clear of every path a
-    manifest file holds.
+    manifest file holds. When the record has two manifest files at one
+    stored path (a new path took over the stored file of an old one, and
+    both are listed now), only one keeps it, the one whose content it holds
+    first; the other counts as new.
 
     Args:
         state: The source's record (``load_state``).
@@ -298,8 +337,15 @@ def plan_sync(
     recorded = state.get("files") or {}
     present = set(present)
     uploaded = set(uploaded)
-    wanted = {entry.path for entry in manifest}
-    standing = [path for path in recorded if path in wanted]
+    wanted = {entry.path: entry.sha256 for entry in manifest}
+    holders: dict[str, str] = {}
+    for path in sorted(
+        (path for path in recorded if path in wanted),
+        key=lambda path: recorded[path]["sha256"] != wanted[path],
+    ):
+        holders.setdefault(recorded[path]["path"], path)
+    standing = [path for path in recorded if path in wanted and holders[recorded[path]["path"]] == path]
+    recorded = {path: entry for path, entry in recorded.items() if path not in wanted or path in standing}
     folder_names = _folder_names(recorded, standing)
     taken = {recorded[path]["path"] for path in standing}
     stale = present - taken
@@ -318,15 +364,18 @@ def plan_sync(
         if entry.path not in uploaded:
             plan.needed.append(entry.path)
             continue
-        if known is not None:
+        if known is not None and not _blocked(known["path"], present):
             stored_path = known["path"]
         else:
+            # New to the record, or its recorded place can no longer take a
+            # file: a folder now sits there, or a file where its folder was.
             stored_path = allocate(entry.path, folder_names, taken)
             if _blocked(stored_path, stale):
                 # A leftover file sits where this path needs a folder (or the
                 # other way round) and is only removed after the writes.
                 stored_path = allocate(entry.path, folder_names, taken | stale)
             taken.add(stored_path)
+            _reserve_folders(folder_names, entry.path, stored_path)
         plan.writes.append((entry.path, stored_path))
         plan.files[entry.path] = {"path": stored_path, "sha256": entry.sha256}
 
@@ -343,7 +392,9 @@ def state_before_writes(state: dict, plan: SyncPlan, generation: str) -> dict:
 
     Every path about to be written loses its hash and the generation moves,
     so a request that stops here leaves nothing the record vouches for
-    wrongly.
+    wrongly. That includes any other client path recorded at a stored path
+    about to be written (a renamed file can take over the stored path of the
+    name it had).
 
     Args:
         state: The record as read under the files lock.
@@ -353,7 +404,11 @@ def state_before_writes(state: dict, plan: SyncPlan, generation: str) -> dict:
     Returns:
         The new record; ``state`` is not changed.
     """
-    files = {path: dict(entry) for path, entry in (state.get("files") or {}).items()}
+    written = {stored_path for _, stored_path in plan.writes}
+    files = {
+        path: {"path": entry["path"], "sha256": None if entry["path"] in written else entry["sha256"]}
+        for path, entry in (state.get("files") or {}).items()
+    }
     for client_path, stored_path in plan.writes:
         files[client_path] = {"path": stored_path, "sha256": None}
     return {
