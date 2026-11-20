@@ -700,6 +700,10 @@ class OpenAILLM(BaseLLM):
         # ``tool_result_images`` overrides either way.
         responses = self._uses_responses_api()
         native = native_tool_images(self, responses)
+        # Reasoning round-trips for providers that demand it (DeepSeek
+        # thinking mode); most other OpenAI-compatible APIs ignore the extra
+        # field, but a model that refuses it (Mistral: 422) turns it off.
+        send_reasoning = getattr(self.capabilities, "send_reasoning_content", True) is not False
         follow_up = []
 
         def flush_follow_up():
@@ -721,10 +725,7 @@ class OpenAILLM(BaseLLM):
             content = message.get("content")
             if role != "tool":
                 flush_follow_up()
-            # Reasoning round-trips for providers that demand it
-            # (DeepSeek thinking mode). Other OpenAI-compatible APIs
-            # ignore the extra field.
-            reasoning_content = message.get("reasoning_content")
+            reasoning_content = message.get("reasoning_content") if send_reasoning else None
 
             if role == "model":
                 role = "assistant"
@@ -897,6 +898,34 @@ class OpenAILLM(BaseLLM):
             if normalized:
                 return normalized
         return ""
+
+    @classmethod
+    def _split_content_parts(cls, parts: list) -> tuple[str, str]:
+        """Split a streamed ``delta.content`` given as typed parts.
+
+        Mistral reasoning models send their thinking as
+        ``{"type": "thinking", "thinking": [{"type": "text", ...}]}`` parts
+        in ``delta.content`` rather than a string, and the chunk that closes
+        the thinking can also carry the answer's first ``text`` part.
+
+        Args:
+            parts: The delta's content: a list of part dicts or objects.
+
+        Returns:
+            The joined thinking text and the joined answer text. Parts of any
+            other type are left out of both.
+        """
+        thoughts, texts = [], []
+        for part in parts:
+            if isinstance(part, dict):
+                kind, field = part.get("type"), part.get
+            else:
+                kind, field = getattr(part, "type", None), partial(getattr, part)
+            if kind == "thinking":
+                thoughts.append(cls._normalize_reasoning_value(field("thinking", None)))
+            elif kind == "text":
+                texts.append(field("text", None) or "")
+        return "".join(thoughts), "".join(texts)
 
     def _note_tools_rejected(self, model: str, error: Exception) -> None:
         """Record that this endpoint refuses tool calling, warning once."""
@@ -1140,6 +1169,13 @@ class OpenAILLM(BaseLLM):
                     yield {"type": "thought", "thought": reasoning_text}
 
                 content = getattr(delta, "content", None)
+                if isinstance(content, list):
+                    thought, content = self._split_content_parts(content)
+                    if thought:
+                        yield {"type": "thought", "thought": thought}
+                    # The handler reads a yielded choice's content as answer
+                    # text; what the parts held has been surfaced here.
+                    delta.content = None
                 if isinstance(content, str) and content:
                     yield content
                     continue

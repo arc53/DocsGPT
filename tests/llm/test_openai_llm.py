@@ -274,3 +274,158 @@ def test_prepare_messages_with_attachments_image_and_pdf(openai_llm, monkeypatch
         isinstance(p, dict) and p.get("file", {}).get("file_id") == "file_xyz"
         for p in user_msg["content"]
     )
+
+
+# ── Mistral reasoning models on the chat-completions wire ────────────────
+# Chunk shapes are verbatim from a probe of mistral-large-4-latest on Azure
+# AI Foundry (2026-11-20); Mistral's own API uses the same message schema.
+
+
+def _mistral_chunk(delta, finish_reason=None):
+    """A ``ChatCompletionChunk`` built the way the OpenAI SDK parses one off the wire."""
+    from openai._models import construct_type
+    from openai.types.chat import ChatCompletionChunk
+
+    return construct_type(
+        type_=ChatCompletionChunk,
+        value={
+            "id": "chunk",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "mistral-large-4-latest",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
+        },
+    )
+
+
+def _thinking(text, closed=True):
+    part = {"type": "thinking", "thinking": [{"type": "text", "text": text}]}
+    if closed:
+        part["closed"] = True
+    return part
+
+
+@pytest.mark.unit
+def test_raw_gen_stream_reads_typed_content_parts(openai_llm):
+    # Thinking arrives as typed parts in delta.content, and the chunk that
+    # closes it can also hold the answer's first words: both must come out,
+    # the thought first.
+    openai_llm.client.chat.completions.create = lambda **kwargs: iter([
+        _mistral_chunk({"content": [_thinking("The user is asking")]}),
+        _mistral_chunk({"content": [_thinking(" for", closed=False)]}),
+        _mistral_chunk({"content": [_thinking(" three words."), {"type": "text", "text": "Hi there"}]}),
+        _mistral_chunk({"content": " friend."}),
+        _mistral_chunk({"content": ""}, finish_reason="stop"),
+    ])
+
+    chunks = list(openai_llm._raw_gen_stream(openai_llm, model="mistral", messages=[{"role": "user", "content": "hi"}]))
+
+    assert chunks == [
+        {"type": "thought", "thought": "The user is asking"},
+        {"type": "thought", "thought": " for"},
+        {"type": "thought", "thought": " three words."},
+        "Hi there",
+        " friend.",
+    ]
+    assert openai_llm._stream_reached_finish is True
+
+
+@pytest.mark.unit
+def test_raw_gen_stream_reads_parts_given_as_objects(openai_llm):
+    # A client that types the parts hands objects rather than dicts; parts of
+    # a kind that is neither thinking nor text are not answer text.
+    parts = [
+        types.SimpleNamespace(type="thinking", thinking=[types.SimpleNamespace(type="text", text="hmm")]),
+        types.SimpleNamespace(type="image_url", image_url={"url": "data:image/png;base64,AAA"}),
+        types.SimpleNamespace(type="text", text="answer"),
+    ]
+    openai_llm.client.chat.completions.create = lambda **kwargs: FakeChatCompletions._Response(
+        lines=[FakeChatCompletions._StreamLine([{"content": parts, "finish_reason": None}])]
+    )
+
+    chunks = list(openai_llm._raw_gen_stream(openai_llm, model="mistral", messages=[{"role": "user", "content": "hi"}]))
+
+    assert chunks == [{"type": "thought", "thought": "hmm"}, "answer"]
+
+
+@pytest.mark.unit
+def test_raw_gen_stream_hands_on_a_tool_call_chunk_without_its_parts(openai_llm):
+    # The handler reads a yielded choice's content as answer text, so the
+    # parts already surfaced must not reach it a second time (as a list).
+    call = {"index": 0, "id": "call_1", "type": "function", "function": {"name": "search", "arguments": "{}"}}
+    openai_llm.client.chat.completions.create = lambda **kwargs: iter([
+        _mistral_chunk({"content": [_thinking("look it up")], "tool_calls": [call]}),
+        _mistral_chunk({"content": ""}, finish_reason="tool_calls"),
+    ])
+
+    chunks = list(openai_llm._raw_gen_stream(openai_llm, model="mistral", messages=[{"role": "user", "content": "hi"}]))
+
+    assert chunks[0] == {"type": "thought", "thought": "look it up"}
+    choice = chunks[1]
+    assert choice.delta.tool_calls[0].function.name == "search"
+    assert choice.delta.content is None
+    assert chunks[2].finish_reason == "tool_calls"
+
+
+def _history_with_thoughts():
+    return [
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1", "reasoning_content": "thought 1"},
+        {"role": "user", "content": "q2"},
+        {
+            "role": "assistant",
+            "content": None,
+            "reasoning_content": "thought 2",
+            "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": "{}"}}],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": "result"},
+        {"role": "assistant", "content": [{"type": "text", "text": "a2"}], "reasoning_content": "thought 3"},
+        {"role": "user", "content": "q3"},
+    ]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("capabilities", ["none", "default"])
+def test_clean_messages_keeps_reasoning_content_by_default(openai_llm, capabilities):
+    # DeepSeek thinking mode refuses a tool-call turn without its reasoning.
+    from docsgpt.core.model_settings import ModelCapabilities
+
+    openai_llm.capabilities = None if capabilities == "none" else ModelCapabilities()
+
+    cleaned = openai_llm._clean_messages_openai(_history_with_thoughts())
+
+    sent = [m.get("reasoning_content") for m in cleaned if m["role"] == "assistant"]
+    assert sent == ["thought 1", "thought 2", "thought 3"]
+
+
+@pytest.mark.unit
+def test_clean_messages_drops_reasoning_content_for_a_model_that_refuses_it(openai_llm):
+    # Mistral answers an assistant message carrying reasoning_content with a
+    # 422 ("Extra inputs are not permitted").
+    from docsgpt.core.model_settings import ModelCapabilities
+
+    openai_llm.capabilities = ModelCapabilities(send_reasoning_content=False)
+
+    cleaned = openai_llm._clean_messages_openai(_history_with_thoughts())
+
+    assistants = [m for m in cleaned if m["role"] == "assistant"]
+    assert len(assistants) == 3
+    assert not any("reasoning_content" in m for m in assistants)
+    assert [m["content"] for m in assistants] == ["a1", None, [{"type": "text", "text": "a2"}]]
+
+
+@pytest.mark.unit
+def test_raw_gen_stream_sends_no_reasoning_content_to_a_model_that_refuses_it(openai_llm):
+    from docsgpt.core.model_settings import ModelCapabilities
+
+    openai_llm.capabilities = ModelCapabilities(send_reasoning_content=False)
+    sent = {}
+
+    def create(**kwargs):
+        sent.update(kwargs)
+        return iter([_mistral_chunk({"content": "ok"}, finish_reason="stop")])
+
+    openai_llm.client.chat.completions.create = create
+
+    assert list(openai_llm._raw_gen_stream(openai_llm, model="mistral", messages=_history_with_thoughts())) == ["ok"]
+    assert not any("reasoning_content" in m for m in sent["messages"])

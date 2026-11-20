@@ -147,6 +147,7 @@ base_url: https://api.mistral.ai/v1
 defaults:
   supports_tools: true
   context_window: 128000
+  send_reasoning_content: false
 models:
   - id: mistral-large-latest
     display_name: Mistral Large
@@ -155,7 +156,8 @@ models:
 ```
 
 After restart, those models appear in `/api/models` and are selectable
-in the UI. A working template lives at
+in the UI. `send_reasoning_content: false` is for Mistral: it refuses a
+request that sends a stored thought back as `reasoning_content`. A working template lives at
 `docsgpt/core/models/examples/mistral.yaml.example`.
 
 **What you can do:**
