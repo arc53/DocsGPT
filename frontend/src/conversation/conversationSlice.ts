@@ -1640,8 +1640,9 @@ export const conversationSlice = createSlice({
       .addCase(submitToolActions.rejected, (state, action) => {
         if (action.meta.aborted) return;
         state.status = 'failed';
-        const last = state.queries[state.queries.length - 1];
-        if (last) last.error = 'Something went wrong';
+        const paused =
+          state.queries[action.meta.arg.index ?? lastShownIndex(state.queries)];
+        if (paused) paused.error = 'Something went wrong';
       });
   },
 });

@@ -397,3 +397,21 @@ def test_the_point_stops_where_the_turn_history_stopped_when_it_began():
     kwargs = orchestrator.compress_mid_execution.call_args.kwargs
     assert kwargs["persist_query_index"] == 0
     assert kwargs["turn_index"] == 3
+
+
+@pytest.mark.unit
+def test_the_point_is_stored_only_for_a_turn_whose_row_is_saved():
+    agent = _agent()
+    agent.compressed_summary = None
+    synthetic = {"queries": [{"prompt": "q0", "response": "r"}, {"prompt": "q1", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    agent.tool_executor.message_id = "m1"
+    saved = {"queries": [*_settled(1), {"id": "m1", "prompt": "q1", "response": "", "status": "streaming"}]}
+    _, orchestrator = _run_with(_Handler(), agent, _result(), saved, synthetic)
+    assert orchestrator.compress_mid_execution.call_args.kwargs["persist_point"] is True
+
+    # A reservation that failed leaves the turn without a row of its own.
+    agent.tool_executor.message_id = "m9"
+    _, orchestrator = _run_with(_Handler(), agent, _result(), saved, synthetic)
+    assert orchestrator.compress_mid_execution.call_args.kwargs["persist_point"] is False

@@ -174,6 +174,7 @@ class CompressionOrchestrator:
         keep_recent_tokens: Optional[int] = None,
         turn_index: Optional[int] = None,
         turn_message_id: Optional[str] = None,
+        persist_point: bool = True,
     ) -> CompressionResult:
         """
         Perform the actual compression operation.
@@ -190,6 +191,8 @@ class CompressionOrchestrator:
             turn_index: The in-flight turn a mid-turn point summarizes the
                 tool work of.
             turn_message_id: That turn's row id.
+            persist_point: Store the point; False keeps it for the caller's
+                turn only.
 
         Returns:
             CompressionResult
@@ -298,6 +301,25 @@ class CompressionOrchestrator:
                 f"{queries_count}{on_top}"
             )
 
+            if not persist_point:
+                # For this turn only: the point is indexed against the
+                # conversation passed in, and nothing is stored.
+                metadata = compression_service.compress_conversation(
+                    conversation, compress_up_to, start_index=start_index
+                )
+                compressed_summary, recent_queries = compression_service.get_compressed_context(
+                    {
+                        **conversation,
+                        "compression_metadata": {
+                            "is_compressed": True,
+                            "compression_points": [metadata.to_dict()],
+                        },
+                    }
+                )
+                return CompressionResult.success_with_compression(
+                    compressed_summary, recent_queries, metadata
+                )
+
             # Perform compression and save to DB
             metadata = compression_service.compress_and_save(
                 conversation_id,
@@ -383,6 +405,7 @@ class CompressionOrchestrator:
         persist_query_index: Optional[int] = None,
         turn_index: Optional[int] = None,
         turn_message_id: Optional[str] = None,
+        persist_point: bool = True,
     ) -> CompressionResult:
         """
         Perform compression during tool execution.
@@ -401,6 +424,8 @@ class CompressionOrchestrator:
             turn_index: Position of the in-flight turn whose tool work the
                 summary holds.
             turn_message_id: That turn's row id.
+            persist_point: Store the point; False keeps it for the caller's
+                turn only.
 
         Returns:
             CompressionResult
@@ -431,6 +456,7 @@ class CompressionOrchestrator:
                 persist_query_index=persist_query_index,
                 turn_index=turn_index,
                 turn_message_id=turn_message_id,
+                persist_point=persist_point,
             )
 
         except Exception as e:

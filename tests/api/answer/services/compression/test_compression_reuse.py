@@ -420,6 +420,39 @@ class TestAbsolutePersistIndex:
         assert kwargs["turn_index"] == 20
 
 
+    @patch(
+        "docsgpt.api.answer.services.compression.orchestrator.get_provider_from_model_id",
+        return_value="openai",
+    )
+    @patch(
+        "docsgpt.api.answer.services.compression.orchestrator.get_api_key_for_provider",
+        return_value="sk",
+    )
+    @patch("docsgpt.api.answer.services.compression.orchestrator.LLMCreator")
+    @patch("docsgpt.api.answer.services.compression.orchestrator.settings")
+    def test_a_turn_without_a_saved_row_compresses_without_storing_a_point(
+        self, mock_settings, MockLLMCreator, _key, _provider, orchestrator, conversation_service,
+    ):
+        mock_settings.COMPRESSION_MODEL_OVERRIDE = None
+        llm = MagicMock()
+        llm.gen.return_value = "<summary>new</summary>"
+        MockLLMCreator.create_llm.return_value = llm
+        synthetic = {
+            "queries": [{"prompt": "q0", "response": "r"}, {"prompt": "q1", "response": ""}],
+            "compression_metadata": {"is_compressed": False, "compression_points": []},
+        }
+
+        result = orchestrator.compress_mid_execution(
+            "conv1", "user1", "m", {"sub": "user1"}, current_conversation=synthetic,
+            persist_query_index=0, turn_index=1, persist_point=False,
+        )
+
+        assert result.success and result.compression_performed
+        assert result.compressed_summary == "new"
+        assert result.recent_queries == []
+        conversation_service.update_compression_metadata.assert_not_called()
+
+
 @pytest.mark.unit
 class TestUnusableSavedPoints:
     """A saved point with an empty summary (older versions wrote them) must

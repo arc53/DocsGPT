@@ -1222,7 +1222,12 @@ class LLMHandler(ABC):
             persist_query_index = None
             turn_index = None
             in_flight_id = self._in_flight_message_id(agent)
+            persist_point = False
             if conversation:
+                persist_point = bool(in_flight_id) and any(
+                    isinstance(q, dict) and str(q.get("id") or "") == in_flight_id
+                    for q in conversation.get("queries") or []
+                )
                 # Merge current in-flight messages (including tool calls).
                 # The synthetic conversation holds only the turns replayed
                 # this turn plus the in-flight one, so the summary already in
@@ -1281,6 +1286,9 @@ class LLMHandler(ABC):
                 persist_query_index=persist_query_index,
                 turn_index=turn_index,
                 turn_message_id=in_flight_id,
+                # Stored only for a turn whose own row is saved: an edit can
+                # then drop the point, or refuse it once the row is gone.
+                persist_point=persist_point,
             )
 
             if not result.success:

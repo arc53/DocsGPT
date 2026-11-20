@@ -1191,6 +1191,38 @@ describe('a turn left waiting on an approval', () => {
     expect(queries[1].thought).toBeUndefined();
   });
 
+  it('fails the paused turn, not a stored summary after it, when the request throws', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(new Error('down'));
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        waitingTurn,
+        {
+          prompt: '[Context Compression Summary]',
+          response: 's',
+          compressionSummary: true,
+        },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'c5', decision: 'approved' }],
+      }),
+    );
+
+    const { queries } = store.getState().conversation;
+    expect(queries[0].error).toBe('Something went wrong');
+    expect(queries[1].error).toBeUndefined();
+  });
+
   it('reloads the chat instead of failing when a late decision finds it over', async () => {
     vi.mocked(handleSubmitToolActions).mockImplementation(
       async (_conversationId, _actions, _token, _signal, onEvent) => {

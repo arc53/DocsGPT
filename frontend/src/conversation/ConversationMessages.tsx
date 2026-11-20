@@ -378,7 +378,6 @@ export default function ConversationMessages({
     : 'w-full max-w-290 px-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12';
 
   const renderResponseView = (query: Query, index: number) => {
-    const isLastMessage = index === lastIndex;
     const bubbleMargin = DEFAULT_BUBBLE_MARGIN;
 
     // Error first; reconciler-failed rows may carry partial thought/
