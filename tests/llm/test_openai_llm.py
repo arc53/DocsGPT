@@ -367,6 +367,28 @@ def test_raw_gen_stream_hands_on_a_tool_call_chunk_without_its_parts(openai_llm)
     assert chunks[2].finish_reason == "tool_calls"
 
 
+@pytest.mark.unit
+def test_raw_gen_stream_keeps_the_tool_calls_and_finish_of_a_chunk_with_answer_parts(openai_llm):
+    # Answer text in typed parts must not cost the chunk its tool calls or its
+    # finish reason.
+    call = {"index": 0, "id": "call_1", "type": "function", "function": {"name": "search", "arguments": "{}"}}
+    openai_llm.client.chat.completions.create = lambda **kwargs: iter([
+        _mistral_chunk(
+            {"content": [_thinking("look it up"), {"type": "text", "text": "Checking."}], "tool_calls": [call]},
+            finish_reason="tool_calls",
+        ),
+    ])
+
+    chunks = list(openai_llm._raw_gen_stream(openai_llm, model="mistral", messages=[{"role": "user", "content": "hi"}]))
+
+    assert chunks[:2] == [{"type": "thought", "thought": "look it up"}, "Checking."]
+    assert len(chunks) == 3
+    assert chunks[2].delta.tool_calls[0].function.name == "search"
+    assert chunks[2].delta.content is None
+    assert openai_llm._stream_reached_finish is True
+    assert openai_llm._last_finish_reason == "tool_calls"
+
+
 def _history_with_thoughts():
     return [
         {"role": "user", "content": "q1"},

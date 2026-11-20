@@ -1170,12 +1170,15 @@ class OpenAILLM(BaseLLM):
 
                 content = getattr(delta, "content", None)
                 if isinstance(content, list):
-                    thought, content = self._split_content_parts(content)
+                    thought, text = self._split_content_parts(content)
                     if thought:
                         yield {"type": "thought", "thought": thought}
+                    if text:
+                        yield text
                     # The handler reads a yielded choice's content as answer
-                    # text; what the parts held has been surfaced here.
-                    delta.content = None
+                    # text; what the parts held has been surfaced here, and
+                    # the chunk's tool calls and finish reason still follow.
+                    delta.content = content = None
                 if isinstance(content, str) and content:
                     yield content
                     continue
