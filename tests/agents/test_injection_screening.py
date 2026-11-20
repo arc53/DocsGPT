@@ -97,19 +97,37 @@ class TestRetrieval:
         assert agent.retrieved_docs[1]["chunk_key"] == "k2"
         assert ClassicNote not in turn
 
-    def test_withheld_parent_does_not_restore_the_raw_child_for_sources(self, fake):
+    def test_withheld_parent_and_child_do_not_restore_raw_text_for_sources(self, fake):
         from docsgpt.connectors.attribution import client_sources
 
-        child = "unreviewed raw child secret"
+        child = PAYLOAD
         doc = {**DOCS[1], "matched_text": child}
         agent = _agent(rules(), retrieved_docs=[doc])
 
-        screened = agent._screen_docs([doc])
+        messages = agent._build_messages("system prompt", "q")
+        screened = agent.retrieved_docs
         (source,) = client_sources(screened)
 
+        assert child not in user_turn(messages)
         assert source["text"] == BaseAgent.RETRIEVAL_WITHHELD_TEXT
         assert child not in repr(source)
+        assert "matched_text" not in agent.retrieved_docs[0]
         assert doc["matched_text"] == child
+
+    def test_accepted_child_replaces_a_blocked_parent(self, fake):
+        from docsgpt.connectors.attribution import client_sources
+
+        child = "safe child text"
+        doc = {**DOCS[1], "matched_text": child}
+        agent = _agent(rules(), retrieved_docs=[doc])
+
+        messages = agent._build_messages("system prompt", "q")
+        (source,) = client_sources(agent.retrieved_docs)
+
+        assert child in user_turn(messages)
+        assert agent.retrieved_docs[0]["text"] == child
+        assert "matched_text" not in agent.retrieved_docs[0]
+        assert source["text"] == child
 
     def test_the_verdict_carries_the_chunk_ref(self, fake):
         agent = _agent(rules(), retrieved_docs=[dict(d) for d in DOCS])

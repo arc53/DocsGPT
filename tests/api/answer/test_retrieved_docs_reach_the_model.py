@@ -100,6 +100,22 @@ class TestDocumentsLandInTheUserTurn:
         user = agent._build_messages("SYSTEM", "Summarize current context")[-1]["content"]
         assert user == "Summarize current context"
 
+    def test_two_large_parent_sources_fit_the_model_turn_budget(self):
+        from docsgpt.utils import num_tokens_from_string
+
+        docs = [
+            {"text": f"Parent {label}: " + (word + " ") * 4000, "filename": f"{label}.txt"}
+            for label, word in (("A", "alpha"), ("B", "bravo"))
+        ]
+        agent = self._agent(retrieved_docs=docs)
+
+        with patch("docsgpt.core.model_utils.get_token_limit", return_value=8192):
+            messages = agent._build_messages("SYSTEM", "Summarize both sources")
+
+        user_turn = messages[-1]["content"]
+        assert num_tokens_from_string(user_turn) < 8192
+        assert "Parent A:" in user_turn or "Parent B:" in user_turn
+
 
 @pytest.mark.unit
 class TestChunksPrecedence:

@@ -772,7 +772,24 @@ class GraphRAGRetriever(BaseRetriever):
         if fallback:
             segments.append(self._classic_for_sources(fallback))
 
-        return [doc for segment in segments for doc in segment]
+        combined = [doc for segment in segments for doc in segment]
+        # Each graph source has a local selection budget. Reapply one budget
+        # after merging sources so expanded parent windows cannot multiply the
+        # model's document allowance by the number of graph sources.
+        combined_limit = max(
+            int(max(self.doc_token_limit, self.candidate_tokens or 0) * 0.9), 100
+        )
+        combined_docs: List[Dict[str, Any]] = []
+        combined_tokens = 0
+        for doc in combined:
+            text = doc.get("text", "")
+            tokens = num_tokens_from_string(
+                budget_text(doc.get("filename"), text, doc.get("source_name"))
+            )
+            if combined_tokens + tokens < combined_limit:
+                combined_docs.append(doc)
+                combined_tokens += tokens
+        return combined_docs
 
     def _get_data(self) -> List[Dict[str, Any]]:
         sources = [source_id for source_id in self.vectorstores if source_id]

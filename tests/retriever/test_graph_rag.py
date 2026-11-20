@@ -192,6 +192,34 @@ class TestGraphRAGPoolDiscipline:
 
 
 @pytest.mark.unit
+def test_combined_graph_sources_share_the_expanded_document_budget(_patch_llm_creator, _patch_embed):
+    rag = _make_retriever(
+        source={"question": "q", "active_docs": ["a", "b"]},
+        doc_token_limit=8192,
+        chunks=2,
+    )
+    store = MagicMock()
+    store.count_nodes_many.return_value = {"a": 1, "b": 1}
+    rag._connector_labels.prefetch = Mock()
+
+    with patch.object(
+        rag,
+        "_graph_docs_for_source",
+        side_effect=[
+            [{"text": "parent-a", "filename": "a", "source_id": "a"}],
+            [{"text": "parent-b", "filename": "b", "source_id": "b"}],
+        ],
+    ), patch(
+        "docsgpt.retriever.graph_rag.num_tokens_from_string",
+        side_effect=lambda text: 4000 if "parent-" in text else 0,
+    ):
+        docs = rag._retrieve_with_store(store, ["a", "b"])
+
+    assert len(docs) == 1
+    assert sum(4000 for _ in docs) <= 8192
+
+
+@pytest.mark.unit
 class TestGraphRAGHappyPath:
     @patch("docsgpt.retriever.graph_rag.num_tokens_from_string")
     def test_oversized_parent_does_not_hide_a_later_parent_that_fits(

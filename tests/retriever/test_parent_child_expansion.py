@@ -48,6 +48,12 @@ class TestExpandToParent:
     def test_returns_child_when_metadata_is_empty(self):
         assert expand_to_parent({}, "child text") == "child text"
 
+    def test_unicode_child_expands_when_it_is_contained_in_parent(self):
+        assert expand_to_parent({"parent_text": "前置き 🧭 子ども本文 続き"}, "子ども本文") == "前置き 🧭 子ども本文 続き"
+
+    def test_parent_equal_to_child_is_not_a_distinct_expansion(self):
+        assert expand_to_parent({"parent_text": "same text"}, "same text") == "same text"
+
     def test_parent_child_chunker_round_trip_expands_only_unchanged_children(self):
         from docsgpt.parser.chunking_strategies import ParentChildChunker
         from docsgpt.parser.schema.base import Document
