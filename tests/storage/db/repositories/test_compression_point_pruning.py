@@ -125,6 +125,15 @@ class TestMidTurnPointNeedsItsTurn:
         assert repo.append_compression_point(conv_id, point, max_points=3) is False
         assert _points(repo, conv_id) == []
 
+    def test_point_of_a_turn_rewritten_in_place_is_not_stored(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 1)
+        row = repo.reserve_message(conv_id, prompt="q1", placeholder_response="", status="streaming")
+        # A retry without a reservation rewrites the row and keeps its id.
+        repo.update_message_at(conv_id, 1, {"prompt": "q1 again", "response": "a", "status": "complete"})
+        point = {**_point(0, "late", turn_index=1), "turn_message_id": str(row["id"])}
+
+        assert repo.append_compression_point(conv_id, point, max_points=3) is False
+
     def test_deleting_an_unanswered_turn_drops_its_point(self, pg_conn):
         repo, conv_id = _conversation(pg_conn, 2)
         row = repo.reserve_message(conv_id, prompt="wake", placeholder_response="", status="streaming")

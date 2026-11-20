@@ -759,8 +759,9 @@ class ConversationsRepository:
         # (NULL comparisons are false), so it is always appended.
         dup_index = point.get("query_index")
         dup_summary = point.get("compressed_summary")
-        # A mid-turn point is not stored once its turn's row is gone: an edit
-        # or retry replaced the turn while its stream was still compressing.
+        # A mid-turn point is stored only while its turn is still being
+        # answered: once an edit or retry deleted or rewrote the row, the
+        # summary holds a turn that was replaced.
         turn_message_id = point.get("turn_message_id")
         if turn_message_id is not None and not looks_like_uuid(str(turn_message_id)):
             turn_message_id = None
@@ -815,6 +816,7 @@ class ConversationsRepository:
                           SELECT 1 FROM conversation_messages
                           WHERE id = CAST(:turn_message_id AS uuid)
                             AND conversation_id = CAST(:id AS uuid)
+                            AND status IN ('pending', 'streaming')
                       )
                   )
                 """
