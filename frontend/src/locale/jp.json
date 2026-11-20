@@ -2070,14 +2070,50 @@
     "startOver": "最初からやり直す",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人事",
+              "it": "IT",
+              "office": "オフィス・設備",
+              "policies": "社内規程"
+            },
+            "text": "どの分野を対象にしますか？"
+          }
+        },
         "description": "チームからの人事・IT・規程の質問",
         "title": "社内ヘルプデスク"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件ファイル",
+              "contracts": "契約書",
+              "papers": "論文",
+              "reports": "レポート"
+            },
+            "text": "どのような文書ですか？"
+          },
+          "users": {
+            "options": {
+              "clients": "顧客・クライアント",
+              "me": "自分だけ",
+              "team": "自分のチーム"
+            },
+            "text": "誰が使いますか？"
+          }
+        },
         "description": "ドキュメントを調べて出典を示す",
         "title": "リサーチアシスタント"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "会社名または製品名は何ですか？"
+          }
+        },
         "description": "訪問者に回答し、不明な時は引き継ぎ",
         "title": "顧客向けウェブサイトチャット"
       }

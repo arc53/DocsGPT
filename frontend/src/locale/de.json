@@ -2086,14 +2086,50 @@
     "startOver": "Neu beginnen",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Personalwesen",
+              "it": "IT",
+              "office": "Büro und Gebäude",
+              "policies": "Unternehmensrichtlinien"
+            },
+            "text": "Welche Bereiche deckt er ab?"
+          }
+        },
         "description": "HR-, IT- und Richtlinienfragen deines Teams",
         "title": "Interner Helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Fallakten",
+              "contracts": "Verträge",
+              "papers": "Fachartikel",
+              "reports": "Berichte"
+            },
+            "text": "Um welche Dokumente geht es?"
+          },
+          "users": {
+            "options": {
+              "clients": "Kunden oder Mandanten",
+              "me": "Nur ich",
+              "team": "Mein Team"
+            },
+            "text": "Wer nutzt ihn?"
+          }
+        },
         "description": "Durchsucht deine Dokumente und zitiert sie",
         "title": "Rechercheassistent"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "Wie heißt das Unternehmen oder Produkt?"
+          }
+        },
         "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit",
         "title": "Website-Chat für Kunden"
       }

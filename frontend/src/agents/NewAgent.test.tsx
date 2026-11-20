@@ -2729,15 +2729,31 @@ describe('NewAgent drafter', () => {
     it('starts the build from a starting point, and drops the router state', async () => {
       await renderFrom({ starter: 'helpdesk' });
       expect(panel()).not.toBeNull();
+      expect(state.value).toBeNull();
+      // The starting point's question is there before any turn.
+      expect(stream.requests).toHaveLength(0);
+      expect(panel()!.textContent).toContain(
+        'drafter.starters.helpdesk.ask.areas.text',
+      );
+      expect(panel()!.textContent).toContain(
+        'drafter.starters.helpdesk.ask.areas.options.hr',
+      );
+      // Skip and draft runs the first turn, from the starting point.
+      await click(buttonByText('drafter.skipQuestions', panel()!)!);
       expect(stream.requests).toHaveLength(1);
       expect(stream.requests[0]).toMatchObject({
         recipe: 'agent',
-        messages: [
-          { role: 'user', content: 'drafter.starters.helpdesk.title' },
-        ],
-        context: { agent_id: null, step: 'basics', starter: 'helpdesk' },
+        context: {
+          agent_id: null,
+          step: 'basics',
+          starter: 'helpdesk',
+          skip_questions: true,
+        },
       });
-      expect(state.value).toBeNull();
+      expect((stream.requests[0] as SentRequest).messages[0]).toEqual({
+        role: 'user',
+        content: 'drafter.starters.helpdesk.title',
+      });
     });
 
     it('starts the build from a description', async () => {
@@ -2781,10 +2797,38 @@ describe('NewAgent drafter', () => {
       'drafter.starters.website.titledrafter.starters.website.description',
     );
     await click(buttonByText('drafter.starters.website.title', panel()!)!);
+    // Its first question shows at once, with no turn.
+    expect(stream.requests).toHaveLength(0);
+    const cards = panel()!.querySelector('[data-slot="question-cards"]')!;
+    expect(cards.textContent).toContain(
+      'drafter.starters.website.ask.company.text',
+    );
+    expect(panel()!.textContent).toContain('drafter.agent.build.progress');
+    await type(cards.querySelector('input')!, 'Acme Freight');
+    await click(buttonByText('questions.sendAnswers', panel()!)!);
+    // The answer is the first turn; the round went before it as the drafter's.
     expect(stream.requests).toHaveLength(1);
+    const sent = stream.requests[0] as SentRequest;
+    expect(sent.messages).toHaveLength(3);
+    expect(sent.messages[0]).toEqual({
+      role: 'user',
+      content: 'drafter.starters.website.title',
+    });
+    expect(sent.messages[1].role).toBe('assistant');
+    expect(JSON.parse(sent.messages[1].content)).toMatchObject({
+      type: 'questions',
+      questions: [
+        {
+          id: 'company',
+          text: 'drafter.starters.website.ask.company.text',
+          options: [],
+        },
+      ],
+    });
+    expect(sent.messages[2].role).toBe('user');
+    expect(sent.messages[2].content).toContain('Acme Freight');
     expect(stream.requests[0]).toMatchObject({
       recipe: 'agent',
-      messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
       context: {
         agent_id: null,
         step: 'basics',

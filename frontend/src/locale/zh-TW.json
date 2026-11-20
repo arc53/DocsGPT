@@ -2070,14 +2070,50 @@
     "startOver": "重新開始",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人力資源",
+              "it": "IT",
+              "office": "辦公與設施",
+              "policies": "公司政策"
+            },
+            "text": "它涵蓋哪些領域？"
+          }
+        },
         "description": "團隊的人資、IT 和規章問題",
         "title": "內部服務台"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件檔案",
+              "contracts": "合約",
+              "papers": "論文",
+              "reports": "報告"
+            },
+            "text": "這些是什麼文件？"
+          },
+          "users": {
+            "options": {
+              "clients": "客戶",
+              "me": "只有我",
+              "team": "我的團隊"
+            },
+            "text": "誰會使用它？"
+          }
+        },
         "description": "檢索你的文件並註明出處",
         "title": "研究助理"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "公司或產品叫什麼名稱？"
+          }
+        },
         "description": "回答訪客問題，不確定時轉真人",
         "title": "面向客戶的網站聊天"
       }

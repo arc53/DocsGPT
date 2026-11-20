@@ -2070,14 +2070,50 @@
     "startOver": "重新开始",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人力资源",
+              "it": "IT",
+              "office": "办公与设施",
+              "policies": "公司制度"
+            },
+            "text": "它涵盖哪些领域？"
+          }
+        },
         "description": "团队的人事、IT 和制度问题",
         "title": "内部服务台"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件档案",
+              "contracts": "合同",
+              "papers": "论文",
+              "reports": "报告"
+            },
+            "text": "这些是什么文档？"
+          },
+          "users": {
+            "options": {
+              "clients": "客户",
+              "me": "只有我",
+              "team": "我的团队"
+            },
+            "text": "谁会使用它？"
+          }
+        },
         "description": "检索你的文档并注明出处",
         "title": "研究助手"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "公司或产品叫什么名字？"
+          }
+        },
         "description": "回答访客问题，不确定时转人工",
         "title": "面向客户的网站聊天"
       }

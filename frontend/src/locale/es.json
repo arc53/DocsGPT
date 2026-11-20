@@ -2155,14 +2155,50 @@
     "startOver": "Empezar de nuevo",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Recursos humanos",
+              "it": "TI",
+              "office": "Oficina e instalaciones",
+              "policies": "Políticas de la empresa"
+            },
+            "text": "¿Qué áreas cubre?"
+          }
+        },
         "description": "Preguntas de RR. HH., TI y políticas de tu equipo",
         "title": "Mesa de ayuda interna"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Expedientes",
+              "contracts": "Contratos",
+              "papers": "Artículos",
+              "reports": "Informes"
+            },
+            "text": "¿Qué documentos son?"
+          },
+          "users": {
+            "options": {
+              "clients": "Clientes",
+              "me": "Solo yo",
+              "team": "Mi equipo"
+            },
+            "text": "¿Quién lo usa?"
+          }
+        },
         "description": "Busca en tus documentos y los cita",
         "title": "Asistente de investigación"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "¿Cómo se llama la empresa o el producto?"
+          }
+        },
         "description": "Responde a visitantes y deriva si no está seguro",
         "title": "Chat web para clientes"
       }

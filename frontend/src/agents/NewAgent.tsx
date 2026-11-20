@@ -111,7 +111,11 @@ import {
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField, DraftedSettingRow } from '../drafter/DraftedBadge';
 import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
-import { DRAFTER_STARTERS } from '../drafter/starters';
+import {
+  DRAFTER_STARTERS,
+  type DrafterStarter,
+  starterQuestions,
+} from '../drafter/starters';
 import { ProposalSummary } from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
@@ -1291,6 +1295,22 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     t,
   ]);
 
+  /**
+   * Begin the build from a starting point: its title as the user's message
+   * and its first questions at once, with no turn; the answer is the first
+   * turn, and carries the starting point's id to every step.
+   */
+  const startFrom = (starter: DrafterStarter) => {
+    build.start(starter);
+    promptView.setUsed(false);
+    drafterSession.ask(
+      t(`drafter.starters.${starter}.title`),
+      starterQuestions(starter, t),
+    );
+  };
+  const startFromRef = useRef(startFrom);
+  startFromRef.current = startFrom;
+
   // Opened from the New agent modal with a description or a starting point:
   // once the drafter's config is known, the drawer opens and the build
   // starts from it. The router state that carried it is dropped either way,
@@ -1309,12 +1329,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     });
     if (!drafterEnabled || !formEmpty || buildRef.current.guided) return;
     setDrafterOpen(true);
-    const text =
-      start.text ??
-      (start.starter ? t(`drafter.starters.${start.starter}.title`) : null);
-    if (!text) return;
-    buildRef.current.start(start.starter);
-    drafterSessionRef.current.send(text);
+    if (start.text) {
+      buildRef.current.start(start.starter);
+      drafterSessionRef.current.send(start.text);
+    } else if (start.starter) startFromRef.current(start.starter);
   }, [
     mode,
     location.state,
@@ -2277,10 +2295,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             Icon,
             text,
             description: t(`drafter.starters.${key}.description`),
-            onSelect: () => {
-              build.start(key);
-              panelSession.send(text);
-            },
+            onSelect: () => startFrom(key),
           };
         })
       : // What the agent lacks first, then what fits it; Finish setup is

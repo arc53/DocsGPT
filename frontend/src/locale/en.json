@@ -2107,14 +2107,50 @@
     "startOver": "Start over",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "HR",
+              "it": "IT",
+              "office": "Office and facilities",
+              "policies": "Company policies"
+            },
+            "text": "Which areas does it cover?"
+          }
+        },
         "description": "HR, IT and policy questions from your team",
         "title": "Internal helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Case files",
+              "contracts": "Contracts",
+              "papers": "Papers",
+              "reports": "Reports"
+            },
+            "text": "What are the documents?"
+          },
+          "users": {
+            "options": {
+              "clients": "Customers or clients",
+              "me": "Just me",
+              "team": "My team"
+            },
+            "text": "Who uses it?"
+          }
+        },
         "description": "Digs through your documents and cites them",
         "title": "Research assistant"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "What is the company or product called?"
+          }
+        },
         "description": "Answers visitors and hands off when unsure",
         "title": "Website chat for customers"
       }
