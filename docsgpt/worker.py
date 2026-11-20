@@ -1460,16 +1460,9 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 # now, their chunks are deleted, and rebuilt where the file is
                 # stored.
                 unfinished = metadata.get(_REINGEST_PENDING) if isinstance(metadata, dict) else None
-                for rel_path in unfinished if isinstance(unfinished, list) else []:
-                    if not isinstance(rel_path, str):
-                        continue
-                    if rel_path in new_files:
-                        if rel_path not in added_files and rel_path not in modified_files:
-                            modified_files.append(rel_path)
-                    elif rel_path not in removed_files:
-                        removed_files.append(rel_path)
-                modified_files.sort()
-                removed_files.sort()
+                unfinished = {p for p in unfinished if isinstance(p, str)} if isinstance(unfinished, list) else set()
+                modified_files = sorted(set(modified_files) | ((unfinished & new_files.keys()) - set(added_files)))
+                removed_files = sorted(set(removed_files) | (unfinished - new_files.keys()))
 
                 if added_files:
                     logging.info(f"Files added since last ingest: {added_files}")
