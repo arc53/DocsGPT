@@ -843,8 +843,7 @@ def _note_files_changing(source_id: str, owner: str, written: Container[str] = (
     Moves the ``sync_manifest`` generation, so the index counts as stale until
     a reingest reads the new files, and drops the hash of every stored path
     in ``written``, so the next sync uploads those again instead of trusting
-    what it stored there before. A source no sync has touched has no record
-    and is left alone.
+    what it stored there before.
 
     Called again with ``done`` once the change is over. In between the record
     says ``writing``: a reingest that reads it then saw only part of the
@@ -860,8 +859,12 @@ def _note_files_changing(source_id: str, owner: str, written: Container[str] = (
     with db_session() as conn:
         repo = SourcesRepository(conn)
         row = repo.get_for_update(source_id, owner)
-        if row is None or not row.get("sync_manifest"):
+        if row is None:
             return
+        # A source without a record gets an empty one: a new source's upload
+        # record is written a moment after the source appears, and must not
+        # then vouch for a file this change replaced (it is only written
+        # where there is none).
         state = sync_manifest.load_state(row.get("sync_manifest"))
         repo.update(
             source_id, owner,

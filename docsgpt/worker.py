@@ -601,40 +601,56 @@ def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
     return files
 
 
-def _structure_with_pending(old: Any, new: Any, added: List[str], modified: List[str]) -> dict:
+def _is_file_entry(node: Any) -> bool:
+    """Whether a ``directory_structure`` node is a file's entry rather than a folder."""
+    return isinstance(node, dict) and "type" in node and "size_bytes" in node
+
+
+def _structure_with_pending(old: Any, new: Any, added: List[str], changed: List[str]) -> dict:
     """A ``directory_structure`` that says which files a reingest is about to re-chunk.
 
-    The files a run adds are listed (as the new structure has them) and the
-    ones it edits stay listed, all without a ``sha256``. A file stored
-    without a hash counts as edited, so if the run dies between changing the
-    chunks and saving the final structure, the next run deletes whatever
-    chunks those files have and embeds them again.
+    The files a run adds are listed (as the new structure has them), and the
+    ones it edits or removes stay listed, all without a ``sha256``. A file
+    stored without a hash counts as edited, so if the run dies between
+    changing the chunks and saving the final structure, the next run deletes
+    whatever chunks those files have and, where the file is (still, or
+    again) stored, embeds it again.
+
+    An added file is left out when a file or folder ``old`` lists is in its
+    way (``guide`` was a file and is a folder now): the old entries are the
+    only note of chunks still to remove, and the next run deletes an added
+    file's chunks before it embeds them anyway.
 
     Args:
         old: The source's saved ``directory_structure``.
         new: The structure of the files as they are now.
         added: Paths in ``new`` only.
-        modified: Paths in both whose content changed.
+        changed: Paths in ``old`` whose chunks are about to be deleted:
+            edited files and removed ones.
 
     Returns:
         A copy of ``old`` with those entries pending; ``old`` and ``new`` are not changed.
     """
     pending = copy.deepcopy(old) if isinstance(old, dict) else {}
     new_files = _structure_files(new)
-    for rel_path in [*added, *modified]:
+    for rel_path in [*changed, *added]:
         parts = rel_path.split(os.sep)
         node = pending
         for part in parts[:-1]:
             child = node.get(part)
-            if not isinstance(child, dict) or ("type" in child and "size_bytes" in child):
+            if child is None:
                 child = node[part] = {}
+            if not isinstance(child, dict) or _is_file_entry(child):
+                node = None
+                break
             node = child
+        if node is None:
+            continue
         entry = node.get(parts[-1])
-        if not (isinstance(entry, dict) and "type" in entry and "size_bytes" in entry):
-            entry = dict(new_files.get(rel_path) or {})
-        entry = {key: value for key, value in entry.items() if key != "sha256"}
-        if "type" in entry and "size_bytes" in entry:
-            node[parts[-1]] = entry
+        if entry is None:
+            entry = new_files.get(rel_path)
+        if _is_file_entry(entry):
+            node[parts[-1]] = {key: value for key, value in entry.items() if key != "sha256"}
     return pending
 
 
@@ -1506,7 +1522,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         source_id, user,
                         {
                             "directory_structure": _structure_with_pending(
-                                old_directory_structure, directory_structure, added_files, modified_files,
+                                old_directory_structure, directory_structure,
+                                added_files, [*modified_files, *removed_files],
                             )
                         },
                     )

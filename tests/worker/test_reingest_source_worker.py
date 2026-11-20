@@ -464,7 +464,7 @@ class TestReingestDetectsEditedFiles:
         chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
         from docsgpt.vectorstore.vector_creator import VectorCreator
 
-        store = VectorCreator.create_vectorstore()
+        store = VectorCreator.create_vectorstore("faiss", "source")
         real_add = store.add_chunk.side_effect
         store.add_chunk.side_effect = RuntimeError("embedding service down")
         first = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
@@ -513,7 +513,7 @@ class TestReingestDetectsEditedFiles:
         src = _hashed_source(pg_conn, {"a.md": b"alpha"})
         stored_files.update({"a.md": b"alpha, edited"})
         chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
-        store = VectorCreator.create_vectorstore()
+        store = VectorCreator.create_vectorstore("faiss", "source")
         real_get = store.get_chunks.side_effect
         store.get_chunks.side_effect = RuntimeError("vector store down")
 
@@ -730,6 +730,59 @@ class TestReingestThatDiesPartWay:
         }
         assert old["a.md"]["sha256"] == "h-a" and new["docs"]["new"]["c.md"]["sha256"] == "h-c"
 
+    def test_structure_with_pending_keeps_removed_files_listed_without_a_hash(self):
+        old = {"a.md": {"type": "t", "size_bytes": 1, "sha256": "h-a"}, "gone.md": {
+            "type": "t", "size_bytes": 1, "sha256": "h-gone",
+        }}
+        new = {"a.md": {"type": "t", "size_bytes": 1, "sha256": "h-a"}}
+
+        pending = worker._structure_with_pending(old, new, [], ["gone.md"])
+
+        assert pending["gone.md"] == {"type": "t", "size_bytes": 1}
+        assert pending["a.md"]["sha256"] == "h-a"
+
+    def test_structure_with_pending_keeps_a_removed_file_a_folder_took_the_place_of(self):
+        """``guide`` was a file and is a folder now: the file's entry is the only note of its chunks."""
+        old = {"guide": {"type": "t", "size_bytes": 1, "sha256": "h-g"}, "docs": {"a.md": {
+            "type": "t", "size_bytes": 1, "sha256": "h-a",
+        }}}
+        new = {"guide": {"b.md": {"type": "t", "size_bytes": 2, "sha256": "h-b"}}, "docs": {
+            "type": "t", "size_bytes": 3, "sha256": "h-d",
+        }}
+
+        pending = worker._structure_with_pending(
+            old, new, [os.path.join("guide", "b.md"), "docs"], ["guide", os.path.join("docs", "a.md")],
+        )
+
+        assert pending == {
+            "guide": {"type": "t", "size_bytes": 1},
+            "docs": {"a.md": {"type": "t", "size_bytes": 1}},
+        }
+
+    def test_a_file_seen_missing_by_a_dead_run_is_embedded_again_when_it_is_there(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        """A run that listed the files mid-change saw ``a.md`` missing, deleted its chunks and died."""
+        src = _hashed_source(pg_conn, {"a.md": b"alpha", "b.md": b"beta"})
+        chunk_store.extend([
+            {"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}},
+            {"doc_id": "old-b", "text": "beta", "metadata": {"source": "b.md"}},
+        ])
+        stored_files.update({"b.md": b"beta"})
+        _with_manifest(pg_conn, src)
+        with patch.object(worker, "_apply_display_names_to_structure", side_effect=SystemExit("killed")):
+            with pytest.raises(SystemExit):
+                worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+        assert [c["doc_id"] for c in chunk_store] == ["old-b"]
+        # The file is stored after all, with the content its saved hash named.
+        stored_files.update({"a.md": b"alpha"})
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed" and result["modified_files"] == ["a.md"]
+        assert {c["metadata"]["source"] for c in chunk_store} == {"a.md", "b.md"}
+        assert result["index_current"] is True
+
     def test_an_edit_reverted_after_a_dead_run_is_embedded_again(
         self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
     ):
@@ -739,7 +792,7 @@ class TestReingestThatDiesPartWay:
         _with_manifest(pg_conn, src)
         from docsgpt.vectorstore.vector_creator import VectorCreator
 
-        store = VectorCreator.create_vectorstore()
+        store = VectorCreator.create_vectorstore("faiss", "source")
         real_add = store.add_chunk.side_effect
         # The run deletes a.md's chunks, then the process is killed.
         store.add_chunk.side_effect = SystemExit("killed")

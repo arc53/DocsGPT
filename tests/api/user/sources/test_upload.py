@@ -28,6 +28,11 @@ def _patch_db(conn):
         yield
 
 
+@contextmanager
+def _patch_db_session(conn):
+    yield conn
+
+
 def _seed_source(pg_conn, user="u", name="src", **kw):
     from docsgpt.storage.db.repositories.sources import SourcesRepository
     return SourcesRepository(pg_conn).create(name, user_id=user, **kw)
@@ -1942,14 +1947,25 @@ class TestManageSourceFilesManifestSync:
         state = self._state(pg_conn, src)
         assert state["generation"] != state["indexed_generation"]
 
-    def test_a_source_no_sync_touched_gets_no_record_from_add(self, app, pg_conn, tmp_path):
-        from docsgpt.storage.db.repositories.sources import SourcesRepository
+    def test_a_change_to_a_source_without_a_record_leaves_an_empty_one(self, app, pg_conn, tmp_path):
+        """A new source's upload record is written a moment after the source appears, and only where there is
+        none: a file replaced in between must not get the upload's hash."""
+        import docsgpt.worker as worker
 
-        src, _ = self._seed(pg_conn, tmp_path)
+        src, root = self._seed(pg_conn, tmp_path, {"a.md": b"uploaded"})
 
-        self._post(app, pg_conn, tmp_path, src, {"operation": "add", "file": [(io.BytesIO(b"x"), "a.md")]})
+        self._post(app, pg_conn, tmp_path, src, {"operation": "add", "file": [(io.BytesIO(b"by hand"), "a.md")]})
 
-        assert SourcesRepository(pg_conn).get(str(src["id"]), self.USER)["sync_manifest"] is None
+        state = self._state(pg_conn, src)
+        assert state["files"] == {} and state["generation"] and state["writing"] is False
+        with patch.object(worker, "db_session", lambda: _patch_db_session(pg_conn)):
+            worker._record_sync_manifest(str(src["id"]), self.USER, {
+                "version": 1, "generation": "g", "indexed_generation": "g",
+                "files": {"a.md": {"path": "a.md", "sha256": self._sha(b"uploaded")}},
+            })
+        assert self._state(pg_conn, src)["files"] == {}
+        asked, _ = self._sync(app, pg_conn, tmp_path, src, {"a.md": b"uploaded"})
+        assert asked.json["needed"] == ["a.md"]
 
     def test_a_whole_upload_sync_records_what_it_stored(self, app, pg_conn, tmp_path):
         """A sync without a manifest leaves a record, so a manifest sync after it uploads nothing."""
