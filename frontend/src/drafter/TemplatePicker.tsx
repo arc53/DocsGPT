@@ -20,9 +20,9 @@ type CategoryFilter = 'all' | TemplateCategory;
 
 /**
  * Every template the drafter can start from, for the Templates step: a
- * search over titles and descriptions, a category track (drawn only while a
- * category would narrow the list) and the rows, two columns from `sm`, the
- * first twelve then Show more.
+ * search over titles and descriptions, under it a category track with counts
+ * (drawn only while a category would narrow the list), then the rows, two
+ * columns from `sm`, the first twelve then Show more.
  *
  * Args:
  *   onPick: Starts the picked template.
@@ -69,36 +69,34 @@ export function TemplatePicker({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <SearchInput
-          placeholder={t('drafter.templates.search')}
-          labelSurface="card"
-          className="sm:w-64"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
+      <SearchInput
+        placeholder={t('drafter.templates.search')}
+        labelSurface="card"
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setShown(PAGE);
+        }}
+      />
+      {filters.length > 0 && (
+        <ToggleGroup
+          type="single"
+          size="xs"
+          value={category}
+          onValueChange={(next) => {
+            if (!next) return;
+            setCategory(next as CategoryFilter);
             setShown(PAGE);
           }}
-        />
-        {filters.length > 0 && (
-          <ToggleGroup
-            type="single"
-            value={category}
-            onValueChange={(next) => {
-              if (!next) return;
-              setCategory(next as CategoryFilter);
-              setShown(PAGE);
-            }}
-            aria-label={t('drafter.templates.categoriesLabel')}
-          >
-            {filters.map((value) => (
-              <ToggleGroupItem key={value} value={value}>
-                {t(`drafter.templates.categories.${value}`)}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        )}
-      </div>
+          aria-label={t('drafter.templates.categoriesLabel')}
+        >
+          {filters.map((value) => (
+            <ToggleGroupItem key={value} value={value} count={counts[value]}>
+              {t(`drafter.templates.categories.${value}`)}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
       {listed.length === 0 ? (
         <EmptyState
           size="xs"
@@ -108,7 +106,7 @@ export function TemplatePicker({
       ) : (
         <SuggestionRows
           label={t('drafter.templates.title')}
-          className="-mx-3 grid grid-cols-1 sm:grid-cols-2"
+          className="-mx-1 grid grid-cols-1 sm:grid-cols-2"
           rows={listed.slice(0, shown).map(({ key, Icon }) => ({
             key,
             icon: <Icon className={suggestionIconClass} aria-hidden="true" />,
