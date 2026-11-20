@@ -65,6 +65,11 @@ class ModelCapabilities:
     # breakpoints, so a turn that resends its history unchained reads the
     # cache back only through them; earlier models reject the field with a 400.
     prompt_cache_breakpoints: bool = False
+    # Chat Completions only: send a stored thought back as ``reasoning_content``
+    # on its assistant message. DeepSeek thinking mode requires it on a
+    # tool-call turn and most endpoints ignore it, but some (Mistral) refuse
+    # the request with a 422, so they set this to false.
+    send_reasoning_content: bool = True
 
 
 @dataclass
