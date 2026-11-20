@@ -937,7 +937,7 @@ def _apply_sync(
     source_file_path: str,
     make_plan,
     file_name_map,
-) -> tuple[sync_manifest.SyncPlan, list[str], bool]:
+) -> tuple[sync_manifest.SyncPlan, list[tuple[str, str]], bool]:
     """Run one sync request against a source's stored files.
 
     The order is what keeps the ``sync_manifest`` record true whatever
@@ -956,8 +956,10 @@ def _apply_sync(
             when the plan is complete.
 
     Returns:
-        ``(plan, removed stored paths, reingest)``: ``reingest`` is whether
-        the index has to be brought up to date with the stored files.
+        ``(plan, removed, reingest)``: ``removed`` pairs each removed stored
+        path with the path it was sent under (the stored path again when
+        that is not known); ``reingest`` is whether the index has to be
+        brought up to date with the stored files.
 
     Raises:
         SourceFilesBusy: Another request held the source's files lock.
@@ -972,6 +974,12 @@ def _apply_sync(
                 raise LookupError(source_id)
             state = sync_manifest.load_state(row.get("sync_manifest"))
             present = _stored_files(storage, source_file_path)
+            # The path each stored file was sent under, to name removed ones by.
+            client_paths = {
+                entry["path"]: client_path
+                for client_path, entry in state["files"].items()
+                if not client_path.startswith("/")
+            }
             plan, local_paths = make_plan(state, present)
             changing = bool(plan.writes) or (plan.complete and bool(plan.deletes))
             if changing:
@@ -999,11 +1007,11 @@ def _apply_sync(
             if fields:
                 repo.update(source_id, owner, fields)
 
-        removed: list[str] = []
+        removed: list[tuple[str, str]] = []
         if plan.complete:
             for rel_path in plan.deletes:
                 storage.delete_file(present[rel_path])
-                removed.append(rel_path)
+                removed.append((rel_path, client_paths.get(rel_path, rel_path)))
     reingest = plan.complete and (changing or not sync_manifest.index_is_current(state))
     return plan, removed, reingest
 
@@ -1624,6 +1632,14 @@ class ManageSourceFiles(Resource):
                         "become the source's whole file set; files not in the upload are removed)"
                     ),
                 ),
+                "manifest": fields.Raw(
+                    required=False,
+                    description=(
+                        "For sync, as a file part: JSON {\"version\": 1, \"files\": [{\"path\", \"sha256\"}]} "
+                        "listing the whole file set. The reply names the paths the source lacks (status "
+                        "'needs_files'); only those are uploaded, each file part named after its sha256."
+                    ),
+                ),
                 "file_paths": fields.List(
                     fields.String,
                     required=False,
@@ -1951,7 +1967,7 @@ class ManageSourceFiles(Resource):
                         def new_file_name_map(plan):
                             return dict(stager.file_name_map)
 
-                    plan, removed_files, reingest = _apply_sync(
+                    plan, removed, reingest = _apply_sync(
                         storage=storage,
                         source_id=resolved_source_id,
                         owner=owner,
@@ -1964,7 +1980,9 @@ class ManageSourceFiles(Resource):
                     "success": True,
                     "source_id": resolved_source_id,
                     "files": sorted(entry["path"] for entry in plan.files.values()),
-                    "removed_files": removed_files,
+                    "removed_files": [stored_path for stored_path, _ in removed],
+                    # The same files, by the path the client sent each under.
+                    "removed": [client_path for _, client_path in removed],
                     "uploaded": len(plan.writes),
                     "unchanged": len(plan.kept),
                 }

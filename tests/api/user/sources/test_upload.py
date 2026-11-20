@@ -1837,6 +1837,10 @@ class TestManageSourceFilesManifestSync:
 
         assert response.json["removed_files"] == []
         after = {client: entry["path"] for client, entry in self._state(pg_conn, src)["files"].items()}
+        del tree["مرحبا.md"]
+        gone, _ = self._sync(app, pg_conn, tmp_path, src, tree)
+        assert gone.json["removed_files"] == [paths["مرحبا.md"]]
+        assert gone.json["removed"] == ["مرحبا.md"]
         assert {client: after[client] for client in paths} == paths
         # The edited file was written over its own stored path; the new one sits in its folder.
         assert self._stored(root)[paths["документы/введение.md"]] == b"intro v2"
