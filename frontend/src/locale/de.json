@@ -1810,7 +1810,7 @@
         "finish": "Fertigstellen",
         "folded": "{{step}}: {{result}}",
         "goTo": "Zu {{field}}",
-        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle einen Ausgangspunkt oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
+        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle eine Vorlage oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
         "missing": {
           "agentType": "einen Agententyp",
           "contextLimit": "ein gültiges Kontextlimit",
@@ -2150,6 +2150,7 @@
     "stoppedDescription": "Du hast diesen Durchlauf gestoppt. Im Formular hat sich nichts geändert.",
     "suggestionsLabel": "Möglichkeiten zum Einstieg",
     "templates": {
+      "browse": "Alle Vorlagen durchsuchen",
       "categories": {
         "all": "Alle",
         "customerSupport": "Kundensupport",

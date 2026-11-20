@@ -44,6 +44,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Combobox, type ComboboxGroup } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 
 import {
   Select,
@@ -114,8 +115,11 @@ import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
 import {
   DRAFTER_STARTERS,
   type DrafterStarter,
+  FEATURED_STARTERS,
+  HAS_MORE_STARTERS,
   starterQuestions,
 } from '../drafter/starters';
+import { TemplatePicker } from '../drafter/TemplatePicker';
 import { ProposalSummary } from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
@@ -127,6 +131,7 @@ import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { joinList } from '../settings/insights/format';
 import { can, canPublish } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import {
   selectedSourceIdsFromAgent,
@@ -943,6 +948,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const drafterConfig = useDrafterConfig();
   const { isMobile } = useMediaQuery();
   const [drafterOpen, setDrafterOpen] = useState(false);
+  // Every template, opened from the drawer's Browse all templates.
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   // Bumped by the drawer's Turn on Insights: the form's Insights section
   // opens and comes into view.
   const [insightsOpenSignal, setInsightsOpenSignal] = useState(0);
@@ -2286,9 +2293,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       );
   const drafterSuggestions = (
     buildable
-      ? // Starting points: each sends its title and begins the build from
-        // its id, so every step gets that kind of agent's brief.
-        DRAFTER_STARTERS.map(({ key, Icon }) => {
+      ? // The featured templates: each sends its title and begins the build
+        // from its id, so every step gets that kind of agent's brief.
+        FEATURED_STARTERS.map(({ key, Icon }) => {
           const text = t(`drafter.starters.${key}.title`);
           return {
             key,
@@ -2390,6 +2397,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (isMobile) setDrafterOpen(false);
     setInsightsOpenSignal((signal) => signal + 1);
   };
+  // Under the featured rows, while there are more templates than those.
+  const browseTemplates = HAS_MORE_STARTERS ? (
+    <Button
+      type="button"
+      variant="link"
+      size="inline"
+      className="self-start"
+      onClick={() => setTemplatesOpen(true)}
+    >
+      {t('drafter.templates.browse')}
+      <ArrowRight />
+    </Button>
+  ) : undefined;
   const drafterNotice =
     gapsReason === 'agent_off' ? (
       <Alert variant="info" role="note" data-slot="drafter-insights-note">
@@ -3494,7 +3514,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
           suggestions={doneOnly ? [] : drafterSuggestions}
           suggestionGroups={doneOnly ? undefined : drafterSuggestionGroups}
-          notice={doneOnly ? undefined : drafterNotice}
+          notice={
+            doneOnly ? undefined : buildable ? browseTemplates : drafterNotice
+          }
           reads={insightsShown ? 'insights' : undefined}
           insightsDays={agentGaps?.days || undefined}
           renderProposal={renderAgentProposal}
@@ -3502,6 +3524,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           after={drawerAfter}
           onNavigate={leaveGuard.onNavigate()}
         />
+      )}
+      {HAS_MORE_STARTERS && (
+        <Modal
+          open={templatesOpen}
+          onOpenChange={setTemplatesOpen}
+          size="xl"
+          title={t('drafter.templates.title')}
+          description={t('drafter.templates.description', {
+            count: DRAFTER_STARTERS.length,
+            formatted: formatCount(DRAFTER_STARTERS.length),
+          })}
+        >
+          <TemplatePicker
+            asks
+            onPick={(starter) => {
+              setTemplatesOpen(false);
+              startFrom(starter);
+            }}
+          />
+        </Modal>
       )}
     </div>
   );

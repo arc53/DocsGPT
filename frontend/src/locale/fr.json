@@ -1854,7 +1854,7 @@
         "finish": "Terminer",
         "folded": "{{step}} : {{result}}",
         "goTo": "Aller à {{field}}",
-        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un point de départ, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
+        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un modèle, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
         "missing": {
           "agentType": "de type d’agent",
           "contextLimit": "de limite de contexte valide",
@@ -2219,6 +2219,7 @@
     "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé.",
     "suggestionsLabel": "Pour commencer",
     "templates": {
+      "browse": "Parcourir tous les modèles",
       "categories": {
         "all": "Tous",
         "customerSupport": "Support client",

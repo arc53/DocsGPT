@@ -130,6 +130,25 @@ type SentRequest = {
     form: Record<string, unknown>;
   };
 };
+// Today's three templates, or a fourth beyond the featured ones.
+const templates = vi.hoisted(() => ({ more: false }));
+vi.mock('../drafter/starters', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../drafter/starters')>();
+  const extra = [
+    ...real.DRAFTER_STARTERS,
+    { ...real.DRAFTER_STARTERS[0], key: 'orders' },
+  ];
+  return {
+    ...real,
+    get DRAFTER_STARTERS() {
+      return templates.more ? extra : real.DRAFTER_STARTERS;
+    },
+    get HAS_MORE_STARTERS() {
+      return templates.more;
+    },
+  };
+});
+
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
   // Insights' topic suggestions read it with the token they were handed.
@@ -2549,6 +2568,7 @@ describe('NewAgent drafter', () => {
     mocks.tools = null;
     media.isMobile = false;
     media.isDesktop = true;
+    templates.more = false;
   });
 
   const render = async () => {
@@ -2778,6 +2798,46 @@ describe('NewAgent drafter', () => {
       expect(stream.requests).toHaveLength(0);
       expect(state.value).toBeNull();
     });
+  });
+
+  it('offers no Browse all templates while the three rows are all of them', async () => {
+    await render();
+    await click(wand()!);
+    expect(buttonByText('drafter.templates.browse', panel()!)).toBeFalsy();
+  });
+
+  it('lists the featured three and opens the rest from Browse all templates', async () => {
+    templates.more = true;
+    await render();
+    await click(wand()!);
+    const shown = () =>
+      Array.from(
+        panel()!.querySelectorAll<HTMLButtonElement>('[data-suggestion]'),
+      ).map((row) => row.dataset.suggestion);
+    expect(shown()).toEqual(['website', 'helpdesk', 'research']);
+    await click(buttonByText('drafter.templates.browse', panel()!)!);
+    const dialog = () =>
+      Array.from(
+        document.body.querySelectorAll<HTMLElement>(
+          '[data-slot="modal-content"]',
+        ),
+      ).find((node) => node.textContent?.includes('drafter.templates.title'));
+    const rows = Array.from(
+      dialog()!.querySelectorAll<HTMLButtonElement>('[data-suggestion]'),
+    );
+    expect(rows.map((row) => row.dataset.suggestion)).toEqual([
+      'website',
+      'helpdesk',
+      'research',
+      'orders',
+    ]);
+    await click(rows[2]);
+    expect(dialog()).toBeUndefined();
+    // The picked template starts as a row would: its questions at once.
+    expect(stream.requests).toHaveLength(0);
+    expect(
+      panel()!.querySelector('[data-slot="question-cards"]')!.textContent,
+    ).toContain('drafter.starters.research.ask.documents.text');
   });
 
   it('greets an empty new agent with the plan and starts at Basics', async () => {

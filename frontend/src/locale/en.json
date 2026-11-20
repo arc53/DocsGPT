@@ -1831,7 +1831,7 @@
         "finish": "Finish",
         "folded": "{{step}}: {{result}}",
         "goTo": "Go to {{field}}",
-        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a template, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
         "missing": {
           "agentType": "an agent type",
           "contextLimit": "a valid context limit",
@@ -2171,6 +2171,7 @@
     "stoppedDescription": "You stopped this turn. Nothing in the form changed.",
     "suggestionsLabel": "Ways to start",
     "templates": {
+      "browse": "Browse all templates",
       "categories": {
         "all": "All",
         "customerSupport": "Customer support",
