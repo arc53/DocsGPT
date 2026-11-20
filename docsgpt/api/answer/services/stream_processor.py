@@ -1005,7 +1005,10 @@ class StreamProcessor:
         history stops before the first such row past the summary.
         """
         queries = conversation.get("queries") or []
-        for index in range(max(self.history_covered_index + 1, 0), len(queries)):
+        covered = getattr(self, "history_covered_index", -1)
+        if not isinstance(covered, int) or isinstance(covered, bool):
+            covered = -1
+        for index in range(max(covered + 1, 0), len(queries)):
             query = queries[index]
             if isinstance(query, dict) and query.get("status") in ("pending", "streaming"):
                 return index - 1
@@ -1064,8 +1067,9 @@ class StreamProcessor:
                     + ("" if result.compression_performed else " (saved compression point)")
                 )
             self.last_compression_at = result.last_compression_at
-            if result.compression_performed and result.metadata:
-                self.history_covered_index = result.metadata.query_index
+            made = getattr(result.metadata, "query_index", None) if result.compression_performed else None
+            if isinstance(made, int) and not isinstance(made, bool):
+                self.history_covered_index = made
             elif result.compressed_summary:
                 point = latest_usable_compression_point(
                     (conversation.get("compression_metadata") or {}).get("compression_points")
@@ -3518,7 +3522,7 @@ class StreamProcessor:
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
-        agent.history_bound = self.history_bound
+        agent.history_bound = getattr(self, "history_bound", None)
         agent.decision_record = self.decision_record
         # The stream reuses the payer and limits the setup gate resolved instead of resolving them again.
         agent.run_admission = getattr(self, "run_admission", None)
