@@ -82,10 +82,16 @@ _MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
 # Quoted and braced attribute values may hold ">", and braces nest once, as in
 # style={{ color: "red" }}.
 _BRACED = r"\{(?:[^{}]|\{[^{}]*\})*\}"
-_MDX_SELF_CLOSING_COMPONENT = re.compile(
-    r"""<[A-Z][\w.]*(?:\s+(?:(?:[^\s"'{}<>/]|/(?!>))+(?:"[^"]*"|'[^']*'|""" + _BRACED + r""")?"""
-    r"""|"[^"]*"|'[^']*'|""" + _BRACED + r"""))*\s*/>"""
+_MDX_ATTRIBUTES = (
+    r"""(?:\s+(?:(?:[^\s"'{}<>/]|/(?!>))+(?:"[^"]*"|'[^']*'|""" + _BRACED + r""")?"""
+    r"""|"[^"]*"|'[^']*'|""" + _BRACED + r"""))*"""
 )
+_MDX_SELF_CLOSING_COMPONENT = re.compile(r"<[A-Z][\w.]*" + _MDX_ATTRIBUTES + r"\s*/>")
+# A component that wraps content, like <Callout type="info">...</Callout>. Its
+# tags are markup when the same name closes somewhere in the text, as for HTML
+# bare tags; the content between them stays and is text if it has words.
+_MDX_COMPONENT_OPENING_TAG = re.compile(r"<([A-Z][\w.]*)" + _MDX_ATTRIBUTES + r"\s*>")
+_MDX_COMPONENT_CLOSING_TAG = re.compile(r"</([A-Z][\w.]*)\s*>")
 _THEMATIC_BREAK = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t\r]*$", re.MULTILINE)
 # A comment still open where the first heading was found: a "#" line inside it.
 _OPEN_HTML_COMMENT = re.compile(r"<!--(?:(?!-->).)*\Z", re.DOTALL)
@@ -96,6 +102,12 @@ def _front_matter(text: str) -> Optional["re.Match[str]"]:
     match = _FRONT_MATTER.match(text)
     if match and match.group(1) == "---":
         lines = match.group(0).split("\n")[1:-1]
+        # YAML may indent the whole block; its top-level keys start at the
+        # block's own indentation.
+        indent = min(
+            (len(line) - len(line.lstrip(" ")) for line in lines if line.strip()), default=0
+        )
+        lines = [line[indent:] for line in lines]
         is_yaml = all(_YAML_KEY.match(line) or _YAML_LINE.match(line) for line in lines)
         if not is_yaml or not any(_YAML_KEY.match(line) for line in lines):
             return None
@@ -111,6 +123,12 @@ def _has_text(preamble: str) -> bool:
         preamble = preamble[front_matter.end():]
     for pattern in (_MDX_IMPORT, _MDX_EXPORT, _MDX_COMMENT, _MDX_SELF_CLOSING_COMPONENT, _THEMATIC_BREAK):
         preamble = pattern.sub("", preamble)
+    closed = {match.group(1) for match in _MDX_COMPONENT_CLOSING_TAG.finditer(preamble)}
+    if closed:
+        preamble = _MDX_COMPONENT_OPENING_TAG.sub(
+            lambda match: "" if match.group(1) in closed else match.group(0), preamble
+        )
+        preamble = _MDX_COMPONENT_CLOSING_TAG.sub("", preamble)
     return bool(_OPEN_HTML_COMMENT.sub("", _strip_html(preamble)).strip())
 
 

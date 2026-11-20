@@ -196,6 +196,9 @@ def test_markdown_text_before_first_heading_is_kept():
         "<Chart data={x > 1} />\n",
         '<Badge style={{ color: "red" }} />\n',
         "---\n",
+        '<Callout type="info"></Callout>\n',
+        "<Tabs items={['npm', 'pip']}>\n  <Tabs.Tab>\n  </Tabs.Tab>\n</Tabs>\n",
+        "---\n  title: Install\n  tags:\n    - docs\n---\n",
     ],
 )
 def test_markdown_preamble_without_text_adds_no_section(preamble):
@@ -208,6 +211,31 @@ def test_markdown_horizontal_rule_and_heading_are_not_front_matter():
     tups = MarkdownParser().markdown_to_tups(content)
     assert [h for h, _ in tups] == ["Introduction", "Usage"]
     assert "Read this first." in tups[0][1]
+
+
+def test_markdown_indented_prose_between_rules_is_not_front_matter():
+    tups = MarkdownParser().markdown_to_tups("---\n  Read this first.\n---\n# Usage\nrun it\n")
+    assert tups[0][0] is None
+    assert "Read this first." in tups[0][1]
+
+
+@pytest.mark.parametrize(
+    "preamble",
+    [
+        '<Callout type="info">Read this first.</Callout>\n',
+        "<Tabs>\n  Pick your package manager.\n</Tabs>\n",
+        "Press <Enter> to go on.\n",
+    ],
+)
+def test_markdown_text_inside_a_component_before_first_heading_is_kept(preamble):
+    tups = MarkdownParser().markdown_to_tups(preamble + "# Install\nrun it\n")
+    assert tups[0] == (None, preamble)
+
+
+def test_markdown_component_tag_with_long_attributes_is_parsed():
+    # Like the self-closing pattern, the opening-tag pattern runs in linear time.
+    tups = MarkdownParser().markdown_to_tups("<Tabs" + " a" * 50_000 + "\n</Tabs>\n# Install\nrun it\n")
+    assert tups[-1] == ("Install", "run it\n\n")
 
 
 def test_markdown_import_followed_by_long_whitespace_is_parsed():
