@@ -1201,6 +1201,9 @@ class LLMHandler(ABC):
             from docsgpt.api.answer.services.compression import (
                 CompressionOrchestrator,
             )
+            from docsgpt.api.answer.services.compression.types import (
+                latest_usable_compression_point,
+            )
             from docsgpt.api.answer.services.conversation_service import (
                 ConversationService,
             )
@@ -1231,6 +1234,16 @@ class LLMHandler(ABC):
                 persist_query_index, turn_index = self._turn_position(
                     conversation.get("queries") or [], in_flight_id
                 )
+                # The summary in play already covers the saved point, so the
+                # new one covers at least as much, though never this turn.
+                saved_point = latest_usable_compression_point(
+                    (conversation.get("compression_metadata") or {}).get("compression_points")
+                )
+                try:
+                    covered = int(saved_point.get("query_index")) if saved_point else -1
+                except (TypeError, ValueError):
+                    covered = -1
+                persist_query_index = max(persist_query_index, min(covered, turn_index - 1))
                 conversation_from_msgs = self._build_conversation_from_messages(summarizable)
                 if self._nothing_to_summarize(conversation_from_msgs):
                     logger.info(

@@ -746,6 +746,13 @@ class ConversationsRepository:
         if turn_message_id is not None and not looks_like_uuid(str(turn_message_id)):
             turn_message_id = None
         turn_message_id = None if turn_message_id is None else str(turn_message_id)
+        if turn_message_id is not None:
+            # Lock the conversation first, so the check below reads a snapshot
+            # taken after any truncation holding the lock has committed.
+            self._conn.execute(
+                text("SELECT 1 FROM conversations WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+                {"id": conversation_id},
+            )
         result = self._conn.execute(
             text(
                 """

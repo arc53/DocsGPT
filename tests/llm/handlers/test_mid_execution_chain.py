@@ -352,3 +352,29 @@ def test_a_conversation_without_rows_puts_the_turn_first():
     kwargs = orchestrator.compress_mid_execution.call_args.kwargs
     assert kwargs["persist_query_index"] == -1
     assert kwargs["turn_index"] == 0
+
+
+@pytest.mark.unit
+def test_a_stale_unanswered_row_does_not_pull_the_point_behind_the_saved_one():
+    agent = _agent()
+    agent.compressed_summary = PRIOR
+    agent.tool_executor.message_id = "m5"
+    # Row 1 crashed mid-stream and was never reconciled; later turns went on.
+    rows = _settled(5)
+    rows[1] = {"id": "m1", "prompt": "q1", "response": "", "status": "streaming"}
+    db_conversation = {
+        "queries": [*rows, {"id": "m5", "prompt": "q5", "response": "", "status": "streaming"}],
+        "compression_metadata": {
+            "is_compressed": True,
+            "compression_points": [{"query_index": 3, "compressed_summary": PRIOR, "compressed_token_count": 9}],
+        },
+    }
+    synthetic = {"queries": [{"prompt": "q4", "response": "r"}, {"prompt": "q5", "response": ""}],
+                 "compression_metadata": {"is_compressed": False, "compression_points": []}}
+
+    _, orchestrator = _run_with(_Handler(), agent, _result(), db_conversation, synthetic)
+
+    kwargs = orchestrator.compress_mid_execution.call_args.kwargs
+    # The summary in play already covers rows up to 3; the new one builds on it.
+    assert kwargs["persist_query_index"] == 3
+    assert kwargs["turn_index"] == 5
