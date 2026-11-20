@@ -68,6 +68,7 @@ import {
   type QuestionAction,
   resumeQuestionCall,
 } from './questionCall';
+import { lastShownIndex } from './shownQueries';
 import { ToolCallsType } from './types';
 import { readJobArtifacts } from './artifactChips';
 import {
@@ -988,6 +989,8 @@ export const tailInFlightMessage = createAsyncThunk<
 
 type SubmitToolActionsArgs = {
   toolActions: ToolAction[];
+  // The paused turn; the latest shown turn when not given.
+  index?: number;
 };
 
 /**
@@ -1029,7 +1032,10 @@ export const resumeQuestion = createAsyncThunk<
       ),
     send: async () => {
       const sent = await dispatch(
-        submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
+        submitToolActions({
+          toolActions: [{ call_id: callId, ...action }],
+          index,
+        }),
       );
       return submitToolActions.rejected.match(sent)
         ? !sent.meta.aborted
@@ -1039,7 +1045,7 @@ export const resumeQuestion = createAsyncThunk<
 });
 
 async function sendToolActions(
-  { toolActions }: SubmitToolActionsArgs,
+  { toolActions, index }: SubmitToolActionsArgs,
   {
     dispatch,
     getState,
@@ -1048,8 +1054,10 @@ async function sendToolActions(
 ): Promise<ToolActionsOutcome> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
+  // A stored compression summary after the paused turn is not the turn.
+  const pausedIndex = index ?? lastShownIndex(state.conversation.queries);
   if (!conversationId) {
-    const targetIndex = state.conversation.queries.length - 1;
+    const targetIndex = pausedIndex;
     if (targetIndex >= 0) {
       dispatch(
         conversationSlice.actions.raiseError({
@@ -1076,7 +1084,7 @@ async function sendToolActions(
     signal,
     (event) => {
       const data = JSON.parse(event.data);
-      const targetIndex = state.conversation.queries.length - 1;
+      const targetIndex = pausedIndex;
       // The first frame tells whether the server took the request.
       if (outcome === null)
         outcome =

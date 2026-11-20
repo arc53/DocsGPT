@@ -730,15 +730,21 @@ class ConversationService:
                 conv_pg_id = (
                     str(conv["id"]) if conv is not None else conversation_id
                 )
+                # A mid-turn point whose turn was replaced is refused; the
+                # flags then stay as they are.
+                if not repo.append_compression_point(
+                    conv_pg_id,
+                    compression_metadata,
+                    max_points=settings.COMPRESSION_MAX_HISTORY_POINTS,
+                ):
+                    logger.info(
+                        f"Compression point not stored for conversation {conversation_id}: its turn is gone"
+                    )
+                    return
                 repo.set_compression_flags(
                     conv_pg_id,
                     is_compressed=True,
                     last_compression_at=compression_metadata.get("timestamp"),
-                )
-                repo.append_compression_point(
-                    conv_pg_id,
-                    compression_metadata,
-                    max_points=settings.COMPRESSION_MAX_HISTORY_POINTS,
                 )
             logger.info(
                 f"Updated compression metadata for conversation {conversation_id}"

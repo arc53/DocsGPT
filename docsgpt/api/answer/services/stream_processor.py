@@ -15,7 +15,10 @@ from docsgpt.agents.agent_creator import AgentCreator
 from docsgpt.api.answer.services.compression import CompressionOrchestrator
 from docsgpt.api.answer.services.compression.threshold_checker import uses_responses_api
 from docsgpt.api.answer.services.compression.token_counter import TokenCounter
-from docsgpt.api.answer.services.compression.types import is_compression_summary_row
+from docsgpt.api.answer.services.compression.types import (
+    is_compression_summary_row,
+    latest_usable_compression_point,
+)
 from docsgpt.api.answer.services.conversation_service import ConversationService
 from docsgpt.api.answer.services.passthrough import stored_passthrough
 from docsgpt.decisions.record import DecisionRecord, activate as activate_decision_record
@@ -636,6 +639,11 @@ class StreamProcessor:
         # Rows of files attached on earlier turns (no text), in upload order.
         self.earlier_attachments: List[Dict[str, Any]] = []
         self.history = []
+        # The last saved row this turn's history holds whole (a summary, or
+        # replayed with its answer); a compression during the turn covers no
+        # row past it. None when the history did not come from the database.
+        self.history_bound: Optional[int] = None
+        self.history_covered_index = -1
         self.retrieved_docs = []
         # Which sources the pre-fetch searched and which failed to (see
         # ``pre_fetch_docs``); None when no pre-fetch ran.
@@ -968,6 +976,7 @@ class StreamProcessor:
                     for query in conversation.get("queries", [])
                     if not is_compression_summary_row(query)
                 ]
+            self.history_bound = self._history_bound(conversation)
         else:
             self.earlier_attachments = self._with_request_earlier_attachments([])
             self._ensure_turn_fits()
@@ -988,6 +997,19 @@ class StreamProcessor:
                 # holds the dropped turns: chaining onto it would undo the trim.
                 history[-1] = _without_response_id(history[-1])
             self.history = history
+
+    def _history_bound(self, conversation: Dict[str, Any]) -> int:
+        """The last saved row this turn's history holds whole: the summary's, or any settled one after it.
+
+        A row still being answered is replayed without its answer, so the
+        history stops before the first such row past the summary.
+        """
+        queries = conversation.get("queries") or []
+        for index in range(max(self.history_covered_index + 1, 0), len(queries)):
+            query = queries[index]
+            if isinstance(query, dict) and query.get("status") in ("pending", "streaming"):
+                return index - 1
+        return len(queries) - 1
 
     def _handle_compression(self, conversation: Dict[str, Any]):
         """Handle conversation compression logic using orchestrator."""
@@ -1042,6 +1064,16 @@ class StreamProcessor:
                     + ("" if result.compression_performed else " (saved compression point)")
                 )
             self.last_compression_at = result.last_compression_at
+            if result.compression_performed and result.metadata:
+                self.history_covered_index = result.metadata.query_index
+            elif result.compressed_summary:
+                point = latest_usable_compression_point(
+                    (conversation.get("compression_metadata") or {}).get("compression_points")
+                )
+                try:
+                    self.history_covered_index = int(point.get("query_index")) if point else -1
+                except (TypeError, ValueError):
+                    self.history_covered_index = -1
 
             self.history = result.as_history()
             # Preserve metadata from recent queries (as_history only has prompt/response)
@@ -3486,6 +3518,7 @@ class StreamProcessor:
 
         agent.conversation_id = self.conversation_id
         agent.initial_user_id = self.initial_user_id
+        agent.history_bound = self.history_bound
         agent.decision_record = self.decision_record
         # The stream reuses the payer and limits the setup gate resolved instead of resolving them again.
         agent.run_admission = getattr(self, "run_admission", None)

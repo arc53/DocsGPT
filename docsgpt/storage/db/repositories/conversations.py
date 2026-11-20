@@ -18,7 +18,7 @@ import json
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Iterable, Optional
 
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -617,26 +617,45 @@ class ConversationsRepository:
         )
         return result.rowcount > 0
 
-    def prune_compression_points(self, conversation_id: str, keep_up_to: int) -> int:
+    def prune_compression_points(
+        self, conversation_id: str, keep_up_to: int, retired_message_ids: Iterable[str] = ()
+    ) -> int:
         """Drop compression points that cover a message past position ``keep_up_to``.
 
         A point covers the rows up to its ``query_index`` and, for a mid-turn
-        point, the tool work of the turn at ``turn_index``. Once those rows are
-        deleted or rewritten, its summary describes messages that are gone.
+        point, the tool work of the turn at ``turn_index``; both count rows in
+        order, not stored positions, which a deleted row leaves gaps in. Once
+        those rows are deleted or rewritten, its summary describes messages
+        that are gone. A mid-turn point whose turn's row was deleted goes too.
 
         Args:
             conversation_id: Conversation whose points are checked.
             keep_up_to: Highest position whose messages are still current.
+            retired_message_ids: Ids of messages just deleted.
 
         Returns:
             Number of points removed.
         """
+        if not looks_like_uuid(conversation_id):
+            return 0
+        kept_rows = self._conn.execute(
+            text(
+                "SELECT count(*) FROM conversation_messages "
+                "WHERE conversation_id = CAST(:id AS uuid) AND position <= :pos"
+            ),
+            {"id": conversation_id, "pos": keep_up_to},
+        ).scalar() or 0
+        keep_index = kept_rows - 1
+        retired = {str(m) for m in retired_message_ids}
 
         def _past(value) -> bool:
-            return isinstance(value, (int, float)) and not isinstance(value, bool) and value > keep_up_to
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value > keep_index
 
         return self._drop_compression_points(
-            conversation_id, lambda p: _past(p.get("query_index")) or _past(p.get("turn_index"))
+            conversation_id,
+            lambda p: _past(p.get("query_index"))
+            or _past(p.get("turn_index"))
+            or str(p.get("turn_message_id") or "") in retired,
         )
 
     def _drop_compression_points(self, conversation_id: str, stale) -> int:
@@ -1212,11 +1231,19 @@ class ConversationsRepository:
         ).fetchone()
         if deleted is None:
             return False
-        # A point made while this turn ran summarized its tool work.
+        # A point made while this turn ran summarized its tool work. Points
+        # count rows in order: the turn was the row after those before it.
         conversation_id, position = str(deleted[0]), deleted[1]
+        turn_index = self._conn.execute(
+            text(
+                "SELECT count(*) FROM conversation_messages "
+                "WHERE conversation_id = CAST(:id AS uuid) AND position < :pos"
+            ),
+            {"id": conversation_id, "pos": position},
+        ).scalar() or 0
         self._drop_compression_points(
             conversation_id,
-            lambda p: str(p.get("turn_message_id") or "") == message_id or p.get("turn_index") == position,
+            lambda p: str(p.get("turn_message_id") or "") == message_id or p.get("turn_index") == turn_index,
         )
         return True
 
@@ -1646,7 +1673,7 @@ class ConversationsRepository:
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
-        self.prune_compression_points(conversation_id, keep_up_to)
+        self.prune_compression_points(conversation_id, keep_up_to, self.retired_message_ids)
         return result.rowcount
 
     def was_superseded(self, message_id: str) -> bool:

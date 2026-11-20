@@ -1144,6 +1144,53 @@ describe('a turn left waiting on an approval', () => {
     expect(calls[1]).toMatchObject({ status: 'denied', not_run: 'moved_on' });
   });
 
+  it('writes a resumed stream to the paused turn, not a stored summary after it', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'thought', thought: 'resumed' }),
+          }),
+        );
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'end' }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        waitingTurn,
+        {
+          prompt: '[Context Compression Summary]',
+          response: 's',
+          compressionSummary: true,
+        },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'c5', decision: 'approved' }],
+      }),
+    );
+
+    const { queries } = store.getState().conversation;
+    expect(queries[0].thought).toBe('resumed');
+    expect(queries[1].thought).toBeUndefined();
+  });
+
   it('reloads the chat instead of failing when a late decision finds it over', async () => {
     vi.mocked(handleSubmitToolActions).mockImplementation(
       async (_conversationId, _actions, _token, _signal, onEvent) => {

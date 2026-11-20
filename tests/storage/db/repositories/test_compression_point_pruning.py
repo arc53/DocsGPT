@@ -136,3 +136,32 @@ class TestMidTurnPointNeedsItsTurn:
 
         assert repo.delete_in_flight_message(str(row["id"])) is True
         assert [p["compressed_summary"] for p in _points(repo, conv_id)] == ["pre"]
+
+
+class TestPruningCountsRowsNotPositions:
+    def test_a_deleted_middle_row_does_not_keep_a_replaced_turns_point(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 1)
+        gone = repo.reserve_message(conv_id, prompt="wake", placeholder_response="", status="streaming")
+        repo.append_message(conv_id, {"prompt": "q2", "response": "a2"})
+        repo.append_message(conv_id, {"prompt": "q3", "response": "a3"})
+        # Positions are now 0, 2, 3; points count rows: q3 is row 2.
+        assert repo.delete_in_flight_message(str(gone["id"])) is True
+        _store(repo, conv_id, _point(0, "pre"), _point(1, "mid", turn_index=2))
+
+        # The user edits q3 (position 3).
+        repo.truncate_after(conv_id, keep_up_to=2)
+
+        assert [p["compressed_summary"] for p in _points(repo, conv_id)] == ["pre"]
+
+    def test_a_replaced_turns_point_goes_by_its_row_id(self, pg_conn):
+        repo, conv_id = _conversation(pg_conn, 1)
+        row = repo.reserve_message(conv_id, prompt="q1", placeholder_response="", status="streaming")
+        _store(
+            repo, conv_id,
+            # Indexes that the cut would keep: only the row id says it is gone.
+            {**_point(-1, "mid", turn_index=0), "turn_message_id": str(row["id"])},
+        )
+
+        repo.truncate_after(conv_id, keep_up_to=0)
+
+        assert _points(repo, conv_id) == []

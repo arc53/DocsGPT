@@ -1234,16 +1234,22 @@ class LLMHandler(ABC):
                 persist_query_index, turn_index = self._turn_position(
                     conversation.get("queries") or [], in_flight_id
                 )
-                # The summary in play already covers the saved point, so the
-                # new one covers at least as much, though never this turn.
-                saved_point = latest_usable_compression_point(
-                    (conversation.get("compression_metadata") or {}).get("compression_points")
-                )
-                try:
-                    covered = int(saved_point.get("query_index")) if saved_point else -1
-                except (TypeError, ValueError):
-                    covered = -1
-                persist_query_index = max(persist_query_index, min(covered, turn_index - 1))
+                bound = getattr(agent, "history_bound", None)
+                if isinstance(bound, int) and not isinstance(bound, bool):
+                    # What the turn's history held when it started is what
+                    # the summary holds; a row answered since is not in it.
+                    persist_query_index = min(bound, turn_index - 1)
+                else:
+                    # The summary in play already covers the saved point, so
+                    # the new one covers at least as much, never this turn.
+                    saved_point = latest_usable_compression_point(
+                        (conversation.get("compression_metadata") or {}).get("compression_points")
+                    )
+                    try:
+                        covered = int(saved_point.get("query_index")) if saved_point else -1
+                    except (TypeError, ValueError):
+                        covered = -1
+                    persist_query_index = max(persist_query_index, min(covered, turn_index - 1))
                 conversation_from_msgs = self._build_conversation_from_messages(summarizable)
                 if self._nothing_to_summarize(conversation_from_msgs):
                     logger.info(
