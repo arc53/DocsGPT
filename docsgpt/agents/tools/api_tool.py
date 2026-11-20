@@ -79,6 +79,7 @@ class APITool(Tool):
         if method.upper() not in _VALID_METHODS:
             return {
                 "status_code": None,
+                "status": "error",
                 "message": f"Unsupported HTTP method: {method}",
                 "data": None,
             }
@@ -112,6 +113,7 @@ class APITool(Tool):
                     logger.error(f"Body serialization failed: {str(e)}")
                     return {
                         "status_code": None,
+                        "status": "error",
                         "message": f"Body serialization error: {str(e)}",
                         "data": None,
                     }
@@ -134,6 +136,26 @@ class APITool(Tool):
                 headers=request_headers,
                 timeout=DEFAULT_TIMEOUT,
             )
+
+            # Handle 3xx redirects (pinned_request does not follow them)
+            # 304 Not Modified is not an error - it means the resource hasn't changed
+            if 300 <= response.status_code < 400 and response.status_code != 304:
+                location = response.headers.get("Location", "")
+                logger.error(f"HTTP redirect {response.status_code}")
+                # Resolve relative location against request_url
+                if location and not location.startswith(("http://", "https://")):
+                    from urllib.parse import urljoin, urlparse
+                    # Strip query params and fragment from base URL to avoid leaking credentials
+                    parsed_base = urlparse(request_url)
+                    clean_base = f"{parsed_base.scheme}://{parsed_base.netloc}{parsed_base.path}"
+                    location = urljoin(clean_base, location)
+                return {
+                    "status_code": response.status_code,
+                    "status": "error",
+                    "message": f"HTTP redirect {response.status_code}. Fetch {location} directly instead.",
+                    "data": None,
+                }
+
             response.raise_for_status()
 
             data = self._parse_response(response)
@@ -147,6 +169,7 @@ class APITool(Tool):
             logger.error(f"URL validation failed: {e}")
             return {
                 "status_code": None,
+                "status": "error",
                 "message": f"URL validation error: {e}",
                 "data": None,
             }
@@ -154,6 +177,7 @@ class APITool(Tool):
             logger.error(f"Request timeout for {request_url}")
             return {
                 "status_code": None,
+                "status": "error",
                 "message": f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)",
                 "data": None,
             }
@@ -161,6 +185,7 @@ class APITool(Tool):
             logger.error(f"Connection error: {str(e)}")
             return {
                 "status_code": None,
+                "status": "error",
                 "message": f"Connection error: {str(e)}",
                 "data": None,
             }
@@ -172,6 +197,7 @@ class APITool(Tool):
                 error_data = response.text
             return {
                 "status_code": response.status_code,
+                "status": "error",
                 "message": f"HTTP Error {response.status_code}",
                 "data": error_data,
             }
@@ -179,6 +205,7 @@ class APITool(Tool):
             logger.error(f"Request failed: {str(e)}")
             return {
                 "status_code": response.status_code if response else None,
+                "status": "error",
                 "message": f"API call failed: {str(e)}",
                 "data": None,
             }
@@ -186,6 +213,7 @@ class APITool(Tool):
             logger.error(f"Unexpected error in API call: {str(e)}", exc_info=True)
             return {
                 "status_code": None,
+                "status": "error",
                 "message": f"Unexpected error: {str(e)}",
                 "data": None,
             }
