@@ -197,6 +197,28 @@ class TestCompressionThatStaysOverTheModelWindow:
         assert agent._compression_exhausted is True
 
 
+class TestNonStreamingWrapUp:
+    def test_the_turn_answers_without_tools_once_the_context_limit_is_reached(self):
+        class _GenLLM(_ReadingLLM):
+            def gen(self, model, messages, tools=None, **kwargs):
+                self.tools_seen.append(tools)
+                if tools:
+                    return _reads(2, start=len(self.tools_seen) * 10)
+                return LLMResponse(content="final", tool_calls=[], finish_reason="stop", raw_response=None)
+
+        llm = _GenLLM()
+        agent = _agent(llm, limit_after=0)
+        agent._compression_exhausted = True
+        agent._over_model_threshold = lambda messages: True
+        handler = _ScriptHandler()
+        with patch("docsgpt.core.settings.settings.ENABLE_CONVERSATION_COMPRESSION", True):
+            _, answer = _drain(
+                handler.handle_non_streaming(agent, _reads(2), {}, [{"role": "system", "content": "s"}])
+            )
+        assert answer == "final"
+        assert llm.tools_seen == [None], "one call, without tools, after the limit is reached"
+
+
 class TestRoomForEachRead:
     def test_the_executor_is_told_the_room_before_each_call(self):
         llm = _ReadingLLM()

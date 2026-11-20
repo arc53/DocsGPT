@@ -2059,10 +2059,13 @@ class LLMHandler(ABC):
             # beginning" — killing the primary on the very turn meant to
             # wrap up. ``tools=None`` below enforces the cap regardless
             # of the role.
-            if iteration >= MAX_TOOL_ITERATIONS:
+            # Past the context limit the turn wraps up too, as the streaming
+            # loop does: the tools it skipped would only be asked for again.
+            limit_reached = getattr(agent, "context_limit_reached", False) is True
+            if iteration >= MAX_TOOL_ITERATIONS or limit_reached:
                 logger.warning(
-                    "agent tool loop hit cap (%d); forcing finalize",
-                    MAX_TOOL_ITERATIONS,
+                    "agent tool loop %s; forcing finalize",
+                    "reached the context limit" if limit_reached else f"hit cap ({MAX_TOOL_ITERATIONS})",
                 )
                 messages.append(
                     {"role": "user", "content": _FINALIZE_INSTRUCTION},
