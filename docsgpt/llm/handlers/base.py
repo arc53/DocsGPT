@@ -1245,6 +1245,10 @@ class LLMHandler(ABC):
                     # the summary holds; a row answered since is not in it.
                     persist_query_index = min(bound, turn_index - 1)
                 else:
+                    # Without the bound (a turn resumed from a state saved
+                    # before it existed) nothing says which rows the summary
+                    # holds: it serves this turn and is not stored.
+                    persist_point = False
                     # The summary in play already covers the saved point, so
                     # the new one covers at least as much, never this turn.
                     saved_point = latest_usable_compression_point(

@@ -407,9 +407,17 @@ def test_the_point_is_stored_only_for_a_turn_whose_row_is_saved():
                  "compression_metadata": {"is_compressed": False, "compression_points": []}}
 
     agent.tool_executor.message_id = "m1"
+    agent.history_bound = 0
     saved = {"queries": [*_settled(1), {"id": "m1", "prompt": "q1", "response": "", "status": "streaming"}]}
     _, orchestrator = _run_with(_Handler(), agent, _result(), saved, synthetic)
     assert orchestrator.compress_mid_execution.call_args.kwargs["persist_point"] is True
+
+    # Resumed from a state saved without the bound: the summary may miss a row
+    # answered during the pause, so it serves the turn and is not stored.
+    agent.history_bound = None
+    _, orchestrator = _run_with(_Handler(), agent, _result(), saved, synthetic)
+    assert orchestrator.compress_mid_execution.call_args.kwargs["persist_point"] is False
+    agent.history_bound = 0
 
     # A reservation that failed leaves the turn without a row of its own.
     agent.tool_executor.message_id = "m9"
