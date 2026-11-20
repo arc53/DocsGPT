@@ -601,6 +601,11 @@ def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
     return files
 
 
+#: ``sources.metadata`` key: the files a reingest is changing the chunks of,
+#: from before the first chunk change until a clean finish.
+_REINGEST_PENDING = "reingest_pending"
+
+
 def _is_file_entry(node: Any) -> bool:
     """Whether a ``directory_structure`` node is a file's entry rather than a folder."""
     return isinstance(node, dict) and "type" in node and "size_bytes" in node
@@ -1450,6 +1455,21 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     path for path in new_files.keys() & old_files.keys()
                     if rechunk or _file_content_changed(old_files[path], new_files[path])
                 )
+                # Files a run that never finished was changing the chunks of
+                # (``_REINGEST_PENDING``): whatever the structure says of them
+                # now, their chunks are deleted, and rebuilt where the file is
+                # stored.
+                unfinished = metadata.get(_REINGEST_PENDING) if isinstance(metadata, dict) else None
+                for rel_path in unfinished if isinstance(unfinished, list) else []:
+                    if not isinstance(rel_path, str):
+                        continue
+                    if rel_path in new_files:
+                        if rel_path not in added_files and rel_path not in modified_files:
+                            modified_files.append(rel_path)
+                    elif rel_path not in removed_files:
+                        removed_files.append(rel_path)
+                modified_files.sort()
+                removed_files.sort()
 
                 if added_files:
                     logging.info(f"Files added since last ingest: {added_files}")
@@ -1518,7 +1538,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 # if this run dies part way, the next one rebuilds their
                 # chunks instead of trusting hashes the index no longer matches.
                 with db_session() as conn:
-                    SourcesRepository(conn).update(
+                    repo = SourcesRepository(conn)
+                    repo.update(
                         source_id, user,
                         {
                             "directory_structure": _structure_with_pending(
@@ -1527,6 +1548,15 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                             )
                         },
                     )
+                    # The same files by path alone, for the ones the structure
+                    # cannot list (a file where a folder was, or the reverse).
+                    repo.set_metadata_key(
+                        source_id, user, _REINGEST_PENDING,
+                        sorted({*added_files, *modified_files, *removed_files}),
+                    )
+                    # From here until a clean finish the index is not what
+                    # any sync left: a rechunk, too, starts from a current one.
+                    repo.clear_sync_indexed(source_id)
 
                 # 1) Delete chunks of removed files, of edited files before
                 # their new content is embedded, and any an earlier run that
@@ -1715,6 +1745,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         )
                         if rechunk and not inner_warnings:
                             repo.remove_metadata_key(source_id, user, "rechunk_pending")
+                        if not inner_warnings:
+                            repo.remove_metadata_key(source_id, user, _REINGEST_PENDING)
                         if not inner_warnings and scanned_all:
                             index_current = repo.mark_sync_indexed(source_id, files_generation)
                 except Exception as e:

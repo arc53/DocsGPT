@@ -475,3 +475,28 @@ class TestGetForUpdate:
 
     def test_a_non_uuid_is_none(self, pg_conn):
         assert _repo(pg_conn).get_for_update("not-a-uuid", "u") is None
+
+
+class TestClearSyncIndexed:
+    def test_forgets_the_indexed_generation_and_keeps_the_rest(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+        sid = str(src["id"])
+        repo.update(sid, "u", {"sync_manifest": {
+            "version": 1, "generation": "g1", "indexed_generation": "g1", "files": {"a.md": {"path": "a.md"}},
+        }})
+
+        repo.clear_sync_indexed(sid)
+
+        manifest = repo.get(sid, "u")["sync_manifest"]
+        assert manifest["indexed_generation"] is None
+        assert manifest["generation"] == "g1" and manifest["files"] == {"a.md": {"path": "a.md"}}
+
+    def test_a_source_without_a_manifest_is_left_alone(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+
+        repo.clear_sync_indexed(str(src["id"]))
+        repo.clear_sync_indexed("not-a-uuid")
+
+        assert repo.get(str(src["id"]), "u")["sync_manifest"] is None

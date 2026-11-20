@@ -660,6 +660,26 @@ class SourcesRepository:
         )
         return result.rowcount > 0
 
+    def clear_sync_indexed(self, source_id: str) -> None:
+        """Forget that the index was built from any generation of the files.
+
+        A reingest calls this before it changes chunks, so a run that stops
+        part way leaves the index marked stale. A source without a sync
+        manifest is left alone.
+
+        Args:
+            source_id: The source's UUID.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return
+        self._conn.execute(
+            text(
+                "UPDATE sources SET sync_manifest = jsonb_set(sync_manifest, '{indexed_generation}', 'null'::jsonb) "
+                "WHERE id = CAST(:sid AS uuid) AND jsonb_typeof(sync_manifest) = 'object'"
+            ),
+            {"sid": str(source_id)},
+        )
+
     def set_metadata_key(self, source_id: str, user_id: str, key: str, value: Any) -> bool:
         """Set one top-level key of ``metadata``, keeping the others.
 

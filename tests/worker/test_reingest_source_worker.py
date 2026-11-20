@@ -864,3 +864,63 @@ class TestReingestSaysWhetherTheIndexIsCurrent:
         result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
 
         assert result["status"] == "completed" and result["index_current"] is False
+
+
+@pytest.mark.unit
+class TestReingestPendingRecord:
+    """Before it changes chunks a run notes the files and un-marks the index; a clean finish clears the note."""
+
+    def _metadata(self, pg_conn, src):
+        return SourcesRepository(pg_conn).get(str(src["id"]), "alice")["metadata"] or {}
+
+    def test_a_clean_run_leaves_no_note(self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert "reingest_pending" not in self._metadata(pg_conn, src)
+
+    def test_a_run_that_dies_un_marks_the_index_and_leaves_the_note(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        """Also the rechunk case: it starts from an index a sync marked current."""
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
+        stored_files.update({"a.md": b"alpha"})
+        _with_manifest(pg_conn, src, indexed="g1")
+        SourcesRepository(pg_conn).set_metadata_key(str(src["id"]), "alice", "rechunk_pending", True)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore("faiss", "source").add_chunk.side_effect = SystemExit("killed")
+
+        with pytest.raises(SystemExit):
+            worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert not chunk_store
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+        assert self._metadata(pg_conn, src)["reingest_pending"] == ["a.md"]
+
+    def test_a_file_a_dead_run_added_where_a_file_was_leaves_no_chunks_when_the_file_is_back(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        """``guide.md`` was a file, became a folder with ``a.md``, and is a file again after a run died in between."""
+        src = _hashed_source(pg_conn, {"guide.md": b"alpha"})
+        child = os.path.join("guide.md", "a.md")
+        chunk_store.extend([
+            {"doc_id": "old-guide", "text": "alpha", "metadata": {"source": "guide.md"}},
+            # What the dead run embedded for the file it added.
+            {"doc_id": "orphan", "text": "child", "metadata": {"source": child}},
+        ])
+        SourcesRepository(pg_conn).set_metadata_key(
+            str(src["id"]), "alice", "reingest_pending", ["guide.md", child],
+        )
+        stored_files.update({"guide.md": b"alpha"})
+        _with_manifest(pg_conn, src)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["removed_files"] == [child] and result["modified_files"] == ["guide.md"]
+        assert {c["metadata"]["source"] for c in chunk_store} == {"guide.md"}
+        assert "orphan" not in [c["doc_id"] for c in chunk_store]
+        assert "reingest_pending" not in self._metadata(pg_conn, src)
