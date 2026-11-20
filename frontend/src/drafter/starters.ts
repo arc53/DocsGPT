@@ -6,7 +6,8 @@ import type { Question } from '../components/QuestionCards';
  * The drafter's starting points, offered by the prompt drawer and the agent
  * build alike. Each recipe has a brief per id (`STARTERS` in
  * prompt_recipe.py and agent_recipe.py); the rows read
- * `drafter.starters.<id>.title` and `.description`.
+ * `drafter.starters.<id>.title` and `.description`, the modal's chips
+ * `.short`.
  */
 export type DrafterStarter = 'website' | 'helpdesk' | 'research';
 
@@ -15,6 +16,19 @@ export const DRAFTER_STARTERS: { key: DrafterStarter; Icon: LucideIcon }[] = [
   { key: 'helpdesk', Icon: LifeBuoy },
   { key: 'research', Icon: FileSearch },
 ];
+
+/** How many starting points the New agent modal and the drawer offer. */
+export const FEATURED_STARTER_COUNT = 3;
+
+/** The starting points the modal's chips and the drawer's first screen show. */
+export const FEATURED_STARTERS = DRAFTER_STARTERS.slice(
+  0,
+  FEATURED_STARTER_COUNT,
+);
+
+/** Whether there are more than the featured ones, so "All templates" shows. */
+export const HAS_MORE_STARTERS =
+  DRAFTER_STARTERS.length > FEATURED_STARTER_COUNT;
 
 /**
  * What each starting point asks before Basics, the questions its brief has

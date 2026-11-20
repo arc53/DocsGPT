@@ -1008,14 +1008,16 @@
     "title": "Agents",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "typeModal": {
-      "blankTitle": "Partir de zéro",
+      "blankAgent": "Agent vide",
+      "blankWorkflow": "Workflow vide",
       "classicDescription": "Créez un agent IA standard avec un seul modèle, des outils et des sources de connaissances",
       "classicTitle": "Agent classique",
       "describeLabel": "Décrivez l’agent",
       "describePlaceholder": "Un agent sur notre site web qui répond aux questions sur la livraison",
       "description": "Choisissez le type d’agent à créer",
-      "draftDescription": "Partez de zéro, ou décrivez l’agent et DocsGPT le rédige pour que vous le relisiez.",
-      "draftTitle": "Ou rédigez-le avec DocsGPT",
+      "draftDescription": "Dites à quoi il sert et DocsGPT le construit avec vous, étape par étape.",
+      "newTitle": "Nouvel agent",
+      "templatesLabel": "Ou partez d’un modèle",
       "title": "Créer un agent",
       "workflowDescription": "Concevez des workflows complexes en plusieurs étapes avec différents modèles, une logique conditionnelle et une gestion d’état",
       "workflowTitle": "Agent workflow"
@@ -2167,6 +2169,7 @@
           }
         },
         "description": "Questions RH, IT et règlements de votre équipe",
+        "short": "Assistance interne",
         "title": "Assistance interne"
       },
       "research": {
@@ -2190,6 +2193,7 @@
           }
         },
         "description": "Fouille vos documents et les cite",
+        "short": "Assistant de recherche",
         "title": "Assistant de recherche"
       },
       "website": {
@@ -2200,6 +2204,7 @@
           }
         },
         "description": "Répond aux visiteurs, passe la main en cas de doute",
+        "short": "Chat web",
         "title": "Chat web pour les clients"
       }
     },

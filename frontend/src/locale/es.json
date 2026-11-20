@@ -1008,14 +1008,16 @@
     "title": "Agentes",
     "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
     "typeModal": {
-      "blankTitle": "Empezar en blanco",
+      "blankAgent": "Agente en blanco",
+      "blankWorkflow": "Flujo en blanco",
       "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
       "classicTitle": "Agente clásico",
       "describeLabel": "Describe el agente",
       "describePlaceholder": "Un agente en nuestro sitio web que responde preguntas sobre envíos",
       "description": "Elige el tipo de agente que quieres crear",
-      "draftDescription": "Empieza en blanco o describe el agente y DocsGPT lo redacta para que lo revises.",
-      "draftTitle": "O redáctalo con DocsGPT",
+      "draftDescription": "Di para qué es y DocsGPT lo construye contigo, paso a paso.",
+      "newTitle": "Nuevo agente",
+      "templatesLabel": "O empieza con una plantilla",
       "title": "Crear un agente nuevo",
       "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado",
       "workflowTitle": "Agente de flujo de trabajo"
@@ -2167,6 +2169,7 @@
           }
         },
         "description": "Preguntas de RR. HH., TI y políticas de tu equipo",
+        "short": "Mesa de ayuda interna",
         "title": "Mesa de ayuda interna"
       },
       "research": {
@@ -2190,6 +2193,7 @@
           }
         },
         "description": "Busca en tus documentos y los cita",
+        "short": "Asistente de investigación",
         "title": "Asistente de investigación"
       },
       "website": {
@@ -2200,6 +2204,7 @@
           }
         },
         "description": "Responde a visitantes y deriva si no está seguro",
+        "short": "Chat web",
         "title": "Chat web para clientes"
       }
     },

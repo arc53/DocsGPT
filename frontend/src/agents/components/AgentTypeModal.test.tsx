@@ -119,8 +119,17 @@ describe('AgentTypeModal', () => {
 
     const describeBox = () =>
       document.body.querySelector<HTMLTextAreaElement>('textarea')!;
-    const build = () =>
-      document.body.querySelector<HTMLButtonElement>('[data-drafter-entry]')!;
+    const buttons = () =>
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>('button'));
+    const byText = (text: string) =>
+      buttons().find((button) => button.textContent?.includes(text))!;
+    const build = () => byText('drafter.build');
+    const chips = () =>
+      Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>(
+          '[data-template-chip]',
+        ),
+      );
     const type = async (value: string) => {
       const setter = Object.getOwnPropertyDescriptor(
         HTMLTextAreaElement.prototype,
@@ -132,31 +141,61 @@ describe('AgentTypeModal', () => {
       });
     };
 
-    it('puts the blank starts first, then the describe box and the starting points', async () => {
+    it('leads with the describe box and the featured templates as chips', async () => {
       await render();
-      const found = tiles();
-      expect(found.map((tile) => tile.textContent)).toEqual([
-        expect.stringContaining('agents.typeModal.classicTitle'),
-        expect.stringContaining('agents.typeModal.workflowTitle'),
-        expect.stringContaining('drafter.starters.website.title'),
-        expect.stringContaining('drafter.starters.helpdesk.title'),
-        expect.stringContaining('drafter.starters.research.title'),
-      ]);
-      expect(
-        found[1].compareDocumentPosition(describeBox()) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-      expect(build().textContent).toContain('drafter.build');
+      expect(tiles()).toHaveLength(0);
+      expect(document.body.textContent).toContain('agents.typeModal.newTitle');
       expect(document.body.textContent).toContain(
         'agents.typeModal.draftDescription',
       );
+      expect(describeBox().getAttribute('aria-label')).toBe(
+        'agents.typeModal.describeLabel',
+      );
+      expect(document.body.textContent).toContain(
+        'agents.typeModal.templatesLabel',
+      );
+      expect(chips().map((chip) => chip.textContent)).toEqual([
+        'drafter.starters.website.short',
+        'drafter.starters.helpdesk.short',
+        'drafter.starters.research.short',
+      ]);
     });
 
-    it('still opens the blank classic form with no draft start', async () => {
+    it('puts the blank starts and Build in the footer', async () => {
       await render();
-      await act(async () => tiles()[0].click());
+      const footer = document.body.querySelector('[data-slot="modal-footer"]')!;
+      const labels = Array.from(footer.querySelectorAll('button')).map(
+        (button) => button.textContent,
+      );
+      expect(labels).toEqual([
+        'agents.typeModal.blankAgent',
+        'agents.typeModal.blankWorkflow',
+        'drafter.build',
+      ]);
+    });
+
+    it('keeps Build disabled until something is written', async () => {
+      await render();
+      expect(build().disabled).toBe(true);
+      await type('   ');
+      expect(build().disabled).toBe(true);
+      await type('Answers shipping questions');
+      expect(build().disabled).toBe(false);
+    });
+
+    it('opens the blank classic form with no draft start', async () => {
+      const onClose = await render();
+      await act(async () => byText('agents.typeModal.blankAgent').click());
       expect(navigate).toHaveBeenCalledTimes(1);
       expect(navigate.mock.calls[0]).toHaveLength(1);
+      expect(String(navigate.mock.calls[0][0])).not.toContain('workflow');
+      expect(onClose).toHaveBeenCalled();
+    });
+
+    it('opens the blank workflow builder', async () => {
+      await render();
+      await act(async () => byText('agents.typeModal.blankWorkflow').click());
+      expect(String(navigate.mock.calls[0][0])).toContain('workflow');
     });
 
     it('hands the description to the new-agent form and closes', async () => {
@@ -173,15 +212,33 @@ describe('AgentTypeModal', () => {
       expect(onClose).toHaveBeenCalled();
     });
 
-    it('opens the drawer alone when Build is pressed with nothing written', async () => {
+    it('builds on Ctrl or Cmd+Enter, never with an empty field', async () => {
       await render();
-      await act(async () => build().click());
-      expect(navigate.mock.calls[0][1]).toEqual({ state: { draftStart: {} } });
+      const press = async (init: KeyboardEventInit) =>
+        act(async () => {
+          describeBox().dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: 'Enter',
+              bubbles: true,
+              ...init,
+            }),
+          );
+        });
+      await press({ ctrlKey: true });
+      expect(navigate).not.toHaveBeenCalled();
+      await type('Answers shipping questions');
+      await press({});
+      expect(navigate).not.toHaveBeenCalled();
+      await press({ metaKey: true });
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate.mock.calls[0][1].state.draftStart.text).toBe(
+        'Answers shipping questions',
+      );
     });
 
-    it('hands a starting point over by its id', async () => {
+    it('hands a template over by its id', async () => {
       await render();
-      await act(async () => tiles()[3].click());
+      await act(async () => chips()[1].click());
       expect(navigate.mock.calls[0][1]).toEqual({
         state: { draftStart: { starter: 'helpdesk' } },
       });

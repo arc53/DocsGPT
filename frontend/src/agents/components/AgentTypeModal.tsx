@@ -1,18 +1,21 @@
-import { Bot, Workflow } from 'lucide-react';
+import { Bot, WandSparkles, Workflow } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
-import { FormField } from '../../components/ui/form-field';
+import { Button } from '../../components/ui/button';
 import { Modal } from '../../components/ui/modal';
 import { OptionCard } from '../../components/ui/option-card';
-import { SectionHeader } from '../../components/ui/section-header';
 import { Textarea } from '../../components/ui/textarea';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../../components/ui/tooltip';
 import { DRAFTER_USER_MESSAGE_CHARS } from '../../drafter/drafterApi';
-import { DRAFTER_STARTERS } from '../../drafter/starters';
+import { FEATURED_STARTERS } from '../../drafter/starters';
 import { useDrafterConfigFor } from '../../drafter/useDrafterConfig';
-import { WandButton } from '../../drafter/WandButton';
 import { selectToken } from '../../preferences/preferenceSlice';
 import { type DraftStart, draftStartState } from '../draftStart';
 import { agentNewPath } from '../paths';
@@ -24,10 +27,11 @@ interface AgentTypeModalProps {
 }
 
 /**
- * The New agent modal: the two blank starts (classic, workflow). Where Draft
- * with DocsGPT is on, it also takes a description or a starting point and
- * opens the new-agent form with the drafter already building from it; where
- * it is off, or not known yet, only the blank starts show.
+ * The New agent modal. Where Draft with DocsGPT is on, it leads with a
+ * description (Build) and the featured templates as chips, either opening the
+ * new-agent form with the drafter already building from it, and keeps the
+ * two blank starts (classic, workflow) as quiet footer buttons. Where it is
+ * off, or not known yet, only the blank starts show, as OptionCards.
  */
 export default function AgentTypeModal({
   isOpen,
@@ -90,57 +94,98 @@ export default function AgentTypeModal({
       </Modal>
     );
 
+  const described = text.trim() !== '';
+  const build = () => {
+    if (described) draft({ text });
+  };
+
+  // The quiet blank starts: today's descriptions go in their tooltips.
+  const blankButtons = (
+    [
+      ['normal', Bot, 'blankAgent', 'classicDescription'],
+      ['workflow', Workflow, 'blankWorkflow', 'workflowDescription'],
+    ] as const
+  ).map(([type, Icon, label, hint]) => (
+    <Tooltip key={type}>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost-muted"
+          size="sm"
+          shape="pill"
+          onClick={() => handleSelect(type)}
+        >
+          <Icon />
+          {t(`agents.typeModal.${label}`)}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t(`agents.typeModal.${hint}`)}</TooltipContent>
+    </Tooltip>
+  ));
+
   return (
     <Modal
       open={isOpen}
       onOpenChange={(o) => !o && close()}
-      size="lg"
-      title={t('agents.typeModal.title')}
+      title={t('agents.typeModal.newTitle')}
       description={t('agents.typeModal.draftDescription')}
-    >
-      <div className="flex flex-col gap-6">
-        <section className="flex flex-col gap-3">
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('agents.typeModal.blankTitle')}
-          />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{blank}</div>
-        </section>
-        <section className="flex flex-col gap-3">
-          <SectionHeader
-            as="h3"
-            size="xs"
-            title={t('agents.typeModal.draftTitle')}
-          />
-          <FormField label={t('agents.typeModal.describeLabel')}>
-            <Textarea
-              size="lg"
-              resize="none"
-              maxLength={DRAFTER_USER_MESSAGE_CHARS}
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              placeholder={t('agents.typeModal.describePlaceholder')}
-            />
-          </FormField>
-          <div className="flex justify-end">
-            <WandButton
-              mode="draft"
-              onClick={() => draft(text.trim() ? { text } : {})}
-            />
+      footer={
+        <>
+          {/* First in the DOM, so a phone's stacked footer puts Build on
+              top and these under it. */}
+          <div className="flex flex-wrap justify-center gap-1 sm:mr-auto sm:justify-start">
+            {blankButtons}
           </div>
-          <div className="flex flex-col gap-3">
-            {DRAFTER_STARTERS.map(({ key, Icon }) => (
-              <OptionCard
+          <Button
+            type="button"
+            size="lg"
+            shape="pill"
+            disabled={!described}
+            onClick={build}
+          >
+            <WandSparkles />
+            {t('drafter.build')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Textarea
+          size="lg"
+          resize="none"
+          maxLength={DRAFTER_USER_MESSAGE_CHARS}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              build();
+            }
+          }}
+          aria-label={t('agents.typeModal.describeLabel')}
+          placeholder={t('agents.typeModal.describePlaceholder')}
+        />
+        <div className="flex flex-col gap-2">
+          <p className="text-muted-foreground text-xs">
+            {t('agents.typeModal.templatesLabel')}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {FEATURED_STARTERS.map(({ key, Icon }) => (
+              <Button
                 key={key}
-                icon={<Icon />}
-                title={t(`drafter.starters.${key}.title`)}
-                description={t(`drafter.starters.${key}.description`)}
+                type="button"
+                variant="outline"
+                size="sm"
+                shape="pill"
+                data-template-chip={key}
                 onClick={() => draft({ starter: key })}
-              />
+              >
+                <Icon className="text-muted-foreground" />
+                {t(`drafter.starters.${key}.short`)}
+              </Button>
             ))}
           </div>
-        </section>
+        </div>
       </div>
     </Modal>
   );

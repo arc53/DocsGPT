@@ -981,14 +981,16 @@
     "title": "Agenten",
     "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
     "typeModal": {
-      "blankTitle": "Leer beginnen",
+      "blankAgent": "Leerer Agent",
+      "blankWorkflow": "Leerer Workflow",
       "classicDescription": "Erstelle einen Standard-KI-Agenten mit einem Modell, Tools und Wissensquellen",
       "classicTitle": "Klassischer Agent",
       "describeLabel": "Beschreibe den Agenten",
       "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet",
       "description": "Wähle die Art des Agenten, den du erstellen möchtest",
-      "draftDescription": "Beginne leer oder beschreibe den Agenten, und DocsGPT entwirft ihn, damit du ihn prüfen kannst.",
-      "draftTitle": "Oder mit DocsGPT entwerfen",
+      "draftDescription": "Sag, wofür er da ist, und DocsGPT baut ihn Schritt für Schritt mit dir.",
+      "newTitle": "Neuer Agent",
+      "templatesLabel": "Oder mit einer Vorlage beginnen",
       "title": "Neuen Agenten erstellen",
       "workflowDescription": "Entwirf komplexe mehrstufige Workflows mit verschiedenen Modellen, bedingter Logik und Zustandsverwaltung",
       "workflowTitle": "Workflow-Agent"
@@ -2098,6 +2100,7 @@
           }
         },
         "description": "HR-, IT- und Richtlinienfragen deines Teams",
+        "short": "Interner Helpdesk",
         "title": "Interner Helpdesk"
       },
       "research": {
@@ -2121,6 +2124,7 @@
           }
         },
         "description": "Durchsucht deine Dokumente und zitiert sie",
+        "short": "Rechercheassistent",
         "title": "Rechercheassistent"
       },
       "website": {
@@ -2131,6 +2135,7 @@
           }
         },
         "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit",
+        "short": "Website-Chat",
         "title": "Website-Chat für Kunden"
       }
     },

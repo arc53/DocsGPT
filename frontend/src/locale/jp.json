@@ -980,14 +980,16 @@
     "title": "エージェント",
     "tryDifferentSearch": "別の検索語をお試しください",
     "typeModal": {
-      "blankTitle": "空の状態から始める",
+      "blankAgent": "空のエージェント",
+      "blankWorkflow": "空のワークフロー",
       "classicDescription": "単一のモデル、ツール、ナレッジソースを持つ標準的な AI エージェントを作成します",
       "classicTitle": "クラシックエージェント",
       "describeLabel": "エージェントについて説明",
       "describePlaceholder": "当社のウェブサイトで配送に関する質問に答えるエージェント",
       "description": "作成するエージェントの種類を選択してください",
-      "draftDescription": "空の状態から始めるか、エージェントについて説明すると、DocsGPT が下書きを作成し、内容を確認できます。",
-      "draftTitle": "または DocsGPT で下書き",
+      "draftDescription": "用途を伝えると、DocsGPT が一歩ずつ一緒に作ります。",
+      "newTitle": "新しいエージェント",
+      "templatesLabel": "またはテンプレートから始める",
       "title": "新しいエージェントを作成",
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します",
       "workflowTitle": "ワークフローエージェント"
@@ -2082,6 +2084,7 @@
           }
         },
         "description": "チームからの人事・IT・規程の質問",
+        "short": "社内ヘルプデスク",
         "title": "社内ヘルプデスク"
       },
       "research": {
@@ -2105,6 +2108,7 @@
           }
         },
         "description": "ドキュメントを調べて出典を示す",
+        "short": "リサーチアシスタント",
         "title": "リサーチアシスタント"
       },
       "website": {
@@ -2115,6 +2119,7 @@
           }
         },
         "description": "訪問者に回答し、不明な時は引き継ぎ",
+        "short": "ウェブサイトチャット",
         "title": "顧客向けウェブサイトチャット"
       }
     },
