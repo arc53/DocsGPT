@@ -124,6 +124,16 @@ class OCRSettings(SettingsGroup):
             "prompts add bounding boxes, which the output cleanup removes."
         ),
     )
+    OCR_DEEPSEEK_EXTRA_BODY: Optional[str] = Field(
+        default=None,
+        description=(
+            "JSON object merged into every page request, for servers that need fields beyond the OpenAI "
+            "chat-completions ones. MiniCPM-OCR uses it to send its page-slicing arguments: "
+            '{"mm_processor_kwargs": {"max_slice_nums": 9, "downsample_mode": "4x"}}. The core fields (model, '
+            "messages, max_tokens, temperature) always win over these keys. Invalid JSON or a non-object fails "
+            "only the files that need OCR, not the process."
+        ),
+    )
     OCR_RENDER_DPI: int = Field(
         default=200,
         description=(
