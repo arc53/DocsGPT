@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from typing import Any, Dict, Optional
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urljoin
 
 import requests
 
@@ -11,6 +11,7 @@ from docsgpt.agents.tools.api_body_serializer import (
     RequestBodySerializer,
 )
 from docsgpt.agents.tools.base import Tool
+from docsgpt.agents.tools.tool_results import strip_userinfo, tool_error
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 
 logger = logging.getLogger(__name__)
@@ -77,11 +78,7 @@ class APITool(Tool):
         response = None
 
         if method.upper() not in _VALID_METHODS:
-            return {
-                "status_code": None,
-                "message": f"Unsupported HTTP method: {method}",
-                "data": None,
-            }
+            return tool_error(f"Unsupported HTTP method: {method}")
 
         try:
             path_params_used = set()
@@ -110,11 +107,7 @@ class APITool(Tool):
                     request_headers.update(body_headers)
                 except ValueError as e:
                     logger.error(f"Body serialization failed: {str(e)}")
-                    return {
-                        "status_code": None,
-                        "message": f"Body serialization error: {str(e)}",
-                        "data": None,
-                    }
+                    return tool_error(f"Body serialization error: {str(e)}")
             else:
                 serialized_body = None
             if "Content-Type" not in request_headers and method not in [
@@ -134,6 +127,40 @@ class APITool(Tool):
                 headers=request_headers,
                 timeout=DEFAULT_TIMEOUT,
             )
+            # Redirects are not followed (pinned_request keeps
+            # allow_redirects=False; every hop would need its own SSRF
+            # validation), and raise_for_status() passes 3xx through, so an
+            # unhandled redirect would be reported as a success while the
+            # request never reached its target (issue #3288). Report the
+            # hop as an error and name the target so the agent can follow
+            # it explicitly, mirroring read_webpage's handling.
+            if 300 <= response.status_code < 400:
+                location = response.headers.get("Location", "")
+                if location:
+                    target_url = strip_userinfo(urljoin(request_url, location))
+                    message = (
+                        f"URL redirects to '{target_url}'. "
+                        "Fetch that URL directly instead."
+                    )
+                    logger.error(
+                        f"API call redirect (not followed): "
+                        f"{response.status_code} -> {target_url}"
+                    )
+                elif response.status_code == 304:
+                    message = (
+                        "URL responded 304 Not Modified (conditional request); "
+                        "nothing was fetched."
+                    )
+                    logger.error(
+                        f"API call redirect (not followed): {response.status_code}"
+                    )
+                else:
+                    message = "URL responded with a redirect but no target location."
+                    logger.error(
+                        f"API call redirect (not followed): {response.status_code}"
+                    )
+                return tool_error(message, status_code=response.status_code)
+
             response.raise_for_status()
 
             data = self._parse_response(response)
@@ -145,50 +172,33 @@ class APITool(Tool):
             }
         except UnsafeUserUrlError as e:
             logger.error(f"URL validation failed: {e}")
-            return {
-                "status_code": None,
-                "message": f"URL validation error: {e}",
-                "data": None,
-            }
+            return tool_error(f"URL validation error: {e}")
         except requests.exceptions.Timeout:
             logger.error(f"Request timeout for {request_url}")
-            return {
-                "status_code": None,
-                "message": f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)",
-                "data": None,
-            }
+            return tool_error(f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)")
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error: {str(e)}")
-            return {
-                "status_code": None,
-                "message": f"Connection error: {str(e)}",
-                "data": None,
-            }
+            return tool_error(f"Connection error: {str(e)}")
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error {response.status_code}: {str(e)}")
             try:
                 error_data = response.json()
             except (json.JSONDecodeError, ValueError):
                 error_data = response.text
-            return {
-                "status_code": response.status_code,
-                "message": f"HTTP Error {response.status_code}",
-                "data": error_data,
-            }
+            return tool_error(
+                f"HTTP Error {response.status_code}",
+                status_code=response.status_code,
+                data=error_data,
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
-            return {
-                "status_code": response.status_code if response else None,
-                "message": f"API call failed: {str(e)}",
-                "data": None,
-            }
+            return tool_error(
+                f"API call failed: {str(e)}",
+                status_code=response.status_code if response else None,
+            )
         except Exception as e:
             logger.error(f"Unexpected error in API call: {str(e)}", exc_info=True)
-            return {
-                "status_code": None,
-                "message": f"Unexpected error: {str(e)}",
-                "data": None,
-            }
+            return tool_error(f"Unexpected error: {str(e)}")
 
     def _parse_response(self, response: requests.Response) -> Any:
         """

@@ -1,4 +1,7 @@
+import requests
+
 from docsgpt.agents.tools.base import Tool
+from docsgpt.agents.tools.tool_results import tool_error
 from docsgpt.security.safe_url import UnsafeUserUrlError, pinned_request
 
 class NtfyTool(Tool):
@@ -76,18 +79,22 @@ class NtfyTool(Tool):
                 "POST", url, data=data, headers=headers, timeout=100,
             )
         except UnsafeUserUrlError as e:
-            return {"status": "error", "status_code": None, "error": f"URL validation error: {e}"}
+            return tool_error(f"URL validation error: {e}")
+        except requests.exceptions.Timeout:
+            return tool_error("Request timeout (100s exceeded)")
+        except requests.exceptions.RequestException as e:
+            return tool_error(f"ntfy request failed: {e}")
         if 200 <= response.status_code < 300:
             return {"status_code": response.status_code, "message": "Message sent"}
         try:
             reason = response.json().get("error")
         except (ValueError, AttributeError):
             reason = None
-        return {
-            "status": "error",
-            "status_code": response.status_code,
-            "error": f"ntfy refused the message (HTTP {response.status_code}): {reason or 'no reason given'}",
-        }
+        return tool_error(
+            f"ntfy refused the message (HTTP {response.status_code}): "
+            f"{reason or 'no reason given'}",
+            status_code=response.status_code,
+        )
 
     def get_actions_metadata(self):
         """
