@@ -5569,7 +5569,6 @@
       },
       "mismatch": "This agent belongs to another workspace than this chat.",
       "notFound": "You're no longer in this team, so the chat can't continue here.",
-      "onlyYou": "Only you can see this chat",
       "switchTo": "Switch to {{name}}",
       "thisTeam": "this team"
     },
@@ -5585,13 +5584,6 @@
     },
     "folders": {
       "alsoInFolder": "Also in this folder"
-    },
-    "line": {
-      "people_one": "{{count}} person",
-      "people_other": "{{count}} people",
-      "personal": "Personal",
-      "personalScope": "Only you, unless you share an item",
-      "teamScope": "Everyone in the team can use what's here"
     },
     "menu": {
       "moveToPersonal": "Move to Personal…",

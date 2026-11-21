@@ -18,7 +18,6 @@ vi.mock('react-i18next', () => ({
 import { prefSlice } from '../preferences/preferenceSlice';
 import CreatorMeta, { showsCreator } from './CreatorMeta';
 import { splitByOrigin, type ItemOrigin } from './itemOrigin';
-import WorkspaceLine from './WorkspaceLine';
 import workspaceReducer, {
   loadWorkspaces,
   switchWorkspace,
@@ -72,35 +71,6 @@ const render = (store: ReturnType<typeof makeStore>, node: React.ReactNode) =>
   act(() => {
     root.render(<Provider store={store}>{node}</Provider>);
   });
-
-describe('WorkspaceLine', () => {
-  it('reads Personal · Only you, unless you share an item', () => {
-    render(makeStore('personal'), <WorkspaceLine kind="agents" />);
-    const line = container.querySelector('[data-testid="workspace-line"]')!;
-    expect(line.textContent).toBe(
-      'workspace.line.personal·workspace.line.personalScope',
-    );
-    expect(line.getAttribute('data-kind')).toBe('agents');
-    expect(line.querySelector('.lucide-user-round')).not.toBeNull();
-  });
-
-  it('names the team, who can use it and how many people', () => {
-    render(makeStore('t1'), <WorkspaceLine kind="knowledge" />);
-    const line = container.querySelector('[data-testid="workspace-line"]')!;
-    expect(line.textContent).toBe(
-      'Operations·workspace.line.teamScope·workspace.line.people(count=12)',
-    );
-    expect(line.querySelector('.lucide-users')).not.toBeNull();
-  });
-
-  it('adds a notice when given one', () => {
-    render(
-      makeStore('t1'),
-      <WorkspaceLine kind="tools" notice="Exports are off" />,
-    );
-    expect(container.textContent).toContain('Exports are off');
-  });
-});
 
 describe('CreatorMeta', () => {
   it('names who added a team item', () => {

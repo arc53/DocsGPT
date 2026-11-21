@@ -1014,6 +1014,49 @@ class LLMHandler(ABC):
         return [*messages[:index], stub, *messages[index + 1:]], turn
 
     @staticmethod
+    def _in_flight_message_id(agent) -> Optional[str]:
+        """The id of the row this turn's answer will be written to, when reserved."""
+        message_id = getattr(getattr(agent, "tool_executor", None), "message_id", None)
+        return str(message_id) if isinstance(message_id, str) and message_id else None
+
+    @staticmethod
+    def _is_in_flight_row(query: Any, in_flight_id: Optional[str]) -> bool:
+        """Whether a saved row is still being answered: this turn's, or any pending or streaming one."""
+        if not isinstance(query, dict):
+            return False
+        if in_flight_id and str(query.get("id") or "") == in_flight_id:
+            return True
+        return query.get("status") in ("pending", "streaming")
+
+    @classmethod
+    def _turn_position(cls, queries: List[Dict], in_flight_id: Optional[str]) -> tuple[int, int]:
+        """Where this turn sits among the saved rows: ``(last row a summary may cover, its own position)``.
+
+        Its own position is its reserved row when that row's id is saved, else
+        the first of the trailing rows still being answered, or the next free
+        position. A summary covers no row that is still being answered, so the
+        first answer is the summary's bound; the rows between it and the turn
+        are replayed.
+        """
+        turn = next(
+            (
+                index
+                for index, query in enumerate(queries)
+                if in_flight_id and isinstance(query, dict) and str(query.get("id") or "") == in_flight_id
+            ),
+            None,
+        )
+        if turn is None:
+            turn = len(queries)
+            while turn > 0 and cls._is_in_flight_row(queries[turn - 1], in_flight_id):
+                turn -= 1
+        first_unsettled = next(
+            (index for index, query in enumerate(queries[:turn]) if cls._is_in_flight_row(query, in_flight_id)),
+            turn,
+        )
+        return first_unsettled - 1, turn
+
+    @staticmethod
     def _nothing_to_summarize(conversation: Optional[Dict]) -> bool:
         """The synthetic conversation holds only the stubbed current turn."""
         queries = (conversation or {}).get("queries") or []
@@ -1158,6 +1201,9 @@ class LLMHandler(ABC):
             from docsgpt.api.answer.services.compression import (
                 CompressionOrchestrator,
             )
+            from docsgpt.api.answer.services.compression.types import (
+                latest_usable_compression_point,
+            )
             from docsgpt.api.answer.services.conversation_service import (
                 ConversationService,
             )
@@ -1174,16 +1220,45 @@ class LLMHandler(ABC):
             )
 
             persist_query_index = None
+            turn_index = None
+            in_flight_id = self._in_flight_message_id(agent)
+            persist_point = False
             if conversation:
+                persist_point = bool(in_flight_id) and any(
+                    isinstance(q, dict) and str(q.get("id") or "") == in_flight_id
+                    for q in conversation.get("queries") or []
+                )
                 # Merge current in-flight messages (including tool calls).
                 # The synthetic conversation holds only the turns replayed
                 # this turn plus the in-flight one, so the summary already in
                 # the system prompt rides along as its latest point, and the
                 # persisted point is indexed against the SAVED conversation,
-                # not this shortened list.
-                saved_count = len(conversation.get("queries") or [])
-                if saved_count:
-                    persist_query_index = saved_count - 1
+                # not this shortened list. It stops before this turn's own
+                # row: the answer is not written yet, so the next turn must
+                # replay the row rather than treat it as summarized.
+                persist_query_index, turn_index = self._turn_position(
+                    conversation.get("queries") or [], in_flight_id
+                )
+                bound = getattr(agent, "history_bound", None)
+                if isinstance(bound, int) and not isinstance(bound, bool):
+                    # What the turn's history held when it started is what
+                    # the summary holds; a row answered since is not in it.
+                    persist_query_index = min(bound, turn_index - 1)
+                else:
+                    # Without the bound (a turn resumed from a state saved
+                    # before it existed) nothing says which rows the summary
+                    # holds: it serves this turn and is not stored.
+                    persist_point = False
+                    # The summary in play already covers the saved point, so
+                    # the new one covers at least as much, never this turn.
+                    saved_point = latest_usable_compression_point(
+                        (conversation.get("compression_metadata") or {}).get("compression_points")
+                    )
+                    try:
+                        covered = int(saved_point.get("query_index")) if saved_point else -1
+                    except (TypeError, ValueError):
+                        covered = -1
+                    persist_query_index = max(persist_query_index, min(covered, turn_index - 1))
                 conversation_from_msgs = self._build_conversation_from_messages(summarizable)
                 if self._nothing_to_summarize(conversation_from_msgs):
                     logger.info(
@@ -1213,6 +1288,11 @@ class LLMHandler(ABC):
                 decoded_token=getattr(agent, "decoded_token", {}),
                 current_conversation=conversation,
                 persist_query_index=persist_query_index,
+                turn_index=turn_index,
+                turn_message_id=in_flight_id,
+                # Stored only for a turn whose own row is saved: an edit can
+                # then drop the point, or refuse it once the row is gone.
+                persist_point=persist_point,
             )
 
             if not result.success:
@@ -1243,31 +1323,25 @@ class LLMHandler(ABC):
                     f"saved {result.metadata.original_token_count - result.metadata.compressed_token_count} tokens"
                 )
 
-            # Also store the compression summary as a visible message
-            if result.metadata:
-                conversation_service.append_compression_message(
-                    agent.conversation_id, result.metadata.to_dict()
-                )
-
-            # Update agent's compressed summary for downstream persistence.
-            # ``compress_mid_execution`` already wrote the compression point
-            # and the row above is the visible summary, so this IS saved —
-            # leaving the flag False made the route persist both again
-            # (prod: every mid-execution compression stored twice).
+            # ``compress_mid_execution`` already wrote the compression point.
             agent.compressed_summary = result.compressed_summary
-            agent.compression_metadata = result.metadata.to_dict() if result.metadata else None
-            agent.compression_saved = True
             self._reset_responses_chain(agent, result.metadata)
 
             # Reset the context limit flag so tools can continue
             agent.context_limit_reached = False
             agent.current_token_count = 0
 
-            # Rebuild messages
+            # Rebuild messages. This turn's own row is in the recent queries
+            # now, but its message is restored below, verbatim.
+            recent_queries = [
+                q
+                for q in result.recent_queries or []
+                if not self._is_in_flight_row(q, in_flight_id)
+            ]
             rebuilt_messages = self._rebuild_messages_after_compression(
                 messages,
                 result.compressed_summary,
-                result.recent_queries,
+                recent_queries,
                 include_current_execution=False,
                 include_tool_calls=False,
             )
@@ -1407,9 +1481,8 @@ class LLMHandler(ABC):
             )
 
             agent.compressed_summary = compressed_summary
-            agent.compression_metadata = metadata.to_dict()
-            # Nothing reached the DB on this path; the route persists once.
-            agent.compression_saved = False
+            # Not persisted: the point is indexed against the synthetic
+            # conversation, not the saved one, so it holds for this turn only.
             self._reset_responses_chain(agent, metadata)
             agent.context_limit_reached = False
             agent.current_token_count = 0
@@ -1595,6 +1668,18 @@ class LLMHandler(ABC):
                             # Proceed to execute the current tool call with the reduced context
                         else:
                             logger.warning("Mid-execution compression attempted but failed. Skipping remaining tools.")
+                        if compression_successful:
+                            over_model_after = getattr(agent, "_over_model_threshold", None)
+                            if callable(over_model_after) and over_model_after(updated_messages) is True:
+                                # Smaller, yet still past the model's own threshold:
+                                # the turn answers with what it has, as when a
+                                # compression cannot reduce it.
+                                logger.warning(
+                                    "Context still past the model threshold after compression; "
+                                    "skipping remaining tools."
+                                )
+                                agent._compression_exhausted = True
+                                compression_successful = False
                     except Exception as e:
                         if is_budget_exhausted(e):
                             raise
@@ -1974,10 +2059,13 @@ class LLMHandler(ABC):
             # beginning" — killing the primary on the very turn meant to
             # wrap up. ``tools=None`` below enforces the cap regardless
             # of the role.
-            if iteration >= MAX_TOOL_ITERATIONS:
+            # Past the context limit the turn wraps up too, as the streaming
+            # loop does: the tools it skipped would only be asked for again.
+            limit_reached = getattr(agent, "context_limit_reached", False) is True
+            if iteration >= MAX_TOOL_ITERATIONS or limit_reached:
                 logger.warning(
-                    "agent tool loop hit cap (%d); forcing finalize",
-                    MAX_TOOL_ITERATIONS,
+                    "agent tool loop %s; forcing finalize",
+                    "reached the context limit" if limit_reached else f"hit cap ({MAX_TOOL_ITERATIONS})",
                 )
                 messages.append(
                     {"role": "user", "content": _FINALIZE_INSTRUCTION},

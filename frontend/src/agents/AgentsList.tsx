@@ -47,7 +47,6 @@ import {
   setAgents,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
-import WorkspaceLine from '../workspace/WorkspaceLine';
 import AgentCard from './AgentCard';
 import {
   AgentSectionId,
@@ -222,7 +221,6 @@ export default function AgentsList() {
       <p className="text-muted-foreground text-sm leading-6">
         {t('agents.description')}
       </p>
-      <WorkspaceLine kind="agents" />
 
       <SectionPills className="mt-6" />
 

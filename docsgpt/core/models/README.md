@@ -49,6 +49,7 @@ base_url: https://api.mistral.ai/v1
 defaults:
   supports_tools: true
   context_window: 128000
+  send_reasoning_content: false       # Mistral refuses reasoning_content on assistant messages
 models:
   - id: mistral-large-latest
     display_name: Mistral Large
@@ -59,7 +60,8 @@ models:
 `MISTRAL_API_KEY=sk-... ; restart` — Mistral models appear in
 `/api/models` with `provider: "mistral"`. They route through the OpenAI
 wire format (it's `OpenAILLM` under the hood) but with Mistral's
-endpoint and key.
+endpoint and key. A reasoning model's thinking, which Mistral streams as
+typed `thinking` parts of the content, is shown as the answer's thoughts.
 
 Multiple `openai_compatible` YAMLs coexist: each file is one logical
 endpoint with its own `api_key_env` and `base_url`. Drop in
@@ -116,6 +118,7 @@ defaults:                              # optional, applied to every model below
   api_flavor: <string>                  # chat_completions (default) or responses
   tool_result_images: <string>          # default: by API; native (inside the tool result) or follow_up (a user message after it)
   prompt_cache_breakpoints: bool        # default false; responses only: mark explicit prompt-cache breakpoints (GPT-5.6+; earlier models reject them)
+  send_reasoning_content: bool          # default true; chat_completions only: send stored thoughts back as reasoning_content (false for Mistral, which refuses it)
 
 models:                                # required
   - id: <string, required>             # unique registry key; persisted in agent records
