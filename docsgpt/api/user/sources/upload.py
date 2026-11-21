@@ -7,9 +7,11 @@ import os
 import posixpath
 import re
 import tempfile
+import time
 import uuid
 import zipfile
-from typing import Any, Container, Optional
+from contextlib import ExitStack, contextmanager
+from typing import Any, Container, Iterator, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from flask import Response, current_app, jsonify, make_response, request
@@ -25,6 +27,7 @@ from docsgpt.api.user.tasks import ingest, ingest_connector_task, ingest_remote
 from docsgpt.api.user.resource_access import AccessDenied, workspace_mismatch_refusal, workspace_mismatches
 from docsgpt.api.user.task_owners import TaskOwnersUnavailable, get_task_owner
 from docsgpt.api.user.sources.access import SYNC_FREQUENCIES, denied_response, load_source
+from docsgpt.api.user.sources import sync_manifest
 from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -58,6 +61,7 @@ from docsgpt.stt.upload_limits import (
 )
 from docsgpt.upload_limits import (
     copy_upload_to_path,
+    read_upload_limited,
     upload_limit_message,
     UploadTooLargeError,
 )
@@ -511,15 +515,12 @@ def _safe_relative_upload_path(filename: str, folder_names: dict[str, str]) -> s
     (``docs/guide/a.md``). Keeping it gives the source the same tree a ZIP of
     that folder would. Backslashes count as separators, and empty, ``.`` and
     ``..`` parts are dropped, so the path can never leave the source
-    directory. Every part goes through ``safe_filename``.
+    directory. Every part is made safe by ``_safe_part``.
 
     Args:
         filename: The name the client sent, possibly with folders in it.
         folder_names: Safe path already chosen for each folder path in this
-            upload; new folders are added as they appear. ``safe_filename``
-            makes up a random name for a part it cannot keep (one written
-            only in non-Latin letters), so reusing the choice keeps every file
-            of such a folder together. Two folders whose names clean up to
+            upload; new folders are added as they appear. Two folders whose names clean up to
             the same name (``my docs`` and ``my_docs``) get different safe
             paths, so their files never mix.
 
@@ -536,11 +537,22 @@ def _safe_relative_upload_path(filename: str, folder_names: dict[str, str]) -> s
         folder = "/".join(parts[:depth])
         if folder not in folder_names:
             folder_names[folder] = _unique_upload_path(
-                posixpath.join(safe_folder, safe_filename(part)),
+                posixpath.join(safe_folder, _safe_part(part)),
                 folder_names.values(),
             )
         safe_folder = folder_names[folder]
-    return posixpath.join(safe_folder, safe_filename(parts[-1]))
+    return posixpath.join(safe_folder, _safe_part(parts[-1]))
+
+
+def _safe_part(part: str) -> str:
+    """One folder or file name made safe for storage.
+
+    A part ``safe_filename`` cannot keep (one written only in non-Latin
+    letters) is named after its hash rather than at random, so the same
+    upload lands at the same paths every time and a sync does not embed such
+    files again. An empty part has nothing to hash and gets a random name.
+    """
+    return sync_manifest.stable_name(part) if part else safe_filename(part)
 
 
 def _unique_upload_path(path: str, taken: Container[str]) -> str:
@@ -630,6 +642,8 @@ class _UploadStager:
 
     Attributes:
         pending: ``(local path, path relative to the source)`` for each staged file.
+        client_paths: The path each staged file was sent under (a ZIP member's path
+            inside its archive, under the archive's folder), by its relative path.
         file_name_map: The name each loose file was sent with, by its relative path.
         current_name: The file being staged, for an error message.
     """
@@ -637,6 +651,7 @@ class _UploadStager:
     def __init__(self, temp_dir: str) -> None:
         self.temp_dir = temp_dir
         self.pending: list[tuple[str, str]] = []
+        self.client_paths: dict[str, str] = {}
         self.file_name_map: dict[str, str] = {}
         self.current_name = "uploaded archive"
 
@@ -688,13 +703,376 @@ class _UploadStager:
                             claimed_paths,
                         )
                         claimed_paths.add(rel_path)
+                        self.client_paths[rel_path] = sync_manifest.normalize_path(
+                            posixpath.join(
+                                posixpath.dirname(sync_manifest.normalize_path(original_path)),
+                                os.path.relpath(local_path, extract_dir).replace(os.sep, "/"),
+                            )
+                        )
                         self.pending.append((local_path, rel_path))
             else:
                 rel_path = _unique_file_path(safe_path, claimed_paths)
                 claimed_paths.add(rel_path)
+                self.client_paths[rel_path] = sync_manifest.normalize_path(original_path)
                 if original_filename:
                     self.file_name_map[rel_path] = original_filename
                 self.pending.append((temp_file_path, rel_path))
+
+
+class SourceFilesBusy(Exception):
+    """Another request is changing this source's files and did not finish in time."""
+
+
+#: First key of the advisory lock that guards a source's stored files.
+_FILES_LOCK_NAMESPACE = 0x73796E63
+#: How long a request waits for another one changing the same source's files.
+_FILES_LOCK_WAIT_SECONDS = 30.0
+#: Largest manifest a sync may send.
+_MANIFEST_MAX_BYTES = 16 * 1024 * 1024
+
+
+@contextmanager
+def _source_files_lock(source_id: str, wait_seconds: float = _FILES_LOCK_WAIT_SECONDS) -> Iterator[None]:
+    """Hold one source's files lock for the block.
+
+    Every request that changes a source's stored files runs inside it, so two
+    of them never interleave their writes and the ``sync_manifest`` record
+    always describes what one whole request left. It is a transaction-scoped
+    Postgres advisory lock on a connection of its own: no row is locked, so
+    the block reads and writes the source row in short transactions.
+
+    Args:
+        source_id: The source's UUID.
+        wait_seconds: How long to wait for the lock.
+
+    Raises:
+        SourceFilesBusy: The lock was still held after ``wait_seconds``.
+    """
+    deadline = time.monotonic() + wait_seconds
+    with ExitStack() as held:
+        while True:
+            # A waiter gives its connection back between tries: a queue of
+            # them must not use up the pool the holder needs for its own
+            # transactions.
+            with ExitStack() as attempt:
+                conn = attempt.enter_context(db_session())
+                locked = conn.execute(
+                    sql_text("SELECT pg_try_advisory_xact_lock(:namespace, hashtext(:key))"),
+                    {"namespace": _FILES_LOCK_NAMESPACE, "key": str(source_id)},
+                ).scalar()
+                if locked:
+                    # Keep this transaction, and with it the lock, for the block.
+                    held.push(attempt.pop_all())
+                    break
+            if time.monotonic() >= deadline:
+                raise SourceFilesBusy(str(source_id))
+            time.sleep(0.25)
+        yield
+
+
+def _files_busy_response() -> Response:
+    """The 409 for a source whose files another request is changing."""
+    return make_response(
+        jsonify(
+            {
+                "success": False,
+                "code": "source_files_busy",
+                "message": "Another change to this source's files is still running; try again shortly",
+            }
+        ),
+        409,
+    )
+
+
+def _stored_files(storage, source_file_path: str) -> dict[str, str]:
+    """The files under a source's folder: path relative to the source, to its storage path."""
+    stored: dict[str, str] = {}
+    for storage_path in storage.list_files(source_file_path):
+        # Local storage on Windows lists with backslashes. Stored names
+        # never contain one (staging splits on it), so it is always a
+        # separator here.
+        rel_path = posixpath.relpath(storage_path.replace("\\", "/"), source_file_path)
+        # A store that lists by bare prefix can name another source's files
+        # (``src`` matching ``src-2/...``): those are not this source's.
+        if rel_path == ".." or rel_path.startswith("../") or storage_path.endswith("/"):
+            continue
+        stored[rel_path] = storage_path
+    return stored
+
+
+def _remove_empty_folders(storage, source_file_path: str, removed: list[str]) -> None:
+    """Remove the folders a sync's deletions left empty.
+
+    Local storage keeps a folder after its last file is gone, and a later
+    file of that name could then never be written there. A store without
+    real folders has none to remove.
+
+    Args:
+        storage: The file storage.
+        source_file_path: The source's folder in storage.
+        removed: The removed files, relative to the source.
+    """
+    folders = set()
+    for rel_path in removed:
+        parts = rel_path.split("/")[:-1]
+        folders.update("/".join(parts[:depth]) for depth in range(1, len(parts) + 1))
+    # Deepest first, so a folder emptied by removing its subfolder goes too.
+    for folder in sorted(folders, key=lambda path: path.count("/"), reverse=True):
+        full_path = f"{source_file_path}/{folder}"
+        if storage.is_directory(full_path) and not storage.list_files(full_path):
+            storage.remove_directory(full_path)
+
+
+def _file_sha256(path: str) -> str:
+    """The SHA-256 of a local file, as lowercase hex."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _allocate_stored_path(client_path: str, folder_names: dict[str, str], taken: set[str]) -> str:
+    """A stored path for a file new to the source, clear of the ``taken`` ones."""
+    return _unique_file_path(_safe_relative_upload_path(client_path, folder_names), taken)
+
+
+def _note_files_changing(source_id: str, owner: str, written: Container[str] = (), done: bool = False) -> None:
+    """Record that a source's stored files are about to change outside a sync.
+
+    Moves the ``sync_manifest`` generation, so the index counts as stale until
+    a reingest reads the new files, and drops the hash of every stored path
+    in ``written``, so the next sync uploads those again instead of trusting
+    what it stored there before.
+
+    Called again with ``done`` once the change is over. In between the record
+    says ``writing``: a reingest that reads it then saw only part of the
+    change and does not mark the index current, also when the request died
+    before saying it was done.
+
+    Args:
+        source_id: The source's UUID.
+        owner: The source's owner.
+        written: Stored paths (relative to the source) about to be written.
+        done: The change is over.
+    """
+    with db_session() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_for_update(source_id, owner)
+        if row is None:
+            return
+        # A source without a record gets an empty one: a new source's upload
+        # record is written a moment after the source appears, and must not
+        # then vouch for a file this change replaced (it is only written
+        # where there is none).
+        state = sync_manifest.load_state(row.get("sync_manifest"))
+        repo.update(
+            source_id, owner,
+            {
+                "sync_manifest": sync_manifest.state_touched(
+                    state, written, sync_manifest.new_generation(), writing=not done,
+                )
+            },
+        )
+
+
+class _ManifestUpload:
+    """The files of one manifest sync request, staged and checked.
+
+    Each ``file`` part is named after the SHA-256 of its content rather than
+    its path, so a path in any script, with quotes or with backslashes
+    arrives intact (it travels in the manifest's JSON) and one upload serves
+    every manifest file with that content.
+
+    Attributes:
+        entries: The manifest's files.
+        local_paths: Staged file by content hash.
+    """
+
+    def __init__(self, temp_dir: str) -> None:
+        self.temp_dir = temp_dir
+        self.entries: list[sync_manifest.ManifestEntry] = []
+        self.local_paths: dict[str, str] = {}
+
+    def stage(self, raw_manifest: Any, files) -> None:
+        """Read the manifest and stage ``files``.
+
+        Raises:
+            sync_manifest.ManifestError: A bad manifest, or a file that is
+                not in it, repeats another, or does not match its hash.
+            UploadTooLargeError: A file is over ``UPLOAD_MAX_FILE_BYTES``.
+            AudioFileTooLargeError: An audio file is over the transcription limit.
+        """
+        self.entries = sync_manifest.parse_manifest(raw_manifest, settings.UPLOAD_MAX_ARCHIVE_FILES)
+        paths_by_hash: dict[str, list[str]] = {}
+        for entry in self.entries:
+            paths_by_hash.setdefault(entry.sha256, []).append(entry.path)
+        for index, file in enumerate(files):
+            digest = (file.filename or "").strip().lower()
+            if digest not in paths_by_hash:
+                raise sync_manifest.ManifestError(
+                    "Each uploaded file must be named after the sha256 of a manifest file"
+                )
+            if digest in self.local_paths:
+                raise sync_manifest.ManifestError("A file was uploaded twice")
+            local_path = os.path.join(self.temp_dir, str(index))
+            copy_upload_to_path(file, local_path)
+            if _file_sha256(local_path) != digest:
+                raise sync_manifest.ManifestError(
+                    "An uploaded file does not match its sha256; it may have changed while it was read"
+                )
+            for client_path in paths_by_hash[digest]:
+                _enforce_audio_path_size_limit(local_path, posixpath.basename(client_path))
+            self.local_paths[digest] = local_path
+
+    @property
+    def uploaded(self) -> set[str]:
+        """The manifest paths this request brought content for."""
+        return {entry.path for entry in self.entries if entry.sha256 in self.local_paths}
+
+
+def _staged_records(stager: _UploadStager) -> tuple[dict[str, dict[str, Optional[str]]], dict[str, str]]:
+    """What a staged upload stores, as ``sync_manifest`` file entries.
+
+    Args:
+        stager: The staged upload; its files must still be on disk.
+
+    Returns:
+        The entries by client path, and the staged file of each. A client
+        path two staged files share (a loose file and a ZIP member) is kept
+        for the first; the others are recorded under ``/<stored path>``, which
+        no manifest can name.
+    """
+    records: dict[str, dict[str, Optional[str]]] = {}
+    local_paths: dict[str, str] = {}
+    for local_path, rel_path in stager.pending:
+        client_path = stager.client_paths.get(rel_path) or f"/{rel_path}"
+        if client_path in records:
+            client_path = f"/{rel_path}"
+        records[client_path] = {"path": rel_path, "sha256": _file_sha256(local_path)}
+        local_paths[client_path] = local_path
+    return records, local_paths
+
+
+def _legacy_sync_plan(stager: _UploadStager, present: Container[str]) -> tuple[sync_manifest.SyncPlan, dict[str, str]]:
+    """The plan of a sync whose upload is the whole file set.
+
+    Args:
+        stager: The staged upload.
+        present: The stored paths the source's folder holds now.
+
+    Returns:
+        The plan, and the staged file of each of its client paths.
+    """
+    plan = sync_manifest.SyncPlan()
+    plan.files, local_paths = _staged_records(stager)
+    plan.writes = [(client_path, entry["path"]) for client_path, entry in plan.files.items()]
+    synced = {rel_path for _, rel_path in stager.pending}
+    plan.deletes = sorted(set(present) - synced)
+    return plan, local_paths
+
+
+def _apply_sync(
+    *,
+    storage,
+    source_id: str,
+    owner: str,
+    source_file_path: str,
+    make_plan,
+    file_name_map,
+) -> tuple[sync_manifest.SyncPlan, list[tuple[str, str]], bool]:
+    """Run one sync request against a source's stored files.
+
+    The order is what keeps the ``sync_manifest`` record true whatever
+    interrupts the request: the record first forgets the hash of every path
+    about to be written, then the files are stored, then their hashes are
+    recorded, and only a request that leaves the source holding the whole
+    file set removes the files it no longer has. The generation moves once
+    more at the end, so a reingest that started while the files were changing
+    cannot mark the index current.
+
+    Args:
+        storage: The file storage.
+        source_id: The source's UUID.
+        owner: The source's owner.
+        source_file_path: The source's folder in storage.
+        make_plan: ``(state, present) -> (plan, local file by client path)``.
+        file_name_map: ``(plan) -> the source's new file_name_map``, used
+            when the plan is complete.
+
+    Returns:
+        ``(plan, removed, reingest)``: ``removed`` pairs each removed stored
+        path with the path it was sent under (the stored path again when
+        that is not known); ``reingest`` is whether the index has to be
+        brought up to date with the stored files.
+
+    Raises:
+        SourceFilesBusy: Another request held the source's files lock.
+        LookupError: The source is gone.
+    """
+    generation = sync_manifest.new_generation()
+    with _source_files_lock(source_id):
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            row = repo.get_for_update(source_id, owner)
+            if row is None:
+                raise LookupError(source_id)
+            state = sync_manifest.load_state(row.get("sync_manifest"))
+            present = _stored_files(storage, source_file_path)
+            # The path each stored file was sent under, to name removed ones by.
+            client_paths = {
+                entry["path"]: client_path
+                for client_path, entry in state["files"].items()
+                if not client_path.startswith("/")
+            }
+            plan, local_paths = make_plan(state, present)
+            changing = bool(plan.writes) or (plan.complete and bool(plan.deletes))
+            if changing:
+                repo.update(
+                    source_id, owner,
+                    {"sync_manifest": sync_manifest.state_before_writes(state, plan, generation)},
+                )
+
+        for client_path, stored_path in plan.writes:
+            with open(local_paths[client_path], "rb") as staged_file:
+                storage.save_file(staged_file, f"{source_file_path}/{stored_path}")
+
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            row = repo.get_for_update(source_id, owner)
+            if row is None:
+                raise LookupError(source_id)
+            state = sync_manifest.load_state(row.get("sync_manifest"))
+            fields: dict[str, Any] = {}
+            if changing:
+                state = sync_manifest.state_after_writes(state, plan, generation)
+                fields["sync_manifest"] = state
+            elif plan.complete and state["files"] != plan.files:
+                # Nothing to store or remove, but the record still lists
+                # paths an earlier, unfinished sync left: only the manifest's
+                # files are the source's.
+                state = {**state, "files": {path: dict(entry) for path, entry in plan.files.items()}}
+                fields["sync_manifest"] = state
+            if plan.complete:
+                fields["file_name_map"] = file_name_map(plan)
+            if fields:
+                repo.update(source_id, owner, fields)
+
+        removed: list[tuple[str, str]] = []
+        if plan.complete:
+            for rel_path in plan.deletes:
+                # ``False`` is also what a store answers for a file already
+                # gone; only a file that is still there was not removed.
+                if storage.delete_file(present[rel_path]) is False and storage.file_exists(present[rel_path]):
+                    raise OSError(f"Could not remove {present[rel_path]} from storage")
+                removed.append((rel_path, client_paths.get(rel_path, rel_path)))
+            _remove_empty_folders(storage, source_file_path, [rel_path for rel_path, _ in removed])
+        if changing or state["writing"]:
+            # Done; also on behalf of a request that died before saying so
+            # (this one holds the lock, so nothing else is writing).
+            _note_files_changing(source_id, owner, done=True)
+    reingest = plan.complete and (changing or not sync_manifest.index_is_current(state))
+    return plan, removed, reingest
 
 
 def _requested_folder(
@@ -856,6 +1234,16 @@ class UploadFile(Resource):
                 stager = _UploadStager(temp_dir)
                 stager.stage(files)
                 file_name_map = stager.file_name_map
+                # What the new source will hold, for the worker to record once
+                # it has indexed these files: a sync of the same files then
+                # uploads nothing.
+                generation = sync_manifest.new_generation()
+                stored_manifest = {
+                    "version": sync_manifest.MANIFEST_VERSION,
+                    "generation": generation,
+                    "indexed_generation": generation,
+                    "files": _staged_records(stager)[0],
+                }
                 for local_path, rel_path in stager.pending:
                     with open(local_path, "rb") as staged_file:
                         storage.save_file(staged_file, f"{base_path}/{rel_path}")
@@ -879,6 +1267,7 @@ class UploadFile(Resource):
                     "file_path": base_path,
                     "filename": dir_name,
                     "file_name_map": file_name_map,
+                    "sync_manifest": stored_manifest,
                     "config": source_config,
                     # Scoped so the worker dedup row matches the HTTP claim.
                     "idempotency_key": scoped_key or idempotency_key,
@@ -1298,8 +1687,18 @@ class ManageSourceFiles(Resource):
                 "operation": fields.String(
                     required=True,
                     description=(
-                        "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs "
-                        "become the source's whole file set; files not in the upload are removed)"
+                        "Operation: 'add', 'remove', 'remove_directory', 'sync' (the uploaded files and ZIPs "
+                        "become the source's whole file set; files not in the upload are removed), or "
+                        "'sync_manifest' (the same, uploading only the files the source lacks)"
+                    ),
+                ),
+                "manifest": fields.Raw(
+                    required=False,
+                    description=(
+                        "For sync_manifest, as a file part: JSON "
+                        "{\"version\": 1, \"files\": [{\"path\": \"guide/intro.md\", \"sha256\": \"<64 lowercase hex>\"}]} "
+                        "listing the whole file set. The reply names the paths the source lacks (status "
+                        "'needs_files'); only those are uploaded, each file part named after its sha256."
                     ),
                 ),
                 "file_paths": fields.List(
@@ -1351,12 +1750,12 @@ class ManageSourceFiles(Resource):
                 ),
                 400,
             )
-        if operation not in ["add", "remove", "remove_directory", "sync"]:
+        if operation not in ["add", "remove", "remove_directory", "sync", "sync_manifest"]:
             return make_response(
                 jsonify(
                     {
                         "success": False,
-                        "message": "operation must be 'add', 'remove', 'remove_directory', or 'sync'",
+                        "message": "operation must be 'add', 'remove', 'remove_directory', 'sync', or 'sync_manifest'",
                     }
                 ),
                 400,
@@ -1473,23 +1872,36 @@ class ManageSourceFiles(Resource):
                         )
 
                     # All files are bounded before the first storage mutation.
-                    for (
-                        staged_path,
-                        file_path,
-                        safe_filename_str,
-                        original_filename,
-                    ) in staged_files:
-                        with open(staged_path, "rb") as staged_file:
-                            storage.save_file(staged_file, file_path)
-                        added_files.append(safe_filename_str)
-                        if original_filename:
-                            relative_key = (
-                                f"{parent_dir}/{safe_filename_str}"
-                                if parent_dir
-                                else safe_filename_str
-                            )
-                            file_name_map[relative_key] = original_filename
-                            map_updated = True
+                    # A sync's record of these paths stops vouching for them
+                    # first, under the lock syncs hold.
+                    with _source_files_lock(resolved_source_id):
+                        _note_files_changing(
+                            resolved_source_id, owner,
+                            {
+                                # As storage resolves it: ``docs/`` and
+                                # ``./docs`` are the folder ``docs``.
+                                sync_manifest.normalize_path(f"{parent_dir}/{staged[2]}")
+                                for staged in staged_files
+                            },
+                        )
+                        for (
+                            staged_path,
+                            file_path,
+                            safe_filename_str,
+                            original_filename,
+                        ) in staged_files:
+                            with open(staged_path, "rb") as staged_file:
+                                storage.save_file(staged_file, file_path)
+                            added_files.append(safe_filename_str)
+                            if original_filename:
+                                relative_key = (
+                                    f"{parent_dir}/{safe_filename_str}"
+                                    if parent_dir
+                                    else safe_filename_str
+                                )
+                                file_name_map[relative_key] = original_filename
+                                map_updated = True
+                        _note_files_changing(resolved_source_id, owner, done=True)
 
                 if map_updated:
                     with db_session() as conn:
@@ -1530,8 +1942,14 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
-            elif operation == "sync":
+            elif operation in ("sync", "sync_manifest"):
                 files = [file for file in request.files.getlist("file") if file.filename]
+                # A sync by manifest is its own operation rather than a field
+                # of ``sync``: a server without it refuses the request, where
+                # a ``sync`` that ignored the manifest would take the changed
+                # files it came with for the whole set and remove the rest.
+                by_manifest = operation == "sync_manifest"
+                manifest_part = request.files.get("manifest")
                 if parent_dir:
                     return make_response(
                         jsonify(
@@ -1550,7 +1968,18 @@ class ManageSourceFiles(Resource):
                         jsonify({"success": False, "message": "This source keeps no files to sync"}),
                         400,
                     )
-                if not files:
+                if by_manifest and manifest_part is None and not request.form.get("manifest"):
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "code": "bad_manifest",
+                                "message": "sync_manifest needs a manifest file part",
+                            }
+                        ),
+                        400,
+                    )
+                if not by_manifest and not files:
                     return make_response(
                         jsonify({"success": False, "message": "No files provided for sync operation"}),
                         400,
@@ -1571,46 +2000,103 @@ class ManageSourceFiles(Resource):
                         return make_response(jsonify(cached), 200)
 
                 # Every file is validated before the first storage write, and
-                # files the upload no longer has are removed only once the new
+                # files the source no longer has are removed only once the new
                 # ones are in place. The reingest re-embeds only what changed.
                 with tempfile.TemporaryDirectory() as temp_dir:
-                    stager = _UploadStager(temp_dir)
-                    stager.stage(files)
-                    if not stager.pending:
-                        # An empty ZIP, or one of folders only: syncing it
-                        # would remove every file of the source.
-                        if scoped_key:
-                            _release_claim(scoped_key)
-                        return make_response(
-                            jsonify({"success": False, "message": "The upload holds no files to sync"}),
-                            400,
-                        )
-                    synced = {rel_path for _, rel_path in stager.pending}
-                    for local_path, rel_path in stager.pending:
-                        with open(local_path, "rb") as staged_file:
-                            storage.save_file(staged_file, f"{source_file_path}/{rel_path}")
-                removed_files = []
-                for storage_path in storage.list_files(source_file_path):
-                    # Local storage on Windows lists with backslashes. Stored
-                    # names never contain one (staging splits on it), so it is
-                    # always a separator here.
-                    rel_path = posixpath.relpath(storage_path.replace("\\", "/"), source_file_path)
-                    # A store that lists by bare prefix can name another
-                    # source's files (``src`` matching ``src-2/...``): never
-                    # delete outside this source's folder.
-                    if rel_path == ".." or rel_path.startswith("../"):
-                        continue
-                    if storage_path.endswith("/") or rel_path in synced:
-                        continue
-                    storage.delete_file(storage_path)
-                    removed_files.append(rel_path)
-                removed_files.sort()
+                    if by_manifest:
+                        # The client lists its files and uploads only the
+                        # ones the source lacks; see ``sync_manifest``.
+                        raw_manifest: Any = request.form.get("manifest")
+                        if manifest_part is not None:
+                            try:
+                                raw_manifest = read_upload_limited(manifest_part, _MANIFEST_MAX_BYTES)
+                            except UploadTooLargeError:
+                                if scoped_key:
+                                    _release_claim(scoped_key)
+                                return make_response(
+                                    jsonify(
+                                        {
+                                            "success": False,
+                                            "code": "manifest_too_large",
+                                            "message": upload_limit_message(_MANIFEST_MAX_BYTES).replace(
+                                                "File", "Manifest", 1
+                                            ),
+                                        }
+                                    ),
+                                    413,
+                                )
+                        upload = _ManifestUpload(temp_dir)
+                        upload.stage(raw_manifest, files)
 
-                with db_session() as conn:
-                    SourcesRepository(conn).update(
-                        resolved_source_id, owner,
-                        {"file_name_map": dict(stager.file_name_map)},
+                        def make_plan(state, present):
+                            plan = sync_manifest.plan_sync(
+                                state, present, upload.entries, upload.uploaded, _allocate_stored_path,
+                            )
+                            hashes = {entry.path: entry.sha256 for entry in upload.entries}
+                            return plan, {
+                                client_path: upload.local_paths[hashes[client_path]]
+                                for client_path, _ in plan.writes
+                            }
+
+                        def new_file_name_map(plan):
+                            return {
+                                entry["path"]: posixpath.basename(client_path)
+                                for client_path, entry in plan.files.items()
+                            }
+                    else:
+                        stager = _UploadStager(temp_dir)
+                        stager.stage(files)
+                        if not stager.pending:
+                            # An empty ZIP, or one of folders only: syncing it
+                            # would remove every file of the source.
+                            if scoped_key:
+                                _release_claim(scoped_key)
+                            return make_response(
+                                jsonify({"success": False, "message": "The upload holds no files to sync"}),
+                                400,
+                            )
+
+                        def make_plan(state, present):
+                            return _legacy_sync_plan(stager, present)
+
+                        def new_file_name_map(plan):
+                            return dict(stager.file_name_map)
+
+                    plan, removed, reingest = _apply_sync(
+                        storage=storage,
+                        source_id=resolved_source_id,
+                        owner=owner,
+                        source_file_path=source_file_path,
+                        make_plan=make_plan,
+                        file_name_map=new_file_name_map,
                     )
+
+                result = {
+                    "success": True,
+                    "source_id": resolved_source_id,
+                    "files": sorted(entry["path"] for entry in plan.files.values()),
+                    "removed_files": [stored_path for stored_path, _ in removed],
+                    # The same files, by the path the client sent each under.
+                    "removed": [client_path for _, client_path in removed],
+                    "uploaded": len(plan.writes),
+                    "unchanged": len(plan.kept),
+                }
+                if not plan.complete:
+                    # Nothing was removed and the index is untouched: the
+                    # client uploads these and asks again.
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    result.update(
+                        status="needs_files",
+                        needed=plan.needed,
+                        message=f"{len(plan.needed)} files are needed",
+                    )
+                    return make_response(jsonify(result), 200)
+                if not reingest:
+                    if scoped_key:
+                        _release_claim(scoped_key)
+                    result.update(status="unchanged", message="The source already holds these files")
+                    return make_response(jsonify(result), 200)
 
                 from docsgpt.api.user.tasks import reingest_source_task
 
@@ -1625,19 +2111,13 @@ class ManageSourceFiles(Resource):
                 )
                 claim_transferred = True
 
-                return make_response(
-                    jsonify(
-                        {
-                            "success": True,
-                            "message": f"Synced {len(synced)} files",
-                            "files": sorted(synced),
-                            "removed_files": removed_files,
-                            "reingest_task_id": task.id,
-                            "source_id": resolved_source_id,
-                        }
-                    ),
-                    200,
+                result.update(
+                    status="synced",
+                    message=f"Synced {len(plan.files)} files",
+                    reingest_task_id=task.id,
                 )
+                return make_response(jsonify(result), 200)
+
             elif operation == "remove":
                 file_paths_str = request.form.get("file_paths")
                 if not file_paths_str:
@@ -1700,17 +2180,22 @@ class ManageSourceFiles(Resource):
 
                 removed_files = []
                 map_updated = False
-                for file_path in file_paths:
-                    full_path = f"{source_file_path}/{file_path}"
+                # Under the lock syncs hold: a sync must not plan to keep a
+                # file this is about to remove.
+                with _source_files_lock(resolved_source_id):
+                    _note_files_changing(resolved_source_id, owner)
+                    for file_path in file_paths:
+                        full_path = f"{source_file_path}/{file_path}"
 
-                    # Remove from storage
+                        # Remove from storage
 
-                    if storage.file_exists(full_path):
-                        storage.delete_file(full_path)
-                        removed_files.append(file_path)
-                    if file_path in file_name_map:
-                        file_name_map.pop(file_path, None)
-                        map_updated = True
+                        if storage.file_exists(full_path):
+                            storage.delete_file(full_path)
+                            removed_files.append(file_path)
+                        if file_path in file_name_map:
+                            file_name_map.pop(file_path, None)
+                            map_updated = True
+                    _note_files_changing(resolved_source_id, owner, done=True)
 
                 if map_updated and isinstance(file_name_map, dict):
                     with db_session() as conn:
@@ -1809,7 +2294,11 @@ class ManageSourceFiles(Resource):
                         cached["source_id"] = resolved_source_id
                         return make_response(jsonify(cached), 200)
 
-                success = storage.remove_directory(full_directory_path)
+                # Under the lock syncs hold, as ``remove`` is.
+                with _source_files_lock(resolved_source_id):
+                    _note_files_changing(resolved_source_id, owner)
+                    success = storage.remove_directory(full_directory_path)
+                    _note_files_changing(resolved_source_id, owner, done=True)
 
                 if not success:
                     current_app.logger.error(
@@ -1876,6 +2365,16 @@ class ManageSourceFiles(Resource):
                     ),
                     200,
                 )
+        except sync_manifest.ManifestError as err:
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
+            return make_response(
+                jsonify({"success": False, "code": "bad_manifest", "message": err.public_message}), 400
+            )
+        except SourceFilesBusy:
+            if scoped_key and not claim_transferred:
+                _release_claim(scoped_key)
+            return _files_busy_response()
         except (UploadTooLargeError, AudioFileTooLargeError) as err:
             if scoped_key and not claim_transferred:
                 _release_claim(scoped_key)
