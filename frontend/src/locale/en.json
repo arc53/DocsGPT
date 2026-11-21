@@ -1002,9 +1002,16 @@
     "title": "Agents",
     "tryDifferentSearch": "Try a different search term",
     "typeModal": {
+      "blankAgent": "Blank agent",
+      "blankWorkflow": "Blank workflow",
       "classicDescription": "Create a standard AI agent with a single model, tools, and knowledge sources",
       "classicTitle": "Classic Agent",
+      "describeLabel": "Describe the agent",
+      "describePlaceholder": "An agent on our website that answers shipping questions",
       "description": "Choose the type of agent you want to create",
+      "draftDescription": "Say what it's for and DocsGPT builds it with you, one step at a time.",
+      "newTitle": "New agent",
+      "templatesLabel": "Or start from a template",
       "title": "Create New Agent",
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management",
       "workflowTitle": "Workflow Agent"
@@ -1824,7 +1831,7 @@
         "finish": "Finish",
         "folded": "{{step}}: {{result}}",
         "goTo": "Go to {{field}}",
-        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a template, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
         "missing": {
           "agentType": "an agent type",
           "contextLimit": "a valid context limit",
@@ -2102,15 +2109,54 @@
     "startOver": "Start over",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "HR",
+              "it": "IT",
+              "office": "Office and facilities",
+              "policies": "Company policies"
+            },
+            "text": "Which areas does it cover?"
+          }
+        },
         "description": "HR, IT and policy questions from your team",
+        "short": "Internal helpdesk",
         "title": "Internal helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Case files",
+              "contracts": "Contracts",
+              "papers": "Papers",
+              "reports": "Reports"
+            },
+            "text": "What are the documents?"
+          },
+          "users": {
+            "options": {
+              "clients": "Customers or clients",
+              "me": "Just me",
+              "team": "My team"
+            },
+            "text": "Who uses it?"
+          }
+        },
         "description": "Digs through your documents and cites them",
+        "short": "Research assistant",
         "title": "Research assistant"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "What is the company or product called?"
+          }
+        },
         "description": "Answers visitors and hands off when unsure",
+        "short": "Website chat",
         "title": "Website chat for customers"
       }
     },
@@ -2124,6 +2170,23 @@
     "stop": "Stop",
     "stoppedDescription": "You stopped this turn. Nothing in the form changed.",
     "suggestionsLabel": "Ways to start",
+    "templates": {
+      "browse": "Browse all templates",
+      "categories": {
+        "all": "All",
+        "customerSupport": "Customer support",
+        "internal": "Internal",
+        "research": "Research"
+      },
+      "categoriesLabel": "Template categories",
+      "description_one": "{{formatted}} template. Pick one and DocsGPT builds it with you.",
+      "description_other": "{{formatted}} templates. Pick one and DocsGPT builds it with you.",
+      "empty": "No templates match",
+      "search": "Search templates",
+      "showAll": "All templates",
+      "showMore": "Show more",
+      "title": "Templates"
+    },
     "title": "Draft with DocsGPT",
     "topics": {
       "add_one": "Add {{formatted}} topic",

@@ -980,9 +980,16 @@
     "title": "智能体",
     "tryDifferentSearch": "请尝试不同的搜索词",
     "typeModal": {
+      "blankAgent": "空白智能体",
+      "blankWorkflow": "空白工作流",
       "classicDescription": "创建一个使用单一模型、工具和知识来源的标准 AI 智能体",
       "classicTitle": "经典智能体",
+      "describeLabel": "描述这个智能体",
+      "describePlaceholder": "我们网站上回答配送问题的智能体",
       "description": "选择要创建的智能体类型",
+      "draftDescription": "说说它的用途，DocsGPT 会和你一起一步步构建。",
+      "newTitle": "新建智能体",
+      "templatesLabel": "或从模板开始",
       "title": "创建新智能体",
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流",
       "workflowTitle": "工作流智能体"
@@ -1793,7 +1800,7 @@
         "finish": "完成",
         "folded": "{{step}}：{{result}}",
         "goTo": "前往{{field}}",
-        "intro": "我们一起一步步搭建这个智能体：基本信息、知识、提示词与开场问题，最后是限制与安全。\n\n选择一个起点，或告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
+        "intro": "我们一起一步步搭建这个智能体：基本信息、知识、提示词与开场问题，最后是限制与安全。\n\n选择一个模板，或告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
         "missing": {
           "agentType": "智能体类型",
           "contextLimit": "有效的上下文上限",
@@ -2065,15 +2072,54 @@
     "startOver": "重新开始",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人力资源",
+              "it": "IT",
+              "office": "办公与设施",
+              "policies": "公司制度"
+            },
+            "text": "它涵盖哪些领域？"
+          }
+        },
         "description": "团队的人事、IT 和制度问题",
+        "short": "内部服务台",
         "title": "内部服务台"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件档案",
+              "contracts": "合同",
+              "papers": "论文",
+              "reports": "报告"
+            },
+            "text": "这些是什么文档？"
+          },
+          "users": {
+            "options": {
+              "clients": "客户",
+              "me": "只有我",
+              "team": "我的团队"
+            },
+            "text": "谁会使用它？"
+          }
+        },
         "description": "检索你的文档并注明出处",
+        "short": "研究助手",
         "title": "研究助手"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "公司或产品叫什么名字？"
+          }
+        },
         "description": "回答访客问题，不确定时转人工",
+        "short": "网站聊天",
         "title": "面向客户的网站聊天"
       }
     },
@@ -2087,6 +2133,23 @@
     "stop": "停止",
     "stoppedDescription": "你停止了本轮。表单没有变化。",
     "suggestionsLabel": "开始方式",
+    "templates": {
+      "browse": "浏览全部模板",
+      "categories": {
+        "all": "全部",
+        "customerSupport": "客户支持",
+        "internal": "内部",
+        "research": "研究"
+      },
+      "categoriesLabel": "模板类别",
+      "description_one": "{{formatted}} 个模板。选择一个，DocsGPT 会和你一起构建。",
+      "description_other": "{{formatted}} 个模板。选择一个，DocsGPT 会和你一起构建。",
+      "empty": "没有匹配的模板",
+      "search": "搜索模板",
+      "showAll": "全部模板",
+      "showMore": "显示更多",
+      "title": "模板"
+    },
     "title": "用 DocsGPT 起草",
     "topics": {
       "add_other": "添加 {{formatted}} 个主题",

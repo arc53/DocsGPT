@@ -1008,9 +1008,16 @@
     "title": "Agents",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "typeModal": {
+      "blankAgent": "Agent vide",
+      "blankWorkflow": "Workflow vide",
       "classicDescription": "Créez un agent IA standard avec un seul modèle, des outils et des sources de connaissances",
       "classicTitle": "Agent classique",
+      "describeLabel": "Décrivez l’agent",
+      "describePlaceholder": "Un agent sur notre site web qui répond aux questions sur la livraison",
       "description": "Choisissez le type d’agent à créer",
+      "draftDescription": "Dites à quoi il sert et DocsGPT le construit avec vous, étape par étape.",
+      "newTitle": "Nouvel agent",
+      "templatesLabel": "Ou partez d’un modèle",
       "title": "Créer un agent",
       "workflowDescription": "Concevez des workflows complexes en plusieurs étapes avec différents modèles, une logique conditionnelle et une gestion d’état",
       "workflowTitle": "Agent workflow"
@@ -1847,7 +1854,7 @@
         "finish": "Terminer",
         "folded": "{{step}} : {{result}}",
         "goTo": "Aller à {{field}}",
-        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un point de départ, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
+        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un modèle, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
         "missing": {
           "agentType": "de type d’agent",
           "contextLimit": "de limite de contexte valide",
@@ -2150,15 +2157,54 @@
     "startOver": "Recommencer",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "RH",
+              "it": "Informatique",
+              "office": "Bureaux et locaux",
+              "policies": "Politiques de l’entreprise"
+            },
+            "text": "Quels domaines couvre-t-il ?"
+          }
+        },
         "description": "Questions RH, IT et règlements de votre équipe",
+        "short": "Assistance interne",
         "title": "Assistance interne"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Dossiers",
+              "contracts": "Contrats",
+              "papers": "Articles",
+              "reports": "Rapports"
+            },
+            "text": "De quels documents s’agit-il ?"
+          },
+          "users": {
+            "options": {
+              "clients": "Des clients",
+              "me": "Moi uniquement",
+              "team": "Mon équipe"
+            },
+            "text": "Qui l’utilise ?"
+          }
+        },
         "description": "Fouille vos documents et les cite",
+        "short": "Assistant de recherche",
         "title": "Assistant de recherche"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "Comment s’appelle l’entreprise ou le produit ?"
+          }
+        },
         "description": "Répond aux visiteurs, passe la main en cas de doute",
+        "short": "Chat web",
         "title": "Chat web pour les clients"
       }
     },
@@ -2172,6 +2218,24 @@
     "stop": "Arrêter",
     "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé.",
     "suggestionsLabel": "Pour commencer",
+    "templates": {
+      "browse": "Parcourir tous les modèles",
+      "categories": {
+        "all": "Tous",
+        "customerSupport": "Support client",
+        "internal": "Interne",
+        "research": "Recherche"
+      },
+      "categoriesLabel": "Catégories de modèles",
+      "description_many": "{{formatted}} de modèles. Choisissez-en un et DocsGPT le construit avec vous.",
+      "description_one": "{{formatted}} modèle. Choisissez-en un et DocsGPT le construit avec vous.",
+      "description_other": "{{formatted}} modèles. Choisissez-en un et DocsGPT le construit avec vous.",
+      "empty": "Aucun modèle ne correspond",
+      "search": "Rechercher des modèles",
+      "showAll": "Tous les modèles",
+      "showMore": "Afficher plus",
+      "title": "Modèles"
+    },
     "title": "Rédiger avec DocsGPT",
     "topics": {
       "add_many": "Ajouter {{formatted}} sujets",

@@ -1008,9 +1008,16 @@
     "title": "Agentes",
     "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
     "typeModal": {
+      "blankAgent": "Agente en blanco",
+      "blankWorkflow": "Flujo en blanco",
       "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
       "classicTitle": "Agente clásico",
+      "describeLabel": "Describe el agente",
+      "describePlaceholder": "Un agente en nuestro sitio web que responde preguntas sobre envíos",
       "description": "Elige el tipo de agente que quieres crear",
+      "draftDescription": "Di para qué es y DocsGPT lo construye contigo, paso a paso.",
+      "newTitle": "Nuevo agente",
+      "templatesLabel": "O empieza con una plantilla",
       "title": "Crear un agente nuevo",
       "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado",
       "workflowTitle": "Agente de flujo de trabajo"
@@ -1847,7 +1854,7 @@
         "finish": "Terminar",
         "folded": "{{step}}: {{result}}",
         "goTo": "Ir a {{field}}",
-        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige una plantilla o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
         "missing": {
           "agentType": "un tipo de agente",
           "contextLimit": "un límite de contexto válido",
@@ -2150,15 +2157,54 @@
     "startOver": "Empezar de nuevo",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Recursos humanos",
+              "it": "TI",
+              "office": "Oficina e instalaciones",
+              "policies": "Políticas de la empresa"
+            },
+            "text": "¿Qué áreas cubre?"
+          }
+        },
         "description": "Preguntas de RR. HH., TI y políticas de tu equipo",
+        "short": "Mesa de ayuda interna",
         "title": "Mesa de ayuda interna"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Expedientes",
+              "contracts": "Contratos",
+              "papers": "Artículos",
+              "reports": "Informes"
+            },
+            "text": "¿Qué documentos son?"
+          },
+          "users": {
+            "options": {
+              "clients": "Clientes",
+              "me": "Solo yo",
+              "team": "Mi equipo"
+            },
+            "text": "¿Quién lo usa?"
+          }
+        },
         "description": "Busca en tus documentos y los cita",
+        "short": "Asistente de investigación",
         "title": "Asistente de investigación"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "¿Cómo se llama la empresa o el producto?"
+          }
+        },
         "description": "Responde a visitantes y deriva si no está seguro",
+        "short": "Chat web",
         "title": "Chat web para clientes"
       }
     },
@@ -2172,6 +2218,24 @@
     "stop": "Detener",
     "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado.",
     "suggestionsLabel": "Formas de empezar",
+    "templates": {
+      "browse": "Ver todas las plantillas",
+      "categories": {
+        "all": "Todas",
+        "customerSupport": "Atención al cliente",
+        "internal": "Interno",
+        "research": "Investigación"
+      },
+      "categoriesLabel": "Categorías de plantillas",
+      "description_many": "{{formatted}} de plantillas. Elige una y DocsGPT la construye contigo.",
+      "description_one": "{{formatted}} plantilla. Elige una y DocsGPT la construye contigo.",
+      "description_other": "{{formatted}} plantillas. Elige una y DocsGPT la construye contigo.",
+      "empty": "Ninguna plantilla coincide",
+      "search": "Buscar plantillas",
+      "showAll": "Todas las plantillas",
+      "showMore": "Mostrar más",
+      "title": "Plantillas"
+    },
     "title": "Redactar con DocsGPT",
     "topics": {
       "add_many": "Añadir {{formatted}} temas",

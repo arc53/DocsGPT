@@ -980,9 +980,16 @@
     "title": "代理",
     "tryDifferentSearch": "請嘗試不同的搜尋詞",
     "typeModal": {
+      "blankAgent": "空白代理",
+      "blankWorkflow": "空白工作流程",
       "classicDescription": "建立一個使用單一模型、工具和知識來源的標準 AI 代理",
       "classicTitle": "經典代理",
+      "describeLabel": "描述這個代理",
+      "describePlaceholder": "我們網站上回答配送問題的代理",
       "description": "選擇要建立的代理類型",
+      "draftDescription": "說說它的用途，DocsGPT 會和你一起一步步建置。",
+      "newTitle": "新增代理",
+      "templatesLabel": "或從範本開始",
       "title": "建立新代理",
       "workflowDescription": "設計包含不同模型、條件邏輯和狀態管理的複雜多步驟工作流程",
       "workflowTitle": "工作流程代理"
@@ -1793,7 +1800,7 @@
         "finish": "完成",
         "folded": "{{step}}：{{result}}",
         "goTo": "前往{{field}}",
-        "intro": "我們一起一步步建立這個代理：基本資訊、知識、提示詞與開場問題，最後是限制與安全。\n\n選擇一個起點，或告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
+        "intro": "我們一起一步步建立這個代理：基本資訊、知識、提示詞與開場問題，最後是限制與安全。\n\n選擇一個範本，或告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
         "missing": {
           "agentType": "代理類型",
           "contextLimit": "有效的上下文上限",
@@ -2065,15 +2072,54 @@
     "startOver": "重新開始",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人力資源",
+              "it": "IT",
+              "office": "辦公與設施",
+              "policies": "公司政策"
+            },
+            "text": "它涵蓋哪些領域？"
+          }
+        },
         "description": "團隊的人資、IT 和規章問題",
+        "short": "內部服務台",
         "title": "內部服務台"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件檔案",
+              "contracts": "合約",
+              "papers": "論文",
+              "reports": "報告"
+            },
+            "text": "這些是什麼文件？"
+          },
+          "users": {
+            "options": {
+              "clients": "客戶",
+              "me": "只有我",
+              "team": "我的團隊"
+            },
+            "text": "誰會使用它？"
+          }
+        },
         "description": "檢索你的文件並註明出處",
+        "short": "研究助理",
         "title": "研究助理"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "公司或產品叫什麼名稱？"
+          }
+        },
         "description": "回答訪客問題，不確定時轉真人",
+        "short": "網站聊天",
         "title": "面向客戶的網站聊天"
       }
     },
@@ -2087,6 +2133,23 @@
     "stop": "停止",
     "stoppedDescription": "你停止了這一輪。表單沒有變更。",
     "suggestionsLabel": "開始方式",
+    "templates": {
+      "browse": "瀏覽全部範本",
+      "categories": {
+        "all": "全部",
+        "customerSupport": "客戶支援",
+        "internal": "內部",
+        "research": "研究"
+      },
+      "categoriesLabel": "範本類別",
+      "description_one": "{{formatted}} 個範本。選擇一個，DocsGPT 會和你一起建置。",
+      "description_other": "{{formatted}} 個範本。選擇一個，DocsGPT 會和你一起建置。",
+      "empty": "沒有符合的範本",
+      "search": "搜尋範本",
+      "showAll": "全部範本",
+      "showMore": "顯示更多",
+      "title": "範本"
+    },
     "title": "用 DocsGPT 起草",
     "topics": {
       "add_other": "加入 {{formatted}} 個主題",
