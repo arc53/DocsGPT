@@ -152,7 +152,6 @@ describe('AGENTS_SECTION', () => {
     const items = getSectionItems(AGENTS_SECTION);
     expect(items.map((i) => i.key)).toEqual([
       'all',
-      'template',
       'user',
       'teamShared',
       'sharedWithYou',
@@ -174,7 +173,7 @@ describe('AGENTS_SECTION', () => {
       );
     expect(keys(false)).toContain('sharedWithYou');
     expect(keys(false)).toContain('shared');
-    expect(keys(true)).toEqual(['all', 'template', 'user', 'teamShared']);
+    expect(keys(true)).toEqual(['all', 'user', 'teamShared']);
   });
 
   it('shows Shared with this team only in a team', () => {

@@ -8,7 +8,6 @@ import {
   selectToken,
   setAgents,
   setSharedAgents,
-  setTemplateAgents,
 } from '../../preferences/preferenceSlice';
 import type { AppDispatch } from '../../store';
 import { captureWorkspace } from '../../workspace/requestWorkspace';
@@ -22,8 +21,8 @@ interface UseAgentsFetchResult {
 }
 
 /**
- * Loads the agent list's sections: templates, the workspace's agents (with,
- * in Personal, the ones shared with the caller) and, in Personal, the public
+ * Loads the agent list's sections: the workspace's agents (with, in
+ * Personal, the ones shared with the caller) and, in Personal, the public
  * agents opened by a link. An answer that comes back after a workspace
  * switch is dropped, so it can't land in the other workspace's list.
  *
@@ -36,7 +35,6 @@ export function useAgentsFetch(): UseAgentsFetchResult {
   const inTeam = useSelector(selectInTeam);
 
   const [isLoading, setIsLoading] = useState<Record<AgentSectionId, boolean>>({
-    template: true,
     user: true,
     // Shared with you and Shared with this team are split out of the same
     // /api/get_agents payload, so their loading state tracks the user fetch.
@@ -44,20 +42,6 @@ export function useAgentsFetch(): UseAgentsFetchResult {
     sharedWithYou: true,
     shared: true,
   });
-
-  const fetchTemplateAgents = useCallback(async () => {
-    const workspace = captureWorkspace();
-    try {
-      const response = await userService.getTemplateAgents(token);
-      if (!response.ok) throw new Error('Failed to fetch template agents');
-      const data = await response.json();
-      if (workspace.isCurrent()) dispatch(setTemplateAgents(data));
-    } catch (error) {
-      if (workspace.isCurrent()) dispatch(setTemplateAgents([]));
-    } finally {
-      setIsLoading((prev) => ({ ...prev, template: false }));
-    }
-  }, [token, dispatch]);
 
   const fetchUserAgents = useCallback(async () => {
     const workspace = captureWorkspace();
@@ -105,22 +89,15 @@ export function useAgentsFetch(): UseAgentsFetchResult {
 
   useEffect(() => {
     setIsLoading({
-      template: true,
       user: true,
       teamShared: true,
       sharedWithYou: true,
       shared: true,
     });
-    Promise.all([
-      fetchTemplateAgents(),
-      fetchUserAgents(),
-      fetchSharedAgents(),
-      fetchFolders(),
-    ]);
-  }, [fetchTemplateAgents, fetchUserAgents, fetchSharedAgents, fetchFolders]);
+    Promise.all([fetchUserAgents(), fetchSharedAgents(), fetchFolders()]);
+  }, [fetchUserAgents, fetchSharedAgents, fetchFolders]);
 
   const isAllLoaded =
-    !isLoading.template &&
     !isLoading.user &&
     !isLoading.teamShared &&
     !isLoading.sharedWithYou &&

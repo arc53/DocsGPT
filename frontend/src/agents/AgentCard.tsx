@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Activity,
-  Copy,
   Download,
   Eye,
   Folder,
@@ -21,10 +20,7 @@ import userService from '../api/services/userService';
 import RoleMeta, { showsRole } from '../components/RoleMeta';
 import { canMoveToFolder } from '../components/folders/folderFiling';
 // Safe on a store without the workspace slice (read as Personal).
-import {
-  selectCanEditFolders as selectCanCreate,
-  selectFoldersInTeam as selectInTeam,
-} from '../components/folders/folderWorkspace';
+import { selectFoldersInTeam as selectInTeam } from '../components/folders/folderWorkspace';
 import MoveToFolderModal from '../components/folders/MoveToFolderModal';
 import { MetaItem, MetaLine } from '../components/ui/meta-line';
 import { Avatar } from '../components/ui/avatar';
@@ -42,12 +38,7 @@ import ConfirmationModal from '../modals/ConfirmationModal';
 import { ActiveState } from '../models/misc';
 import { useSidebarLevel } from '../navigation/SidebarLevelProvider';
 import ShareToTeamModal from '../teams/ShareToTeamModal';
-import {
-  selectAgents,
-  selectToken,
-  setAgents,
-  setSelectedAgent,
-} from '../preferences/preferenceSlice';
+import { selectToken, setSelectedAgent } from '../preferences/preferenceSlice';
 import {
   agentChatPath,
   agentEditPath,
@@ -100,8 +91,6 @@ export default function AgentCard({
   const { goToLevel } = useSidebarLevel();
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
-  const userAgents = useSelector(selectAgents);
-  const canCreate = useSelector(selectCanCreate);
   const inTeam = useSelector(selectInTeam);
   const moveToWorkspace = useMoveToWorkspace('agent');
 
@@ -196,17 +185,6 @@ export default function AgentCard({
   ];
 
   const menuOptionsConfig: Record<string, MenuOption[]> = {
-    // Duplicating a template creates an agent here: Personal, or Editor and
-    // up in a team.
-    template: canCreate
-      ? [
-          {
-            icon: Copy,
-            label: t('modals.prompts.duplicate'),
-            onClick: () => handleDuplicate(),
-          },
-        ]
-      : [],
     // The workspace's agents and Shared with you share one menu, built from
     // what the caller's role allows on this agent (`allowed_actions` from the
     // API). Editors get Logs, Edit, Export and Pin; viewers only Pin. Share,
@@ -333,20 +311,6 @@ export default function AgentCard({
       (prevAgent) => prevAgent.id !== agent.id,
     );
     updateAgents?.(updatedAgents);
-  };
-
-  const handleDuplicate = async () => {
-    try {
-      const response = await userService.adoptAgent(agent.id ?? '', token);
-      if (!response.ok) throw new Error('Failed to duplicate agent');
-      const data = await response.json();
-      if (userAgents) {
-        const updatedAgents = [...userAgents, data.agent];
-        dispatch(setAgents(updatedAgents));
-      } else dispatch(setAgents([data.agent]));
-    } catch (error) {
-      console.error('Error:', error);
-    }
   };
 
   const handleMoveSuccess = (folderId: string | null) => {

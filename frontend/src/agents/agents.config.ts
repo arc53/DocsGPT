@@ -2,10 +2,8 @@ import userService from '../api/services/userService';
 import {
   selectAgents,
   selectSharedAgents,
-  selectTemplateAgents,
   setAgents,
   setSharedAgents,
-  setTemplateAgents,
 } from '../preferences/preferenceSlice';
 
 /**
@@ -15,20 +13,9 @@ import {
  * shared with the caller directly (Personal only); `shared` the public ones
  * opened by a link (Discovered, Personal only).
  */
-export type AgentSectionId =
-  'template' | 'user' | 'teamShared' | 'sharedWithYou' | 'shared';
+export type AgentSectionId = 'user' | 'teamShared' | 'sharedWithYou' | 'shared';
 
 export const agentSectionsConfig = [
-  {
-    id: 'template' as const,
-    title: 'Templates',
-    description: 'Agents provided by DocsGPT',
-    showNewAgentButton: false,
-    emptyStateDescription: 'No template agents found.',
-    fetchAgents: (token: string | null) => userService.getTemplateAgents(token),
-    selectData: selectTemplateAgents,
-    updateAction: setTemplateAgents,
-  },
   {
     id: 'user' as const,
     title: 'My agents',

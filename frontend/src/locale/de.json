@@ -311,7 +311,6 @@
     "exportAgentFailed": "Agent konnte nicht exportiert werden",
     "filters": {
       "all": "Alle",
-      "byDocsGPT": "Von DocsGPT",
       "byMe": "Von mir",
       "shared": "Mit mir geteilt"
     },
@@ -954,11 +953,6 @@
       "teamShared": {
         "description": "Agenten, die andere Teams mit diesem Team geteilt haben. Alle im Team können mit ihnen chatten.",
         "emptyState": "Noch hat kein anderes Team einen Agenten mit diesem Team geteilt."
-      },
-      "template": {
-        "description": "Von DocsGPT bereitgestellte Agenten",
-        "emptyState": "Keine Vorlagen-Agenten gefunden.",
-        "title": "Von DocsGPT"
       },
       "user": {
         "description": "Von dir erstellte oder veröffentlichte Agenten",

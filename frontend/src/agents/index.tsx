@@ -55,7 +55,11 @@ export default function Agents() {
     <Routes>
       {/* Managing agents. */}
       <Route path="manage" element={<AgentsList />} />
-      <Route path="manage/templates" element={<AgentsList />} />
+      {/* The old Templates filter's address. */}
+      <Route
+        path="manage/templates"
+        element={<Navigate to={AGENTS_MANAGE_ROOT} replace />}
+      />
       <Route path="manage/mine" element={<AgentsList />} />
       <Route path="manage/shared-with-you" element={<AgentsList />} />
       {/* The old Team section's address (see `workspaceFilter`). */}
