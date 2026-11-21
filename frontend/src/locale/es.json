@@ -5754,7 +5754,6 @@
       },
       "mismatch": "Este agente pertenece a otro espacio de trabajo que este chat.",
       "notFound": "Ya no estás en este equipo, así que el chat no puede continuar aquí.",
-      "onlyYou": "Solo tú puedes ver este chat",
       "switchTo": "Cambiar a {{name}}",
       "thisTeam": "este equipo"
     },
@@ -5770,14 +5769,6 @@
     },
     "folders": {
       "alsoInFolder": "También en esta carpeta"
-    },
-    "line": {
-      "people_many": "{{count}} personas",
-      "people_one": "{{count}} persona",
-      "people_other": "{{count}} personas",
-      "personal": "Personal",
-      "personalScope": "Solo tú, salvo que compartas un elemento",
-      "teamScope": "Todo el equipo puede usar lo que hay aquí"
     },
     "menu": {
       "moveToPersonal": "Mover a Personal…",

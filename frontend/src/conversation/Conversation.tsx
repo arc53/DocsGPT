@@ -682,7 +682,7 @@ export default function Conversation() {
                 }
                 // A send now would go to the chat still applied, not the URL's.
                 sendBlocked={isLoadingUrlChat}
-                workspaceLine
+                usageNotice
                 showSourceButton={selectedAgent ? false : true}
                 showToolButton={selectedAgent ? false : true}
               />

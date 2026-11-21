@@ -314,14 +314,6 @@ describe('Knowledge in Personal', () => {
     await mount([ownDoc]);
     expect(moveCalls).toContain('source');
   });
-
-  it('shows the workspace line under the intro', async () => {
-    answer({ own: page([ownDoc]) });
-    await mount([ownDoc]);
-    expect(
-      container.querySelector('[data-testid="workspace-line"]'),
-    ).not.toBeNull();
-  });
 });
 
 describe('Knowledge in a team', () => {

@@ -5513,7 +5513,6 @@
       },
       "mismatch": "此代理屬於與此聊天不同的工作區。",
       "notFound": "您已不在此團隊中，因此無法在這裡繼續聊天。",
-      "onlyYou": "只有您能看到此聊天",
       "switchTo": "切換到 {{name}}",
       "thisTeam": "此團隊"
     },
@@ -5529,13 +5528,6 @@
     },
     "folders": {
       "alsoInFolder": "此資料夾中的其他內容"
-    },
-    "line": {
-      "people_one": "{{count}} 人",
-      "people_other": "{{count}} 人",
-      "personal": "個人",
-      "personalScope": "僅限您本人，除非您分享某個項目",
-      "teamScope": "團隊中的每個人都可以使用這裡的內容"
     },
     "menu": {
       "moveToPersonal": "移至個人…",

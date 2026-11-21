@@ -95,7 +95,6 @@ import {
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
 import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
-import WorkspaceLine from '../workspace/WorkspaceLine';
 import {
   roleAtLeast,
   selectCurrentWorkspace,
@@ -973,7 +972,6 @@ export default function Tools() {
                 <p className="text-muted-foreground text-sm leading-6">
                   {t('settings.tools.subtitle')}
                 </p>
-                <WorkspaceLine kind="tools" />
               </div>
             )}
             <PageToolbar
