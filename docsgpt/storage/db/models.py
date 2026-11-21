@@ -500,6 +500,10 @@ sources_table = Table(
     Column("remote_data", JSONB),
     Column("directory_structure", JSONB),
     Column("file_name_map", JSONB),
+    # What a file sync stored: client path -> stored path and content hash,
+    # plus the generation the index was last built from (see
+    # ``docsgpt/api/user/sources/sync_manifest.py``). NULL until a sync runs.
+    Column("sync_manifest", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),

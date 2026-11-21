@@ -15,6 +15,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import text as sql_text
 
 from docsgpt.agents.headless_runner import run_agent_headless
+from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.quotas.agent_limits import AgentLimitExceeded
@@ -104,6 +105,8 @@ def _load_chat_history(schedule: Dict[str, Any]) -> list:
         return []
     history: list = []
     for msg in messages:
+        if is_compression_summary_row(msg):
+            continue
         if msg.get("prompt") and msg.get("response"):
             history.append({
                 "prompt": msg["prompt"],

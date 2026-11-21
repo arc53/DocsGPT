@@ -101,6 +101,11 @@ def _cache_key_for_user(user_id: Any) -> Optional[str]:
     return hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:32]
 
 
+def _int_or_none(value: Any) -> Optional[int]:
+    """``value`` when it is an int (a bool is not), else None."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def _epoch_text(value: Any) -> Optional[str]:
     """Serialize a compression timestamp for message metadata."""
     if value is None:
@@ -2674,6 +2679,9 @@ class BaseAgent(ABC):
             ),
             "decisions": decision_record.snapshot(),
             "context_window_limit": getattr(self, "context_window_limit", None),
+            # What the turn's history held when it began, so a compression
+            # after the resume covers no row answered during the pause.
+            "history_bound": _int_or_none(getattr(self, "history_bound", None)),
             # Whether the turn offers questions, and whether it asked already:
             # one question round per user message, resumes included.
             "questions": getattr(executor, "offers_questions", False) is True,

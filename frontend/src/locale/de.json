@@ -981,9 +981,16 @@
     "title": "Agenten",
     "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
     "typeModal": {
+      "blankAgent": "Leerer Agent",
+      "blankWorkflow": "Leerer Workflow",
       "classicDescription": "Erstelle einen Standard-KI-Agenten mit einem Modell, Tools und Wissensquellen",
       "classicTitle": "Klassischer Agent",
+      "describeLabel": "Beschreibe den Agenten",
+      "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet",
       "description": "Wähle die Art des Agenten, den du erstellen möchtest",
+      "draftDescription": "Sag, wofür er da ist, und DocsGPT baut ihn Schritt für Schritt mit dir.",
+      "newTitle": "Neuer Agent",
+      "templatesLabel": "Oder mit einer Vorlage beginnen",
       "title": "Neuen Agenten erstellen",
       "workflowDescription": "Entwirf komplexe mehrstufige Workflows mit verschiedenen Modellen, bedingter Logik und Zustandsverwaltung",
       "workflowTitle": "Workflow-Agent"
@@ -1803,7 +1810,7 @@
         "finish": "Fertigstellen",
         "folded": "{{step}}: {{result}}",
         "goTo": "Zu {{field}}",
-        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle einen Ausgangspunkt oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
+        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle eine Vorlage oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
         "missing": {
           "agentType": "einen Agententyp",
           "contextLimit": "ein gültiges Kontextlimit",
@@ -2081,15 +2088,54 @@
     "startOver": "Neu beginnen",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Personalwesen",
+              "it": "IT",
+              "office": "Büro und Gebäude",
+              "policies": "Unternehmensrichtlinien"
+            },
+            "text": "Welche Bereiche deckt er ab?"
+          }
+        },
         "description": "HR-, IT- und Richtlinienfragen deines Teams",
+        "short": "Interner Helpdesk",
         "title": "Interner Helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Fallakten",
+              "contracts": "Verträge",
+              "papers": "Fachartikel",
+              "reports": "Berichte"
+            },
+            "text": "Um welche Dokumente geht es?"
+          },
+          "users": {
+            "options": {
+              "clients": "Kunden oder Mandanten",
+              "me": "Nur ich",
+              "team": "Mein Team"
+            },
+            "text": "Wer nutzt ihn?"
+          }
+        },
         "description": "Durchsucht deine Dokumente und zitiert sie",
+        "short": "Rechercheassistent",
         "title": "Rechercheassistent"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "Wie heißt das Unternehmen oder Produkt?"
+          }
+        },
         "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit",
+        "short": "Website-Chat",
         "title": "Website-Chat für Kunden"
       }
     },
@@ -2103,6 +2149,23 @@
     "stop": "Stoppen",
     "stoppedDescription": "Du hast diesen Durchlauf gestoppt. Im Formular hat sich nichts geändert.",
     "suggestionsLabel": "Möglichkeiten zum Einstieg",
+    "templates": {
+      "browse": "Alle Vorlagen durchsuchen",
+      "categories": {
+        "all": "Alle",
+        "customerSupport": "Kundensupport",
+        "internal": "Intern",
+        "research": "Recherche"
+      },
+      "categoriesLabel": "Vorlagenkategorien",
+      "description_one": "{{formatted}} Vorlage. Wähle eine aus, und DocsGPT baut sie mit dir.",
+      "description_other": "{{formatted}} Vorlagen. Wähle eine aus, und DocsGPT baut sie mit dir.",
+      "empty": "Keine passenden Vorlagen",
+      "search": "Vorlagen durchsuchen",
+      "showAll": "Alle Vorlagen",
+      "showMore": "Mehr anzeigen",
+      "title": "Vorlagen"
+    },
     "title": "Mit DocsGPT entwerfen",
     "topics": {
       "add_one": "{{formatted}} Thema hinzufügen",
@@ -5548,7 +5611,6 @@
       },
       "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
       "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
-      "onlyYou": "Nur du siehst diesen Chat",
       "switchTo": "Zu {{name}} wechseln",
       "thisTeam": "diesem Team"
     },
@@ -5564,13 +5626,6 @@
     },
     "folders": {
       "alsoInFolder": "Auch in diesem Ordner"
-    },
-    "line": {
-      "people_one": "{{count}} Person",
-      "people_other": "{{count}} Personen",
-      "personal": "Persönlich",
-      "personalScope": "Nur du, außer du teilst ein Element",
-      "teamScope": "Alle im Team können nutzen, was hier liegt"
     },
     "menu": {
       "moveToPersonal": "Nach Persönlich verschieben…",

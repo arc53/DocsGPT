@@ -172,6 +172,9 @@ class CompressionOrchestrator:
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
         keep_recent_tokens: Optional[int] = None,
+        turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
+        persist_point: bool = True,
     ) -> CompressionResult:
         """
         Perform the actual compression operation.
@@ -185,6 +188,11 @@ class CompressionOrchestrator:
             model_user_id: BYOM-resolution scope (model owner)
             keep_recent_tokens: Leave the newest queries that fit in this many
                 tokens out of the summary; None summarizes up to the latest.
+            turn_index: The in-flight turn a mid-turn point summarizes the
+                tool work of.
+            turn_message_id: That turn's row id.
+            persist_point: Store the point; False keeps it for the caller's
+                turn only.
 
         Returns:
             CompressionResult
@@ -293,31 +301,45 @@ class CompressionOrchestrator:
                 f"{queries_count}{on_top}"
             )
 
-            # Perform compression and save to DB
-            metadata = compression_service.compress_and_save(
-                conversation_id,
-                conversation,
-                compress_up_to,
-                start_index=start_index,
-                persist_query_index=persist_query_index,
-            )
+            if persist_point:
+                metadata = compression_service.compress_and_save(
+                    conversation_id,
+                    conversation,
+                    compress_up_to,
+                    start_index=start_index,
+                    persist_query_index=persist_query_index,
+                    turn_index=turn_index,
+                    turn_message_id=turn_message_id,
+                )
+            else:
+                # For this turn only: nothing is stored.
+                metadata = compression_service.compress_conversation(
+                    conversation, compress_up_to, start_index=start_index
+                )
 
             logger.info(
                 f"Compression successful - ratio: {metadata.compression_ratio:.1f}x, "
                 f"saved {metadata.original_token_count - metadata.compressed_token_count} tokens"
             )
 
-            # Reload under caller (conversation is owned by caller).
-            reload_user_id = caller_user_id
-            if reload_user_id is None and isinstance(decoded_token, dict):
-                reload_user_id = decoded_token.get("sub")
-            conversation = self.conversation_service.get_conversation(
-                conversation_id, user_id=reload_user_id
-            )
-
-            # Get compressed context
-            compressed_summary, recent_queries = (
-                compression_service.get_compressed_context(conversation)
+            # The context this turn goes on with is the summary just made over
+            # the conversation passed in, whether or not the point was stored
+            # (an edit may have replaced the turn meanwhile and refused it).
+            compressed_summary, recent_queries = compression_service.get_compressed_context(
+                {
+                    **conversation,
+                    "compression_metadata": {
+                        "is_compressed": True,
+                        "compression_points": [
+                            {
+                                "query_index": compress_up_to,
+                                "compressed_summary": getattr(metadata, "compressed_summary", None),
+                                "compressed_token_count": getattr(metadata, "compressed_token_count", None),
+                                "original_token_count": getattr(metadata, "original_token_count", None),
+                            }
+                        ],
+                    },
+                }
             )
 
             return CompressionResult.success_with_compression(
@@ -374,6 +396,9 @@ class CompressionOrchestrator:
         current_conversation: Optional[Dict[str, Any]] = None,
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
+        turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
+        persist_point: bool = True,
     ) -> CompressionResult:
         """
         Perform compression during tool execution.
@@ -388,6 +413,12 @@ class CompressionOrchestrator:
                 shared-agent dispatch this is the agent owner; defaults
                 to ``user_id`` so built-in / caller-owned models are
                 unaffected.
+            persist_query_index: Last settled row the point covers.
+            turn_index: Position of the in-flight turn whose tool work the
+                summary holds.
+            turn_message_id: That turn's row id.
+            persist_point: Store the point; False keeps it for the caller's
+                turn only.
 
         Returns:
             CompressionResult
@@ -416,6 +447,9 @@ class CompressionOrchestrator:
                 user_id=user_id,
                 model_user_id=model_user_id,
                 persist_query_index=persist_query_index,
+                turn_index=turn_index,
+                turn_message_id=turn_message_id,
+                persist_point=persist_point,
             )
 
         except Exception as e:
