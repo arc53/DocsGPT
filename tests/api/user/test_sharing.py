@@ -422,6 +422,46 @@ class TestGetPubliclySharedConversations:
         assert query["segments"] == order
         assert "metadata" not in query
 
+    def test_leaves_out_stored_compression_summaries(self, app, pg_conn):
+        from docsgpt.api.user.sharing.routes import (
+            GetPubliclySharedConversations,
+            ShareConversation,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "user-shared-summary"
+        conv_id = _seed_conversation(pg_conn, user, name="Sum")
+        repo = ConversationsRepository(pg_conn)
+        repo.append_message(conv_id, {"prompt": "q0", "response": "a0"})
+        repo.append_message(
+            conv_id,
+            {"prompt": "[Context Compression Summary]", "response": "s",
+             "metadata": {"compression_summary": True}},
+        )
+        repo.append_message(conv_id, {"prompt": "[Context Compression Summary]", "response": "legacy"})
+        repo.append_message(conv_id, {"prompt": "q1", "response": "a1"})
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            "/api/share?isPromptable=false",
+            method="POST",
+            json={"conversation_id": conv_id},
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            identifier = ShareConversation().post().json["identifier"]
+        # A turn after sharing stays out of the share.
+        repo.append_message(conv_id, {"prompt": "q2", "response": "a2"})
+
+        with _patch_sharing_db(pg_conn), app.test_request_context(
+            f"/api/shared_conversation/{identifier}"
+        ):
+            queries = GetPubliclySharedConversations().get(identifier).json["queries"]
+
+        assert [q["prompt"] for q in queries] == ["q0", "q1"]
+
     def test_drops_mcp_app_views_from_shared_tool_calls(self, app, pg_conn):
         from docsgpt.api.user.sharing.routes import (
             GetPubliclySharedConversations,

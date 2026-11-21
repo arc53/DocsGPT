@@ -37,6 +37,7 @@ import ConversationMessages from './ConversationMessages';
 import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
 import { pendingQuestionCall, type QuestionAction } from './questionCall';
+import { lastShownIndex } from './shownQueries';
 import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
@@ -469,7 +470,7 @@ export default function Conversation() {
 
   useEffect(() => {
     if (queries.length) {
-      const last = queries[queries.length - 1];
+      const last = queries[lastShownIndex(queries)];
       if (last.error) setLastQueryReturnedErr(true);
       if (last.response) setLastQueryReturnedErr(false);
     }

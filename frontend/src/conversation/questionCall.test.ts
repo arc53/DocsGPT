@@ -203,6 +203,16 @@ describe('pendingQuestionCall', () => {
       pendingQuestionCall([turn, { prompt: 'next', response: 'ok' }]),
     ).toBeNull();
   });
+
+  it('looks past a stored compression summary after the waiting turn', () => {
+    const turn: Query = { prompt: 'deck', tool_calls: [askUser()] };
+    const summary: Query = {
+      prompt: '[Context Compression Summary]',
+      response: 's',
+      compressionSummary: true,
+    };
+    expect(pendingQuestionCall([turn, summary])?.call_id).toBe('ask-1');
+  });
 });
 
 describe('answeredCall', () => {

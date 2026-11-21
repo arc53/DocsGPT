@@ -42,6 +42,24 @@ describe('resendPlan', () => {
 });
 
 describe('composerSubmitTarget', () => {
+  it('retries the failed turn, not a stored compression summary after it', () => {
+    expect(
+      composerSubmitTarget({
+        question: 'summarise these',
+        queries: [
+          failed,
+          {
+            prompt: '[Context Compression Summary]',
+            response: 's',
+            compressionSummary: true,
+          },
+        ],
+        lastQueryReturnedErr: true,
+        composerFileCount: 0,
+      }),
+    ).toEqual({ kind: 'retry', index: 0, samePrompt: true });
+  });
+
   it('starts a new turn after an answer', () => {
     expect(
       composerSubmitTarget({

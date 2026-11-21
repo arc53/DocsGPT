@@ -473,6 +473,16 @@ class TestPauseAndResume:
         agent = ClassicAgent(**agent_base_params, context_window_limit=LIMIT)
         assert agent.paused_turn_state()["context_window_limit"] == LIMIT
 
+    def test_a_paused_turn_saves_its_history_bound(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.agents.classic_agent import ClassicAgent
+
+        agent = ClassicAgent(**agent_base_params)
+        assert agent.paused_turn_state()["history_bound"] is None
+        agent.history_bound = 4
+        assert agent.paused_turn_state()["history_bound"] == 4
+
     def test_the_resumed_agent_gets_it_back(self, monkeypatch, pg_conn):
         from contextlib import nullcontext
         from unittest.mock import MagicMock
@@ -492,7 +502,7 @@ class TestPauseAndResume:
             "messages": [], "pending_tool_calls": [], "tools_dict": {}, "tool_schemas": [], "client_tools": None,
             "agent_config": {
                 "model_id": "m1", "llm_name": "openai", "api_key": "k", "agent_type": "ClassicAgent",
-                "context_window_limit": LIMIT,
+                "context_window_limit": LIMIT, "history_bound": 3,
             },
         }
         monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
@@ -500,14 +510,17 @@ class TestPauseAndResume:
         monkeypatch.setattr(handler_mod.LLMHandlerCreator, "create_handler", lambda *a, **kw: MagicMock())
         monkeypatch.setattr(te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None))
         created = {}
+        resumed = MagicMock()
         monkeypatch.setattr(
-            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: created.update(kw) or MagicMock(),
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: created.update(kw) or resumed,
         )
         sp = _processor(agent_config={}, conversation_id="00000000-0000-0000-0000-000000000001")
 
         sp.resume_from_tool_actions(tool_actions=[], conversation_id="00000000-0000-0000-0000-000000000001")
 
         assert created["context_window_limit"] == LIMIT
+        # The bound the turn began with, not one from the conversation now.
+        assert resumed.history_bound == 3
 
 
 @pytest.mark.unit
