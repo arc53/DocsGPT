@@ -63,6 +63,13 @@
           "description": "Active documents",
           "type": "string"
         },
+        "active_folders": {
+          "description": "Agentless chats only: the caller's own source folders to search as a whole, every source filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agent_id": {
           "description": "Agent ID",
           "type": "string"
@@ -70,6 +77,13 @@
         "api_key": {
           "description": "API key",
           "type": "string"
+        },
+        "capabilities": {
+          "description": "What this client can render. 'forms': the assistant may ask clarifying questions (ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Optional and not enforced: unknown values are ignored, and without 'forms' the assistant never asks and answers as usual.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "chunks": {
           "default": 6,
@@ -159,6 +173,18 @@
       },
       "required": [
         "agent_ids"
+      ],
+      "type": "object"
+    },
+    "CheckPromptModel": {
+      "properties": {
+        "content": {
+          "description": "The prompt's text as the editor holds it, at most 100,000 characters",
+          "type": "string"
+        }
+      },
+      "required": [
+        "content"
       ],
       "type": "object"
     },
@@ -284,8 +310,15 @@
           "type": "string"
         },
         "folder_id": {
-          "description": "Folder ID to organize the agent",
+          "description": "One of the caller's agent folders to file the agent in (the caller's own filing)",
           "type": "string"
+        },
+        "folders": {
+          "description": "Source folders the agent reads live: every source their owner files in them, subfolders included. A folder is attached by its owner only (403 folder_not_accessible); ones already on the agent stay. Must be a list (a JSON string in a multipart form)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "image": {
           "description": "Image file upload",
@@ -391,10 +424,70 @@
       ],
       "type": "object"
     },
+    "CreateFolderRequest": {
+      "properties": {
+        "name": {
+          "description": "Folder name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "Parent folder id",
+          "type": "string"
+        },
+        "type": {
+          "description": "Ignored: a folder holds every kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "CreateMemberToolModel": {
+      "properties": {
+        "connector_key": {
+          "description": "The service each person signs in to (a catalog key)",
+          "type": "string"
+        },
+        "displayName": {
+          "description": "For custom_mcp: the tool's name",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "A folder of the team's tree to file the new tool in",
+          "type": "string"
+        },
+        "permissions": {
+          "description": "Per-action permission overrides: {action: always|ask|off}",
+          "type": "object"
+        },
+        "server_url": {
+          "description": "For custom_mcp: the sign-in MCP server each person signs in to (a preset's server counts as that preset)",
+          "type": "string"
+        },
+        "status": {
+          "description": "Switch it into the creator's own chats (default true)",
+          "type": "boolean"
+        },
+        "transport_type": {
+          "description": "For custom_mcp: auto (default), http or sse",
+          "type": "string"
+        }
+      },
+      "required": [
+        "connector_key"
+      ],
+      "type": "object"
+    },
     "CreatePromptModel": {
       "properties": {
         "content": {
           "description": "Content of the prompt",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "A folder of the workspace's tree to file the new prompt in",
           "type": "string"
         },
         "name": {
@@ -426,6 +519,10 @@
           "description": "Display name for the tool",
           "type": "string"
         },
+        "folder_id": {
+          "description": "A folder of the workspace's tree to file the new tool in",
+          "type": "string"
+        },
         "name": {
           "description": "Name of the tool",
           "type": "string"
@@ -446,6 +543,10 @@
     },
     "CreateWikiModel": {
       "properties": {
+        "folder_id": {
+          "description": "One of the caller's source folders (the team's in a team) to file the wiki in",
+          "type": "string"
+        },
         "initial_content": {
           "description": "Optional markdown seed for /index.md",
           "type": "string"
@@ -484,6 +585,34 @@
       ],
       "type": "object"
     },
+    "DrafterStreamModel": {
+      "properties": {
+        "context": {
+          "description": "The recipe's screen state: the agent form's current values (agent), the prompt being written or improved (prompt), or {agent_id} (topics)",
+          "type": "object"
+        },
+        "messages": {
+          "description": "The conversation so far, oldest first: {role: user | assistant, content}. An assistant message is the JSON of an earlier questions or proposal event. Ends with a user message.",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "recipe": {
+          "description": "What is drafted: agent (the agent form), prompt (a prompt), topics (Insights topics)",
+          "type": "string"
+        },
+        "turn_id": {
+          "description": "The id the client picks for this turn (32 lowercase hex characters), so it can stop the turn before the turn event arrives. Optional: without one, or with one that isn't a turn id, the server picks it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "messages",
+        "recipe"
+      ],
+      "type": "object"
+    },
     "FeedbackModel": {
       "properties": {
         "answer": {
@@ -516,6 +645,79 @@
         "feedback",
         "question_index"
       ],
+      "type": "object"
+    },
+    "FileFolderItemsRequest": {
+      "properties": {
+        "folder_id": {
+          "description": "Target folder id, or null to unfile",
+          "type": "string"
+        },
+        "ids": {
+          "description": "Ids of items of that kind",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "description": "agent, source, tool or prompt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ids",
+        "type"
+      ],
+      "type": "object"
+    },
+    "Folder": {
+      "properties": {
+        "counts": {
+          "description": "{agent, source, tool, prompt}: items filed directly in it the caller can see",
+          "type": "object"
+        },
+        "created_at": {
+          "description": "ISO timestamp",
+          "type": "string"
+        },
+        "created_by": {
+          "description": "{user_id, label} of the person who made it, or null",
+          "type": "object"
+        },
+        "folder_count": {
+          "description": "Folders directly in it",
+          "type": "integer"
+        },
+        "id": {
+          "description": "Folder id",
+          "type": "string"
+        },
+        "item_count": {
+          "description": "Items of the requested type filed directly in it (all kinds without)",
+          "type": "integer"
+        },
+        "name": {
+          "description": "Folder name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "Parent folder id; null at the top level",
+          "type": "string"
+        },
+        "type": {
+          "description": "The kind the request named (agent when none); folders hold every kind",
+          "type": "string"
+        },
+        "updated_at": {
+          "description": "ISO timestamp",
+          "type": "string"
+        },
+        "used_by": {
+          "description": "{agents: [{id, name, agent_type, can_edit, status}], others}: who reads its sources live",
+          "type": "object"
+        }
+      },
       "type": "object"
     },
     "GetConversationInsightsModel": {
@@ -868,12 +1070,24 @@
           "description": "MCP server configuration",
           "type": "object"
         },
+        "connection_id": {
+          "description": "With owner=team: the team's connection that was reconnected",
+          "type": "string"
+        },
         "displayName": {
           "description": "Display name for the MCP server",
           "type": "string"
         },
+        "folder_id": {
+          "description": "Folder to file the server in: the workspace's tree for a new server, the tool's own tree for an existing one; null unfiles an existing server",
+          "type": "string"
+        },
         "id": {
           "description": "Tool ID for updates (optional)",
+          "type": "string"
+        },
+        "owner": {
+          "description": "team: save a sign-in server on the team's connection the caller just signed in to (config.oauth_task_id from /mcp_server/test with owner=team; Admins)",
           "type": "string"
         },
         "status": {
@@ -894,8 +1108,16 @@
           "description": "MCP server configuration to test",
           "type": "object"
         },
+        "connection_id": {
+          "description": "With owner=team: the team's connection to this server to reconnect",
+          "type": "string"
+        },
         "id": {
           "description": "Stored tool to test with (empty secrets reuse its stored ones)",
+          "type": "string"
+        },
+        "owner": {
+          "description": "team: sign in to a new sign-in server for the team the workspace header names (Admins); the sign-in's events, cancel and status are the caller's",
           "type": "string"
         }
       },
@@ -921,8 +1143,12 @@
           },
           "type": "array"
         },
+        "manifest": {
+          "description": "For sync_manifest, as a file part: JSON {\"version\": 1, \"files\": [{\"path\": \"guide/intro.md\", \"sha256\": \"<64 lowercase hex>\"}]} listing the whole file set. The reply names the paths the source lacks (status 'needs_files'); only those are uploaded, each file part named after its sha256.",
+          "type": "object"
+        },
         "operation": {
-          "description": "Operation: 'add', 'remove', 'remove_directory', or 'sync' (the uploaded files and ZIPs become the source's whole file set; files not in the upload are removed)",
+          "description": "Operation: 'add', 'remove', 'remove_directory', 'sync' (the uploaded files and ZIPs become the source's whole file set; files not in the upload are removed), or 'sync_manifest' (the same, uploading only the files the source lacks)",
           "type": "string"
         },
         "parent_dir": {
@@ -1126,6 +1352,10 @@
       "properties": {
         "data": {
           "description": "JSON loader config. For source=website: {entries: [{url, mode: page|site, max_pages, path_prefix, include_subdomains, discovery: auto|sitemap|links, sitemap_url}], skip: [url or https://host/path/*], keep_links}",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "One of the caller's source folders to file the new source in",
           "type": "string"
         },
         "name": {
@@ -1370,6 +1600,13 @@
           "description": "Active documents",
           "type": "string"
         },
+        "active_folders": {
+          "description": "Agentless chats only: the caller's own source folders to search as a whole, every source filed in them (subfolders included), unioned with active_docs. Ignored when an agent answers",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "agent_id": {
           "description": "Agent ID",
           "type": "string"
@@ -1380,6 +1617,13 @@
         },
         "attachments": {
           "description": "List of attachment IDs",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "capabilities": {
+          "description": "What this client can render. 'forms': the assistant may ask clarifying questions (ask_user), which pause the turn on an awaiting_answer tool call carrying `message` and `questions`; resume it with tool_actions [{call_id, answer}] or [{call_id, skipped: true}]. Optional and not enforced: unknown values are ignored, and without 'forms' the assistant never asks and answers as usual.",
           "items": {
             "type": "string"
           },
@@ -1504,8 +1748,15 @@
           "type": "string"
         },
         "folder_id": {
-          "description": "Folder ID to organize the agent",
+          "description": "One of the caller's agent folders to file the agent in (the caller's own filing)",
           "type": "string"
+        },
+        "folders": {
+          "description": "Source folders the agent reads live: every source their owner files in them, subfolders included. A folder is attached by its owner only (403 folder_not_accessible); ones already on the agent stay. Must be a list (a JSON string in a multipart form)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "image": {
           "description": "Image file upload",
@@ -1637,10 +1888,31 @@
       ],
       "type": "object"
     },
+    "UpdateFolderRequest": {
+      "properties": {
+        "name": {
+          "description": "New name",
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "New parent folder id, or null",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "UpdatePromptModel": {
       "properties": {
         "content": {
           "description": "New content of the prompt",
+          "type": "string"
+        },
+        "expected_updated_at": {
+          "description": "The prompt's updated_at as last read or saved; the save is refused (409) when someone saved it since",
+          "type": "string"
+        },
+        "folder_id": {
+          "description": "File the prompt in this folder of its workspace's tree; null takes it out",
           "type": "string"
         },
         "id": {
@@ -1721,6 +1993,10 @@
           "description": "Display name for the tool",
           "type": "string"
         },
+        "folder_id": {
+          "description": "File the tool in this folder of its workspace's tree; null takes it out",
+          "type": "string"
+        },
         "id": {
           "description": "Tool ID",
           "type": "string"
@@ -1762,6 +2038,10 @@
           "description": "File(s) to upload",
           "type": "object"
         },
+        "folder_id": {
+          "description": "One of the caller's source folders to file the new source in",
+          "type": "string"
+        },
         "name": {
           "description": "Job name",
           "type": "string"
@@ -1787,11 +2067,12 @@
         "only_if_unset": {
           "description": "Store it only when no chat prompt was ever stored (moving a browser's old choice); otherwise the stored one is kept and returned. Refused to a token restricted to specific prompts",
           "type": "boolean"
+        },
+        "task_model_id": {
+          "description": "The model the caller's DocsGPT jobs run on (drafting, graph extraction, monitor judging): a model the caller can use, their own custom models included; null uses the instance's. A token needs models:write to send it",
+          "type": "string"
         }
       },
-      "required": [
-        "chat_prompt_id"
-      ],
       "type": "object"
     },
     "WebsiteSettingsModel": {
@@ -1847,6 +2128,27 @@
       "required": [
         "content",
         "path"
+      ],
+      "type": "object"
+    },
+    "WorkspaceMove": {
+      "properties": {
+        "fingerprint": {
+          "description": "The plan's fingerprint (apply only)",
+          "type": "string"
+        },
+        "items": {
+          "description": "[{type: agent|source|tool|prompt|folder, id}]",
+          "type": "object"
+        },
+        "to": {
+          "description": "{workspace: \"personal\" | team id, folder_id?}",
+          "type": "object"
+        }
+      },
+      "required": [
+        "items",
+        "to"
       ],
       "type": "object"
     }
@@ -2141,6 +2443,35 @@
         "x-pat-denied": true
       }
     },
+    "/api/admin/defaults/models": {
+      "get": {
+        "description": "`task_model_id` is null when none is stored or the stored one can't run; `task_model_unavailable`\nis then true for the latter, and a PUT with null clears it. `task_model_error` is {model_id, code, at}\nwhen the model that runs for members without a choice failed a draft because its provider refused the\nkey (code model_auth), else null; a draft that works on it, or any PUT, clears it.",
+        "operationId": "get_admin_model_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "The instance task model, what runs when it is unset (TASK_MODEL_ID or the default), the built-ins",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      },
+      "put": {
+        "operationId": "put_admin_model_defaults_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Store the body's `task_model_id` (a built-in model id, or null to clear) as the instance task model",
+        "tags": [
+          "admin"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/admin/defaults/sources": {
       "get": {
         "operationId": "get_admin_source_defaults_resource",
@@ -2336,6 +2667,7 @@
         "x-pat-denied": true
       },
       "get": {
+        "description": "409 for a team or the system.",
         "operationId": "get_admin_user_quota_resource",
         "responses": {
           "200": {
@@ -2357,6 +2689,7 @@
         }
       ],
       "put": {
+        "description": "409 for a team or the system.",
         "operationId": "put_admin_user_quota_resource",
         "responses": {
           "200": {
@@ -2443,6 +2776,7 @@
     },
     "/api/admin/users/{user_id}": {
       "get": {
+        "description": "A team principal is shown, not hidden, labelled with its team, so the\ncounts of what the team owns stay reachable.",
         "operationId": "get_admin_user_resource",
         "responses": {
           "200": {
@@ -2488,6 +2822,7 @@
         }
       ],
       "post": {
+        "description": "409 for a team or the system.",
         "operationId": "post_admin_user_sessions_resource",
         "responses": {
           "200": {
@@ -2525,7 +2860,7 @@
         }
       ],
       "post": {
-        "description": "Idempotent.",
+        "description": "Idempotent. 409 for a team or the system.",
         "operationId": "post_admin_user_role_resource",
         "responses": {
           "200": {
@@ -2541,6 +2876,7 @@
     },
     "/api/admin/users/{user_id}/tokens": {
       "get": {
+        "description": "A team principal has none, so it is not found.",
         "operationId": "get_admin_user_tokens",
         "responses": {
           "200": {
@@ -2587,7 +2923,7 @@
     },
     "/api/adopt_agent": {
       "post": {
-        "description": "Adopt an agent by ID",
+        "description": "Adopt a template agent into the current workspace: a copy the caller owns, or in a team (Editor and up) one the team owns. A team's copy keeps only the team's own items and gets a key only when an Admin adopts it.",
         "operationId": "post_adopt_agent",
         "parameters": [
           {
@@ -2688,7 +3024,7 @@
     },
     "/api/agents/folders/": {
       "get": {
-        "description": "Get all folders for the user",
+        "description": "The workspace's folder tree, as GET /api/folders?type=agent",
         "operationId": "get_agent_folders",
         "responses": {
           "200": {
@@ -2703,7 +3039,7 @@
         ]
       },
       "post": {
-        "description": "Create a new folder",
+        "description": "Create a folder in the workspace's tree, as POST /api/folders",
         "operationId": "post_agent_folders",
         "parameters": [
           {
@@ -2730,7 +3066,7 @@
     },
     "/api/agents/folders/bulk_move": {
       "post": {
-        "description": "Move multiple agents to a folder",
+        "description": "File several agents into a folder (null takes them out of the workspace's tree)",
         "operationId": "post_bulk_move_agents",
         "parameters": [
           {
@@ -2757,7 +3093,7 @@
     },
     "/api/agents/folders/move_agent": {
       "post": {
-        "description": "Move an agent to a folder or remove from folder",
+        "description": "File an agent into a folder, or take it out of the workspace's tree (as POST /api/folders/items)",
         "operationId": "post_move_agent_to_folder",
         "parameters": [
           {
@@ -2784,7 +3120,7 @@
     },
     "/api/agents/folders/{folder_id}": {
       "delete": {
-        "description": "Delete a folder",
+        "description": "Delete a folder; its folders and items move to its parent",
         "operationId": "delete_agent_folder",
         "responses": {
           "200": {
@@ -2799,7 +3135,7 @@
         ]
       },
       "get": {
-        "description": "Get a specific folder with its agents",
+        "description": "A folder with the agents filed in it and its subfolders",
         "operationId": "get_agent_folder",
         "responses": {
           "200": {
@@ -2822,7 +3158,7 @@
         }
       ],
       "put": {
-        "description": "Update a folder",
+        "description": "Rename or move a folder, as PUT /api/folders/<id>",
         "operationId": "put_agent_folder",
         "responses": {
           "200": {
@@ -2835,6 +3171,29 @@
         "x-pat-scopes": [
           "agents:write"
         ]
+      }
+    },
+    "/api/agents/{agent_id}/outside_access/take_over": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "agent_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Become the person who pays for a team agent's outside access (its API key, public link and webhook). Needs the Admin role in the team; not available on a personal agent, whose owner pays. Returns {success, outside_access, changed}; changed is false when the caller already pays. Refusals: 404 agent_not_found, 403 workspace_role_required, 409 take_over_team_only, 409 no_outside_access.",
+        "operationId": "post_take_over_outside_access",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "agents"
+        ],
+        "x-pat-denied": true
       }
     },
     "/api/agents/{agent_id}/schedules": {
@@ -3071,7 +3430,7 @@
     },
     "/api/artifacts": {
       "get": {
-        "description": "List artifacts for a conversation, workflow run, or the caller",
+        "description": "List artifacts for a conversation, workflow run, or the caller. The caller's own list is per workspace (the X-DocsGPT-Workspace header; Personal without it).",
         "operationId": "get_list_artifacts",
         "responses": {
           "200": {
@@ -3180,7 +3539,7 @@
     },
     "/api/available_tools": {
       "get": {
-        "description": "Get available tools for a user",
+        "description": "Get the tools the caller can add in the current workspace. A team workspace leaves out what a team can't hold (connected services and the paired-device tool). The response echoes ``workspace`` ({kind, team_id, role}).",
         "operationId": "get_available_tools",
         "responses": {
           "200": {
@@ -3271,6 +3630,39 @@
         ]
       }
     },
+    "/api/check_prompt": {
+      "post": {
+        "description": "Check a prompt's text without a model: blanks left in, lines DocsGPT already adds to a persona, and a template that doesn't parse, runs tool variables, or lacks the Boundaries section or citation rules. Each check is a code the client words; works with the drafter off",
+        "operationId": "post_check_prompt",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CheckPromptModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "checks: at most 20 of {code, ...}: placeholder {text, line}, repeats_builtin {topic, line}, template_invalid, tool_variables {variables}, boundaries_missing, citations_missing"
+          },
+          "400": {
+            "description": "content is missing, not text, or too long"
+          },
+          "429": {
+            "description": "more than 120 checks in a minute"
+          }
+        },
+        "tags": [
+          "prompts"
+        ],
+        "x-pat-scopes": [
+          "prompts:read"
+        ]
+      }
+    },
     "/api/combine": {
       "get": {
         "description": "Redirects /api/combine to /api/sources for backward compatibility",
@@ -3288,8 +3680,16 @@
     },
     "/api/connections": {
       "get": {
-        "description": "The caller's connections with status and linked resource counts",
+        "description": "The caller's connections with status and linked resource counts; with owner=team, the connections of the team the workspace header names (any member). Each says who owns it, who connected it, why it is paused and what the caller may do (allowed_actions, can_pick).",
         "operationId": "get_connections_list",
+        "parameters": [
+          {
+            "description": "personal (default) or team",
+            "in": "query",
+            "name": "owner",
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -3301,7 +3701,7 @@
         "x-pat-denied": true
       },
       "post": {
-        "description": "Create a connection from pasted credentials: {connector_key, credentials, label?}. Same credentials reuse the same connection.",
+        "description": "Create a connection from pasted credentials: {connector_key, credentials, label?, owner?}. Same credentials reuse the same connection. owner=team connects it for the team the workspace header names (Admins); without it the connection is the caller's own, whatever the header.",
         "operationId": "post_connections_list",
         "responses": {
           "200": {
@@ -3354,7 +3754,7 @@
     },
     "/api/connections/{connection_id}": {
       "delete": {
-        "description": "Remove a connection: {sources: keep | delete, tools: delete | keep}. Kept sources keep their content and stop syncing.",
+        "description": "Remove a connection: {sources: keep | delete, tools: delete | keep}. Kept sources keep their content and stop syncing. Owner, or a team's Admins.",
         "operationId": "delete_connection_detail",
         "responses": {
           "200": {
@@ -3388,7 +3788,7 @@
         }
       ],
       "patch": {
-        "description": "Name an account: {name}. An empty name clears it. Owner only.",
+        "description": "Name an account: {name}. An empty name clears it. Owner, or a team's Admins.",
         "operationId": "patch_connection_detail",
         "responses": {
           "200": {
@@ -3411,7 +3811,7 @@
         }
       ],
       "post": {
-        "description": "Delete a connection's stored credentials; its sources and tools stay",
+        "description": "Delete a connection's stored credentials; its sources and tools stay. Owner, or a team's Admins.",
         "operationId": "post_connection_disconnect",
         "responses": {
           "200": {
@@ -3457,7 +3857,7 @@
         }
       ],
       "post": {
-        "description": "A short-lived access token for a browser-side file picker. Owner only; never a refresh token.",
+        "description": "A short-lived access token for a browser-side file picker; never a refresh token. Owner only; on a team's connection only the Admin who connected it (403 connection_picker_owner_only), and 409 connection_paused while the account is paused.",
         "operationId": "post_connection_picker_token",
         "responses": {
           "200": {
@@ -3480,7 +3880,7 @@
         }
       ],
       "post": {
-        "description": "OAuth: returns an authorization URL for the same account. API key: accepts {credentials} and replaces the stored ones.",
+        "description": "OAuth: returns an authorization URL for the same account. API key: accepts {credentials} and replaces the stored ones. On a team's connection (Admins), an Admin other than whoever connected it (or any Admin while it is paused) reconnects with their own account: replace is true, a key must fill every required field and nothing of the old one is kept, the connection keeps its id, sources and tools, and they become who connected it (409 account_already_connected with connection_id when the team already has that account).",
         "operationId": "post_connection_reconnect",
         "responses": {
           "200": {
@@ -3549,7 +3949,7 @@
         }
       ],
       "post": {
-        "description": "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, sync?: {items, frequency, name?, config?}}. allow_writes points GitHub's tool at its write endpoint. config is the synced source's retrieval settings, validated like an upload's. Honours an Idempotency-Key header for the sync.",
+        "description": "Apply the connect wizard's choices: {create_tools, allow_writes?, tool_permissions?, sync?: {items, frequency, name?, config?, folder_id?}}. allow_writes points GitHub's tool at its write endpoint. config is the synced source's retrieval settings, validated like an upload's; folder_id files the new source in one of the owner's source folders (404 folder_not_found). Honours an Idempotency-Key header for the sync. On a team's connection: Admins; the sync only by the Admin who connected it (403 connection_picker_owner_only); 409 connection_paused while the account is paused. The source and tools are the team's.",
         "operationId": "post_connection_setup",
         "responses": {
           "200": {
@@ -3578,7 +3978,7 @@
         }
       ],
       "put": {
-        "description": "Fix or release an action's parameters: {action, parameters: {name: value | null}}. A value is sent on every call and hidden from the model; null lets the model decide. Owner only.",
+        "description": "Fix or release an action's parameters: {action, parameters: {name: value | null}}. A value is sent on every call and hidden from the model; null lets the model decide. Owner, or a team's Admins.",
         "operationId": "put_connection_tool_parameters",
         "responses": {
           "200": {
@@ -3630,7 +4030,7 @@
         }
       ],
       "put": {
-        "description": "GitHub: let agents make changes through this connection, or only read: {allow}. Re-reads the tool's actions from the matching endpoint. Owner only.",
+        "description": "GitHub: let agents make changes through this connection, or only read: {allow}. Re-reads the tool's actions from the matching endpoint. Owner, or a team's Admins.",
         "operationId": "put_connection_writes",
         "responses": {
           "200": {
@@ -3645,13 +4045,25 @@
     },
     "/api/connectors/auth": {
       "get": {
-        "description": "Get connector OAuth authorization URL",
+        "description": "Get connector OAuth authorization URL. owner=team connects the account for the team the workspace header names (Admins); without it the connection is the caller's own, whatever the header. connection_id signs a connection in again (its owner's, or a team's for its Admins; another Admin than whoever connected it replaces the account with theirs).",
         "operationId": "get_connector_auth",
         "parameters": [
           {
             "description": "Connector provider (e.g., google_drive)",
             "in": "query",
             "name": "provider",
+            "type": "string"
+          },
+          {
+            "description": "personal (default) or team",
+            "in": "query",
+            "name": "owner",
+            "type": "string"
+          },
+          {
+            "description": "The connection to sign in again",
+            "in": "query",
+            "name": "connection_id",
             "type": "string"
           }
         ],
@@ -3668,7 +4080,7 @@
     },
     "/api/connectors/auth/complete": {
       "post": {
-        "description": "Finish a connector sign-in: the app's callback page posts the provider's code and state",
+        "description": "Finish a connector sign-in: the app's callback page posts the provider's code and state. Only whoever started it finishes it; a sign-in for a team needs them still its Admin (403 connection_admin_required, the sign-in is used up) and goes to the team the sign-in named, never the request's workspace. A replacing sign-in into an account the team already has: 409 account_already_connected with connection_id.",
         "operationId": "post_connector_auth_complete",
         "parameters": [
           {
@@ -3725,8 +4137,16 @@
     },
     "/api/connectors/catalog": {
       "get": {
-        "description": "Every connector with its availability and the caller's connection summary",
+        "description": "Every connector with its availability and the caller's connection summary; with owner=team, the summary of the connections of the team the workspace header names (any member)",
         "operationId": "get_connector_catalog",
+        "parameters": [
+          {
+            "description": "personal (default) or team",
+            "in": "query",
+            "name": "owner",
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -3790,7 +4210,7 @@
     },
     "/api/connectors/sync": {
       "post": {
-        "description": "Sync connector source to check for modifications. A 409 with code connection_missing when the source has no connection (it was removed) and none is named, as for a team editor, who can't name one; code reconnect_needed when a team editor's sync finds the source's connection signed out.",
+        "description": "Sync connector source to check for modifications. A 409 with code connection_missing when the source has no connection (it was removed) and none is named, as for a team editor, who can't name one; code reconnect_needed when a team editor's sync finds the source's connection signed out; code connection_paused (with paused_for) for a team's source whose team account is paused. A team's source is synced by its Editors and up, through the team's connection, and bills the caller.",
         "operationId": "post_connector_sync",
         "parameters": [
           {
@@ -3890,7 +4310,7 @@
     },
     "/api/create_prompt": {
       "post": {
-        "description": "Create a new prompt",
+        "description": "Create a new prompt in the workspace the request names (header X-DocsGPT-Workspace, default Personal); in a team it needs the Editor role and the team owns it",
         "operationId": "post_create_prompt",
         "parameters": [
           {
@@ -3904,7 +4324,13 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "The new prompt's id and updated_at (the version a save over it sends back)"
+          },
+          "403": {
+            "description": "A Viewer in the team (error workspace_role_required)"
+          },
+          "404": {
+            "description": "Not a member of the named team (error workspace_not_found), or folder_id isn't a folder of the workspace's tree (error folder_not_found)"
           }
         },
         "tags": [
@@ -3969,7 +4395,7 @@
     },
     "/api/delete_all_conversations": {
       "get": {
-        "description": "Deletes all conversations for a specific user",
+        "description": "Deletes all of the caller's conversations in the current workspace (the workspace header; Personal without it). A team's needs current membership (404 otherwise).",
         "operationId": "get_delete_all_conversations",
         "responses": {
           "200": {
@@ -4144,6 +4570,165 @@
         ]
       }
     },
+    "/api/drafter/agent_gaps": {
+      "get": {
+        "description": "An agent's gap summary from Insights for Draft with DocsGPT's improve screen: expected gaps per topic and gap type over the last 30 days, the most first, read from the decision model's labels (no model call). Returns {\"available\", \"reason\", \"conversations\", \"needed\", \"days\", \"rows\": [{\"topic\", \"gap_type\", \"expected\", \"turns\", \"previous\"}]}: at most 10 rows, each with at least half an expected gap, counts rounded as Insights shows them; topic is null for an agent without a topic question, previous null until the period before has labelled answers. reason is disabled (the drafter is off), off_on_this_instance, agent_off (Insights is off for the agent) or not_enough (fewer than needed analysed conversations; conversations counts them), else null. Needs edit access to the agent.",
+        "operationId": "get_drafter_agent_gaps",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's gap summary"
+          },
+          "400": {
+            "description": "No agent_id"
+          },
+          "401": {
+            "description": "Not signed in"
+          },
+          "404": {
+            "description": "No agent the caller may edit"
+          },
+          "500": {
+            "description": "The summary could not be read"
+          }
+        },
+        "summary": "Report an agent's gap summary",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/config": {
+      "get": {
+        "description": "Whether Draft with DocsGPT is offered to the caller, and the model it runs on (the task model). Returns {\"enabled\", \"model\": {\"id\", \"display_name\"} | null, \"reason\": \"disabled\" | \"no_model\" | null}.",
+        "operationId": "get_drafter_config",
+        "responses": {
+          "200": {
+            "description": "The drafter's config"
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        },
+        "summary": "Report whether the drafter is on for the caller, and its model",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/stream": {
+      "post": {
+        "description": "Run one draft turn and stream it as server-sent events (data: <json>). Events: turn (first, {\"id\"}: the id POST /api/drafter/turns/<id>/cancel stops, the request's turn_id when it sent a valid one; absent when the server can't stop turns), status, read (what a read tool showed the model, {\"kind\": \"questions\", \"items\"}), message, questions, proposal, error, and end (always last). Refusals (disabled, no_model, rate_limited, quota, bad_request) arrive as an error event in a 200 stream; a bad_request carries reason: history (the conversation is refused: start a new one), too_long (the prompt is over the read cap, with limit), empty (the message is empty once cleaned) or invalid. Nothing is saved.",
+        "operationId": "post_drafter_stream",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DrafterStreamModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/event-stream of draft events"
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        },
+        "summary": "Stream one draft turn",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/topics/status": {
+      "get": {
+        "description": "Whether Draft with DocsGPT suggests Insights topics for an agent from its conversations: Insights sorts them (on this server and for the agent) and it had enough in the last 30 days. Returns {\"available\", \"conversations\", \"needed\", \"reason\"}; reason is disabled (the drafter is off), off_on_this_instance or turned_off_for_this_agent (Insights is off), with conversations 0 and uncounted, else null. Needs edit access to the agent: the suggestions read its users' questions.",
+        "operationId": "get_drafter_topics_status",
+        "parameters": [
+          {
+            "description": "Agent id",
+            "in": "query",
+            "name": "agent_id",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent's status"
+          },
+          "400": {
+            "description": "No agent_id"
+          },
+          "401": {
+            "description": "Not signed in"
+          },
+          "403": {
+            "description": "No edit access"
+          },
+          "404": {
+            "description": "Agent not found"
+          },
+          "500": {
+            "description": "The status could not be read"
+          }
+        },
+        "summary": "Report whether topic suggestions are available for an agent",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/drafter/turns/{turn_id}/cancel": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "turn_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Stop the caller's draft turn: it makes no further model calls and its stream ends with end. The id is the turn_id the stream request sent, or the stream's first event (turn). A stop that arrives before the turn has started stops it as soon as it does. The stop is kept under the caller's name, so it never reaches another user's turn. Answers 202 once the request is stored, whether or not the caller has such a turn.\nArgs:\n    turn_id: The id the stream request sent, or the one its ``turn`` event carried.\n\nReturns:\n    202 when the stop was stored, 404 for a malformed id, 503 without Redis.",
+        "operationId": "post_drafter_turn_cancel",
+        "responses": {
+          "202": {
+            "description": "The stop was requested"
+          },
+          "401": {
+            "description": "Not signed in"
+          },
+          "404": {
+            "description": "Not a turn id (32 lowercase hex characters)"
+          },
+          "429": {
+            "description": "More than 60 stops in a minute"
+          },
+          "503": {
+            "description": "Stopping is unavailable right now"
+          }
+        },
+        "summary": "Ask a running draft turn to stop",
+        "tags": [
+          "drafter"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/export_agent": {
       "get": {
         "description": "Export an agent as YAML",
@@ -4196,6 +4781,151 @@
         ]
       }
     },
+    "/api/folders": {
+      "get": {
+        "description": "The folder tree of the workspace the request names (header X-DocsGPT-Workspace, default Personal), oldest first: {folders: [Folder], workspace}. In a team it is the team's one tree, the same for every member. counts, item_count and folder_count count direct children; used_by names the agents reading a folder's sources live. 404 workspace_not_found for a team the caller isn't in.",
+        "operationId": "get_folders",
+        "parameters": [
+          {
+            "description": "agent, source, tool or prompt (optional): the kind item_count counts",
+            "in": "query",
+            "name": "type",
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:read",
+          "prompts:read",
+          "sources:read",
+          "tools:read"
+        ]
+      },
+      "post": {
+        "description": "Create a folder in the workspace the request names: {name, parent_id?} (type is ignored). Names are trimmed, 1-80 characters, unique among siblings ignoring case across kinds (409 folder_name_taken); folders nest 3 levels deep (400 folder_too_deep). In a team it needs the Editor role (403 workspace_role_required). Answers 201 with the Folder.",
+        "operationId": "post_folders",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateFolderRequest"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "The new folder",
+            "schema": {
+              "$ref": "#/definitions/Folder"
+            }
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "prompts:write",
+          "sources:write",
+          "tools:write"
+        ]
+      }
+    },
+    "/api/folders/items": {
+      "post": {
+        "description": "File items into a folder: {type, folder_id, ids}; folder_id null takes them out of the tree of the workspace the request names. A team's folder holds only the team's own items and needs the Editor role (403 workspace_role_required); a personal folder holds the caller's own items and personal items shared with them. 409 team_item_not_fileable (a team's item into a personal folder) or item_not_in_team (anything else into a team's folder), with ids; nothing is filed then. Answers {success, moved: [ids], skipped: [ids the caller can't see]}.",
+        "operationId": "post_folder_items",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/FileFolderItemsRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "prompts:write",
+          "sources:write",
+          "tools:write"
+        ]
+      }
+    },
+    "/api/folders/{folder_id}": {
+      "delete": {
+        "description": "Delete a folder. Its folders and items move to its parent (the top level and unfiled when it had none); a child folder whose name is taken there gets a \" (n)\" suffix; agents reading it live lose it. A team's folder needs the Editor role there. Answers {success, moved_items, moved_folders, renamed: [{id, from, to}]}.",
+        "operationId": "delete_folder_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "prompts:write",
+          "sources:write",
+          "tools:write"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "folder_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Rename or move a folder within its tree: {name?, parent_id?}; parent_id null moves it to the top level. The folder's own tree decides (a team's folder needs the Editor role there). Errors: 404 folder_not_found, 403 workspace_role_required, 400 folder_cycle / folder_too_deep, 409 folder_name_taken.",
+        "operationId": "put_folder_resource",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UpdateFolderRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "folders"
+        ],
+        "x-pat-scopes": [
+          "agents:write",
+          "prompts:write",
+          "sources:write",
+          "tools:write"
+        ]
+      }
+    },
     "/api/get_agent": {
       "get": {
         "description": "Get agent by ID",
@@ -4223,7 +4953,7 @@
     },
     "/api/get_agents": {
       "get": {
-        "description": "Retrieve agents for the user",
+        "description": "Retrieve the agents of the current workspace (X-DocsGPT-Workspace: personal or a team id). Personal: the caller's own plus those shared with their teams; a team: the team's agents, each with the caller's role, then those other teams share with it (origin team_shared, shared_from {team_id, name}, the receiver's actions). Every row carries workspace, team_role, origin and created_by.",
         "operationId": "get_get_agents",
         "responses": {
           "200": {
@@ -4322,7 +5052,7 @@
     },
     "/api/get_conversations": {
       "get": {
-        "description": "Retrieve the user's sidebar conversations (visibility = listed), newest first, ordered by ``date`` DESC then ``id`` DESC. Each item carries ``date`` (ISO-8601). To page older conversations, pass the last item's ``date`` and ``id`` as ``before`` and ``before_id``. Invalid params are ignored.",
+        "description": "Retrieve the user's sidebar conversations (visibility = listed) in the workspace the X-DocsGPT-Workspace header names (Personal without it), newest first, ordered by ``date`` DESC then ``id`` DESC. Each item carries ``date`` (ISO-8601) and ``workspace`` ({kind, team_id}). To page older conversations, pass the last item's ``date`` and ``id`` as ``before`` and ``before_id``. Invalid params are ignored. A team the caller is not in answers 404 workspace_not_found.",
         "operationId": "get_get_conversations",
         "parameters": [
           {
@@ -4440,7 +5170,7 @@
     },
     "/api/get_prompts": {
       "get": {
-        "description": "Get all prompts for the user",
+        "description": "Get the prompts of the workspace the request names (header X-DocsGPT-Workspace, default Personal), after the built-in presets: in a team, the team's prompts with the caller's team role, then those other teams share with it (origin team_shared, shared_from {team_id, name}, the receiver's actions); in Personal, the caller's own and those shared with them, never a team's. Each row carries workspace, created_by {user_id, label}, access, allowed_actions, team_role, origin and its filing in the workspace's folder tree (folder_id, folder_path [{id, name}] from the top-level folder down; presets have none)",
         "operationId": "get_get_prompts",
         "responses": {
           "200": {
@@ -4588,7 +5318,7 @@
     },
     "/api/get_tools": {
       "get": {
-        "description": "Get tools created by a user",
+        "description": "Get the tools of the workspace the request names (header X-DocsGPT-Workspace, default Personal): in a team, the team's tools with the caller's team role, then those other teams share with it (origin team_shared, shared_from {team_id, name}, the receiver's actions); in Personal, the caller's own and those shared with them, never a team's. Each row carries workspace, created_by {user_id, label}, access, allowed_actions, team_role, origin and its filing in the workspace's folder tree (folder_id, folder_path [{id, name}] from the top-level folder down; built-in tools have none); the response echoes workspace {kind, team_id, role}",
         "operationId": "get_get_tools",
         "responses": {
           "200": {
@@ -4764,7 +5494,7 @@
     },
     "/api/import_agent": {
       "post": {
-        "description": "Import an agent from YAML: create a draft, or update the agent matched by id or slug",
+        "description": "Import an agent from YAML into the request's workspace (X-DocsGPT-Workspace): create a draft, or update the workspace's agent matched by id or slug. A team needs the editor role; the agent and what the import creates are the team's. resolution.folders is keyed by a folder entry's key, its path_key, or its name when no other folder entry shares it",
         "operationId": "post_import_agent",
         "responses": {
           "200": {
@@ -4781,7 +5511,7 @@
     },
     "/api/import_agent/plan": {
       "post": {
-        "description": "Dry-run an agent YAML import and return the resolution plan",
+        "description": "Dry-run an agent YAML import into the request's workspace (X-DocsGPT-Workspace) and return the resolution plan. A team needs the editor role. Knowledge-folder entries carry key, path, path_key and target_path; a team's plan marks a custom model or a personal-only tool unavailable with a reason",
         "operationId": "post_import_agent_plan",
         "responses": {
           "200": {
@@ -5017,7 +5747,7 @@
     },
     "/api/mcp_server/save": {
       "post": {
-        "description": "Create or update MCP server with automatic tool discovery. While Admin > Guardrails warns on tool descriptions, each discovered action is scored for prompt injection and stored with `injection: {p, scorer}`; the response's `injection` is `{flagged: [names], unscored: [names]}` (null while the warnings are off). Nothing is deactivated.",
+        "description": "Create or update MCP server with automatic tool discovery. While Admin > Guardrails warns on tool descriptions, each discovered action is scored for prompt injection and stored with `injection: {p, scorer}`; the response's `injection` is `{flagged: [names], unscored: [names]}` (null while the warnings are off). Nothing is deactivated. The response's `connection_id` is the connection the server runs on. With owner=team, the tool is the team's, on the team connection the caller's finished sign-in wrote; signing in again updates that tool.",
         "operationId": "post_mcp_server_save",
         "parameters": [
           {
@@ -5044,7 +5774,7 @@
     },
     "/api/mcp_server/test": {
       "post": {
-        "description": "Test MCP server connection with provided configuration",
+        "description": "Test MCP server connection with provided configuration. With owner=team on a sign-in server (Admins of the header's team), always starts a fresh sign-in for the team: {requires_oauth, task_id}; 409 account_already_connected {connection_id} when the team is already signed in to that server (reconnect it with connection_id instead).",
         "operationId": "post_test_mcp_server_config",
         "parameters": [
           {
@@ -5122,7 +5852,7 @@
     },
     "/api/models": {
       "get": {
-        "description": "When the request is authenticated, the response includes the\nuser's own BYOM registrations alongside the built-in catalog.",
+        "description": "When the request is authenticated, the response includes the\nuser's own BYOM registrations alongside the built-in catalog. In a\nteam workspace it lists the team's enabled models instead\n(``source: \"team\"``, without ``base_url``) and never the person's:\nsaving one on a team item is refused, so a team's pickers never\noffer one.",
         "operationId": "get_models_list_resource",
         "responses": {
           "200": {
@@ -5332,7 +6062,7 @@
     },
     "/api/pinned_agents": {
       "get": {
-        "description": "Get pinned agents for the user",
+        "description": "Get the caller's pinned agents in the current workspace: a pin shows in the workspace its agent lives in (a team's agents in that team and in each team it is shared with, every other agent in Personal)",
         "operationId": "get_pinned_agents",
         "responses": {
           "200": {
@@ -5553,7 +6283,7 @@
     },
     "/api/resource_shares": {
       "get": {
-        "description": "Needs ``share`` on it.\n\nPowers the share dialog (current shares + unshare), so only someone who\nmay change the sharing can enumerate it: 404 when the resource isn't\nvisible, 403 when the caller's role can't share.",
+        "description": "Needs ``share`` on it.\n\nPowers the share dialog (current shares + unshare), so only someone who\nmay change the sharing can enumerate it: 404 when the resource isn't\nvisible, 403 when the caller's role can't share. A personal agent adds\n``uses_team_items`` (``[{team_id, name, items}]``, the teams' items it\nuses, which keep its shares to people who reach them). A team's own\nitem has no per-person shares: whoever reaches it gets where its\naccess comes from and its shares with other teams instead\n(:func:`_team_item_shares`).",
         "operationId": "get_resource_shares",
         "responses": {
           "200": {
@@ -5571,14 +6301,14 @@
     },
     "/api/schedules": {
       "get": {
-        "description": "List the caller's schedules across every agent: their own, agentless ones created in chat, and those of teammates' agents they manage through a team (team: true). Monitors are not included.\nReturns:\n    A Flask response with ``schedules``: schedule rows plus\n    ``agent_name``, ``agent_image`` (a signed URL, never a storage\n    path), ``origin_conversation_name`` and ``team`` (a schedule of a\n    teammate's agent the caller manages through a team).",
+        "description": "List the schedules of the current workspace (X-DocsGPT-Workspace). Personal: the caller's own across every personal agent, agentless ones created in chat, and those of teammates' agents they manage through a team (team: true). A team: the schedules on the team's agents, every member's for an Editor and up, the caller's own for a Viewer. Each row names who pays for it (paid_by). Monitors are not included.\nReturns:\n    A Flask response with ``workspace`` (``{kind, team_id, role}``) and\n    ``schedules``: schedule rows plus ``agent_name``, ``agent_image``\n    (a signed URL, never a storage path), ``origin_conversation_name``,\n    ``team`` (someone else's schedule the caller manages through a\n    team) and ``paid_by``.",
         "operationId": "get_user_schedules",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return the caller's schedules with agent and origin-chat names",
+        "summary": "Return the workspace's schedules with agent and origin-chat names",
         "tags": [
           "schedules"
         ],
@@ -5752,6 +6482,30 @@
         }
       ]
     },
+    "/api/schedules/{schedule_id}/take_over": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "schedule_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Make the caller the payer of a schedule on a team agent: it runs under them from now on (its failure count reset, the chat it was set from no longer linked). Editors and up of the team; a personal agent's schedule can't be taken over. Returns the schedule in the list's shape and whether anything changed. Not available to access tokens.\nArgs:\n    schedule_id: Schedule id from the URL.\n\nReturns:\n    200 ``{success, schedule, changed}``; ``changed`` is false when the\n    caller already paid for it. Refusals carry ``{success: false,\n    error, message}``: 401; 404 ``schedule_not_found``; 403\n    ``workspace_role_required``; 409 ``take_over_team_only`` or\n    ``schedule_finished`` (completed or cancelled); 429 ``max_schedules``.",
+        "operationId": "post_schedule_take_over",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Take over a schedule on a team agent",
+        "tags": [
+          "schedules"
+        ],
+        "x-pat-denied": true
+      }
+    },
     "/api/search": {
       "post": {
         "description": "Search for relevant documents based on query",
@@ -5781,7 +6535,7 @@
     },
     "/api/search_conversations": {
       "get": {
-        "description": "Search the authenticated user's conversations by name or message content (case-insensitive substring match). Mirrors the visibility filter and response shape of /get_conversations, and additionally returns ``match_field`` (``name``, ``prompt`` or ``response``) and ``match_snippet`` (a short excerpt of the matched text centered on the query) for each result.",
+        "description": "Search the authenticated user's conversations by name or message content (case-insensitive substring match). Mirrors the visibility and workspace filter and response shape of /get_conversations, and additionally returns ``match_field`` (``name``, ``prompt`` or ``response``) and ``match_snippet`` (a short excerpt of the matched text centered on the query) for each result.",
         "operationId": "get_search_conversations",
         "parameters": [
           {
@@ -5988,7 +6742,7 @@
     },
     "/api/sources/paginated": {
       "get": {
-        "description": "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` (the agents using it). ``kind_counts`` counts every kind with the search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind filters applied.",
+        "description": "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` (the agents using it) and the caller's filing (``folder_id``, ``folder_path`` [{id, name}] from the top-level folder down) and ``sync_paused`` ({reason, since} while a team source's scheduled sync is skipped for want of a payer; {reason, until, left_team, connection_id} while the team connection it reads through is paused; else null). ``kind_counts`` counts every kind with the search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search and kind filters applied. Both follow ``origin``; ``origin_counts`` counts own/shared with the search, kind and usage filters applied. With ``folder``, the counts and ``subtree_total`` cover the folder's whole subtree, while ``total``/``totalPages`` describe the listed rows.",
         "operationId": "get_paginated_sources",
         "parameters": [
           {
@@ -6032,6 +6786,24 @@
             "in": "query",
             "name": "usage",
             "type": "string"
+          },
+          {
+            "description": "all (default), own (the workspace's own sources) or shared (in Personal, sources a team shares with the caller; in a team, sources other teams share with it)",
+            "in": "query",
+            "name": "origin",
+            "type": "string"
+          },
+          {
+            "description": "root, or one of the caller's source folders: counts cover that folder and every folder under it (root: everything). Omitted: no folder scoping",
+            "in": "query",
+            "name": "folder",
+            "type": "string"
+          },
+          {
+            "description": "true lists only the sources filed directly in ``folder`` (root: the unfiled ones); false (default) lists its whole subtree",
+            "in": "query",
+            "name": "direct",
+            "type": "string"
           }
         ],
         "responses": {
@@ -6049,7 +6821,7 @@
     },
     "/api/sources/reingest": {
       "post": {
-        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again. Honours an Idempotency-Key header: a repeat with the same key runs nothing new, and a rebuild's repeat answers with the first request's task_id.",
+        "description": "Re-run ingestion for a source — e.g. to recover a stalled embed flagged by the reconciler, or to apply a chunking change. A source with no stored files (Website, crawler, connector) is synced from its stored config instead; either way the answer is ``{success, task_id}`` and the task's source.ingest events carry that task_id. A connector source can be refused with a 409: code connection_missing when its connection was removed, reconnect_needed when the owner must sign it in again, connection_paused (with paused_for) when a team's account it reads through is paused. Honours an Idempotency-Key header: a repeat with the same key runs nothing new, and a rebuild's repeat answers with the first request's task_id.",
         "operationId": "post_reingest_source",
         "parameters": [
           {
@@ -6500,6 +7272,32 @@
         "x-pat-denied": true
       }
     },
+    "/api/sources/{source_id}/workspace": {
+      "get": {
+        "description": "The workspace a source lives in (``{kind, team_id}``), so a link to it opened from another workspace can go there first. A source another team shares with the caller's team lives in that receiving team. 404 when the caller cannot see the source.\nArgs:\n    source_id: The source's id.\n\nReturns:\n    Response: ``{\"success\", \"workspace\"}``, or 404 for a source the\n    caller can't read (missing, someone else's, or a team they left).",
+        "operationId": "get_source_workspace",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Return where a source the caller can read lives",
+        "tags": [
+          "sources"
+        ],
+        "x-pat-scopes": [
+          "sources:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "source_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/store_attachment": {
       "post": {
         "description": "Stores one or multiple attachments without vectorization or training. Supports user or API key authentication.",
@@ -6748,9 +7546,33 @@
         "x-pat-denied": true
       }
     },
+    "/api/teams/{team_id}/chats/export": {
+      "get": {
+        "description": "404 while ``TEAM_CHAT_EXPORT_ENABLED`` is off, as if the route were\nabsent. The team's Owner and Admins only (403\n``workspace_role_required`` below Admin, 404 outside the team). The\n``team.chats_exported`` audit row is written before the first byte;\n503 ``audit_unavailable`` and no file when it can't be.",
+        "operationId": "get_team_chats_export",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Every chat of the team workspace as NDJSON: a header line, then one line per conversation",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/teams/{team_id}/grants": {
       "delete": {
-        "description": "Allowed with ``share`` on the resource — no membership needed, so an\nowner who left the team can still pull their resource back — or for a\nteam_admin of this team. ``target_user_id`` picks one member's grant\n(absent → the whole-team grant). Identifiers come from query params\n(some proxies strip DELETE bodies), with a JSON-body fallback.",
+        "description": "Allowed with ``share`` on the resource — no membership needed, so an\nowner who left the team can still pull their resource back — or for a\nteam_admin of this team. ``target_user_id`` picks one member's grant\n(absent → the whole-team grant). Identifiers come from query params\n(some proxies strip DELETE bodies), with a JSON-body fallback.\n\nA team's item shared with this team is stopped from either side\n(``outside.revoke_team_item``): in the owning team by whoever may take\nits items outside and by its Admins and Owner (locked too), in this\nteam by its Admins and Owner.",
         "operationId": "delete_team_grants",
         "responses": {
           "200": {
@@ -6764,7 +7586,7 @@
         "x-pat-denied": true
       },
       "get": {
-        "description": "Requires membership.\n\nEach row carries the resource's name, owner and people labels (email\nwhen on file, else null) and ``caller`` — the caller's own live\n``{access, allowed_actions}`` on that resource (null if none). A plain\nmember sees whole-team grants and grants aimed at them; a team_admin,\nor someone with ``share`` on the resource, sees every grant.",
+        "description": "Requires membership.\n\nEach row carries the resource's name, owner and people labels (email\nwhen on file, else null), ``caller`` — the caller's own live access\nfields on that resource (null if none) — and ``origin``\n(``personal_shared`` on a member's personal item). A Viewer or Editor\nsees whole-team grants and grants aimed at them; an Admin, the Owner,\nor someone with ``share`` on the resource, sees every grant.\n``paused_reason`` is ``owner_left`` on a grant whose item's owner is no\nlonger in the team (it gives no access until they are re-added), else\nnull. Items other teams share with this team follow, every member\nseeing them, with ``origin`` ``team_shared``, ``shared_from``,\n``paused_reason`` ``team_locked`` and ``can_revoke`` (see\n``outside.incoming_share_rows``). The envelope gives the caller's\n``role`` (``owner|admin|editor|viewer``) and ``team_role`` in today's\nnames.",
         "operationId": "get_team_grants",
         "responses": {
           "200": {
@@ -6788,7 +7610,7 @@
         }
       ],
       "post": {
-        "description": "Needs ``share`` on the resource (the owner, or an editor when the owner\nturned on ``editors_can_share``) and membership of the team. The grant\nrecords the real owner as ``owner_id`` and the caller as ``granted_by``.",
+        "description": "A person's item needs ``share`` on it (the owner, or an editor when the\nowner turned on ``editors_can_share``) and membership of the team. The\ngrant records the real owner as ``owner_id`` and the caller as\n``granted_by``. A personal agent that uses a team's items goes only to\npeople who reach them (409 ``uses_team_items``).\n\nA team's item goes to the whole team at Viewer level, from someone its\noutside policy lets share (``share_outside``) who is in this team too\n(``outside.share_team_item``): 201 with ``share``, 200 when this team\nhas it already.",
         "operationId": "post_team_grants",
         "responses": {
           "200": {
@@ -6804,7 +7626,7 @@
     },
     "/api/teams/{team_id}/members": {
       "get": {
-        "description": "Requires membership.\n\nOptional query args: ``q`` (case-insensitive substring over email and\nuser id), ``page`` (1-based) and ``page_size`` (1..100; paginates only\nwhen given). ``total`` is the row count after the ``q`` filter.",
+        "description": "Requires membership.\n\nOptional query args: ``q`` (case-insensitive substring over email and\nuser id), ``page`` (1-based) and ``page_size`` (1..100; paginates only\nwhen given). ``total`` is the row count after the ``q`` filter.\n\nFor the team's Owner and Admins each row also has ``pays_for``\n(``{schedules, outside_access}``): the running schedules the member set\non the team's agents and the team agents whose outside access they pay\nfor, which pause when they leave or lose the role; and\n``custom_models``: how many of the team's custom models they added,\nwhose keys stay in use after they leave.",
         "operationId": "get_team_members",
         "responses": {
           "200": {
@@ -6828,7 +7650,7 @@
         }
       ],
       "post": {
-        "description": "Requires team_admin.",
+        "description": "Requires an Admin or the Owner.\n\nBody: ``email`` or ``user_id``, and ``role``: ``viewer`` (the default),\n``editor`` or ``admin`` (``team_member`` / ``team_admin`` still work).\nThe member must be a person who has signed in: anyone else, a team\nprincipal included, is 404. Re-adding an existing member sets their\nrole, under the same owner and last-admin guard as the role change.",
         "operationId": "post_team_members",
         "responses": {
           "200": {
@@ -6872,7 +7694,7 @@
         }
       ],
       "put": {
-        "description": "Requires team_admin. Guards the last admin.",
+        "description": "Requires an Admin or the Owner.\n\nBody: ``role``: ``viewer``, ``editor`` or ``admin`` (``team_member`` /\n``team_admin`` still work). ``owner`` is 400: only the ownership\ntransfer changes the Owner. The owner can't be demoted and the last\nadmin can't step down (``change_membership``).",
         "operationId": "put_team_member",
         "responses": {
           "200": {
@@ -6880,6 +7702,56 @@
           }
         },
         "summary": "Change a member's role",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/teams/{team_id}/outside": {
+      "get": {
+        "description": "Every member reads it (404 to anyone else): ``outside_policy``, ``can_set_outside_policy``,\n``shares`` (see :func:`outside_share_rows`; ``can_revoke`` per the reader) and ``published``\n(``{agent_id, name, outside_access}``, the agent page's block, read-only here).",
+        "operationId": "get_team_outside",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "What the team takes outside: its items shared with other teams, and its agents with outside access",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
+    "/api/teams/{team_id}/outside_policy": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "put": {
+        "description": "Admins and the Owner while it isn't locked; once locked only the Owner (403\n``policy_owner_only`` for an Admin), and an instance admin gets no way in (404 outside the\nteam; ownership is transferred instead). The team row is locked for the change. A change is\naudited as ``team.outside_policy_changed``; the same policy again answers ``changed: false``.",
+        "operationId": "put_team_outside_policy",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Change who may take the team's items outside: ``admins``, ``editors`` or ``locked``",
         "tags": [
           "teams"
         ],
@@ -6910,6 +7782,30 @@
         "x-pat-denied": true
       }
     },
+    "/api/teams/{team_id}/usage": {
+      "get": {
+        "description": "The team's Owner and Admins only: 403 ``workspace_role_required``\nbelow Admin, 404 outside the team. Lists hold at most 200 rows, by\ncost then tokens. See :func:`team_usage_body` for the shape.",
+        "operationId": "get_team_usage",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "What the team workspace spent this period (``?period=previous`` for the one before)",
+        "tags": [
+          "teams"
+        ],
+        "x-pat-denied": true
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "team_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/template_agents": {
       "get": {
         "description": "Get template/premade agents",
@@ -6924,6 +7820,33 @@
         ],
         "x-pat-scopes": [
           "agents:read"
+        ]
+      }
+    },
+    "/api/tools/member": {
+      "post": {
+        "description": "Add a team tool that runs on each person's own account for a service (member mode). Editor and up in the team the workspace header names. No secret is stored: each run uses the caller's own connection. An MCP service's actions are read with the creator's own connection (409 connect_personal_first without one). 409 member_mode_not_allowed when an admin makes every tool of that service run on its owner's account. A custom sign-in MCP server (connector_key custom_mcp with server_url) is read with the creator's own sign-in to that server.",
+        "operationId": "post_create_member_tool",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CreateMemberToolModel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "tools"
+        ],
+        "x-pat-scopes": [
+          "tools:write"
         ]
       }
     },
@@ -7160,7 +8083,10 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Saved: success and the new updated_at, the version the next save sends back"
+          },
+          "409": {
+            "description": "Someone saved the prompt since expected_updated_at (code stale_write)"
           }
         },
         "tags": [
@@ -7325,8 +8251,16 @@
     },
     "/api/user/models": {
       "get": {
-        "description": "List the current user's BYOM custom models",
+        "description": "List the current user's BYOM custom models; with owner=team, the models of the team the workspace header names (any member)",
         "operationId": "get_user_models_collection_resource",
+        "parameters": [
+          {
+            "description": "personal (default) or team",
+            "in": "query",
+            "name": "owner",
+            "type": "string"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
@@ -7340,7 +8274,7 @@
         ]
       },
       "post": {
-        "description": "Register a new BYOM custom model",
+        "description": "Register a new BYOM custom model. owner=team adds it for the team the workspace header names (Admins, in the app only); without it the model is the caller's own, whatever the header.",
         "operationId": "post_user_models_collection_resource",
         "responses": {
           "200": {
@@ -7374,7 +8308,7 @@
     },
     "/api/user/models/{model_id}": {
       "delete": {
-        "description": "Delete a BYOM custom model",
+        "description": "Delete a BYOM custom model. On a team's model (Admins, in the app only) the answer also has usage: the team's agents and workflows that named it; agents fall back to the default model, workflow steps set to it stop.",
         "operationId": "delete_user_model_resource",
         "responses": {
           "200": {
@@ -7389,7 +8323,7 @@
         ]
       },
       "get": {
-        "description": "Get one BYOM custom model",
+        "description": "Get one BYOM custom model: the caller's own, or a team's they are in",
         "operationId": "get_user_model_resource",
         "responses": {
           "200": {
@@ -7414,6 +8348,31 @@
       "patch": {
         "description": "Update a BYOM custom model (partial)",
         "operationId": "patch_user_model_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:write"
+        ]
+      }
+    },
+    "/api/user/models/{model_id}/copy": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model_id",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "post": {
+        "description": "Copy the caller's own custom model into a team where they are an Admin or the Owner (body: team_id). The team's copy has its key re-sealed for the team and names the caller as the one who added it; the caller's model is left as it was. 409 model_already_in_team when the team already has a model with the same base URL and upstream model id. In the app only.",
+        "operationId": "post_user_model_copy_resource",
         "responses": {
           "200": {
             "description": "Success"
@@ -7452,25 +8411,52 @@
         ]
       }
     },
+    "/api/user/models/{model_id}/usage": {
+      "get": {
+        "description": "The owner's agents and workflows that name a custom model. If it is deleted, agents fall back to the default model and workflow steps set to it stop: {usage: {agents: [{id, name}], workflows: [{id, name}]}}. Anyone who may see the model: every member for a team's model, only its owner for a person's own.\nArgs:\n    model_id: The model's id.\n\nReturns:\n    200 ``{success, usage}``; 404 ``model_not_found`` to anyone who may not see the model.",
+        "operationId": "get_user_model_usage_resource",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "summary": "Answer which of the owner's agents and workflows use the model, so a delete confirm can name them",
+        "tags": [
+          "models"
+        ],
+        "x-pat-scopes": [
+          "models:read"
+        ]
+      },
+      "parameters": [
+        {
+          "in": "path",
+          "name": "model_id",
+          "required": true,
+          "type": "string"
+        }
+      ]
+    },
     "/api/user/preferences": {
       "get": {
-        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default.",
+        "description": "The caller's preferences: {success, chat_prompt_id, chat_prompt_set, task_model_id, task_model_unavailable, task_model_error, instance_task_model_id}. chat_prompt_id is default when none was set or the stored prompt was deleted or is no longer shared with the caller. chat_prompt_set is true once a chat prompt was ever stored, default included, even when it now reads as default. task_model_id is the model the caller's DocsGPT jobs run on, null when they picked none or can no longer use it; task_model_unavailable is true when a choice is stored that can no longer run (a disabled or deleted model): the instance's runs meanwhile, the stored one again if it comes back, until a PUT with task_model_id null clears it. task_model_error is {model_id, code, at} when the task model that runs now failed its last draft because its provider refused the key (code model_auth, at ISO 8601), else null; a draft that works on it, or a PUT of task_model_id, clears it. instance_task_model_id is the one that runs without a usable choice, null when no model can. A token gets the chat prompt fields with prompts:read (never when restricted to specific prompts) and the task model fields with models:read.\nA token reads only the parts its scopes cover: the chat prompt with\n``prompts:read`` and no prompt allowlist (the stored id can't be\nproven inside one), the task model with ``models:read``.\n\nReturns:\n    Response: The preferences the caller may read.",
         "operationId": "get_preferences_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return ``{success, chat_prompt_id, chat_prompt_set}`` for the caller",
+        "summary": "Return the chat prompt and the task model fields the caller may read",
         "tags": [
           "me"
         ],
         "x-pat-scopes": [
+          "models:read",
           "prompts:read"
         ]
       },
       "put": {
-        "description": "Set the prompt the caller's chats use: {success, chat_prompt_id, applied}. With only_if_unset and a chat prompt already stored, nothing is written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a value that is neither a preset nor a prompt id, or a non-boolean only_if_unset; 403 for only_if_unset from a token restricted to specific prompts; 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success, chat_prompt_id, applied}``; ``applied`` is\n    false only when ``only_if_unset`` found a stored chat prompt, whose\n    readable value ``chat_prompt_id`` then carries.",
+        "description": "Set the prompt the caller's chats use, the model their DocsGPT jobs run on, or both; send at least one. Answers {success} with chat_prompt_id and applied when a chat prompt was sent, and task_model_id when one was. With only_if_unset and a chat prompt already stored, the chat prompt is not written, applied is false and chat_prompt_id is the stored one as GET reads it. 400 for a chat_prompt_id that is neither a preset nor a prompt id, a non-boolean only_if_unset, or a task_model_id the caller can't use (code invalid_model), in which case nothing is written; 403 for only_if_unset from a token restricted to specific prompts, or a token without prompts:write (chat_prompt_id) or models:write (task_model_id); 404 when the caller can't read the prompt; 500 when the read or write fails.\nReturns:\n    Response: ``{success}`` plus, for a sent chat prompt,\n    ``chat_prompt_id`` and ``applied`` (false only when\n    ``only_if_unset`` found a stored chat prompt, whose readable value\n    ``chat_prompt_id`` then carries), and for a sent task model,\n    ``task_model_id`` as stored (``None``: the instance's applies).",
         "operationId": "put_preferences_resource",
         "parameters": [
           {
@@ -7487,24 +8473,26 @@
             "description": "Success"
           }
         },
-        "summary": "Store ``chat_prompt_id`` after checking the caller may use that prompt",
+        "summary": "Store ``chat_prompt_id`` and/or ``task_model_id`` after checking the caller may use them",
         "tags": [
           "me"
         ],
         "x-pat-scopes": [
+          "models:write",
           "prompts:write"
         ]
       }
     },
     "/api/user/quota": {
       "get": {
+        "description": "``buckets``: ``{bucket, tokens, cost, resets_at}`` each. ``notice``: see :func:`quota_notice`.\n``parts``: see :func:`quota_parts`, only when a limit is set. ``paused``: see\n:func:`stopped_for_allowance`, only when ``notice.level`` is ``reached``. Each of the three is\nnull otherwise, and null too when it can't be worked out: the buckets still answer. For a\npersonal access token, ``paused.published`` keeps only the agents it may read.",
         "operationId": "get_my_quota_resource",
         "responses": {
           "200": {
             "description": "Success"
           }
         },
-        "summary": "Return the caller's limited buckets: ``{bucket, tokens, cost, resets_at}`` each",
+        "summary": "Return the caller's limited buckets, the near-limit notice, the parts of their use, and what stopped",
         "tags": [
           "me"
         ],
@@ -7964,6 +8952,73 @@
         ]
       }
     },
+    "/api/workspace_moves": {
+      "post": {
+        "description": "Apply a planned move in one transaction. Answers 409 move_plan_changed with the fresh plan when the fingerprint no longer matches, 409 move_would_borrow naming the agents with outside access that would use a moved item (and counting those the caller can't open), 403 move_needs_admin when a moving agent has outside access and the caller isn't a team Admin, and 409 credentials_unreadable naming a tool whose saved secret can't be re-sealed.",
+        "operationId": "post_workspace_moves",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WorkspaceMove"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/workspace_moves/plan": {
+      "post": {
+        "description": "Plan a move to a team (the person who owns the items, Editor or above there) or out of one to the caller's Personal (an Admin): what comes along, what can't, who gains or loses access, and the fingerprint to apply it with. Changes nothing.",
+        "operationId": "post_workspace_move_plan",
+        "parameters": [
+          {
+            "in": "body",
+            "name": "payload",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/WorkspaceMove"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "x-pat-denied": true
+      }
+    },
+    "/api/workspaces": {
+      "get": {
+        "description": "Personal and every team the caller is in, with the caller's role in each",
+        "operationId": "get_workspaces",
+        "responses": {
+          "200": {
+            "description": "Success"
+          }
+        },
+        "tags": [
+          "workspaces"
+        ],
+        "x-pat-scopes": [
+          "teams:read"
+        ]
+      }
+    },
     "/stream": {
       "post": {
         "description": "Stream a response based on the question and retriever",
@@ -8041,6 +9096,14 @@
       "name": "conversations"
     },
     {
+      "description": "Folders for agents, knowledge, tools and prompts",
+      "name": "folders"
+    },
+    {
+      "description": "Draft with DocsGPT",
+      "name": "drafter"
+    },
+    {
       "description": "Current user identity and roles",
       "name": "me"
     },
@@ -8069,7 +9132,7 @@
       "name": "agents"
     },
     {
-      "description": "Agent folder management",
+      "description": "Agent folder management (aliases of /api/folders?type=agent)",
       "name": "agents_folders"
     },
     {
@@ -8138,6 +9201,10 @@
     {
       "description": "Workflow run results",
       "name": "workflow_runs"
+    },
+    {
+      "description": "Workspaces and moving items between them",
+      "name": "workspaces"
     },
     {
       "description": "Connector operations",
