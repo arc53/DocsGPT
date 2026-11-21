@@ -333,6 +333,21 @@ def _assert_rows_match_documents(store):
 
 @pytest.mark.unit
 class TestFaissUpdateChunk:
+    def test_clears_parent_metadata_without_embedding(self, make_store):
+        store = make_store(docs_init=[
+            _SeedDoc("first child", {"parent_text": "parent", "source": "doc.txt"}),
+            _SeedDoc("second child", {"parent_text": "parent", "source": "doc.txt"}),
+        ])
+        ids = [chunk["doc_id"] for chunk in store.get_chunks()]
+        embed = Mock(wraps=store.embeddings.embed_documents)
+        store.embeddings.embed_documents = embed
+
+        updated = store.clear_parent_text(ids)
+
+        assert updated == [(chunk_id, chunk_id) for chunk_id in ids]
+        assert all("parent_text" not in chunk["metadata"] for chunk in store.get_chunks())
+        embed.assert_not_called()
+
     def test_keeps_id_and_position(self, populated):
         before = [c["doc_id"] for c in populated.get_chunks()]
         target = before[1]

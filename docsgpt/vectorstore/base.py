@@ -2,7 +2,7 @@ import hashlib
 import logging
 import threading
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import requests
 
@@ -497,6 +497,19 @@ class InvalidChunkMetadataError(ValueError):
     """
 
 
+class ParentClearError(RuntimeError):
+    """A parent metadata clear failed after updating some chunks.
+
+    Attributes:
+        remapped_ids: Completed ``(old_id, new_id)`` writes, in update order.
+    """
+
+    def __init__(self, remapped_ids: List[Tuple[str, str]], cause: Exception):
+        super().__init__(f"Failed to clear parent metadata: {cause}")
+        self.remapped_ids = remapped_ids
+        self.__cause__ = cause
+
+
 class BaseVectorStore(ABC):
     def __init__(self):
         pass
@@ -617,6 +630,46 @@ class BaseVectorStore(ABC):
                 exc_info=True,
             )
         raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Remove stored parent windows from chunks without changing their text.
+
+        Backends should override this to update metadata without recomputing
+        embeddings. This compatibility fallback preserves support for custom
+        stores by using their existing chunk update operation.
+
+        Args:
+            chunk_ids: IDs of chunks whose parent window should be removed.
+
+        Returns:
+            Pairs of ``(old_id, new_id)`` for stores whose fallback changes IDs.
+        """
+        wanted = {str(chunk_id) for chunk_id in chunk_ids}
+        if not wanted:
+            return []
+        updated_ids: List[Tuple[str, str]] = []
+        try:
+            # Some adapters expose their live internal list. The fallback update
+            # can delete and re-add rows, so always iterate a stable snapshot.
+            chunks = list(self.get_chunks() or [])
+            found = set()
+            for chunk in chunks:
+                chunk_id = str(chunk.get("doc_id") or "")
+                metadata = dict(chunk.get("metadata") or {})
+                if chunk_id not in wanted:
+                    continue
+                found.add(chunk_id)
+                if not metadata.get("parent_text"):
+                    continue
+                metadata.pop("parent_text", None)
+                new_id = self.update_chunk(chunk_id, chunk.get("text", ""), metadata)
+                updated_ids.append((chunk_id, str(new_id)))
+            missing = wanted - found
+            if missing:
+                raise RuntimeError(f"Chunks disappeared while clearing parent metadata: {sorted(missing)}")
+        except Exception as err:
+            raise ParentClearError(updated_ids, err) from err
+        return updated_ids
 
     @classmethod
     def supports_chunk_edits(cls) -> bool:

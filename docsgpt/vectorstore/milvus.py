@@ -219,6 +219,33 @@ class MilvusStore(BaseVectorStore):
         ids = self.add_texts([text], [metadata or {}])
         return ids[0]
 
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Remove parent metadata while preserving stored vectors and chunk IDs."""
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        rows = self._client.query(
+            collection_name=self._collection,
+            filter=self._ids_filter(ids),
+            output_fields=["id", "text", "vector", "source_id", "metadata"],
+        )
+        updates = []
+        for row in rows:
+            metadata = dict(row.get("metadata") or {})
+            if metadata.get("source_id") != self._source_id or not metadata.get("parent_text"):
+                continue
+            metadata.pop("parent_text", None)
+            updates.append({**row, "metadata": metadata})
+        if updates:
+            result = self._client.upsert(collection_name=self._collection, data=updates)
+            if isinstance(result, dict):
+                status = result.get("status") or {}
+                error_code = status.get("error_code") if isinstance(status, dict) else None
+                count = result.get("upsert_count")
+                if error_code not in (None, 0, "0", "Success") or count not in (None, len(updates)):
+                    raise RuntimeError("Milvus parent metadata update was incomplete")
+        return [(str(row["id"]), str(row["id"])) for row in updates]
+
     def delete_chunk(self, chunk_id: str) -> bool:
         """Delete one of this source's chunks by id.
 

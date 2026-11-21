@@ -574,6 +574,32 @@ class TestGraphStoreLive:
             other_node: ["old"]
         }
 
+    def test_pending_chunk_remaps_survive_a_failed_graph_write_and_retry(self, store, source_id):
+        ada = store.upsert_node(source_id, "Ada", "ada")
+        store.link_node_chunk(source_id, ada, "old")
+
+        store.record_pending_chunk_remaps(source_id, {"old": "new"})
+        conn = store._get_connection()
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "SELECT old_chunk_id, new_chunk_id FROM graph_pending_chunk_remaps "
+                "WHERE source_id = %s;",
+                (source_id,),
+            )
+            assert cursor.fetchall() == [("old", "new")]
+        conn.rollback()
+
+        completed = store.apply_pending_chunk_remaps(source_id)
+
+        assert completed == {"old": "new"}
+        assert store.get_chunk_ids_for_nodes(source_id, [ada]) == {ada: ["new"]}
+        with store._get_connection().cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM graph_pending_chunk_remaps WHERE source_id = %s;",
+                (source_id,),
+            )
+            assert cursor.fetchone()[0] == 0
+
     def _apply(self, store, source_id, chunk_id, entities, relationships):
         """Write one chunk the way a build does: entities linked, edges recorded, degrees counted."""
         store.apply_chunk(
@@ -801,6 +827,37 @@ class TestGraphStoreParameterization:
         assert "pg_advisory_xact_lock(hashtext(%s))" in first_sql
         assert first_params == (f"graphrag:source:{sid}",)
 
+    def test_pending_remaps_are_journaled_before_the_graph_update(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+        sid = str(uuid.uuid4())
+
+        store.record_pending_chunk_remaps(sid, {"old": "new"})
+
+        sql, params = cursor.executemany.call_args.args
+        assert "graph_pending_chunk_remaps" in sql
+        assert sid not in sql
+        assert params == [(sid, "old", "new")]
+        cursor.execute.assert_called_once()
+        assert "pg_advisory_xact_lock(hashtext(%s))" in cursor.execute.call_args.args[0]
+        store._connection.commit.assert_called_once()
+
+    def test_pending_remap_and_graph_links_clear_in_one_transaction(self):
+        store, cursor = self._store_with_mock_conn()
+        store._write_with_reconnect = lambda write: write(store._connection)
+        cursor.fetchall.return_value = [("old", "new")]
+        sid = str(uuid.uuid4())
+
+        completed = store.apply_pending_chunk_remaps(sid)
+
+        assert completed == {"old": "new"}
+        assert "FOR UPDATE" in cursor.execute.call_args_list[1].args[0]
+        assert any("graph_node_chunks" in call.args[0] for call in cursor.execute.call_args_list)
+        assert any("graph_edges" in call.args[0] for call in cursor.execute.call_args_list)
+        assert any("graph_ingest_progress" in call.args[0] for call in cursor.execute.call_args_list)
+        assert "DELETE FROM graph_pending_chunk_remaps" in cursor.execute.call_args_list[-1].args[0]
+        store._connection.commit.assert_called_once()
+
     def test_apply_chunk_keeps_an_explicit_zero_weight(self, monkeypatch):
         store, cursor = self._store_with_mock_conn()
         cursor.fetchone.side_effect = [None, ["n1"], ["n2"]]
@@ -838,7 +895,13 @@ class TestGraphStoreParameterization:
             assert sid not in sql
             assert params == (sid,)
             tables.append(sql.split('"')[1])
-        assert tables == ["graph_node_chunks", "graph_edges", "graph_nodes", "graph_ingest_progress"]
+        assert tables == [
+            "graph_node_chunks",
+            "graph_edges",
+            "graph_nodes",
+            "graph_pending_chunk_remaps",
+            "graph_ingest_progress",
+        ]
 
     def test_delete_by_source_keeps_the_tombstones(self):
         store, cursor = self._store_with_mock_conn()
