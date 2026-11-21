@@ -87,7 +87,6 @@ const makeStore = (
     token: 'tok-1',
     modalState: 'INACTIVE',
     paginatedDocuments: null,
-    templateAgents: null,
     agents: null,
     sharedAgents: null,
     selectedAgent: null,

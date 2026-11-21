@@ -19,7 +19,6 @@ const state = vi.hoisted(() => ({
     token: null,
     selectedAgent: null,
     agents: [] as unknown[],
-    templateAgents: [] as unknown[],
     sharedAgents: [] as unknown[],
   },
   folders: {
@@ -48,7 +47,6 @@ vi.mock('react-i18next', () => ({
 vi.mock('./hooks/useAgentsFetch', () => ({
   useAgentsFetch: () => ({
     isLoading: {
-      template: false,
       user: false,
       sharedWithYou: false,
       teamShared: false,
@@ -128,7 +126,6 @@ beforeEach(() => {
   root = createRoot(container);
   moveCalls.length = 0;
   state.preference.agents = [];
-  state.preference.templateAgents = [];
   state.preference.sharedAgents = [];
   state.folders.tree.items = [];
   inWorkspace('personal');

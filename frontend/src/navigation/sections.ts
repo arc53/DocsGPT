@@ -13,7 +13,6 @@ import {
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
-  LayoutTemplate,
   Lightbulb,
   MessageSquareText,
   Plug,
@@ -361,12 +360,6 @@ export const AGENTS_SECTION: Section = {
           path: agentsFilterPath('all'),
           labelKey: 'agents.filters.all',
           icon: LayoutGrid,
-        },
-        {
-          key: 'template',
-          path: agentsFilterPath('template'),
-          labelKey: 'agents.filters.byDocsGPT',
-          icon: LayoutTemplate,
         },
         {
           key: 'user',

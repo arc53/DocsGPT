@@ -44,8 +44,6 @@ const endpoints = {
     SHARED_AGENTS: '/api/shared_agents',
     SHARE_AGENT: `/api/share_agent`,
     REMOVE_SHARED_AGENT: (id: string) => `/api/remove_shared_agent?id=${id}`,
-    TEMPLATE_AGENTS: '/api/template_agents',
-    ADOPT_AGENT: (id: string) => `/api/adopt_agent?id=${id}`,
     AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
     REGENERATE_AGENT_KEY: (id: string) => `/api/regenerate_agent_key/${id}`,
     EXPORT_AGENT: (id: string) => `/api/export_agent?id=${id}`,

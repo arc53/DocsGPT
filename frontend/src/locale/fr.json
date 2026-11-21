@@ -324,7 +324,6 @@
     "exportAgentFailed": "Échec de l’exportation de l’agent",
     "filters": {
       "all": "Tous",
-      "byDocsGPT": "Modèles",
       "byMe": "Mes agents",
       "shared": "Découverts"
     },
@@ -980,11 +979,6 @@
       "teamShared": {
         "description": "Agents que d’autres équipes ont partagés avec cette équipe. Tous ses membres peuvent discuter avec eux.",
         "emptyState": "Aucune autre équipe n’a encore partagé d’agent avec cette équipe."
-      },
-      "template": {
-        "description": "Agents fournis par DocsGPT",
-        "emptyState": "Aucun modèle d’agent trouvé.",
-        "title": "Modèles"
       },
       "user": {
         "description": "Agents que vous avez créés ou publiés",

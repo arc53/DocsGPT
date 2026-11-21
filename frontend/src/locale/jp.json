@@ -311,7 +311,6 @@
     "exportAgentFailed": "エージェントをエクスポートできませんでした",
     "filters": {
       "all": "すべて",
-      "byDocsGPT": "DocsGPT提供",
       "byMe": "自分の",
       "shared": "共有された"
     },
@@ -953,11 +952,6 @@
       "teamShared": {
         "description": "ほかのチームがこのチームと共有したエージェント。チームの全員がチャットできます。",
         "emptyState": "まだほかのチームからこのチームに共有されたエージェントはありません。"
-      },
-      "template": {
-        "description": "DocsGPTが提供するエージェント",
-        "emptyState": "テンプレートエージェントが見つかりません。",
-        "title": "DocsGPT提供"
       },
       "user": {
         "description": "あなたが作成または公開したエージェント",
