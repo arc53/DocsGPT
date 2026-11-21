@@ -252,6 +252,36 @@ def test_prepare_messages_with_attachments_appends_files(monkeypatch):
     assert pdf_part == {"file_uri": "gs://file_uri", "mime_type": "application/pdf"}
 
 
+def _stream_with_finish_reason(monkeypatch, finish_reason):
+    chunk = types.SimpleNamespace(
+        candidates=[
+            types.SimpleNamespace(
+                content=types.SimpleNamespace(
+                    parts=[types.SimpleNamespace(text="partial", function_call=None, thought=False)]
+                ),
+                finish_reason=finish_reason,
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        FakeModels, "generate_content_stream", lambda self, *a, **k: [chunk]
+    )
+    llm = GoogleLLM(api_key="key")
+    msgs = [{"role": "user", "content": "hello"}]
+    list(llm._raw_gen_stream(llm, model="gemini", messages=msgs, stream=True))
+    return llm
+
+
+def test_raw_gen_stream_records_length_finish_reason(monkeypatch):
+    finish = types.SimpleNamespace(name="MAX_TOKENS")
+    assert _stream_with_finish_reason(monkeypatch, finish)._last_finish_reason == "length"
+
+
+def test_raw_gen_stream_records_stop_finish_reason(monkeypatch):
+    finish = types.SimpleNamespace(name="STOP")
+    assert _stream_with_finish_reason(monkeypatch, finish)._last_finish_reason == "stop"
+
+
 def _capture_stream_config(monkeypatch, chunks=None):
     captured = {}
 
