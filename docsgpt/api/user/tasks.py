@@ -171,8 +171,12 @@ def ingest(
     copy_files=None,
     folder_id=None,
     actor_id=None,
+    sync_manifest=None,
 ):
-    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner)."""
+    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner).
+
+    ``sync_manifest`` is the record of the uploaded files the new source starts with.
+    """
     resp = ingest_worker(
         self,
         directory,
@@ -188,6 +192,7 @@ def ingest(
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
         **({"folder_id": folder_id} if folder_id else {}),
+        **({"sync_manifest": sync_manifest} if sync_manifest else {}),
         **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp

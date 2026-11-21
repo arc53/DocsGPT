@@ -30,7 +30,6 @@ import workspaceReducer, {
 } from '../workspace/workspaceSlice';
 import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import useWorkspaceLanding from '../workspace/useWorkspaceLanding';
-import ChatWorkspaceLine from './ChatWorkspaceLine';
 import { curatedErrorText } from './curatedError';
 import WorkspaceMismatchAction from './WorkspaceMismatchAction';
 
@@ -170,23 +169,5 @@ describe('a chat refused because its agent lives in another workspace', () => {
     const store = makeStore('personal', agent({ kind: 'team', team_id: 't9' }));
     render(store, <WorkspaceMismatchAction agentId="a1" />);
     expect(container.querySelector('button')).toBeNull();
-  });
-});
-
-describe('the line under a chat composer', () => {
-  it('in a team, names it and says the chat is private', () => {
-    render(makeStore('t1'), <ChatWorkspaceLine />);
-    expect(container.textContent).toContain('Operations');
-    expect(container.textContent).toContain('workspace.chat.onlyYou');
-  });
-
-  it('takes a notice at its end', () => {
-    render(makeStore('t1'), <ChatWorkspaceLine notice={<span>N</span>} />);
-    expect(container.textContent?.endsWith('N')).toBe(true);
-  });
-
-  it('is not drawn in Personal', () => {
-    render(makeStore('personal'), <ChatWorkspaceLine />);
-    expect(container.textContent).toBe('');
   });
 });

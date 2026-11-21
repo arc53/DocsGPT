@@ -8,6 +8,7 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import (
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
@@ -346,6 +347,11 @@ class GetSingleConversation(Resource):
                     }
                     if metadata:
                         query["metadata"] = metadata
+                    # A summary row an earlier version stored: the client hides
+                    # it but keeps its slot, as edits and feedback address
+                    # messages by position.
+                    if is_compression_summary_row(msg):
+                        query["compression_summary"] = True
                     # Feedback on conversation_messages is a JSONB blob with
                     # shape {"text": <str>, "timestamp": <iso>}. The legacy
                     # frontend consumed a flat scalar feedback string, so

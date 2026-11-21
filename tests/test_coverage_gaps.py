@@ -1051,41 +1051,6 @@ class TestConversationServiceEdge:
         service.update_compression_metadata(conv_id_str, metadata)
         mock_conv_col.update_one.assert_called_once()
 
-    def test_append_compression_message(self, monkeypatch):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        monkeypatch.setattr(
-            "docsgpt.api.answer.services.conversation_service.dual_write",
-            lambda repo_cls, fn: None,
-        )
-
-        conv_id_str = uuid.uuid4().hex[:24]
-        mock_conv_col = MagicMock()
-
-        service = ConversationService.__new__(ConversationService)
-        service.conversations_collection = mock_conv_col
-        service.agents_collection = MagicMock()
-
-        metadata = {"compressed_summary": "summary text"}
-        service.append_compression_message(conv_id_str, metadata)
-        mock_conv_col.update_one.assert_called_once()
-
-    def test_append_compression_message_empty_summary(self):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        mock_conv_col = MagicMock()
-        service = ConversationService.__new__(ConversationService)
-        service.conversations_collection = mock_conv_col
-        service.agents_collection = MagicMock()
-
-        # Should return without error (empty summary → early return)
-        service.append_compression_message("fakeid", {"compressed_summary": ""})
-        mock_conv_col.update_one.assert_not_called()
-
     def test_get_compression_metadata(self, monkeypatch):
         from docsgpt.api.answer.services.conversation_service import (
             ConversationService,

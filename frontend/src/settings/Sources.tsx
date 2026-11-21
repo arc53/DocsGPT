@@ -107,7 +107,6 @@ import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
 import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { captureWorkspace } from '../workspace/requestWorkspace';
 import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
-import WorkspaceLine from '../workspace/WorkspaceLine';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -1577,7 +1576,6 @@ export default function Sources({
             <p className="text-muted-foreground text-sm leading-6">
               {t('settings.sources.subtitle')}
             </p>
-            <WorkspaceLine kind="knowledge" />
           </div>
         )}
         <PageToolbar

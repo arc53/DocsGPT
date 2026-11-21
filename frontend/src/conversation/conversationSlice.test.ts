@@ -514,6 +514,27 @@ describe('workflow step progress', () => {
   });
 });
 
+describe('mapServerQueryToClient compression summary', () => {
+  it('marks a row the server flags as a stored compression summary', () => {
+    const query = mapServerQueryToClient({
+      prompt: '[Context Compression Summary]',
+      response: 's',
+      status: 'complete',
+      compression_summary: true,
+    });
+    expect(query.compressionSummary).toBe(true);
+  });
+
+  it('leaves other rows unmarked', () => {
+    const query = mapServerQueryToClient({
+      prompt: 'q',
+      response: 'a',
+      status: 'complete',
+    });
+    expect(query.compressionSummary).toBeUndefined();
+  });
+});
+
 describe('mapServerQueryToClient feedback', () => {
   // The API stores feedback lowercase (analytics counts 'like'/'dislike'),
   // while the thumbs compare against the FEEDBACK union.
@@ -1121,6 +1142,85 @@ describe('a turn left waiting on an approval', () => {
     const calls = state.queries[0].tool_calls ?? [];
     expect(calls[0].status).toBe('completed');
     expect(calls[1]).toMatchObject({ status: 'denied', not_run: 'moved_on' });
+  });
+
+  it('writes a resumed stream to the paused turn, not a stored summary after it', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'thought', thought: 'resumed' }),
+          }),
+        );
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'end' }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        waitingTurn,
+        {
+          prompt: '[Context Compression Summary]',
+          response: 's',
+          compressionSummary: true,
+        },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'c5', decision: 'approved' }],
+      }),
+    );
+
+    const { queries } = store.getState().conversation;
+    expect(queries[0].thought).toBe('resumed');
+    expect(queries[1].thought).toBeUndefined();
+  });
+
+  it('fails the paused turn, not a stored summary after it, when the request throws', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(new Error('down'));
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        waitingTurn,
+        {
+          prompt: '[Context Compression Summary]',
+          response: 's',
+          compressionSummary: true,
+        },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'c5', decision: 'approved' }],
+      }),
+    );
+
+    const { queries } = store.getState().conversation;
+    expect(queries[0].error).toBe('Something went wrong');
+    expect(queries[1].error).toBeUndefined();
   });
 
   it('reloads the chat instead of failing when a late decision finds it over', async () => {

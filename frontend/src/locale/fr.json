@@ -5818,7 +5818,6 @@
       },
       "mismatch": "Cet agent appartient à un autre espace de travail que ce chat.",
       "notFound": "Vous ne faites plus partie de cette équipe ; le chat ne peut pas continuer ici.",
-      "onlyYou": "Vous seul voyez ce chat",
       "switchTo": "Passer à {{name}}",
       "thisTeam": "cette équipe"
     },
@@ -5834,14 +5833,6 @@
     },
     "folders": {
       "alsoInFolder": "Aussi dans ce dossier"
-    },
-    "line": {
-      "people_many": "{{count}} personnes",
-      "people_one": "{{count}} personne",
-      "people_other": "{{count}} personnes",
-      "personal": "Personnel",
-      "personalScope": "Vous seul, sauf si vous partagez un élément",
-      "teamScope": "Toute l’équipe peut utiliser ce qui se trouve ici"
     },
     "menu": {
       "moveToPersonal": "Déplacer vers Personnel…",

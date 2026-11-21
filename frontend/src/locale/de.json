@@ -5611,7 +5611,6 @@
       },
       "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
       "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
-      "onlyYou": "Nur du siehst diesen Chat",
       "switchTo": "Zu {{name}} wechseln",
       "thisTeam": "diesem Team"
     },
@@ -5627,13 +5626,6 @@
     },
     "folders": {
       "alsoInFolder": "Auch in diesem Ordner"
-    },
-    "line": {
-      "people_one": "{{count}} Person",
-      "people_other": "{{count}} Personen",
-      "personal": "Persönlich",
-      "personalScope": "Nur du, außer du teilst ein Element",
-      "teamScope": "Alle im Team können nutzen, was hier liegt"
     },
     "menu": {
       "moveToPersonal": "Nach Persönlich verschieben…",

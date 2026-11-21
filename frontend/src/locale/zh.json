@@ -5574,7 +5574,6 @@
       },
       "mismatch": "此智能体属于与此聊天不同的工作区。",
       "notFound": "您已不在此团队中，因此无法在这里继续聊天。",
-      "onlyYou": "只有您能看到此聊天",
       "switchTo": "切换到 {{name}}",
       "thisTeam": "此团队"
     },
@@ -5590,13 +5589,6 @@
     },
     "folders": {
       "alsoInFolder": "此文件夹中的其他内容"
-    },
-    "line": {
-      "people_one": "{{count}} 人",
-      "people_other": "{{count}} 人",
-      "personal": "个人",
-      "personalScope": "仅您自己，除非您共享某项内容",
-      "teamScope": "团队中的每个人都可以使用这里的内容"
     },
     "menu": {
       "moveToPersonal": "移至个人…",

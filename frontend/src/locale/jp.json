@@ -5576,7 +5576,6 @@
       },
       "mismatch": "このエージェントは、このチャットとは別のワークスペースに属しています。",
       "notFound": "このチームのメンバーではなくなったため、ここではチャットを続けられません。",
-      "onlyYou": "このチャットはあなただけが見られます",
       "switchTo": "{{name}} に切り替える",
       "thisTeam": "このチーム"
     },
@@ -5592,13 +5591,6 @@
     },
     "folders": {
       "alsoInFolder": "このフォルダーにあるその他の項目"
-    },
-    "line": {
-      "people_one": "{{count}}人",
-      "people_other": "{{count}}人",
-      "personal": "個人",
-      "personalScope": "アイテムを共有しない限り、あなただけ",
-      "teamScope": "チームの全員がここにあるものを使えます"
     },
     "menu": {
       "moveToPersonal": "個人に移動…",

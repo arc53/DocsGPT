@@ -198,6 +198,22 @@ Two cases re-embed every file once:
 
 To replace all of a source's files at once, for example from a script, send the new set with the `sync` operation of `POST /api/manage_source_files`. Files and ZIP archives are accepted, with the same limits as an upload, and a ZIP keeps its folders. Files that are not in the new set are removed, and the source keeps its ID, so agents that use it keep working.
 
+### Sync only the files that changed
+
+A sync can also upload only what the source lacks. This is how `docsgpt-cli sources upload <folder> --sync` keeps a source in step with a folder, for example from a scheduled job, without sending the whole folder each time.
+
+1. Send the request with the operation `sync_manifest`, a `manifest` file part and no files. The manifest is JSON that lists every file the source should hold, by its path and the SHA-256 of its content:
+
+   ```json
+   {"version": 1, "files": [{"path": "guide/intro.md", "sha256": "9b2e…"}]}
+   ```
+
+   When the source lacks some of that content, the answer has `"status": "needs_files"` and, in `needed`, the paths it does not hold with that content, and nothing has changed. When it lacks none, this request already completes the sync as in step 3: files that are not in the manifest are removed.
+2. Send the manifest again with those files as `file` parts, each named after the SHA-256 of its content instead of its path. One part serves every path with that content. The files can go in several requests: each one stores what it brings and answers with what is still `needed`.
+3. When the source holds every file of the manifest, the files that are not in it are removed and the answer is `"status": "synced"` with a `reingest_task_id`, or `"status": "unchanged"` when nothing differed and the index was already up to date.
+
+A path is relative, uses `/`, and can be in any script; each folder or file name in it is up to 200 bytes. Files are stored as sent: a ZIP archive is not unpacked here. A manifest lists up to `UPLOAD_MAX_ARCHIVE_FILES` files (10,000 by default), and a request carries up to 1,000 parts. While another request is changing the same source's files, the answer is `409` with `"code": "source_files_busy"`: try again shortly.
+
 To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 
 ## Organize knowledge in folders

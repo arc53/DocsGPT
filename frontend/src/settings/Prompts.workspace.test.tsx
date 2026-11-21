@@ -305,11 +305,8 @@ describe('Prompts page in a workspace', () => {
       (b) => b.textContent === text,
     );
 
-  it('in Personal: the line, folders, your prompts, then Shared with you', async () => {
+  it('in Personal: folders, your prompts, then Shared with you', async () => {
     await render();
-    expect(
-      container.querySelector('[data-testid="workspace-line"]'),
-    ).not.toBeNull();
     expect(headings()).toEqual([
       'settings.prompts.sections.folders2',
       'settings.prompts.sections.included3',
