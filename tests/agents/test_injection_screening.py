@@ -129,6 +129,44 @@ class TestRetrieval:
         assert "matched_text" not in agent.retrieved_docs[0]
         assert source["text"] == child
 
+    def test_owner_child_allowance_never_approves_the_unreviewed_parent(self, fake, monkeypatch):
+        from docsgpt.connectors.attribution import client_sources
+
+        child = PAYLOAD
+        parent = f"Additional unreviewed parent context. {child}"
+        monkeypatch.setattr(
+            scoring,
+            "allowed_hashes",
+            lambda _ids: {"src-1": {scoring.content_hash(child)}},
+        )
+        doc = {**DOCS[1], "text": parent, "matched_text": child}
+        agent = _agent(rules(), retrieved_docs=[doc])
+
+        messages = agent._build_messages("system prompt", "q")
+        (source,) = client_sources(agent.retrieved_docs)
+
+        assert parent not in user_turn(messages)
+        assert child in user_turn(messages)
+        assert agent.retrieved_docs[0]["text"] == child
+        assert "matched_text" not in agent.retrieved_docs[0]
+        assert source["text"] == child
+
+    def test_blocked_child_is_not_emitted_when_parent_passes(self, fake):
+        from docsgpt.connectors.attribution import client_sources
+
+        child = PAYLOAD
+        doc = {**DOCS[0], "text": "Clean expanded parent context.", "matched_text": child}
+        agent = _agent(rules(), retrieved_docs=[doc])
+
+        messages = agent._build_messages("system prompt", "q")
+        (source,) = client_sources(agent.retrieved_docs)
+
+        assert child not in user_turn(messages)
+        assert "Clean expanded parent context." in user_turn(messages)
+        assert "matched_text" not in agent.retrieved_docs[0]
+        assert source["text"] == "Clean expanded parent context."
+        assert child not in repr(source)
+
     def test_the_verdict_carries_the_chunk_ref(self, fake):
         agent = _agent(rules(), retrieved_docs=[dict(d) for d in DOCS])
         agent._build_messages("system prompt", "q")

@@ -878,6 +878,80 @@ class TestDeleteChunk:
             "get_chunks", "clear_parent_text", "delete_chunk"
         ]
 
+    @pytest.mark.parametrize("failure", ["false", "raises"])
+    def test_vector_delete_failure_preserves_graph_links_and_tombstone(
+        self, app, pg_conn, failure
+    ):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        user = f"u-graph-delete-{failure}"
+        src = _graph_source(pg_conn, user)
+        chunk = {"doc_id": "chunk-1", "text": "still present", "metadata": {}}
+        store = MagicMock()
+        store.get_chunks.return_value = [chunk]
+        if failure == "false":
+            store.delete_chunk.return_value = False
+        else:
+            store.delete_chunk.side_effect = RuntimeError("vector delete failed")
+        graph = MagicMock()
+        graph.apply_pending_chunk_remaps.return_value = {}
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+            f"/api/delete_chunk?id={src['id']}&chunk_id=chunk-1", method="DELETE"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == (404 if failure == "false" else 500)
+        assert chunk["text"] == "still present"
+        graph.delete_chunks.assert_not_called()
+
+    def test_graph_delete_failure_is_retried_after_vector_delete_commits(self, app, pg_conn):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        user = "u-graph-delete-retry"
+        src = _graph_source(pg_conn, user)
+        remaining = [{"doc_id": "chunk-1", "text": "text", "metadata": {}}]
+        store = MagicMock()
+        store.get_chunks.side_effect = lambda: list(remaining)
+
+        def delete_chunk(chunk_id):
+            remaining[:] = [c for c in remaining if c["doc_id"] != chunk_id]
+            return True
+
+        store.delete_chunk.side_effect = delete_chunk
+        graph = MagicMock()
+        graph.apply_pending_chunk_remaps.return_value = {}
+        graph.delete_chunks.side_effect = [RuntimeError("graph cleanup failed"), None]
+
+        def delete():
+            with _patch_db(pg_conn), patch(
+                "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+            ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+                f"/api/delete_chunk?id={src['id']}&chunk_id=chunk-1", method="DELETE"
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": user}
+                return DeleteChunk().delete()
+
+        first = delete()
+        assert first.status_code == 500
+        assert remaining == []
+        assert graph.delete_chunks.call_count == 1
+
+        retry = delete()
+        assert retry.status_code == 404
+        assert graph.delete_chunks.call_count == 2
+        assert graph.delete_chunks.call_args_list == [
+            ((str(src["id"]), ["chunk-1"]),),
+            ((str(src["id"]), ["chunk-1"]),),
+        ]
+
     def test_returns_404_inaccessible_source(self, app, pg_conn):
         # No ownership and no team grant: the source isn't visible → 404
         # (403 is reserved for a visible source the role can't change).

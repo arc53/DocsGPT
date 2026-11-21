@@ -84,6 +84,10 @@ def source_names(source_ids: list[str]) -> dict[str, str]:
 PROMPT_ONLY_KEYS = frozenset({"source_name"})
 
 
+class GuardedCitationText(str):
+    """A citation snippet independently screened for the retrieval stage."""
+
+
 def client_sources(docs: Any) -> Any:
     """Retrieved chunks as they may leave the server: in a stream, a response or a stored turn.
 
@@ -92,10 +96,12 @@ def client_sources(docs: Any) -> Any:
 
     Returns:
         A new list of copies without :data:`PROMPT_ONLY_KEYS` or
-        ``matched_text``. A non-empty string becomes the client-facing
-        ``text`` only when it is contained in the current document text. The
-        caller's chunks keep their original text for the prompt. Anything but
-        a list is returned as is.
+        ``matched_text`` and internal guarded-citation metadata. A non-empty
+        ``matched_text`` becomes client-facing text only when contained in the
+        current document. A ``GuardedCitationText`` was screened separately
+        and can safely serve as a citation even after its parent was redacted.
+        The caller's chunks keep their original text for the prompt. Anything
+        but a list is returned as is.
     """
     if not isinstance(docs, list):
         return docs
@@ -105,13 +111,16 @@ def client_sources(docs: Any) -> Any:
             client_docs.append(doc)
             continue
         matched = doc.get("matched_text")
+        guarded_citation = doc.get("_guarded_citation_text")
         client_doc = {
             key: value
             for key, value in doc.items()
-            if key not in PROMPT_ONLY_KEYS and key != "matched_text"
+            if key not in PROMPT_ONLY_KEYS and key not in {"matched_text", "_guarded_citation_text"}
         }
         current_text = doc.get("text")
-        if isinstance(matched, str) and matched and isinstance(current_text, str) and matched in current_text:
+        if isinstance(guarded_citation, GuardedCitationText):
+            client_doc["text"] = str(guarded_citation)
+        elif isinstance(matched, str) and matched and isinstance(current_text, str) and matched in current_text:
             client_doc["text"] = matched
         client_docs.append(client_doc)
     return client_docs

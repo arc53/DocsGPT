@@ -495,10 +495,18 @@ class DeleteChunk(Resource):
                     # window. If clearing fails, the original chunk still
                     # exists and the parent remains valid wherever it remains.
                     _drop_sibling_parent_text(store, chunks, target, doc)
-                    _delete_graph_chunk(doc, chunk_id)
                     deleted = store.delete_chunk(chunk_id)
+                    # Vector deletion is the commit point: a failed delete must
+                    # leave GraphRAG's links and tombstone untouched. If graph
+                    # cleanup fails after this point, a retry sees no vector
+                    # row and retries the idempotent graph cleanup below.
+                    if deleted:
+                        _delete_graph_chunk(doc, chunk_id)
                 else:
                     deleted = False
+                    # Recover graph cleanup if the vector delete succeeded but
+                    # GraphStore.delete_chunks failed on the previous request.
+                    _delete_graph_chunk(doc, chunk_id)
             if deleted:
                 return make_response(
                     jsonify({"message": "Chunk deleted successfully"}), 200

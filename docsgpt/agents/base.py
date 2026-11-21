@@ -1919,9 +1919,8 @@ class BaseAgent(ABC):
             per_doc = engine.evaluate(
                 str(doc["text"]), Stage.RETRIEVAL, controls=redacting
             )
-            scrubbed.append(
-                self._retrieval_doc_with_guarded_text(doc, per_doc.text) if per_doc.redacted else doc
-            )
+            guarded = self._retrieval_doc_with_guarded_text(doc, per_doc.text) if per_doc.redacted else doc
+            scrubbed.append(guarded)
         self.retrieved_docs = scrubbed
 
     @staticmethod
@@ -1988,6 +1987,11 @@ class BaseAgent(ABC):
             text = doc.get("text") if not doc.get("withheld") else None
             if isinstance(text, str) and key(doc) not in cache:
                 first.setdefault(key(doc), doc)
+            matched_text = doc.get("matched_text")
+            if isinstance(matched_text, str) and matched_text:
+                child = {**doc, "text": matched_text}
+                if key(child) not in cache:
+                    first.setdefault(key(child), child)
             name = one_line(doc.get("source_name"))
             if name:
                 names.setdefault(str(doc.get("source_id") or ""), name)
@@ -2001,6 +2005,15 @@ class BaseAgent(ABC):
         for doc in docs:
             text = doc.get("text") if isinstance(doc, dict) else None
             decision = cache.get(key(doc)) if isinstance(text, str) else None
+            matched_text = doc.get("matched_text") if isinstance(doc, dict) else None
+            if isinstance(matched_text, str) and matched_text:
+                child_key = key({**doc, "text": matched_text})
+                child_decision = cache.get(child_key)
+                if child_decision is not None and child_decision.blocked and not (
+                    decision is not None and decision.blocked
+                ):
+                    doc = {**doc}
+                    doc.pop("matched_text", None)
             if decision is not None and decision.blocked and not doc.get("withheld"):
                 matched_text = doc.get("matched_text")
                 if isinstance(matched_text, str) and matched_text:
@@ -2074,8 +2087,39 @@ class BaseAgent(ABC):
         if not docs:
             return 0
         screened = self._screen_docs(docs)
+        screened = self._screen_retrieval_citations(screened)
         self.retrieved_docs = screened
         return sum(1 for before, after in zip(docs, screened) if after is not before)
+
+    def _screen_retrieval_citations(self, docs: List[Dict]) -> List[Dict]:
+        """Independently guard citation snippets before they can leave the server.
+
+        ``matched_text`` is rendered to the client as a citation rather than
+        prompt context, so parent screening alone cannot protect it. Apply
+        retrieval redaction controls to each child and replace the raw field
+        with a typed, already-screened citation value.
+        """
+        from docsgpt.connectors.attribution import GuardedCitationText
+
+        engine = self.guardrails
+        redacting = [
+            control
+            for control in engine.config.controls_for(Stage.RETRIEVAL)
+            if control.action is Action.REDACT
+        ] if engine is not None else []
+        if not redacting:
+            return docs
+        screened = []
+        for doc in docs:
+            matched_text = doc.get("matched_text") if isinstance(doc, dict) else None
+            if not isinstance(matched_text, str) or not matched_text:
+                screened.append(doc)
+                continue
+            result = engine.evaluate(matched_text, Stage.RETRIEVAL, controls=redacting)
+            guarded = {**doc, "_guarded_citation_text": GuardedCitationText(result.text)}
+            guarded.pop("matched_text", None)
+            screened.append(guarded)
+        return screened
 
     def _screen_attachments(self) -> None:
         """Withhold, one by one, the attached files an attachment control blocks.

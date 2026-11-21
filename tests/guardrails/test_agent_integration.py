@@ -267,6 +267,31 @@ class TestRetrievalStage:
         assert "matched_text" not in agent.retrieved_docs[0]
         assert child not in repr(source)
 
+    def test_secret_in_child_snippet_is_redacted_before_client_citation(self, agent_base_params):
+        from docsgpt.connectors.attribution import client_sources
+
+        config = {
+            "enabled": True,
+            "mode": "scan_all",
+            "controls": [
+                {"check": "secrets", "stage": "retrieval", "action": "redact"}
+            ],
+        }
+        token = "AKIAIOSFODNN7EXAMPLE"
+        child = f"A child-only edit includes {token}."
+        docs = [{"text": "The expanded parent is otherwise public context.", "matched_text": child}]
+        agent = _agent(agent_base_params, config, retrieved_docs=docs)
+
+        messages = agent._build_messages("system prompt", "q")
+        prompt = " ".join(message["content"] for message in messages if isinstance(message.get("content"), str))
+        (source,) = client_sources(agent.retrieved_docs)
+
+        assert token not in prompt
+        assert token not in source["text"]
+        assert "[REDACTED]" in source["text"]
+        assert "matched_text" not in agent.retrieved_docs[0]
+        assert child not in repr(source)
+
     def test_expanded_parent_block_falls_back_to_allowed_child(self, agent_base_params, monkeypatch):
         from types import SimpleNamespace
 
