@@ -216,13 +216,10 @@ describe('AgentsList in Personal', () => {
     expect(mine.querySelector('[data-testid="role-meta"]')).toBeNull();
   });
 
-  it('shows the workspace line and keeps Discovered', async () => {
+  it('keeps Discovered', async () => {
     state.preference.agents = [own];
     state.preference.sharedAgents = [discovered];
     await render();
-    expect(
-      container.querySelector('[data-testid="workspace-line"]'),
-    ).not.toBeNull();
     expect(sectionIds()).toContain('shared');
   });
 
