@@ -1,7 +1,7 @@
 """The ``sandbox`` runner: a detached code run followed by a Celery poller.
 
 When a turn hands off a ``run_code`` call that runs detached (every run on
-Daytona, a ``background`` run on Jupyter), :func:`detach_job` moves the job to
+Daytona and boxd, a ``background`` run on Jupyter), :func:`detach_job` moves the job to
 this runner. A chain of short Celery tasks (:func:`poll_job`, re-enqueued
 with a countdown) then checks the process, keeps the sandbox active, and once
 it exits captures its files and finishes the job with the same payload the
@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
 from docsgpt.background.results import stored_result
+from docsgpt.sandbox import FRESH_INTERPRETER_BACKENDS
 from docsgpt.sandbox.activity import shared_activity
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -201,7 +202,7 @@ def finish_detached(row: Dict[str, Any], backend: Any, state: Any) -> Optional[D
             str(row["id"]), status="failed", error={"type": type(exc).__name__, "message": str(exc)}
         )
     tool.drain_native_parts()
-    if not prepared.keep_alive and external.get("run", {}).get("backend") == "daytona":
+    if not prepared.keep_alive and external.get("run", {}).get("backend") in FRESH_INTERPRETER_BACKENDS:
         # The model asked to close the session after this run.
         try:
             backend.close(prepared.session_id)
