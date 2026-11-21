@@ -324,7 +324,6 @@
     "exportAgentFailed": "No se pudo exportar el agente",
     "filters": {
       "all": "Todos",
-      "byDocsGPT": "Por DocsGPT",
       "byMe": "Por mí",
       "shared": "Compartidos conmigo"
     },
@@ -980,11 +979,6 @@
       "teamShared": {
         "description": "Agentes que otros equipos compartieron con este equipo. Todos sus miembros pueden chatear con ellos.",
         "emptyState": "Ningún otro equipo ha compartido aún un agente con este equipo."
-      },
-      "template": {
-        "description": "Agentes proporcionados por DocsGPT",
-        "emptyState": "No se encontraron agentes de plantilla.",
-        "title": "Por DocsGPT"
       },
       "user": {
         "description": "Agentes creados o publicados por ti",

@@ -20,7 +20,6 @@ const state = vi.hoisted(() => ({
     token: null,
     selectedAgent: null,
     agents: [] as unknown[],
-    templateAgents: [] as unknown[],
     sharedAgents: [] as unknown[],
   },
   folders: {
@@ -49,7 +48,6 @@ vi.mock('react-i18next', () => ({
 vi.mock('./hooks/useAgentsFetch', () => ({
   useAgentsFetch: () => ({
     isLoading: {
-      template: false,
       user: false,
       sharedWithYou: false,
       shared: false,
@@ -126,7 +124,6 @@ const teamAgent = agent('Ops bot', {
   created_by: { user_id: 'dana', label: 'Dana' },
 });
 const discovered = agent('Public helper', { shared_token: 'tok' });
-const template = agent('Starter', { id: 'tpl' });
 
 const folder = (
   id: string,
@@ -150,7 +147,6 @@ beforeEach(() => {
   root = createRoot(container);
   moveCalls.length = 0;
   state.preference.agents = [];
-  state.preference.templateAgents = [];
   state.preference.sharedAgents = [];
   state.folders.tree.items = [];
   inWorkspace('personal');
@@ -274,28 +270,6 @@ describe('AgentsList in a team', () => {
     expect(labels).not.toContain('agents.newAgent');
     expect(labels).not.toContain('agents.importAgent');
     expect(labels).not.toContain('folders.newFolder');
-  });
-
-  it('keeps Templates, with Duplicate only for an Editor', async () => {
-    state.preference.templateAgents = [template];
-    inWorkspace('t1', 'viewer');
-    await render();
-    expect(sectionIds()).toContain('template');
-    expect(
-      card('Starter')?.querySelector(
-        'button[aria-label="agents.card.actions"]',
-      ),
-    ).toBeFalsy();
-
-    await act(async () => root.unmount());
-    root = createRoot(container);
-    inWorkspace('t1', 'editor');
-    await render();
-    expect(
-      card('Starter')?.querySelector(
-        'button[aria-label="agents.card.actions"]',
-      ),
-    ).toBeTruthy();
   });
 
   it('hides a Discovered or Shared with you route, showing the list', async () => {

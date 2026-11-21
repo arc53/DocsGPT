@@ -17,7 +17,6 @@ export const AGENTS_MANAGE_ROOT = '/agents/manage';
 
 /** URL segment for each list filter. `all` is the root, so it has none. */
 const FILTER_SLUGS: Record<Exclude<AgentFilterTab, 'all'>, string> = {
-  template: 'templates',
   user: 'mine',
   sharedWithYou: 'shared-with-you',
   // A team's: what other teams shared with it.

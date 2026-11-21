@@ -332,7 +332,6 @@
     "exportAgentFailed": "Failed to export agent",
     "filters": {
       "all": "All",
-      "byDocsGPT": "Templates",
       "byMe": "My agents",
       "shared": "Discovered"
     },
@@ -975,11 +974,6 @@
       "teamShared": {
         "description": "Agents other teams shared with this team. Everyone in it can chat with them.",
         "emptyState": "No other team has shared an agent with this team yet."
-      },
-      "template": {
-        "description": "Agents provided by DocsGPT",
-        "emptyState": "No template agents found.",
-        "title": "Templates"
       },
       "user": {
         "description": "Agents created or published by you",

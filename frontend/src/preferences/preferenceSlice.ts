@@ -61,7 +61,6 @@ export interface Preference {
   token: string | null;
   modalState: ActiveState;
   paginatedDocuments: Doc[] | null;
-  templateAgents: Agent[] | null;
   agents: Agent[] | null;
   sharedAgents: Agent[] | null;
   selectedAgent: Agent | null;
@@ -109,7 +108,6 @@ const initialState: Preference = {
   token: localStorage.getItem('authToken') || null,
   modalState: 'INACTIVE',
   paginatedDocuments: null,
-  templateAgents: null,
   agents: null,
   sharedAgents: null,
   selectedAgent: null,
@@ -261,9 +259,6 @@ export const prefSlice = createSlice({
     setModalStateDeleteConv: (state, action: PayloadAction<ActiveState>) => {
       state.modalState = action.payload;
     },
-    setTemplateAgents: (state, action) => {
-      state.templateAgents = action.payload;
-    },
     setAgents: (state, action) => {
       state.agents = action.payload;
     },
@@ -318,8 +313,8 @@ export const prefSlice = createSlice({
   },
   extraReducers: (builder) => {
     // Lists and picks from the old workspace go; the next loads fill them
-    // from the new one. Templates, built-in models and the session are the
-    // same in every workspace.
+    // from the new one. Built-in models and the session are the same in
+    // every workspace.
     builder.addCase(switchWorkspace, (state) => {
       // Custom models are a person's own or one team's: the model list
       // loads again for the new workspace, and a custom pick from the old
@@ -361,7 +356,6 @@ export const {
   setChunks,
   setModalStateDeleteConv,
   setPaginatedDocuments,
-  setTemplateAgents,
   setAgents,
   setSharedAgents,
   setSelectedAgent,
@@ -540,8 +534,6 @@ export const selectPrompts = (state: RootState) => state.preference.prompts;
 export const selectChunks = (state: RootState) => state.preference.chunks;
 export const selectPaginatedDocuments = (state: RootState) =>
   state.preference.paginatedDocuments;
-export const selectTemplateAgents = (state: RootState) =>
-  state.preference.templateAgents;
 export const selectAgents = (state: RootState) => state.preference.agents;
 export const selectSharedAgents = (state: RootState) =>
   state.preference.sharedAgents;

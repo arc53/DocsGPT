@@ -7,7 +7,7 @@ const ITEM_PARAMS = ['folder', 'source', 'tool', 'prompt'];
 // The agents list and its filters; anything else under it is one agent's
 // page or a new agent's form.
 const AGENT_LISTS = new Set(
-  ['', '/templates', '/mine', '/team', '/discovered'].map(
+  ['', '/mine', '/team', '/discovered'].map(
     (suffix) => `${AGENTS_MANAGE_ROOT}${suffix}`,
   ),
 );
