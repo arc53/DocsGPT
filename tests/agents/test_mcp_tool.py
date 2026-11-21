@@ -531,9 +531,14 @@ class TestMCPOAuthManager:
         assert result["status"] == "not_started"
 
 
-@pytest.mark.skip(reason="DBTokenStorage signature changed post-PG migration; needs repo-based rewrite")
 @pytest.mark.unit
 class TestDBTokenStorage:
+    """The storage keys tokens by the server's origin on the Postgres store.
+
+    ``get_db_key`` (the Mongo key dict) went away with the migration; the
+    repository provider is ``mcp:<origin>`` now.
+    """
+
     def test_get_base_url(self):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
@@ -542,18 +547,14 @@ class TestDBTokenStorage:
             == "https://mcp.example.com"
         )
 
-    def test_get_db_key(self):
+    def test_pg_provider_keys_tokens_by_the_server_origin(self):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
-        mock_db = MagicMock()
         storage = DBTokenStorage(
             server_url="https://mcp.example.com/api",
             user_id="user1",
-            db_client=mock_db,
         )
-        key = storage.get_db_key()
-        assert key["server_url"] == "https://mcp.example.com"
-        assert key["user_id"] == "user1"
+        assert storage._pg_provider() == "mcp:https://mcp.example.com"
 
 
 @pytest.mark.unit

@@ -1780,6 +1780,32 @@ class TestMCPOAuthManager:
 # =====================================================================
 
 
+def _patch_pg_sessions(monkeypatch, pg_conn):
+    """Point the connection store's sessions at the ephemeral ``pg_conn``.
+
+    ``DBTokenStorage`` reaches the store through ``docsgpt.connectors.service``,
+    whose helpers open ``db_session`` / ``db_readonly``. Both are patched here,
+    together with the copies ``mcp_tool`` and the service import, so the real
+    INSERT/SELECT runs against the test cluster and never the operator's DB.
+    """
+    from contextlib import contextmanager
+
+    import docsgpt.agents.tools.mcp_tool as mcp_mod
+    import docsgpt.connectors.service as service_mod
+    import docsgpt.storage.db.session as session_mod
+
+    @contextmanager
+    def _yield():
+        yield pg_conn
+
+    monkeypatch.setattr(mcp_mod, "db_session", _yield, raising=False)
+    monkeypatch.setattr(mcp_mod, "db_readonly", _yield, raising=False)
+    monkeypatch.setattr(session_mod, "db_session", _yield)
+    monkeypatch.setattr(session_mod, "db_readonly", _yield)
+    monkeypatch.setattr(service_mod, "db_session", _yield)
+    monkeypatch.setattr(service_mod, "db_readonly", _yield)
+
+
 @pytest.mark.unit
 class TestDBTokenStorage:
     """Covers the repository-backed DBTokenStorage post-PG migration.
@@ -1793,26 +1819,7 @@ class TestDBTokenStorage:
 
     @staticmethod
     def _patch_db(monkeypatch, pg_conn):
-        from contextlib import contextmanager
-
-        import docsgpt.agents.tools.mcp_tool as mcp_mod
-
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
-        monkeypatch.setattr(mcp_mod, "db_session", _yield, raising=False)
-        monkeypatch.setattr(mcp_mod, "db_readonly", _yield, raising=False)
-        # mcp_tool imports db_session/db_readonly *inside* the helper
-        # methods, so also patch the origin module they come from.
-        import docsgpt.storage.db.session as session_mod
-
-        monkeypatch.setattr(session_mod, "db_session", _yield)
-        monkeypatch.setattr(session_mod, "db_readonly", _yield)
-        import docsgpt.connectors.service as service_mod
-
-        monkeypatch.setattr(service_mod, "db_session", _yield)
-        monkeypatch.setattr(service_mod, "db_readonly", _yield)
+        _patch_pg_sessions(monkeypatch, pg_conn)
 
     def test_get_base_url(self):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
@@ -2248,59 +2255,39 @@ class TestStoredSignInRenewal:
 # =====================================================================
 
 
-@pytest.mark.skip(reason="OAuth class signatures changed post-PG migration (db kwarg removed); needs rewrite")
 @pytest.mark.unit
 class TestNonInteractiveOAuth:
+    """A query-time sign-in fails fast instead of waiting for a browser.
 
-    def test_redirect_handler_raises(self):
+    The Mongo-era ``db`` kwarg is gone: tokens now live on the connection and
+    are reached through ``DBTokenStorage``, so the class is constructed with
+    just the server, the redirect URI and the user.
+    """
+
+    def _oauth(self):
         from docsgpt.agents.tools.mcp_tool import NonInteractiveOAuth
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        oauth = NonInteractiveOAuth(
+        return NonInteractiveOAuth(
             mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=None,
             redirect_uri="https://example.com/callback",
-            db=mock_db,
             user_id="user1",
         )
 
-        loop = asyncio.new_event_loop()
-        try:
-            with pytest.raises(Exception, match="OAuth session expired"):
-                loop.run_until_complete(
-                    oauth.redirect_handler("https://auth.example.com/authorize?state=x")
-                )
-        finally:
-            loop.close()
+    def test_redirect_handler_raises_a_typed_error(self):
+        from docsgpt.agents.tools.mcp_tool import MCPReauthorizationRequired
 
-    def test_callback_handler_raises(self):
-        from docsgpt.agents.tools.mcp_tool import NonInteractiveOAuth
+        oauth = self._oauth()
+        with pytest.raises(MCPReauthorizationRequired, match="OAuth session expired"):
+            asyncio.run(
+                oauth.redirect_handler("https://auth.example.com/authorize?state=x")
+            )
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+    def test_callback_handler_raises_a_typed_error(self):
+        from docsgpt.agents.tools.mcp_tool import MCPReauthorizationRequired
 
-        oauth = NonInteractiveOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=None,
-            redirect_uri="https://example.com/callback",
-            db=mock_db,
-            user_id="user1",
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            with pytest.raises(Exception, match="OAuth session expired"):
-                loop.run_until_complete(oauth.callback_handler())
-        finally:
-            loop.close()
+        oauth = self._oauth()
+        with pytest.raises(MCPReauthorizationRequired, match="OAuth session expired"):
+            asyncio.run(oauth.callback_handler())
 
 
 # =====================================================================
@@ -3107,226 +3094,80 @@ class TestRegularConnectionExtended:
 # =====================================================================
 
 
-@pytest.mark.skip(reason="OAuth class signatures changed post-PG migration (db kwarg removed); needs rewrite")
 @pytest.mark.unit
 class TestDocsGPTOAuthExtended:
+    """The browser-less handshake: state extraction, the Redis handoff, polling.
 
-    def test_process_auth_url_success(self):
+    Rewritten on the post-Postgres signature: ``db`` is gone, the callback
+    returns the RFC 9207 issuer, and the poll's error/absent-Redis paths are
+    asserted here — the success path is covered from ``tests/connectors``.
+    """
+
+    @staticmethod
+    def _oauth(redis_client=None, scopes=None, task_id=None):
         from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        oauth = DocsGPTOAuth(
+        return DocsGPTOAuth(
             mcp_url="https://mcp.example.com/api",
-            scopes=["read", "write"],
-            redis_client=MagicMock(),
+            scopes=scopes,
+            redis_client=redis_client,
             redirect_uri="https://example.com/callback",
-            task_id="task1",
-            db=mock_db,
+            task_id=task_id,
             user_id="user1",
         )
 
+    def test_process_auth_url_returns_the_url_and_state(self):
+        oauth = self._oauth(redis_client=MagicMock())
         url, state = oauth._process_auth_url(
             "https://auth.example.com/authorize?state=abc123&client_id=xyz"
         )
         assert state == "abc123"
         assert url == "https://auth.example.com/authorize?state=abc123&client_id=xyz"
 
-    def test_process_auth_url_no_state(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes="read",
-            redis_client=MagicMock(),
-            redirect_uri="https://example.com/callback",
-            db=mock_db,
-            user_id="user1",
-        )
-
+    def test_process_auth_url_without_state_raises(self):
+        oauth = self._oauth(redis_client=MagicMock())
         with pytest.raises(Exception, match="Failed to process auth URL"):
             oauth._process_auth_url("https://auth.example.com/authorize?client_id=xyz")
 
-    def test_redirect_handler_stores_in_redis(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+    def test_init_joins_list_scopes_for_client_registration(self):
+        oauth = self._oauth(redis_client=MagicMock(), scopes=["read", "write"])
+        assert oauth.context.client_metadata.scope == "read write"
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
+    def test_redirect_handler_stores_the_url_for_the_browser(self):
         mock_redis = MagicMock()
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=mock_redis,
-            redirect_uri="https://example.com/callback",
-            task_id="task1",
-            db=mock_db,
-            user_id="user1",
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(
-                oauth.redirect_handler(
-                    "https://auth.example.com/authorize?state=mystate&code=123"
-                )
+        oauth = self._oauth(redis_client=mock_redis, task_id="task1")
+        asyncio.run(
+            oauth.redirect_handler(
+                "https://auth.example.com/authorize?state=mystate&code=123"
             )
-        finally:
-            loop.close()
-
+        )
         assert oauth.auth_url == "https://auth.example.com/authorize?state=mystate&code=123"
         assert oauth.extracted_state == "mystate"
-        # Redis setex should have been called for auth_url and status
-        assert mock_redis.setex.call_count >= 2
-
-    def test_redirect_handler_no_redis(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=None,
-            redirect_uri="https://example.com/callback",
-            db=mock_db,
-            user_id="user1",
+        mock_redis.setex.assert_called_once_with(
+            "mcp_oauth:auth_url:mystate", 600, oauth.auth_url
         )
 
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(
-                oauth.redirect_handler(
-                    "https://auth.example.com/authorize?state=s1"
-                )
-            )
-        finally:
-            loop.close()
-
+    def test_redirect_handler_without_redis_still_keeps_the_state(self):
+        oauth = self._oauth(redis_client=None)
+        asyncio.run(
+            oauth.redirect_handler("https://auth.example.com/authorize?state=s1")
+        )
         assert oauth.extracted_state == "s1"
 
-    def test_callback_handler_no_redis_raises(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
+    def test_callback_handler_without_redis_raises(self):
+        oauth = self._oauth(redis_client=None)
+        with pytest.raises(Exception, match="Redis client or state not configured"):
+            asyncio.run(oauth.callback_handler())
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=None,
-            redirect_uri="https://example.com/callback",
-            db=mock_db,
-            user_id="user1",
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            with pytest.raises(Exception, match="Redis client or state not configured"):
-                loop.run_until_complete(oauth.callback_handler())
-        finally:
-            loop.close()
-
-    def test_callback_handler_receives_code(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
+    def test_callback_handler_reports_the_provider_error(self):
         mock_redis = MagicMock()
-        stored = {
-            "mcp_oauth:code:mystate": b"auth_code_123",
-            "mcp_oauth:iss:mystate": b"https://auth.example.com",
-        }
-        mock_redis.get.side_effect = stored.get
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=mock_redis,
-            redirect_uri="https://example.com/callback",
-            task_id="task1",
-            db=mock_db,
-            user_id="user1",
-        )
-        oauth.extracted_state = "mystate"
-        oauth.auth_url = "https://auth.example.com/authorize"
-
-        loop = asyncio.new_event_loop()
-        try:
-            # The MCP SDK reads ``.code``, ``.state`` and the RFC 9207 ``.iss``.
-            result = loop.run_until_complete(oauth.callback_handler())
-            assert result.code == "auth_code_123"
-            assert result.state == "mystate"
-            assert result.iss == "https://auth.example.com"
-        finally:
-            loop.close()
-
-    def test_callback_handler_receives_error(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        mock_redis = MagicMock()
-        # First get for code returns None, second get for error returns error
+        # The poll reads the code key first (absent) and the error key second.
         mock_redis.get.side_effect = [None, b"access_denied"]
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes=["read"],
-            redis_client=mock_redis,
-            redirect_uri="https://example.com/callback",
-            db=mock_db,
-            user_id="user1",
-        )
+        oauth = self._oauth(redis_client=mock_redis, task_id="task1")
         oauth.extracted_state = "mystate"
         oauth.auth_url = "https://auth.example.com/authorize"
-
-        loop = asyncio.new_event_loop()
-        try:
-            with pytest.raises(Exception, match="OAuth error: access_denied"):
-                loop.run_until_complete(oauth.callback_handler())
-        finally:
-            loop.close()
-
-    def test_init_scopes_as_string(self):
-        from docsgpt.agents.tools.mcp_tool import DocsGPTOAuth
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        oauth = DocsGPTOAuth(
-            mcp_url="https://mcp.example.com/api",
-            scopes="read write",
-            redis_client=MagicMock(),
-            redirect_uri="https://example.com/callback",
-            db=mock_db,
-            user_id="user1",
-        )
-        assert oauth.server_base_url == "https://mcp.example.com"
+        with pytest.raises(Exception, match="OAuth error: access_denied"):
+            asyncio.run(oauth.callback_handler())
 
 
 # =====================================================================
@@ -3334,255 +3175,134 @@ class TestDocsGPTOAuthExtended:
 # =====================================================================
 
 
-@pytest.mark.skip(reason="DBTokenStorage signature changed post-PG migration; needs repo-based rewrite")
 @pytest.mark.unit
 class TestDBTokenStorageExtended:
+    """Client registration and the connection-store lifecycle.
 
-    def test_get_tokens_with_valid_data(self):
+    The old tests mocked a Mongo ``db`` collection; these run against the real
+    Postgres connection the way ``DBTokenStorage`` does after the migration.
+    """
+
+    def test_get_client_info_none_when_no_connection(self, monkeypatch, pg_conn):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "tokens": {
-                "access_token": "at_123",
-                "token_type": "bearer",
-            }
-        }
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
+        _patch_pg_sessions(monkeypatch, pg_conn)
         storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
+            server_url="https://mcp.example.com/mcp", user_id="user-no-client-info"
         )
+        assert asyncio.run(storage.get_client_info()) is None
 
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_tokens())
-            assert result is not None
-            assert result.access_token == "at_123"
-        finally:
-            loop.close()
-
-    def test_get_tokens_with_invalid_data(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "tokens": {"bad_field": "bad_value"}
-        }
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_tokens())
-            assert result is None
-        finally:
-            loop.close()
-
-    def test_set_tokens(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-        from mcp.shared.auth import OAuthToken
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        token = OAuthToken(access_token="new_token", token_type="bearer")
-
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(storage.set_tokens(token))
-            mock_collection.update_one.assert_called_once()
-        finally:
-            loop.close()
-
-    def test_get_client_info_none(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = None
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_client_info())
-            assert result is None
-        finally:
-            loop.close()
-
-    def test_get_client_info_no_client_info_key(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {"tokens": {}}
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_client_info())
-            assert result is None
-        finally:
-            loop.close()
-
-    def test_get_client_info_with_valid_data(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "client_info": {
-                "client_id": "cid123",
-                "redirect_uris": ["https://example.com/callback"],
-            }
-        }
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_client_info())
-            assert result is not None
-            assert result.client_id == "cid123"
-        finally:
-            loop.close()
-
-    def test_get_client_info_redirect_uri_mismatch(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "client_info": {
-                "client_id": "cid123",
-                "redirect_uris": ["https://old.example.com/callback"],
-            }
-        }
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-            expected_redirect_uri="https://new.example.com/callback",
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_client_info())
-            assert result is None
-            mock_collection.update_one.assert_called_once()
-        finally:
-            loop.close()
-
-    def test_get_client_info_invalid_data(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
-
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_collection.find_one.return_value = {
-            "client_info": {"invalid_key": "value"}
-        }
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(storage.get_client_info())
-            assert result is None
-        finally:
-            loop.close()
-
-    def test_set_client_info(self):
-        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+    def test_set_then_get_client_info_roundtrip(self, monkeypatch, pg_conn):
         from mcp.shared.auth import OAuthClientInformationFull
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
-
-        storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
-        )
-
-        client_info = OAuthClientInformationFull(
-            client_id="cid123",
-            redirect_uris=["https://example.com/callback"],
-        )
-
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(storage.set_client_info(client_info))
-            mock_collection.update_one.assert_called_once()
-        finally:
-            loop.close()
-
-    def test_clear_all(self):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
-        mock_db = MagicMock()
-        mock_collection = MagicMock()
-        mock_db.__getitem__ = MagicMock(return_value=mock_collection)
+        _patch_pg_sessions(monkeypatch, pg_conn)
+        storage = DBTokenStorage(
+            server_url="https://mcp.example.com/mcp", user_id="user-client-info"
+        )
+        info = OAuthClientInformationFull(
+            client_id="cid-1",
+            client_name="DocsGPT-MCP",
+            redirect_uris=["https://example.com/callback"],
+        )
+        asyncio.run(storage.set_client_info(info))
 
-        loop = asyncio.new_event_loop()
-        try:
-            loop.run_until_complete(DBTokenStorage.clear_all(mock_db))
-            mock_collection.delete_many.assert_called_once_with({})
-        finally:
-            loop.close()
+        read_back = asyncio.run(storage.get_client_info())
+        assert read_back is not None
+        assert read_back.client_id == "cid-1"
+        assert [str(uri) for uri in read_back.redirect_uris] == [
+            "https://example.com/callback"
+        ]
+
+    def test_redirect_uri_mismatch_drops_the_registration_and_tokens(
+        self, monkeypatch, pg_conn
+    ):
+        from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.connectors.service import read_mcp_secrets
+
+        _patch_pg_sessions(monkeypatch, pg_conn)
+        base_url = "https://mcp.mismatch.example.com"
+        storage = DBTokenStorage(
+            server_url=f"{base_url}/mcp", user_id="user-mismatch"
+        )
+        asyncio.run(
+            storage.set_client_info(
+                OAuthClientInformationFull(
+                    client_id="cid-old",
+                    redirect_uris=["https://old.example.com/callback"],
+                )
+            )
+        )
+        asyncio.run(
+            storage.set_tokens(OAuthToken(access_token="at", token_type="Bearer"))
+        )
+
+        reader = DBTokenStorage(
+            server_url=f"{base_url}/mcp",
+            user_id="user-mismatch",
+            expected_redirect_uri="https://new.example.com/callback",
+        )
+        assert asyncio.run(reader.get_client_info()) is None
+        secrets = read_mcp_secrets("user-mismatch", base_url)
+        assert not secrets.get("tokens")
+        assert not secrets.get("client_info")
+
+    def test_get_client_info_with_invalid_data_returns_none(self, monkeypatch):
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+
+        monkeypatch.setattr(
+            "docsgpt.connectors.service.read_mcp_secrets",
+            lambda *args, **kwargs: {"client_info": {"invalid_key": "value"}},
+        )
+        storage = DBTokenStorage(
+            server_url="https://mcp.example.com/mcp", user_id="user-invalid"
+        )
+        assert asyncio.run(storage.get_client_info()) is None
+
+    def test_clear_all_removes_only_mcp_connections(self, monkeypatch, pg_conn):
+        from mcp.shared.auth import OAuthToken
+
+        from docsgpt.agents.tools.mcp_tool import DBTokenStorage
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        _patch_pg_sessions(monkeypatch, pg_conn)
+        repo = ConnectorSessionsRepository(pg_conn)
+        storage = DBTokenStorage(
+            server_url="https://mcp.clear-all.example.com/mcp",
+            user_id="user-clear-all",
+        )
+        asyncio.run(
+            storage.set_tokens(OAuthToken(access_token="at", token_type="Bearer"))
+        )
+        repo.create(
+            "user-keep",
+            "linear",
+            connector_key="linear",
+            auth_kind="mcp_oauth",
+        )
+        asyncio.run(DBTokenStorage.clear_all())
+
+        assert (
+            repo.get_by_user_and_server_url(
+                "user-clear-all", "https://mcp.clear-all.example.com"
+            )
+            is None
+        )
+        assert repo.get_by_user_provider("user-keep", "linear") is not None
 
     def test_serialize_client_info_without_redirect_uris(self):
         from docsgpt.agents.tools.mcp_tool import DBTokenStorage
 
-        mock_db = MagicMock()
         storage = DBTokenStorage(
-            server_url="https://mcp.example.com",
-            user_id="user1",
-            db_client=mock_db,
+            server_url="https://mcp.example.com", user_id="user1"
         )
         info = {"client_name": "test"}
-        result = storage._serialize_client_info(info)
-        assert result == {"client_name": "test"}
+        assert storage._serialize_client_info(info) == {"client_name": "test"}
 
 
 # =====================================================================
