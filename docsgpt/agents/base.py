@@ -1919,23 +1919,35 @@ class BaseAgent(ABC):
             per_doc = engine.evaluate(
                 str(doc["text"]), Stage.RETRIEVAL, controls=redacting
             )
-            guarded = self._retrieval_doc_with_guarded_text(doc, per_doc.text) if per_doc.redacted else doc
+            guarded = (
+                self._retrieval_doc_with_guarded_text(
+                    doc, per_doc.text, preserve_guarded_citation=True
+                )
+                if per_doc.redacted
+                else doc
+            )
             scrubbed.append(guarded)
         self.retrieved_docs = scrubbed
 
     @staticmethod
-    def _retrieval_doc_with_guarded_text(doc: Dict, text: str) -> Dict:
+    def _retrieval_doc_with_guarded_text(
+        doc: Dict, text: str, *, preserve_guarded_citation: bool = False
+    ) -> Dict:
         """Replace a guarded document's text and discard its unscreened child snippet.
 
         Args:
             doc: A retrieved document whose text was blocked or redacted.
             text: The withheld or redacted text to retain.
+            preserve_guarded_citation: Keep a separately screened citation
+                when a parent is redacted. Blocked documents must discard it.
 
         Returns:
             A copy with guarded ``text`` and no stale ``matched_text``.
         """
         guarded = {**doc, "text": text}
         guarded.pop("matched_text", None)
+        if not preserve_guarded_citation:
+            guarded.pop("_guarded_citation_text", None)
         return guarded
 
     EMBEDDED_WITHHELD_ERROR = (

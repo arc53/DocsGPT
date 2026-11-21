@@ -292,6 +292,43 @@ class TestRetrievalStage:
         assert "matched_text" not in agent.retrieved_docs[0]
         assert child not in repr(source)
 
+    def test_blocked_parent_drops_a_previously_guarded_child_citation(self, agent_base_params):
+        from docsgpt.connectors.attribution import client_sources
+
+        config = {
+            "enabled": True,
+            "mode": "scan_all",
+            "controls": [
+                {"check": "secrets", "stage": "retrieval", "action": "redact"},
+                {
+                    "check": "denylist",
+                    "stage": "retrieval",
+                    "action": "block",
+                    "settings": {"terms": ["restricted"]},
+                },
+            ],
+        }
+        token = "AKIAIOSFODNN7EXAMPLE"
+        child = f"Safe child with {token} removed during redaction."
+        parent = f"Restricted context and parent secret {token}."
+        agent = _agent(
+            agent_base_params,
+            config,
+            retrieved_docs=[{"text": parent, "matched_text": child}],
+        )
+
+        messages = agent._build_messages("system prompt", "q")
+        (source,) = client_sources(agent.retrieved_docs)
+
+        assert "restricted" not in " ".join(
+            message["content"] for message in messages if isinstance(message.get("content"), str)
+        ).lower()
+        assert source["text"] == agent.RETRIEVAL_WITHHELD_TEXT
+        assert "matched_text" not in agent.retrieved_docs[0]
+        assert "_guarded_citation_text" not in agent.retrieved_docs[0]
+        assert token not in repr(source)
+        assert child not in repr(source)
+
     def test_expanded_parent_block_falls_back_to_allowed_child(self, agent_base_params, monkeypatch):
         from types import SimpleNamespace
 
