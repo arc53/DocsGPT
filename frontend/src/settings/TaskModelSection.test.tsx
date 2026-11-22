@@ -72,11 +72,17 @@ vi.mock('../components/ui/select', () => ({
   SelectContent: ({
     children,
     fit,
+    capped,
   }: {
     children: React.ReactNode;
     fit?: boolean;
+    capped?: boolean;
   }) => (
-    <div data-testid="content" data-fit={fit || undefined}>
+    <div
+      data-testid="content"
+      data-fit={fit || undefined}
+      data-capped={capped || undefined}
+    >
       {children}
     </div>
   ),
@@ -131,9 +137,9 @@ const select = () =>
 const item = (value: string) =>
   container.querySelector<HTMLButtonElement>(`[data-item="${value}"]`)!;
 
-async function render(prefs: Record<string, unknown>) {
+async function render(prefs: Record<string, unknown>, models = MODELS) {
   getPreferences.mockResolvedValue(json({ success: true, ...prefs }));
-  getModels.mockResolvedValue(json({ models: MODELS }));
+  getModels.mockResolvedValue(json({ models }));
   await act(async () => root.render(<TaskModelSection />));
 }
 
@@ -179,6 +185,15 @@ describe('Task model row', () => {
       'settings.customModels.modelsGroup.builtin',
       'settings.customModels.modelsGroup.user',
     ]);
+  });
+
+  it('shows no group headings while every model is built-in', async () => {
+    await render(
+      { task_model_id: null, instance_task_model_id: 'gpt-b' },
+      MODELS.filter((m) => m.source === 'builtin'),
+    );
+    expect(item('gpt-a')).not.toBeNull();
+    expect(container.querySelector('[data-testid="group-label"]')).toBeNull();
   });
 
   it("never offers a team's model, even if the list carried one", async () => {
@@ -398,6 +413,12 @@ describe('Task model row', () => {
       container
         .querySelector('[data-testid="content"]')!
         .hasAttribute('data-fit'),
+    ).toBe(true);
+    // And stops at the height of a long list, like the chat's model picker.
+    expect(
+      container
+        .querySelector('[data-testid="content"]')!
+        .hasAttribute('data-capped'),
     ).toBe(true);
     expect(trigger.className).not.toContain('sm:w-56');
     expect(trigger.title).toBe('My Llama');

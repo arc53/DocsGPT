@@ -46,7 +46,10 @@ type TaskModelRowProps = {
   defaultLabel: string;
   /** The label without the model's name: a phone's trigger shows it when the two differ. */
   defaultShortLabel: string;
-  /** The model options; a group with a label is listed under it, and only when it has models. */
+  /**
+   * The model options, group by group. Each group with models is listed under
+   * its label once two of them have models; alone, it needs no heading.
+   */
   groups: { label?: string; models: TaskModelOption[] }[];
   /** The model that runs now. */
   runningModelId: string | null;
@@ -65,7 +68,8 @@ type TaskModelRowProps = {
 /**
  * The task model row of Settings › General and Admin › Defaults: a pill
  * Select whose first option is the default, then the models, a model
- * whose provider refused its key marked in the list. A stored model that
+ * whose provider refused its key marked in the list. The list sizes to its
+ * options and stops at a long list's height. A stored model that
  * can't run shows no option and a warning; else, while the refused model
  * is the one that runs, a warning names it. The trigger grows with its
  * value up to 384px, then ends in "…" with the whole name as its title.
@@ -89,6 +93,8 @@ export default function TaskModelRow({
   refusedNote,
 }: TaskModelRowProps) {
   const models = groups.flatMap((group) => group.models);
+  // Headings only once there are groups to tell apart, as in the chat's picker.
+  const headed = groups.filter((group) => group.models.length > 0).length > 1;
   const nameOf = (modelId: string) =>
     models.find((m) => m.id === modelId)?.display_name ?? modelId;
   const refused =
@@ -154,12 +160,12 @@ export default function TaskModelRow({
             ) : undefined}
           </SelectValue>
         </SelectTrigger>
-        <SelectContent fit>
+        <SelectContent fit capped>
           <SelectItem value={defaultValue}>
             <span className="truncate">{defaultLabel}</span>
           </SelectItem>
           {groups.map((group, index) =>
-            group.label === undefined ? (
+            !headed || group.label === undefined ? (
               <Fragment key={index}>{group.models.map(renderItem)}</Fragment>
             ) : group.models.length > 0 ? (
               <SelectGroup key={index}>
