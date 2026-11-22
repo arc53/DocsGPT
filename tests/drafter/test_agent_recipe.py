@@ -559,7 +559,7 @@ class TestInstructions:
 
     def test_internal_looking_tools_are_asked_about_too(self):
         text = instructions(_req(), _ws())
-        assert "If a source looks internal" in text
+        assert "If a source or folder looks internal" in text
 
     def test_a_public_agent_never_gets_a_tool_into_internal_systems(self):
         text = instructions(_req(), _ws())
@@ -1675,7 +1675,7 @@ class TestKnowledgeFolderCatalogue:
             assert ws.counts()["folders"] == 2
             req = _kf_req(KF_USER, context)
             assert "get_folder" in AGENT_RECIPE.offered_tools(req, ws)
-            assert "get_folder lists the sources" in instructions(req, ws)
+            assert "get_folder lists a folder's sources" in instructions(req, ws)
             assert run_read_tool("get_folder", ws, {"folder_id": listed})["sources"] == [
                 {"id": rates, "name": "Rates guide"}]
         assert ws.proposable_folders() == {on_form, listed}
@@ -1714,3 +1714,152 @@ class TestKnowledgeFolderCatalogue:
 
     def test_no_folders_offer_no_folder_read(self):
         assert "get_folder" not in AGENT_RECIPE.offered_tools(_req(), _ws())
+
+
+# ---------------------------------------------------------------------------
+# Proposing knowledge folders
+# ---------------------------------------------------------------------------
+
+CARRIERS = "a1111111-1111-1111-1111-111111111111"
+EU = "a2222222-2222-2222-2222-222222222222"
+OTHER = "a3333333-3333-3333-3333-333333333333"
+MATES = "a4444444-4444-4444-4444-444444444444"
+RATES = "b1111111-1111-1111-1111-111111111111"
+RAIL = "b2222222-2222-2222-2222-222222222222"
+MISC = "b3333333-3333-3333-3333-333333333333"
+PRIVATE = "b4444444-4444-4444-4444-444444444444"
+
+
+def _fws(kept=(), **kwargs) -> AgentWorkspace:
+    """Carriers > EU and Other, all the caller's to attach; ``kept`` folders are on the form as step 2 kept them."""
+    from docsgpt.drafter.catalog import FolderTree
+
+    tree = FolderTree(names={CARRIERS: "Carriers", EU: "EU", OTHER: "Other"},
+                      parents={CARRIERS: None, EU: CARRIERS, OTHER: None}, children={CARRIERS: [EU]},
+                      filed={CARRIERS: [RATES], EU: [RAIL], OTHER: [MISC]})
+    rows = {CARRIERS: {"id": CARRIERS, "name": "Carriers", "sources": 2},
+            EU: {"id": EU, "name": "EU", "path": "Carriers", "sources": 1},
+            OTHER: {"id": OTHER, "name": "Other", "sources": 1}}
+    ws = _ws(sources=[{"id": SOURCE_ID, "name": "Help Center"}, {"id": RATES, "name": "Rates"},
+                      {"id": RAIL, "name": "Rail notes"}, {"id": MISC, "name": "Misc"}],
+             folder_rows=list(rows.values()), folder_tree=tree)
+    ws.attachable["folders"] = list(rows)
+    ws.found["folders"] = rows
+    for fid in kept:
+        name = rows[fid]["name"] if fid in rows else "Mate's docs"
+        ws.knowledge_folders.append({"id": fid, "name": name, "sources": []})
+        ws.knowledge_folder_feeds[fid] = ws.folder_sources(fid) if fid in rows else [PRIVATE]
+    for key, value in kwargs.items():
+        setattr(ws, key, value)
+    return ws
+
+
+@pytest.mark.unit
+class TestProposingFolders:
+    def test_folders_follow_sources_in_the_knowledge_step(self):
+        from docsgpt.drafter.agent_form import FIELDS, STEP_FIELDS
+
+        assert STEP_FIELDS["knowledge"] == ("sources", "folders", "tools", "agent_type")
+        assert FIELDS.index("folders") == FIELDS.index("sources") + 1
+        assert AGENT_RECIPE.proposal_schema["properties"]["fields"]["properties"]["folders"]["type"] == "array"
+
+    def test_ids_the_caller_cannot_attach_are_dropped_and_the_rest_lower_cased(self):
+        out = _validate({"folders": [CARRIERS.upper(), "made-up", MATES]}, ws=_fws())
+        assert out["fields"]["folders"] == [CARRIERS]
+        assert out["dropped"] == [{"field": "folders", "id": "made-up", "reason": "not_found"},
+                                  {"field": "folders", "id": MATES, "reason": "not_found"}]
+        # Every id dropped: the form's list stays as it is.
+        assert "folders" not in _validate({"folders": ["made-up"]}, ws=_fws())["fields"]
+
+    def test_the_forms_own_ids_are_not_trusted_only_what_the_server_kept(self):
+        out = _validate({"folders": [MATES]}, form={"folders": [MATES]}, ws=_fws())
+        assert "folders" not in out["fields"] and out["dropped"][0]["id"] == MATES
+
+    def test_a_source_inside_a_chosen_folder_is_taken_off_with_a_reason(self):
+        out = _validate({"folders": [CARRIERS], "sources": [SOURCE_ID, RAIL]}, ws=_fws(),
+                        reasons=[{"field": "folders", "summary": "Carriers · live"}])
+        assert out["fields"] == {"folders": [CARRIERS], "sources": [SOURCE_ID]}
+        reason = next(r["summary"] for r in out["reasons"] if r["field"] == "sources")
+        assert "Rail notes" in reason and "Carriers" in reason
+
+    def test_folders_alone_take_off_a_form_source_they_feed(self):
+        out = _validate({"folders": [CARRIERS]}, form={"sources": [RATES, SOURCE_ID]}, ws=_fws())
+        assert out["fields"] == {"folders": [CARRIERS], "sources": [SOURCE_ID]}
+        assert [r["field"] for r in out["reasons"]] == ["sources"]
+
+    def test_a_folder_inside_a_chosen_folder_is_dropped(self):
+        assert _validate({"folders": [EU, CARRIERS, OTHER]}, ws=_fws())["fields"]["folders"] == [CARRIERS, OTHER]
+
+    def test_removing_a_folder_puts_none_of_its_sources_back(self):
+        out = _validate({"folders": []}, form={"folders": [CARRIERS]}, ws=_fws(kept=[CARRIERS]))
+        assert out["fields"] == {"folders": []}
+
+    def test_a_form_already_holding_a_folder_and_a_source_inside_it_is_left_alone(self):
+        form = {"folders": [CARRIERS], "sources": [RATES]}
+        assert _validate({"name": "Carrier desk"}, form=form, ws=_fws(kept=[CARRIERS]))["fields"] == {
+            "name": "Carrier desk"}
+        assert _validate({"folders": [CARRIERS]}, form=form, ws=_fws(kept=[CARRIERS]))["fields"] == {
+            "sources": []}
+
+    def test_a_kept_folder_the_caller_cannot_attach_stays_and_feeds_what_the_run_reads(self):
+        form = {"folders": [MATES], "sources": [PRIVATE, SOURCE_ID]}
+        out = _validate({"folders": [MATES, OTHER]}, form=form, ws=_fws(kept=[MATES]))
+        assert out["fields"] == {"folders": [MATES, OTHER], "sources": [SOURCE_ID]} and out["dropped"] == []
+
+    def test_unchanged_folders_are_left_out(self):
+        assert _validate({"folders": [CARRIERS]}, form={"folders": [CARRIERS]},
+                         ws=_fws(kept=[CARRIERS]))["fields"] == {}
+
+    def test_the_cap_counts_only_the_folders_a_proposal_adds(self):
+        ws = _fws()
+        many = [f"c{i:07d}-0000-0000-0000-000000000000" for i in range(agent_recipe.MAX_REFS + 1)]
+        ws.attachable["folders"] += many
+        with pytest.raises(ProposalInvalid, match="folders"):
+            _validate({"folders": many}, ws=ws)
+
+    def test_folders_draft_the_knowledge_step_ahead(self):
+        out = _validate({"name": "Desk", "folders": [CARRIERS]}, step="basics", ws=_fws())
+        assert out["steps"] == ["basics", "knowledge"]
+
+    def test_a_knowledge_message_about_a_drafted_folders_sources_is_not_a_claim(self):
+        req = _req({}, "Use the carriers folder", step="knowledge")
+        req.can_correct = True
+        proposal = validate({"message": "I attached the Carriers folder and its sources.",
+                             "fields": {"folders": [CARRIERS]}}, req, _fws())
+        assert proposal["fields"] == {"folders": [CARRIERS]}
+
+    def test_a_form_that_offers_no_folders_takes_none_and_says_nothing_of_them(self):
+        form = {"folders_offered": False}
+        out = _validate({"folders": [CARRIERS], "name": "Desk"}, form=form, ws=_fws(), step="knowledge")
+        assert "folders" not in out["fields"] and out["dropped"] == []
+        text = instructions(_req(form, step="knowledge"), _fws())
+        assert "- folders:" not in text and "set only: sources, tools, agent_type" in text
+        assert "knowledge folders, by id" not in text
+
+    def test_the_model_is_told_how_to_pick_folders_when_it_may(self):
+        for req in (_req({}, step="knowledge"), _req({"name": "Desk"})):
+            text = instructions(req, _fws())
+            assert "- folders:" in text and "never in sources" in text and "live" in text
+        assert "set only: sources, folders, tools, agent_type" in instructions(_req({}, step="knowledge"), _fws())
+        # Nothing to pick: not a word about setting folders.
+        assert "- folders:" not in instructions(_req({}, step="knowledge"), _ws())
+
+    def test_a_docs_gap_drafts_no_folder_either(self):
+        from docsgpt.drafter.agent_instructions import INSIGHTS_RULES
+
+        assert "no source, folder, prompt or starter change" in INSIGHTS_RULES
+
+
+def test_an_editor_keeps_the_owners_folder_and_adds_their_own(pg_conn):
+    from tests.api.user.test_resource_sponsors import _agent, EDITOR, OWNER
+
+    owners = _kfolder(pg_conn, OWNER, "Owner docs")
+    private = _filed(pg_conn, owners, OWNER, "Owner private")
+    theirs = _kfolder(pg_conn, EDITOR, "Editor docs")
+    _filed(pg_conn, theirs, EDITOR, "Editor notes")
+    agent_id, _team = _agent(pg_conn, knowledge_folder_ids=[owners], source_id=private)
+    context = parse_context({"agent_id": agent_id, "form": {"folders": [owners], "sources": [private]}})
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+    proposal = validate({"message": "m", "fields": {"folders": [owners, theirs]}}, _kf_req(EDITOR, context), ws)
+    assert proposal["fields"] == {"folders": [owners, theirs], "sources": []}

@@ -1,7 +1,7 @@
 """The agent recipe: draft an agent step by step, or improve a saved one, from what the user writes.
 
 A new agent is built in four steps (:data:`STEPS`): ``basics`` (name,
-description), ``knowledge`` (sources, tools, ``agent_type``: ``classic`` or
+description), ``knowledge`` (sources, knowledge folders, tools, ``agent_type``: ``classic`` or
 ``research``, the two the form offers), ``prompt`` (an existing prompt, or a
 new one the user reviews in the prompt editor, and starters) and ``safety``
 (request or token limits, guardrail checks from :data:`GUARDRAIL_MENU`, and
@@ -58,15 +58,15 @@ from docsgpt.drafter.agent_form import (
     PROMPT_NAME_MAX,
     REASON_SUMMARY_MAX,
     SAFETY_FIELDS,
-    STEP_FIELDS,
     STEPS,
     UNGROUNDED,
 )
 from docsgpt.drafter.agent_instructions import (
-    AGENT_FIELDS,
+    agent_fields,
     CONVERSATION_RULES,
     DESIGN_RULES,
-    GUIDED,
+    FOLDER_RULES,
+    guided,
     INSIGHTS_RULES,
     KNOWLEDGE_FOLDERS,
     NEVER_GUIDED,
@@ -77,6 +77,7 @@ from docsgpt.drafter.agent_instructions import (
     safety_guide,
     SKIPPED,
     STARTERS,
+    step_fields,
     STEP_GUIDES,
     WORKSPACE_FOLDERS,
 )
@@ -835,6 +836,13 @@ def _insights_guardrail(form: dict, ws: AgentWorkspace) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def folders_settable(form: dict, ws: Workspace) -> bool:
+    """Whether a turn may set ``folders``: the form offers folders (``folders_offered``) and there are some to pick
+    (listed in the workspace) or to keep (on the form, as the server kept them)."""
+    return form.get("folders_offered") is not False and isinstance(ws, AgentWorkspace) \
+        and bool(ws.folder_rows or ws.knowledge_folders)
+
+
 def instructions(req: DraftRequest, ws: Workspace) -> str:
     """The agent recipe's system instructions: the shared rules, then the current step's or improve mode's."""
     step = req.context["step"]
@@ -843,16 +851,19 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
     never = NEVER_OTHER if step == "safety" else NEVER_GUIDED if step else NEVER_POLICY_INSIGHTS if insights \
         else NEVER_POLICY
     folders = getattr(ws, "knowledge_folders", None)
-    parts = [AGENT_FIELDS, never, DESIGN_RULES]
+    settable = folders_settable(form, ws)
+    parts = [agent_fields(settable), never, DESIGN_RULES]
     if folders:
         parts.append(KNOWLEDGE_FOLDERS)
     if ws.folder_rows:
         parts.append(WORKSPACE_FOLDERS)
+    if settable:
+        parts.append(FOLDER_RULES)
     if ws.partial():
         parts.append(PARTIAL_WORKSPACE)
     if step:
-        own = ", ".join(STEP_FIELDS[step])
-        parts += [GUIDED, f"The current step is {step}. In this step set only: {own}.",
+        own = ", ".join(step_fields(step, settable))
+        parts += [guided(settable), f"The current step is {step}. In this step set only: {own}.",
                   safety_guide() if step == "safety" else STEP_GUIDES[step]]
         if req.context.get("starter"):
             parts.append(STARTERS[req.context["starter"]])
@@ -892,6 +903,8 @@ PROPOSAL_SCHEMA: dict = {
                 "description": {"type": "string"},
                 "agent_type": {"type": "string", "enum": list(AGENT_TYPES)},
                 "sources": {"type": "array", "items": {"type": "string"}, "description": "Source ids."},
+                "folders": {"type": "array", "items": {"type": "string"},
+                            "description": "Knowledge folder ids, only when the instructions say you may set them."},
                 "tools": {"type": "array", "items": {"type": "string"}, "description": "Tool ids."},
                 "prompt": {
                     "type": "object",
@@ -1368,12 +1381,12 @@ def _unmatched_gap(gap_type: Any, topic: Optional[str], by_topic: bool, rows: li
 def _drafted_ahead(step: str, fields: dict, form: dict) -> bool:
     """Whether a proposal from an earlier step drafted what ``step`` is for, so the build may pass over it.
 
-    Knowledge needs sources or tools (a type alone leaves them to pick); the prompt step a prompt with starters,
-    drafted or already on the form (a prompt alone leaves them to write, starters alone the prompt). Safety is
-    never drafted ahead.
+    Knowledge needs sources, folders or tools (a type alone leaves them to pick); the prompt step a prompt with
+    starters, drafted or already on the form (a prompt alone leaves them to write, starters alone the prompt).
+    Safety is never drafted ahead.
     """
     if step == "knowledge":
-        return "sources" in fields or "tools" in fields
+        return "sources" in fields or "folders" in fields or "tools" in fields
     if step == "prompt":
         return "prompt" in fields and bool(fields.get("starters") or form["starters"])
     return False
@@ -1443,6 +1456,15 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             refs = _refs(kind, raw_fields[kind], ws.ids(kind) | set(form[kind]), form[kind], dropped)
             if refs is not None:
                 fields[kind] = refs
+    # A form that offers no folders takes none: left out quietly, like a field another step sets.
+    if "folders" in raw_fields and form.get("folders_offered") is not False and isinstance(ws, AgentWorkspace):
+        raw = raw_fields["folders"]
+        raw = [item.lower() if isinstance(item, str) else item for item in raw] if isinstance(raw, list) else raw
+        # The form's own ids are client input: only the folders the server kept count as already there.
+        refs = _refs("folders", raw, ws.proposable_folders(), [f["id"] for f in ws.knowledge_folders], dropped)
+        if refs is not None:
+            fields["folders"] = refs
+    covered = _covered_sources(fields, form, ws)
     if "starters" in raw_fields:
         try:
             fields["starters"] = normalize_starters(raw_fields["starters"])
@@ -1482,6 +1504,8 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
             continue
         # Only the summary shows in the panel: a detail a model still sends is dropped.
         reasons.append({"field": reason["field"], "summary": summary})
+    if covered and "sources" in fields:
+        _covered_reason(reasons, covered, fields, ws)
     message = clean_text(args.get("message"), MESSAGE_MAX)
     if step and req.can_correct:
         unbacked = unbacked_claims(message, step, fields, form)
@@ -1502,6 +1526,73 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
     return proposal
 
 
+def _folders_above(ws: AgentWorkspace, folder_id: str) -> list[str]:
+    """The folders above one of the caller's knowledge folders; none for a folder outside their tree."""
+    tree = ws.folder_tree
+    return tree.above(folder_id) if tree is not None and folder_id in tree.names else []
+
+
+def _covered_sources(fields: dict, form: dict, ws: Workspace) -> list[str]:
+    """Normalise a proposal's knowledge: the sources its knowledge folders already feed are taken off.
+
+    Only when the proposal sets ``sources`` or ``folders``. A drafted folder inside another drafted folder is
+    dropped (the outermost stays). The folders are the proposal's, else the form's as the server kept them; the
+    sources the proposal's, else the form's. A source one of those folders feeds is taken off, and ``sources`` is
+    set when that changes the form's list. Taking a folder off puts none of its sources back.
+
+    Returns:
+        The sources taken off, in list order.
+    """
+    if not isinstance(ws, AgentWorkspace) or ("sources" not in fields and "folders" not in fields):
+        return []
+    if "folders" in fields:
+        drafted = set(fields["folders"])
+        fields["folders"] = [fid for fid in fields["folders"] if not drafted.intersection(_folders_above(ws, fid))]
+        folders = fields["folders"]
+    else:
+        folders = [folder["id"] for folder in ws.knowledge_folders]
+    fed = {sid for fid in folders for sid in ws.folder_sources(fid)}
+    current = fields.get("sources", form["sources"])
+    covered = [sid for sid in current if sid.lower() in fed]
+    if covered:
+        fields["sources"] = [sid for sid in current if sid.lower() not in fed]
+    return covered
+
+
+def _named(items: list[str]) -> str:
+    """``a``, ``a and b``, ``a, b and c``."""
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+
+
+def _covered_reason(reasons: list[dict], covered: list[str], fields: dict, ws: AgentWorkspace) -> None:
+    """Say in the ``sources`` reason which sources the server took off and which drafted folders feed them,
+    after the model's own reason or as the reason when it gave none."""
+    source_names = {str(row["id"]): row.get("name") for row in ws.sources}
+    source_names.update({sid: row.get("name") for sid, row in ws.found.get("sources", {}).items()})
+    folder_names = {fid: row.get("name") for fid, row in ws.found.get(FOLDER_KIND, {}).items()}
+    for folder in ws.knowledge_folders:
+        folder_names.setdefault(folder["id"], folder.get("name"))
+        source_names.update({row["id"]: row.get("name") for row in folder["sources"]})
+    folders = fields.get("folders", [f["id"] for f in ws.knowledge_folders])
+    feeding = [folder_names[fid] for fid in folders if folder_names.get(fid)
+               and any(sid.lower() in ws.folder_sources(fid) for sid in covered)]
+    named = [source_names[sid] for sid in covered if source_names.get(sid)][:3]
+    rest = len(covered) - len(named)
+    if named:
+        what = _named(named + ([f"{rest} more"] if rest else []))
+    else:
+        what = f"{rest} source{'s' if rest > 1 else ''}"
+    by = (f"the folder {feeding[0]}" if len(feeding) == 1 else f"the folders {_named(feeding)}") if feeding \
+        else "a chosen folder"
+    note = f"Left out {what}: {by} already feed{'s' if len(feeding) < 2 else ''} " \
+           f"{'it' if len(covered) == 1 else 'them'}"
+    for reason in reasons:
+        if reason["field"] == "sources":
+            reason["summary"] = clean_text(f"{reason['summary']} · {note}", REASON_SUMMARY_MAX)
+            return
+    reasons.append({"field": "sources", "summary": clean_text(note, REASON_SUMMARY_MAX)})
+
+
 def _drop_unchanged(fields: dict, form: dict) -> None:
     """Leave out every field whose drafted value is what the form already holds."""
     current: dict[str, Any] = {
@@ -1509,6 +1600,7 @@ def _drop_unchanged(fields: dict, form: dict) -> None:
         "description": form["description"],
         "agent_type": form["agent_type"] or "classic",
         "sources": form["sources"],
+        "folders": form.get("folders", []),
         "tools": form["tools"],
         "starters": form["starters"],
     }

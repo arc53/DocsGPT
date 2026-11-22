@@ -15,7 +15,7 @@ BUILTIN_PROMPTS = ("default", "creative", "strict")
 STEPS = ("basics", "knowledge", "prompt", "safety")
 STEP_FIELDS: dict[str, tuple[str, ...]] = {
     "basics": ("name", "description"),
-    "knowledge": ("sources", "tools", "agent_type"),
+    "knowledge": ("sources", "folders", "tools", "agent_type"),
     "prompt": ("prompt", "starters"),
     "safety": ("limits", "guardrails", "analytics"),
 }
@@ -37,7 +37,7 @@ NAME_MAX = 100
 DESCRIPTION_MAX = 500
 PROMPT_NAME_MAX = 100
 PROMPT_CONTENT_MAX = 20000
-#: Most sources, and most tools, a proposal adds to those the form already has.
+#: Most sources, most knowledge folders and most tools a proposal adds to those the form already has.
 MAX_REFS = 30
 #: Largest request or token limit a proposal sets.
 LIMIT_MAX = 1_000_000_000
