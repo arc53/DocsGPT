@@ -655,6 +655,29 @@ def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> No
     }
 
 
+def attachable_folders(conn, user_id: str, folder_ids: Iterable[Any], owner_id: Optional[str] = None) -> list[str]:
+    """The ids among ``folder_ids`` the caller may attach to an agent of this workspace, lower-case, in order.
+
+    The rule a save applies (``folder_knowledge.unattachable_folder``): the caller's own knowledge folders in
+    Personal; in a team workspace (``owner_id`` the team's principal) the team's own tree, whoever filed into it.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+        folder_ids: Folder ids; anything that isn't one is left out.
+        owner_id: The workspace's team principal, or None for Personal.
+
+    Returns:
+        list[str]: The attachable ids.
+    """
+    from docsgpt.api.user.folder_knowledge import holder_owned_folders, owned_source_folders
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if is_principal_id(owner_id):
+        return holder_owned_folders(conn, folder_ids, owner_id)
+    return owned_source_folders(conn, folder_ids, user_id)
+
+
 def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None, *,
                     team_id: Optional[str] = None) -> Optional[str]:
     """Whose items the catalogue offers: a team's principal in a team workspace, None in Personal.
