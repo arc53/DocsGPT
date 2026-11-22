@@ -3999,8 +3999,6 @@
       "taskModelDescription": "用於草擬表單、建立知識圖譜和檢查監控。對話使用代理的模型。",
       "taskModelFailed": "{{model}} 無法執行你的上一個任務：其提供者拒絕了 API 金鑰。請選擇其他模型，或請管理員檢查金鑰。",
       "taskModelFailedItem": "· 金鑰遭拒絕",
-      "taskModelInstanceDefault": "使用執行個體預設值（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "使用執行個體預設值",
       "taskModelLoadError": "無法載入任務模型。",
       "taskModelSaveFailed": "無法儲存任務模型，請再試一次。",
       "taskModelUnavailable": "你的任務模型已無法執行（已被停用或移除），因此改用執行個體預設值。如果該模型恢復，會再次使用它；在此選擇一個選項即可取代它。",

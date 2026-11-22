@@ -37,15 +37,23 @@ type TaskModelRowProps = {
   id: string;
   label: string;
   description: string;
-  /** A model id, `defaultValue`, or `TASK_MODEL_UNAVAILABLE`. */
+  /**
+   * A model id, `defaultValue`, `TASK_MODEL_UNAVAILABLE`, or `''` while no
+   * model is picked.
+   */
   value: string;
   onChange: (value: string) => void;
-  /** The value of the first option, no model of the caller's own. */
-  defaultValue: string;
+  /**
+   * A first option for "no model of the caller's own", above the models.
+   * Without it the list is the models alone.
+   */
+  defaultValue?: string;
   /** That option's label, naming the model that runs then when there is one. */
-  defaultLabel: string;
+  defaultLabel?: string;
   /** The label without the model's name: a phone's trigger shows it when the two differ. */
-  defaultShortLabel: string;
+  defaultShortLabel?: string;
+  /** The value shown while no model is picked. */
+  placeholder?: string;
   /**
    * The model options, group by group. Each group with models is listed under
    * its label once two of them have models; alone, it needs no heading.
@@ -84,6 +92,7 @@ export default function TaskModelRow({
   defaultValue,
   defaultLabel,
   defaultShortLabel,
+  placeholder,
   groups,
   runningModelId,
   refusedModelId,
@@ -108,7 +117,7 @@ export default function TaskModelRow({
         ? refusedNote(refused)
         : null;
   const pickedLabel =
-    value === defaultValue
+    defaultValue !== undefined && value === defaultValue
       ? defaultLabel
       : models.find((m) => m.id === value)?.display_name;
   const renderItem = (model: TaskModelOption) => (
@@ -148,8 +157,14 @@ export default function TaskModelRow({
           shape="pill"
           title={pickedLabel}
         >
-          <SelectValue placeholder={unavailableValue}>
-            {value === defaultValue && defaultLabel !== defaultShortLabel ? (
+          <SelectValue
+            placeholder={
+              value === TASK_MODEL_UNAVAILABLE ? unavailableValue : placeholder
+            }
+          >
+            {defaultValue !== undefined &&
+            value === defaultValue &&
+            defaultLabel !== defaultShortLabel ? (
               // A phone's full-width trigger (16px text) can't fit the
               // model's name as well: it shows the choice, and the list and
               // the title name the model.
@@ -161,9 +176,11 @@ export default function TaskModelRow({
           </SelectValue>
         </SelectTrigger>
         <SelectContent fit capped>
-          <SelectItem value={defaultValue}>
-            <span className="truncate">{defaultLabel}</span>
-          </SelectItem>
+          {defaultValue !== undefined && (
+            <SelectItem value={defaultValue}>
+              <span className="truncate">{defaultLabel}</span>
+            </SelectItem>
+          )}
           {groups.map((group, index) =>
             !headed || group.label === undefined ? (
               <Fragment key={index}>{group.models.map(renderItem)}</Fragment>
