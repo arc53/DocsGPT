@@ -1602,6 +1602,10 @@ def _covered_sources(fields: dict, form: dict, ws: Workspace) -> list[str]:
     return covered
 
 
+#: Fewest characters of the model's ``sources`` reason worth keeping beside the covered-sources note.
+_REASON_ROOM_MIN = 20
+
+
 def _named(items: list[str]) -> str:
     """``a``, ``a and b``, ``a, b and c``."""
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
@@ -1627,13 +1631,16 @@ def _covered_reason(reasons: list[dict], covered: list[str], fields: dict, ws: A
         what = f"{rest} source{'s' if rest > 1 else ''}"
     by = (f"the folder {feeding[0]}" if len(feeding) == 1 else f"the folders {_named(feeding)}") if feeding \
         else "a chosen folder"
-    note = f"Left out {what}: {by} already feed{'s' if len(feeding) < 2 else ''} " \
-           f"{'it' if len(covered) == 1 else 'them'}"
+    note = clean_text(f"Left out {what}: {by} already feed{'s' if len(feeding) < 2 else ''} "
+                      f"{'it' if len(covered) == 1 else 'them'}", REASON_SUMMARY_MAX)
     for reason in reasons:
         if reason["field"] == "sources":
-            reason["summary"] = clean_text(f"{reason['summary']} · {note}", REASON_SUMMARY_MAX)
+            # The note is the only word on what the server took off: the model's reason is cut to fit, not the note.
+            room = REASON_SUMMARY_MAX - len(" · ") - len(note)
+            reason["summary"] = f"{clean_text(reason['summary'], room)} · {note}" if room >= _REASON_ROOM_MIN \
+                else note
             return
-    reasons.append({"field": "sources", "summary": clean_text(note, REASON_SUMMARY_MAX)})
+    reasons.append({"field": "sources", "summary": note})
 
 
 def _drop_unchanged(fields: dict, form: dict) -> None:

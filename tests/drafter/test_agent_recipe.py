@@ -1786,6 +1786,16 @@ class TestProposingFolders:
         reason = next(r["summary"] for r in out["reasons"] if r["field"] == "sources")
         assert "Rail notes" in reason and "Carriers" in reason
 
+    def test_a_long_sources_reason_is_shortened_so_the_note_stays_whole(self):
+        from docsgpt.drafter.agent_form import REASON_SUMMARY_MAX
+
+        out = _validate({"folders": [CARRIERS], "sources": [SOURCE_ID, RAIL]}, ws=_fws(),
+                        reasons=[{"field": "sources", "summary": "Help Center answers " + "x" * 160}])
+        reason = next(r["summary"] for r in out["reasons"] if r["field"] == "sources")
+        assert reason.startswith("Help Center answers")
+        assert reason.endswith("… · Left out Rail notes: the folder Carriers already feeds it")
+        assert len(reason) <= REASON_SUMMARY_MAX
+
     def test_folders_alone_take_off_a_form_source_they_feed(self):
         out = _validate({"folders": [CARRIERS]}, form={"sources": [RATES, SOURCE_ID]}, ws=_fws())
         assert out["fields"] == {"folders": [CARRIERS], "sources": [SOURCE_ID]}
