@@ -123,19 +123,27 @@ def no_wait(monkeypatch):
 
 
 def _hammer(limiters, per_limiter_threads=6, rounds=5):
-    """Send requests through ``limiters`` from many threads; returns the peak in flight seen."""
-    state = {"in_flight": 0, "peak": 0}
+    """Send requests through ``limiters`` from many threads; returns the peak in flight seen.
+
+    Fails the test when a thread raised or never finished, or fewer requests completed than were sent.
+    """
+    state = {"in_flight": 0, "peak": 0, "done": 0}
+    errors = []
     lock = threading.Lock()
 
     def request(limiter):
-        for _ in range(rounds):
-            with limiter.slot():
-                with lock:
-                    state["in_flight"] += 1
-                    state["peak"] = max(state["peak"], state["in_flight"])
-                time.sleep(0.002)
-                with lock:
-                    state["in_flight"] -= 1
+        try:
+            for _ in range(rounds):
+                with limiter.slot():
+                    with lock:
+                        state["in_flight"] += 1
+                        state["peak"] = max(state["peak"], state["in_flight"])
+                    time.sleep(0.002)
+                    with lock:
+                        state["in_flight"] -= 1
+                        state["done"] += 1
+        except BaseException as err:  # noqa: BLE001 - reported by the test
+            errors.append(err)
 
     threads = [
         threading.Thread(target=request, args=(limiter,)) for limiter in limiters for _ in range(per_limiter_threads)
@@ -144,6 +152,9 @@ def _hammer(limiters, per_limiter_threads=6, rounds=5):
         thread.start()
     for thread in threads:
         thread.join(timeout=30)
+    assert not errors, errors
+    assert not any(thread.is_alive() for thread in threads), "a request never finished"
+    assert state["done"] == len(threads) * rounds
     return state["peak"]
 
 

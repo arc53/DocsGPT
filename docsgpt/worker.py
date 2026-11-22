@@ -1320,6 +1320,9 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
     # Tracks inner-block failures so a ``completed`` event reflects
     # partial-success accurately rather than masking it.
     inner_warnings: list[str] = []
+    # Files a reingest could not read: reported with its warnings, but they
+    # don't hold back its clean finish (they are retried by hash anyway).
+    read_notes: list[str] = []
     # Holds the source's index lock once taken; released on every way out.
     held = ExitStack()
 
@@ -1630,6 +1633,11 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                             unread |= set(_incomplete_files(raw_docs_new, temp_dir))
                             unsynced.update(unread)
                             scanned_all = scanned_all and not unread
+                            if unread:
+                                # Their old chunks are gone: the completed event says so.
+                                # Reported only: they are stored without a hash, so
+                                # the next reingest tries them again anyway.
+                                read_notes.append(f"{len(unread)} edited file(s) could not be read and were left out")
                             chunker_new = ChunkerCreator.create_chunker(
                                 cfg.chunking.strategy,
                                 chunking_strategy=cfg.chunking.strategy,
@@ -1770,10 +1778,10 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     "chunks_deleted": deleted,
                     "tokens": int(total_tokens) if "total_tokens" in locals() else 0,
                 }
-                if inner_warnings:
+                if inner_warnings or read_notes:
                     # Surface the per-block failures so the toast can warn
                     # rather than claim a clean success.
-                    completed_payload["warnings"] = inner_warnings
+                    completed_payload["warnings"] = [*inner_warnings, *read_notes]
                 _publish_source_event(
                     user, actor_id,
                     "source.ingest.completed",
@@ -5549,14 +5557,6 @@ def _reader_failures(reader: Any, base_dir: str) -> Dict[str, Tuple[str, str]]:
     return failures
 
 
-def _tokens_by_path(reader: Any, base_dir: str) -> Dict[str, int]:
-    """Tokens each file a reader parsed added, keyed by its path under ``base_dir``."""
-    return {
-        os.path.relpath(str(path), start=base_dir): int(count or 0)
-        for path, count in (getattr(reader, "file_token_counts", None) or {}).items()
-    }
-
-
 def _connector_chunks(raw_docs: List[Document], cfg: Any, base_dir: str, urls: Dict[str, str]) -> List[Document]:
     """Chunk a connector's parsed files; each chunk's ``source`` is its file's path, and ``url`` its link."""
     chunker = ChunkerCreator.create_chunker(
@@ -5652,6 +5652,14 @@ def _parse_settings_key() -> Optional[str]:
     except Exception:  # noqa: BLE001 - a failure then waits for its file to change, as before
         logging.warning("Could not read the parse settings", exc_info=True)
         return None
+
+
+def _chunk_tokens(docs_by_path: Dict[str, List[Any]]) -> Dict[str, int]:
+    """Tokens each file's chunks hold, counted as ``count_tokens_docs`` counts an index."""
+    return {
+        path: sum(count_tokens_windowed(str(getattr(doc, "text", "") or "")) for doc in docs)
+        for path, docs in docs_by_path.items()
+    }
 
 
 def _listing_of(loader: Any, selection: Dict[str, Any]) -> Optional[SelectionListing]:
@@ -5846,7 +5854,9 @@ def _apply_connector_plan(
             )
             try:
                 raw_docs = reader.load_data(
-                    progress_callback=_make_parse_progress_callback(task, user, source_id, start_pct=40, end_pct=60)
+                    progress_callback=_make_parse_progress_callback(
+                        task, user, source_id, start_pct=40, end_pct=60, actor_id=actor_id,
+                    )
                 )
             except DocumentParseError:
                 # Every file failed to parse; each is recorded below.
@@ -5855,12 +5865,19 @@ def _apply_connector_plan(
                 entry = by_path.get(rel_path)
                 if entry is not None:
                     failures[entry.id] = failure
-            tokens_by_path = _tokens_by_path(reader, temp_dir)
             new_structure = incremental.structure_files(getattr(reader, "directory_structure", None) or {})
             urls = {entry.path: entry.url for entry in to_download if entry.url}
             urls.update(downloaded.get("file_urls") or {})
             for doc in _connector_chunks(raw_docs, cfg, temp_dir, urls):
                 docs_by_path.setdefault(str((doc.extra_info or {}).get("source") or ""), []).append(doc)
+            # What the index holds, counted as a full sync counts it: the chunks.
+            tokens_by_path = _chunk_tokens(docs_by_path)
+            # A downloaded file the reader passed over (a hidden name, a type no
+            # parser reads) is not indexed: it is recorded, not taken as read.
+            taken = {os.path.relpath(str(path), temp_dir) for path in getattr(reader, "input_files", None) or []}
+            for entry in to_download:
+                if entry.id not in failures and entry.path not in taken:
+                    failures[entry.id] = (incremental.PERMANENT, "not a file DocsGPT reads")
     read = {entry.id for entry in to_download if entry.id not in failures}
     # Indexed without every page (OCR left some out): kept, and tried again.
     partly = {
@@ -6419,8 +6436,17 @@ def _ingest_connector(
             # A file indexed without every page counts as failed too, so a
             # later sync reads it again; its chunks stay.
             partly = _incomplete_files(raw_docs, temp_dir)
+            # A downloaded file the reader passed over (a hidden name, a type no
+            # parser reads) is not indexed: recorded, so the manifest doesn't claim it.
+            taken = {os.path.relpath(str(path), temp_dir) for path in getattr(reader, "input_files", None) or []}
+            passed_over = {
+                entry.path: (incremental.PERMANENT, "not a file DocsGPT reads")
+                for entry in (listing.entries if listing is not None else [])
+                if entry.path not in taken and os.path.isfile(os.path.join(temp_dir, entry.path))
+            }
             failed_files = _connector_failed_files(
-                listing, download_info, {**_reader_failures(reader, temp_dir), **partly}, temp_dir, previous_failed,
+                listing, download_info, {**passed_over, **_reader_failures(reader, temp_dir), **partly}, temp_dir,
+                previous_failed,
             )
             indexed_anyway = {listing.by_path()[p].id for p in partly if p in listing.by_path()} if listing else set()
 
@@ -6428,6 +6454,9 @@ def _ingest_connector(
             # chunk keeping its file's path and its link in the service.
             cfg = SourceConfig.parse(config)
             raw_docs = _connector_chunks(raw_docs, cfg, temp_dir, download_info.get("file_urls") or {})
+            chunks_by_path: Dict[str, List[Any]] = {}
+            for doc in raw_docs:
+                chunks_by_path.setdefault(str((doc.extra_info or {}).get("source") or ""), []).append(doc)
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
             tokens = count_tokens_docs(docs)
@@ -6476,8 +6505,12 @@ def _ingest_connector(
                 # A loader that can't list names no failed file by id, so none
                 # could be retried alone: the next sync downloads everything.
                 sync_fingerprint = None
-            if sync_fingerprint:
-                remote_data["sync_fingerprint"] = sync_fingerprint
+            # With a manifest, the fingerprint is stored with it and the failed
+            # files, in one write after the upload: a fingerprint stored without
+            # them would vouch for files the index lacks.
+            upload_fingerprint = sync_fingerprint if listing is None else None
+            if upload_fingerprint:
+                remote_data["sync_fingerprint"] = upload_fingerprint
             if failed_files:
                 remote_data["failed_files"] = incremental.dump_failed_files(failed_files)
             remote_files = None
@@ -6486,7 +6519,7 @@ def _ingest_connector(
                     "connector",
                     incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME),
                     incremental.manifest_from_listing(
-                        listing, _tokens_by_path(reader, temp_dir),
+                        listing, _chunk_tokens(chunks_by_path),
                         left_out=set(failed_files) - indexed_anyway,
                     ),
                 )
@@ -6508,7 +6541,7 @@ def _ingest_connector(
                 # schedule change may have landed since the row was read) and
                 # stores only the fingerprint; an empty one clears it.
                 file_data["operation"] = "sync"
-                file_data["sync_fingerprint"] = sync_fingerprint or ""
+                file_data["sync_fingerprint"] = upload_fingerprint or ""
             elif config:
                 file_data["config"] = json.dumps(config)
 
@@ -6541,6 +6574,7 @@ def _ingest_connector(
             try:
                 _save_source_sync_state(
                     source_id_for_events, remote_files=remote_files, failed_files=failed_files,
+                    **({"fingerprint": sync_fingerprint} if listing is not None else {}),
                 )
             except Exception as err:  # noqa: BLE001 - the index is stored; the next sync is only a full one
                 logging.warning(f"Could not record what source {source_id_for_events} indexed: {err}")

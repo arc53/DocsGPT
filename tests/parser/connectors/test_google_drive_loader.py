@@ -1475,6 +1475,7 @@ class TestListSelection:
     def test_lists_paths_ids_and_versions_without_downloading(self, drive_loader, tmp_path):
         loader, drive = drive_loader(copy.deepcopy(self.TREE))
         listing = loader.list_selection(self.CONFIG)
+        assert drive.media_calls == []
         assert listing.complete
         assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
             ("f1", os.path.join("R", "a.txt"), "2026-10-01T00:00:00Z", "https://drive/f1"),
@@ -1507,9 +1508,11 @@ class TestListSelection:
 
     @pytest.mark.unit
     def test_download_files_fetches_only_the_given_ids(self, drive_loader, tmp_path):
-        loader, _ = drive_loader(copy.deepcopy(self.TREE))
+        loader, drive = drive_loader(copy.deepcopy(self.TREE))
         loader.list_selection(self.CONFIG)
+        assert drive.media_calls == []
         result = loader.download_files(str(tmp_path), ["f2"])
+        assert drive.media_calls == ["f2"]
         assert _files(tmp_path) == ["R/b.txt"]
         assert result["files_downloaded"] == 1
         assert result["file_ids"] == {os.path.join("R", "b.txt"): "f2"}

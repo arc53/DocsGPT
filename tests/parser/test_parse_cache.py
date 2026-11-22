@@ -253,20 +253,23 @@ class TestOff:
     def test_disabled_never_reads_or_writes(self, tmp_path, cache_db, monkeypatch):
         monkeypatch.setattr(settings, "PARSE_CACHE_ENABLED", False)
 
-        def _boom():
-            raise AssertionError("the cache must not touch the database")
-
-        monkeypatch.setattr(parse_cache, "db_session", _boom)
+        # Recorded, not raised: the cache catches its own errors, so a raise
+        # would pass unseen.
+        touched = []
+        monkeypatch.setattr(parse_cache, "db_session", lambda: touched.append(1))
         parser = CountingParser()
         _read(_folder(tmp_path, "one", {"a.pdf": b"x"}), parser)
         _read(_folder(tmp_path, "two", {"a.pdf": b"x"}), parser)
         assert parser.calls == 2
+        assert touched == []
 
     def test_no_user_never_reads_or_writes(self, tmp_path, cache_db, monkeypatch):
-        monkeypatch.setattr(parse_cache, "db_session", lambda: (_ for _ in ()).throw(AssertionError("no")))
+        touched = []
+        monkeypatch.setattr(parse_cache, "db_session", lambda: touched.append(1))
         parser = CountingParser()
         _read(_folder(tmp_path, "one", {"a.pdf": b"x"}), parser, user=None)
         assert parser.calls == 1
+        assert touched == []
 
     def test_a_database_failure_parses_as_without_a_cache(self, tmp_path, cache_db, monkeypatch):
         calls = []

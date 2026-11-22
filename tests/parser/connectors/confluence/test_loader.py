@@ -1020,17 +1020,22 @@ class TestListSelection:
             f"{self.BASE}/pages/2/attachments": _mock_response({"results": []}),
         }
 
-    def _get(self, routes, calls):
+    def _get(self, routes, calls, params=None):
         def get(url, **kwargs):
             calls.append(url)
+            if params is not None:
+                params.append(kwargs.get("params") or {})
             return routes.get(url) or _mock_response({}, 404)
 
         return get
 
     @pytest.mark.unit
     def test_lists_pages_and_attachments_with_versions(self, loader):
-        calls = []
-        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=self._get(self._routes(), calls)):
+        calls, params = [], []
+        with patch(
+            "docsgpt.parser.connectors.confluence.loader.requests.get",
+            side_effect=self._get(self._routes(), calls, params),
+        ):
             listing = loader.list_selection({"folder_ids": ["S"]})
         assert listing.complete
         assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
@@ -1038,7 +1043,9 @@ class TestListSelection:
             ("page:1", "Intro.html", "3", "https://acme.atlassian.net/wiki/p/1"),
             ("page:2", "Guide_Setup.html", "1", None),
         ]
+        # Listing never asks for page bodies, in the URL or the parameters.
         assert not any("body-format" in str(c) for c in calls)
+        assert not any("body-format" in p for p in params)
 
     @pytest.mark.unit
     def test_incomplete_when_attachments_cannot_be_listed(self, loader):

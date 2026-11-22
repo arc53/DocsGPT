@@ -345,6 +345,7 @@ class ConnectorPlan:
         removed: ``(id, old record)`` for files no longer in the selection.
         unchanged: How many files need nothing.
         retrying: Ids in ``added`` that failed before.
+        deferred: Listed files left for a later sync (a path an unseen indexed file holds).
     """
 
     added: List[FileEntry] = field(default_factory=list)
@@ -353,6 +354,8 @@ class ConnectorPlan:
     removed: List[Tuple[str, Dict[str, Any]]] = field(default_factory=list)
     unchanged: int = 0
     retrying: Set[str] = field(default_factory=set)
+    #: Listed files left for a later sync: their path belongs to an indexed file the listing couldn't see.
+    deferred: int = 0
 
     @property
     def empty(self) -> bool:
@@ -399,6 +402,18 @@ def plan_connector_sync(
     plan = ConnectorPlan()
     removable = listing.complete
     listed = listing.by_id()
+    # An incomplete listing leaves some indexed files unseen: their paths stay
+    # theirs, and a listed file wanting one waits for a listing that settles it.
+    reserved = (
+        set()
+        if removable
+        else {
+            path
+            for file_id, record in manifest.items()
+            if file_id not in listed
+            for path in record_paths(record)
+        }
+    )
     # Paths held by more than one file across the manifest and the listing.
     holders: Dict[str, Set[str]] = {}
     for file_id, record in manifest.items():
@@ -410,6 +425,9 @@ def plan_connector_sync(
 
     for entry in listing.entries:
         record = manifest.get(entry.id)
+        if entry.path in reserved:
+            plan.deferred += 1
+            continue
         failure = failed.get(entry.id)
         due = failure is not None and failure.version == entry.version and (
             retry_failed or failure.retryable(parse_key)
@@ -417,7 +435,7 @@ def plan_connector_sync(
         # A pending record (a sync died part way) is always redone: where its
         # chunks are is only known by its paths, which the redo clears.
         stuck = (
-            failure is not None and failure.version == entry.version and not due
+            failure is not None and entry.version is not None and failure.version == entry.version and not due
             and entry.id not in contested and (record is None or record.get("version") is not None)
         )
         if record is None:
@@ -751,13 +769,22 @@ def add_chunks(
     texts = [text for text, _ in prepared]
     metas = [meta for _, meta in prepared]
     if type(store).add_chunks is not BaseVectorStore.add_chunks:
-        _with_retries(lambda: store.add_chunks(texts, metas))
+        _check_added(_with_retries(lambda: store.add_chunks(texts, metas)), len(texts))
         return len(texts)
     size = max(1, int(batch or _resolve_batch_size()))
     for start in range(0, len(texts), size):
         part_texts, part_metas = texts[start:start + size], metas[start:start + size]
-        _with_retries(lambda: store.add_texts(part_texts, metadatas=part_metas))
+        _check_added(_with_retries(lambda: store.add_texts(part_texts, metadatas=part_metas)), len(part_texts))
     return len(texts)
+
+
+def _check_added(ids: Any, expected: int) -> None:
+    """Raise when a store says it added fewer chunks than it was given (not retried: some may be in).
+
+    A store that returns no list says nothing either way.
+    """
+    if isinstance(ids, (list, tuple)) and len(ids) != expected:
+        raise RuntimeError(f"The vector store added {len(ids)} of {expected} chunks")
 
 
 def rewrite_chunk_paths(store: Any, moves: Dict[str, Tuple[List[str], Dict[str, Any]]]) -> int:

@@ -732,6 +732,52 @@ class TestCodeRabbitFixes:
         assert "stray.md" not in harness.store.by_source()
 
 
+@pytest.mark.unit
+class TestSecondReview:
+
+    def test_a_file_the_reader_passes_over_is_recorded_not_indexed(self, harness):
+        harness.loader.files["hid"] = {"path": "Docs/.hidden.md", "version": "v1", "text": "# H\n\nhidden " * 20}
+        harness.sync()
+        row = harness.row()
+        assert "hid" not in row["remote_files"]["files"]
+        assert [f["id"] for f in row["remote_data"]["failed_files"]] == ["hid"]
+
+        harness.loader.files["hid2"] = {"path": "Docs/.other.md", "version": "v1", "text": "# O\n\nother " * 20}
+        harness.sync()
+        assert "hid2" not in harness.row()["remote_files"]["files"]
+
+    def test_a_path_an_unseen_indexed_file_holds_is_left_alone(self, harness):
+        harness.sync()
+        # id4 can't be seen, and a new file wants its path.
+        harness.loader.hidden = {"id4"}
+        harness.loader.files["new"] = {"path": os.path.join("Docs", "doc4.md"), "version": "v1",
+                                       "text": "# New\n\nnewcomer " * 20}
+        before = harness.store.by_source()[os.path.join("Docs", "doc4.md")]
+
+        harness.sync()
+
+        assert harness.store.by_source()[os.path.join("Docs", "doc4.md")] == before
+        assert "new" not in harness.row()["remote_files"]["files"]
+
+    def test_the_fingerprint_is_written_with_the_manifest(self, harness, monkeypatch):
+        uploads = []
+        real = worker.upload_index
+        monkeypatch.setattr(worker, "upload_index", lambda path, data: (uploads.append(data), real(path, data))[1])
+        harness.sync()
+        assert uploads[0]["sync_fingerprint"] == ""
+        assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])
+        row = harness.row()
+        assert row["remote_data"]["sync_fingerprint"] and row["remote_files"]["files"]
+
+    def test_a_store_that_adds_fewer_chunks_than_asked_fails_the_sync(self, harness, monkeypatch):
+        harness.sync()
+        harness.loader.files["id1"]["version"] = "v2"
+        monkeypatch.setattr(harness.store, "add_chunks", lambda texts, metadatas=None: [])
+        with pytest.raises(RuntimeError, match="added 0 of"):
+            harness.sync()
+        assert harness.row()["remote_files"]["files"]["id1"]["version"] is None
+
+
 # ---------------------------------------------------------------------------
 # Remote sources (GitHub, crawlers, S3...)
 # ---------------------------------------------------------------------------

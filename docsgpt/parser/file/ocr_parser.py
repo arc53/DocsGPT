@@ -24,6 +24,7 @@ the docling extra gets working OCR from the tesseract binary alone, and one
 that does install it keeps today's behaviour unchanged.
 """
 import base64
+import hashlib
 import functools
 import io
 import logging
@@ -928,6 +929,14 @@ def ocr_images(
                 _close_items()
                 break
         while pending:
+            if stop["now"]:
+                # A terminal failure (a spent rate-limit budget, a refused key):
+                # pages not yet sent stay missing for the retry instead of
+                # spending another budget now.
+                for future in [f for f in pending if f.cancel()]:
+                    pending.pop(future)
+                if not pending:
+                    break
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
             _collect(done)
     except BaseException:
@@ -986,7 +995,7 @@ def _log_usage(name: str, engine: OcrEngine, usage: Dict[str, int]) -> None:
 
 
 #: Files whose recognised pages a parser keeps after a failed parse, for the retry.
-_KEPT_FILES = 16
+_KEPT_FILES = 256
 
 
 def _missing_pages_error(
@@ -1222,9 +1231,14 @@ class NativeOcrPdfParser(BaseParser):
         self._kept_lock = threading.Lock()
 
     def _kept_key(self, path: Path, engine: OcrEngine, dpi: int) -> Optional[Tuple]:
+        """The key of a file's recognised pages: its path and its content, the engine and the DPI."""
         try:
             stat = path.stat()
-            return (str(path.resolve()), stat.st_size, stat.st_mtime_ns, engine.name, dpi)
+            digest = hashlib.sha256()
+            with open(path, "rb") as f:
+                for block in iter(lambda: f.read(1024 * 1024), b""):
+                    digest.update(block)
+            return (str(path.resolve()), stat.st_size, digest.hexdigest(), engine.name, dpi)
         except OSError:
             return None
 

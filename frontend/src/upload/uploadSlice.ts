@@ -491,6 +491,8 @@ export const uploadSlice = createSlice({
               row.status = dup.status;
               row.errorMessage = dup.errorMessage;
               row.tokenLimitReached = dup.tokenLimitReached;
+              // Its unreadable files too; undefined clears an older count.
+              row.itemsNotDownloaded = dup.itemsNotDownloaded;
               if (!sourceWasDismissed) row.dismissed = false;
             }
             state.tasks.splice(dupIndex, 1);

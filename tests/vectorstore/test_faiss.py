@@ -354,8 +354,10 @@ class TestFaissUpdateChunksMetadata:
         assert np.allclose(populated.index.reconstruct_n(0, populated.index.ntotal), vectors)
 
     def test_a_failed_save_puts_the_metadata_back(self, populated):
+        import copy
+
         target = populated.get_chunks()[0]["doc_id"]
-        before = dict(populated.documents[target])
+        before = copy.deepcopy(populated.documents[target])
         with patch.object(populated, "_save_to_storage", side_effect=OSError("disk full")):
             with pytest.raises(OSError):
                 populated.update_chunks_metadata({target: {"source": "moved.txt"}})

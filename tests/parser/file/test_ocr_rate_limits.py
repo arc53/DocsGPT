@@ -42,9 +42,13 @@ def clock(monkeypatch):
 
 
 @pytest.fixture
-def budget(settings):  # noqa: F811
-    settings.OCR_RATE_LIMIT_MAX_WAIT = 300.0
-    settings.OCR_MAX_IN_FLIGHT = 8
+def budget(settings, monkeypatch):  # noqa: F811
+    # Through monkeypatch, so these (and later assignments in a test) are put back.
+    monkeypatch.setattr(settings, "OCR_RATE_LIMIT_MAX_WAIT", 300.0)
+    monkeypatch.setattr(settings, "OCR_MAX_IN_FLIGHT", 8)
+    monkeypatch.setattr(settings, "OCR_RATE_LIMIT_COOLDOWN", settings.OCR_RATE_LIMIT_COOLDOWN)
+    # A developer's own Redis must not decide these tests' limits; one that wants Redis installs FakeRedis.
+    monkeypatch.setattr(ocr_limiter, "_redis_client", lambda: None)
     return settings
 
 
@@ -294,14 +298,13 @@ class TestPagesKeptAcrossRetry:
         with pytest.raises(op.OcrRateLimitedError):
             parser.parse_file(pdf)
 
-        _image_pdf(pdf, pages=2)  # rewritten: new mtime
-        import os
-
-        os.utime(pdf, ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))
+        _image_pdf(tmp_path / "other.pdf", pages=3)
+        pdf.write_bytes(_first_pages(tmp_path / "other.pdf", 2))  # new bytes at the same path
         engine.sent.clear()
-        monkeypatch.setattr(op, "_render_page", _tagging_render({0, 1}))
+        monkeypatch.setattr(op, "_render_page", _tagging_render({1, 2}))
         parser.parse_file(pdf)
-        assert sorted(engine.sent) == [0, 1]
+        # Both pages of the new content are sent; nothing of the old file is reused.
+        assert sorted(engine.sent) == [1, 2]
 
     def test_a_permanent_page_failure_raises_that_error(self, tmp_path, monkeypatch):
         monkeypatch.setattr(op, "render_dpi", lambda: 72)
@@ -339,20 +342,48 @@ class TestPagesKeptAcrossRetry:
         assert parser.last_ocr_failed_pages == 0
 
 
+def _page_of(image) -> int:
+    """Which ``_image_pdf`` page an image shows: page ``i`` has a ``3 + i`` pixel border around 200 x 300 points."""
+    gray = image.convert("L")
+    dark = sum(1 for value in gray.getdata() if value < 128)
+    scale = (gray.width / 300) ** 2
+    return round(dark / (1000 * scale)) - 3
+
+
 def _tagging_render(indices):
-    """A ``_render_page`` stand-in that tags each image with the page it renders, in ``indices`` order."""
-    order = iter(sorted(indices))
+    """A ``_render_page`` stand-in that tags each image with the page it actually shows.
+
+    ``indices`` are the pages the test expects to be rendered; a page outside
+    them fails the test.
+    """
+    expected = set(indices)
     original = _real_render
 
     def render(page, dpi):
         image = original(page, dpi)
-        image.info["page"] = next(order)
+        index = _page_of(image)
+        assert index in expected, f"rendered page {index}, expected one of {sorted(expected)}"
+        image.info["page"] = index
         return image
 
     return render
 
 
 _real_render = op._render_page
+
+
+def _first_pages(path: Path, count: int) -> bytes:  # noqa: D401
+    """The bytes of a PDF holding the last ``count`` pages of ``path``, so its content differs from page 0's."""
+    import io
+
+    import pypdfium2 as pdfium
+
+    source = pdfium.PdfDocument(str(path))
+    out = pdfium.PdfDocument.new()
+    out.import_pages(source, list(range(len(source) - count, len(source))))
+    buffer = io.BytesIO()
+    out.save(buffer)
+    return buffer.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -436,7 +467,7 @@ class FlakyParser(BaseParser):
 
 @pytest.fixture
 def reader_sleeps(monkeypatch, settings):  # noqa: F811
-    settings.OCR_RATE_LIMIT_COOLDOWN = 45.0
+    monkeypatch.setattr(settings, "OCR_RATE_LIMIT_COOLDOWN", 45.0)
     recorded = []
     monkeypatch.setattr(bulk, "_sleep", recorded.append)
     return recorded

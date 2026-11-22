@@ -1342,9 +1342,10 @@ class TestListSelection:
 
     @pytest.mark.unit
     def test_lists_files_with_versions_and_download_paths(self, loader):
-        graph, _ = self._graph(self._tree())
+        graph, calls = self._graph(self._tree())
         with graph:
             listing = loader.list_selection({"folder_ids": ["folder"], "file_ids": ["one"], "recursive": True})
+        assert not any(url.endswith("/content") for url in calls)
         assert listing.complete
         assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
             ("a", os.path.join("Docs", "a.pdf"), "c1", "https://sp/a"),

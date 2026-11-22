@@ -57,12 +57,43 @@ def _sleep(seconds: float) -> None:
     time.sleep(seconds)
 
 
-def _redis_client() -> Optional[Any]:
-    """The shared Redis client, or ``None`` when there is none."""
-    try:
-        from docsgpt.cache import get_redis_instance
+#: Longest a limiter command may take: past it the limiter falls back to the process limit.
+_REDIS_COMMAND_SECONDS = 1.0
+_client: Optional[Any] = None
+_client_lock = threading.Lock()
 
-        return get_redis_instance()
+
+def _redis_client() -> Optional[Any]:
+    """The limiter's own Redis client (``CACHE_REDIS_URL``), or ``None`` when there is none.
+
+    Not the app's shared client: that one waits seconds per command and
+    retries a timeout, so a Redis that stops answering would hold every page
+    request for most of a minute. This one gives up after
+    ``_REDIS_COMMAND_SECONDS`` without retrying, and the limiter then falls
+    back to the per-process limit.
+    """
+    global _client
+    if _client is not None:
+        return _client
+    try:
+        import redis
+        from redis.backoff import NoBackoff
+        from redis.retry import Retry
+
+        from docsgpt.core.settings import settings
+
+        if not settings.CACHE_REDIS_URL:
+            return None
+        with _client_lock:
+            if _client is None:
+                _client = redis.Redis.from_url(
+                    settings.CACHE_REDIS_URL,
+                    socket_timeout=_REDIS_COMMAND_SECONDS,
+                    socket_connect_timeout=_REDIS_COMMAND_SECONDS,
+                    retry_on_timeout=False,
+                    retry=Retry(NoBackoff(), 0),
+                )
+        return _client
     except Exception:  # noqa: BLE001 - no Redis means the per-process limit
         return None
 
