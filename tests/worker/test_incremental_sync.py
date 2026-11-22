@@ -672,6 +672,23 @@ class TestIncrementalSafety:
         by_path = harness.store.by_source()
         assert all("alpha" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
 
+    def test_a_file_waits_when_an_old_path_it_would_clear_is_held(self, harness):
+        harness.sync()
+        repo = SourcesRepository(harness.pg)
+        manifest = repo.get_remote_files(harness.source_id)
+        held = os.path.join("Docs", "doc2.md")
+        # id1 died part way, its record naming doc2.md too; id2 holds doc2.md and fails now.
+        manifest["files"]["id1"] = {**manifest["files"]["id1"], "version": None,
+                                    "pending_paths": [os.path.join("Docs", "doc1.md"), held]}
+        repo.update(harness.source_id, "dave", {"remote_files": manifest})
+        harness.loader.files["id2"]["version"] = "v2"
+        harness.loader.download_failures["id2"] = "transient"
+        before = harness.store.by_source()[held]
+
+        harness.sync()
+
+        assert harness.store.by_source()[held] == before
+
     def test_a_waiting_file_is_shown_with_the_failed_files(self, harness):
         loader = harness.loader
         loader.files.clear()
@@ -838,8 +855,14 @@ class TestCodeRabbitFixes:
 
         assert os.path.join("Docs", "doc3.md") in harness.store.by_source()
         assert result["partial"] is True and harness.events[-1][1]["partial"] is True
-        # No manifest from an incomplete listing: the next sync is a full one.
+        # No manifest and no fingerprint from an incomplete listing: the next sync is a full one.
         assert harness.row()["remote_files"] is None
+        assert "sync_fingerprint" not in harness.row()["remote_data"]
+        harness.loader.hidden = set()
+        harness.reset()
+        harness.sync()
+        assert harness.loader.full_downloads == 1
+        assert "id3" in harness.row()["remote_files"]["files"]
 
     def test_a_full_ingest_indexes_only_what_the_listing_names(self, harness, monkeypatch):
         original = harness.loader.download_to_directory

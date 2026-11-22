@@ -472,7 +472,13 @@ class FaissStore(BaseVectorStore):
         step = _resolve_batch_size()
         vectors: List[List[float]] = []
         for start in range(0, len(texts), step):
-            vectors.extend(self.embeddings.embed_documents(texts[start:start + step]))
+            part = texts[start:start + step]
+            answer = self.embeddings.embed_documents(part)
+            if len(answer) != len(part):
+                # Checked per batch: a short one and a long one would add up to the
+                # right total and pair the vectors with the wrong texts.
+                raise ValueError(f"Got {len(answer)} embeddings for {len(part)} texts")
+            vectors.extend(answer)
         return vectors
 
     def _to_document(self, doc_id: str) -> Optional[Document]:

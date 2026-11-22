@@ -94,11 +94,26 @@ class FakeRedis:
 
 
 class FakePipeline:
+    """A redis-py pipeline: commands queue for ``execute``; after ``watch`` they run at once until ``multi``."""
+
     def __init__(self, redis):
         self.redis = redis
         self.calls = []
+        self.immediate = False
+
+    def watch(self, *keys):
+        self.immediate = True
+
+    def multi(self):
+        self.immediate = False
+
+    def reset(self):
+        self.calls = []
+        self.immediate = False
 
     def __getattr__(self, name):
+        if self.immediate:
+            return getattr(self.redis, name)
         def queue(*args, **kwargs):
             self.calls.append((name, args, kwargs))
             return self
@@ -357,3 +372,37 @@ class TestRedisClientAndFailures:
         monkeypatch.setattr(time, "sleep", slept.append)
         ol._sleep(0.25)
         assert slept == [0.25]
+
+
+class TestOneWatchedAttempt:
+    def test_an_exec_whose_reply_was_lost_takes_its_lease_back(self, fake_redis, monkeypatch):
+        from redis.exceptions import WatchError
+
+        real = FakePipeline.execute
+
+        def landed_then_lost(self):
+            real(self)
+            raise WatchError("A ConnectionError occurred while watching one or more keys")
+
+        monkeypatch.setattr(FakePipeline, "execute", landed_then_lost)
+        limiter = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
+        assert limiter._try_redis_slot(fake_redis) is None
+        assert fake_redis.zcard(limiter._leases) == 0
+
+    def test_a_conflict_hands_back_to_the_wait_loop(self, fake_redis, monkeypatch, no_wait):
+        from redis.exceptions import WatchError
+
+        attempts = {"n": 0}
+        real = FakePipeline.execute
+
+        def conflicted_once(self):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise WatchError("watched key changed")
+            return real(self)
+
+        monkeypatch.setattr(FakePipeline, "execute", conflicted_once)
+        limiter = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
+        with limiter.slot():
+            assert fake_redis.zcard(limiter._leases) == 1
+        assert attempts["n"] == 2

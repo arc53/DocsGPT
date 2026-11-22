@@ -583,3 +583,25 @@ class TestSlotWaitDeadline:
         monkeypatch.setattr(engine.limiter, "slot", slot)
         with pytest.raises(op.OcrRateLimitedError):
             engine._send({}, {}, deadline=op._monotonic() + 30)
+
+
+class TestSlotWaitDeadlineWithRedis:
+    def test_a_retry_gives_up_while_another_request_holds_the_only_slot(self, budget, monkeypatch):
+        from tests.parser.file.test_ocr_limiter import FakeRedis
+
+        redis = FakeRedis()
+        monkeypatch.setattr(ocr_limiter, "_redis_client", lambda: redis)
+        monkeypatch.setattr(ocr_limiter, "_sleep", lambda seconds: None)
+        monkeypatch.setattr(budget, "OCR_MAX_IN_FLIGHT", 1)
+        ocr_limiter.reset_limiters()
+        engine = op.DeepseekOcrEngine()
+        clock = {"now": 0.0}
+
+        def tick():
+            clock["now"] += 1.0
+            return clock["now"]
+
+        monkeypatch.setattr(op, "_monotonic", tick)
+        with engine.limiter.slot():  # every slot taken
+            with pytest.raises(op.OcrRateLimitedError, match="waiting for a request slot"):
+                engine._send({}, {}, deadline=5.0)

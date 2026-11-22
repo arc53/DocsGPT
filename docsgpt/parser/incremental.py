@@ -715,8 +715,14 @@ def _sleep(seconds: float) -> None:
     time.sleep(seconds)
 
 
-def _with_retries(write: Callable[[], Any]) -> Any:
-    """Run a batch write, retrying a failure (an embeddings rate limit, an outage) with backoff."""
+def _with_retries(write: Callable[[], Any], before_retry: Optional[Callable[[], None]] = None) -> Any:
+    """Run a batch write, retrying a failure (an embeddings rate limit, an outage) with backoff.
+
+    Args:
+        write: The write.
+        before_retry: Run before each retry, to undo whatever the failed try
+            may have written (a commit that landed with its reply lost).
+    """
     wait = ADD_RETRY_SECONDS
     for attempt in range(1, ADD_TRIES + 1):
         try:
@@ -727,11 +733,17 @@ def _with_retries(write: Callable[[], Any]) -> Any:
             logging.warning(f"Adding chunks failed ({err}); retrying in {wait:.0f}s")
             _sleep(wait)
             wait *= 2
+            if before_retry is not None:
+                before_retry()
     return None
 
 
 def add_chunks(
-    store: Any, chunks: Sequence[Tuple[str, dict]], source_id: Optional[str] = None, batch: Optional[int] = None,
+    store: Any,
+    chunks: Sequence[Tuple[str, dict]],
+    source_id: Optional[str] = None,
+    batch: Optional[int] = None,
+    key: Callable[[dict], str] = source_path_key,
 ) -> int:
     """Add ``(text, metadata)`` chunks in batches, each retried with backoff.
 
@@ -745,6 +757,10 @@ def add_chunks(
         chunks: The chunks.
         source_id: Stamped on each chunk's metadata as ``source_id``.
         batch: Chunks per write; ``EMBEDDINGS_BATCH_SIZE`` when unset.
+        key: Reads a chunk's file path from its metadata. A batch is retried
+            only after the chunks at its files' paths that no earlier batch
+            returned are deleted: the caller cleared those paths first, so
+            they can only be what a failed try wrote.
 
     Returns:
         How many were added.
@@ -770,13 +786,27 @@ def add_chunks(
         return len(prepared)
     texts = [text for text, _ in prepared]
     metas = [meta for _, meta in prepared]
+    confirmed: Set[str] = set()
+
+    def undo_strays(part_metas: List[dict]) -> Callable[[], None]:
+        def undo() -> None:
+            found = chunk_ids_by_path(store, {key(meta) for meta in part_metas}, key)
+            strays = [cid for ids in found.values() for cid in ids if cid not in confirmed]
+            if strays:
+                logging.warning(f"Deleting {len(strays)} chunk(s) a failed write may have left, before retrying it")
+                store.delete_chunks(strays)
+
+        return undo
+
     if type(store).add_chunks is not BaseVectorStore.add_chunks:
-        _check_added(_with_retries(lambda: store.add_chunks(texts, metas)), len(texts))
+        _check_added(_with_retries(lambda: store.add_chunks(texts, metas), undo_strays(metas)), len(texts))
         return len(texts)
     size = max(1, int(batch or _resolve_batch_size()))
     for start in range(0, len(texts), size):
         part_texts, part_metas = texts[start:start + size], metas[start:start + size]
-        _check_added(_with_retries(lambda: store.add_texts(part_texts, metadatas=part_metas)), len(part_texts))
+        ids = _with_retries(lambda: store.add_texts(part_texts, metadatas=part_metas), undo_strays(part_metas))
+        _check_added(ids, len(part_texts))
+        confirmed.update(str(cid) for cid in (ids or []))
     return len(texts)
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.parsed_files import ParsedFilesRepository
@@ -98,3 +99,34 @@ class TestTeamDeletion:
         assert teams.delete(team["id"], artifact_paths=paths) is True
         assert paths == ["parse_cache/team.json"]
         assert repo.list_for_user(principal) == []
+
+
+class TestConcurrentFirstWrites:
+    @pytest.mark.fresh_db
+    def test_a_second_first_write_waits_and_names_the_file_it_replaced(self, pg_engine):
+        """Two first writes of one key: the second waits on the first, then replaces its file."""
+        import threading
+
+        first_in = threading.Event()
+        result = {}
+
+        with pg_engine.connect() as first, first.begin():
+            assert ParsedFilesRepository(first).store("alice", "sha", "key", storage_path="parse_cache/one.json") is None
+            first_in.set()
+
+            def second_write():
+                with pg_engine.connect() as second, second.begin():
+                    result["replaced"] = ParsedFilesRepository(second).store(
+                        "alice", "sha", "key", storage_path="parse_cache/two.json",
+                    )
+
+            worker = threading.Thread(target=second_write)
+            worker.start()
+            worker.join(timeout=1)
+            # Held back by the first write's advisory lock, not racing past it.
+            assert worker.is_alive()
+        worker.join(timeout=10)
+        assert not worker.is_alive()
+        assert result["replaced"] == "parse_cache/one.json"
+        with pg_engine.connect() as check:
+            assert check.execute(text("SELECT storage_path FROM parsed_files")).scalar() == "parse_cache/two.json"

@@ -161,42 +161,50 @@ class InFlightLimiter:
         return self._parse_allowed(client.get(self._limit_key))
 
     def _try_redis_slot(self, client: Any) -> Optional[str]:
-        """Take a Redis slot when one is free; ``None`` when all are held.
+        """Take a Redis slot when one is free; ``None`` when all are held or another worker got in first.
 
-        The count and the insert are one ``WATCH``ed transaction: a lease is
-        only ever added once it is admitted, so a worker that stops part way
-        never leaves one that nobody uses.
+        One ``WATCH``ed attempt: count the live leases, read the limit and,
+        only if admitted, add the lease in the same ``MULTI/EXEC``. A conflict
+        (or an EXEC whose reply was lost, which redis-py reports the same way)
+        is not retried here: the lease is taken back in case it landed, and
+        the caller's wait loop tries again, checking its deadline in between.
 
         Raises:
-            Exception: Redis failed.
+            Exception: Redis failed; the lease was taken back first (best effort).
         """
-        lease = uuid.uuid4().hex
-        admitted: Dict[str, bool] = {}
+        from redis.exceptions import WatchError
 
-        def admit(pipe: Any) -> None:
+        lease = uuid.uuid4().hex
+        pipe = client.pipeline(transaction=True)
+        try:
+            pipe.watch(self._leases, self._limit_key)
             now = _now()
             held = int(pipe.zcount(self._leases, f"({now}", "+inf"))
             allowed = self._parse_allowed(pipe.get(self._limit_key))
+            if held >= allowed:
+                pipe.reset()
+                return None
             pipe.multi()
-            if held < allowed:
-                pipe.zremrangebyscore(self._leases, "-inf", now)
-                pipe.zadd(self._leases, {lease: now + self.lease_seconds})
-                pipe.expire(self._leases, self._key_ttl)
-            admitted["ok"] = held < allowed
-
-        try:
-            # A short pause between WATCH conflicts: every admission, release
-            # and renewal touches the set, so waiters would otherwise spin.
-            client.transaction(admit, self._leases, self._limit_key, watch_delay=0.01)
-        except Exception:
+            pipe.zremrangebyscore(self._leases, "-inf", now)
+            pipe.zadd(self._leases, {lease: now + self.lease_seconds})
+            pipe.expire(self._leases, self._key_ttl)
+            pipe.execute()
+            return lease
+        except Exception as err:
             # The EXEC may have landed with its reply lost: take the lease back,
             # or it would hold a slot nobody uses until it lapses.
             try:
                 client.zrem(self._leases, lease)
             except Exception:  # noqa: BLE001 - it lapses on its own
                 pass
+            if isinstance(err, WatchError):
+                return None
             raise
-        return lease if admitted.get("ok") else None
+        finally:
+            try:
+                pipe.reset()
+            except Exception:  # noqa: BLE001
+                pass
 
     @property
     def _key_ttl(self) -> int:

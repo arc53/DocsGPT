@@ -2550,6 +2550,7 @@ def _sync_remote_changes(
         added = incremental.add_chunks(
             store,
             source_id=source_id,
+            key=lambda metadata: legacy_path_key(metadata) or "",
             chunks=[
                 (doc.page_content, dict(doc.metadata))
                 for path in [*plan.added, *plan.changed]
@@ -5904,13 +5905,20 @@ def _apply_connector_plan(
         outcome = provisional.get(file_id)
         return file_id not in read and outcome is not None and outcome.retryable(parse_key)
 
+    def clears(entry: FileEntry) -> set:
+        """Every path reading this file would clear: its destination and the paths its record names."""
+        record = manifest.get(entry.id)
+        return {entry.path} | (incremental.record_paths(record) if record else set())
+
     deferred: set = set()
     waiting = True
     while waiting:
         waiting = False
         for entry in to_download:
-            others = holders.get(entry.path, set()) - {entry.id}
-            if entry.id in read and entry.id not in deferred and any(holds_on(other) for other in others):
+            if entry.id not in read or entry.id in deferred:
+                continue
+            others = {other for path in clears(entry) for other in holders.get(path, set())} - {entry.id}
+            if any(holds_on(other) for other in others):
                 deferred.add(entry.id)
                 waiting = True
     read -= deferred
@@ -6553,6 +6561,9 @@ def _ingest_connector(
             # With a manifest, the fingerprint is stored with it and the failed
             # files, in one write after the upload: a fingerprint stored without
             # them would vouch for files the index lacks.
+            if listing is not None and not listing.complete:
+                # It would vouch for an index built from part of the selection.
+                sync_fingerprint = None
             upload_fingerprint = sync_fingerprint if listing is None else None
             if upload_fingerprint:
                 remote_data["sync_fingerprint"] = upload_fingerprint

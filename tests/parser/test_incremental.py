@@ -356,3 +356,25 @@ class TestEdges:
         monkeypatch.setattr(time, "sleep", slept.append)
         incremental._sleep(1.5)
         assert slept == [1.5]
+
+
+@pytest.mark.unit
+class TestAmbiguousCommit:
+    def test_a_batch_that_landed_with_its_reply_lost_is_not_added_twice(self, monkeypatch):
+        monkeypatch.setattr(incremental, "_sleep", lambda s: None)
+        store = _Store.make()
+        real = store.add_texts
+        state = {"lost": True}
+
+        def add_texts(texts, metadatas=None, *a, **k):
+            ids = real(texts, metadatas)
+            if state["lost"] and any(m.get("source") == "b" for m in metadatas):
+                state["lost"] = False
+                raise RuntimeError("commit reply lost")
+            return ids
+
+        monkeypatch.setattr(store, "add_texts", add_texts)
+        incremental.add_chunks(store, [("one", {"source": "a"}), ("two", {"source": "b"}), ("three", {"source": "b"})],
+                               batch=1)
+        texts = sorted(c["text"] for c in store.chunks.values())
+        assert texts == ["one", "three", "two"]

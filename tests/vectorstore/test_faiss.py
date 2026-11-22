@@ -342,6 +342,19 @@ class TestFaissShortEmbeddings:
 
 
 @pytest.mark.unit
+class TestFaissOffsettingBatches:
+    def test_a_short_batch_and_a_long_one_are_refused_though_the_total_matches(self, populated, monkeypatch):
+        d = populated.index.d
+        answers = iter([[[0.0] * d], [[0.0] * d] * 3])
+        monkeypatch.setattr("docsgpt.parser.embedding_pipeline._resolve_batch_size", lambda: 2)
+        before = populated.index.ntotal
+        with patch.object(populated.embeddings, "embed_documents", side_effect=lambda texts: next(answers)):
+            with pytest.raises(ValueError, match="1 embeddings for 2 texts"):
+                populated.add_texts(["a", "b", "c", "d"], [{}, {}, {}, {}])
+        assert populated.index.ntotal == before
+
+
+@pytest.mark.unit
 class TestFaissUpdateChunksMetadata:
     def test_rewrites_metadata_without_embedding_and_saves_once(self, populated):
         chunks = populated.get_chunks()
