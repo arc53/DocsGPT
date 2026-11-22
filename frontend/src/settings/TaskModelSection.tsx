@@ -23,7 +23,7 @@ import TaskModelRow, {
   TASK_MODEL_UNAVAILABLE as UNAVAILABLE,
 } from './components/TaskModelRow';
 
-/** The Select value of "Use instance default": no pick of the user's own (saved as null). */
+/** No pick of the user's own (saved as null): the instance's model runs, and shows as the picked one. */
 const INSTANCE_DEFAULT = '__instance__';
 
 type Loaded = {
@@ -41,15 +41,19 @@ type Loaded = {
 
 /**
  * Settings › General › Models: the task model, which runs DocsGPT's own jobs
- * (the drafter, graph extraction, monitor checks) for this user. "Use
- * instance default" (the first option, picked while the user has none)
- * follows whatever the admin sets; a named model is the user's own pick.
- * A stored pick that can no longer run shows no option and a note saying
- * the instance default runs; picking any option replaces it. A model whose
- * provider refused its key on the user's last task (`task_model_error`) is
- * marked "· key refused" in the list, still pickable since an admin can fix
- * the key, and while it is the one that runs a warning says so.
- * The trigger grows with its value up to 320px, then ends in "…".
+ * (the drafter, graph extraction, monitor checks) for this user. The list is
+ * the models alone, as in the chat's picker, and one is always picked: the
+ * user's own, else the instance's (whatever the admin sets), which shows as
+ * picked without being saved. Picking the instance's model saves no pick, so
+ * the user follows the instance; any other model is the user's own pick.
+ * With no model the instance can run, or one the list doesn't carry, no
+ * option is picked. A stored pick that can no longer run shows no option and
+ * a note saying the instance default runs; picking any option replaces it.
+ * A model whose provider refused its key on the user's last task
+ * (`task_model_error`) is marked "· key refused" in the list, still pickable
+ * since an admin can fix the key, and while it is the one that runs a
+ * warning says so.
+ * The trigger grows with its value up to 384px, then ends in "…".
  * Saved to the server on change, one save at a time: a pick made while one
  * is in flight waits, and only the latest such pick goes out. A failed save
  * puts the last saved pick back. A skeleton row stands in while it loads and
@@ -150,11 +154,12 @@ export default function TaskModelSection() {
     );
   }
 
-  const instanceModel = loaded.instanceModelId
-    ? (loaded.models.find((m) => m.id === loaded.instanceModelId)
-        ?.display_name ?? loaded.instanceModelId)
-    : null;
-  const unnamed = t('settings.general.taskModelInstanceDefaultUnnamed');
+  // The instance's model as an option; null when the list doesn't carry it.
+  const instanceOption =
+    loaded.instanceModelId !== null &&
+    loaded.models.some((m) => m.id === loaded.instanceModelId)
+      ? loaded.instanceModelId
+      : null;
   // The model that runs now: the pick, else the instance default.
   const running =
     loaded.value === INSTANCE_DEFAULT || loaded.value === UNAVAILABLE
@@ -204,7 +209,9 @@ export default function TaskModelSection() {
     );
   };
 
-  const change = (next: string) => {
+  const change = (modelId: string) => {
+    // The instance's model is no pick of the user's own: they follow it.
+    const next = modelId === instanceOption ? INSTANCE_DEFAULT : modelId;
     if (next === loaded.value) return;
     setLoaded((current) => (current ? { ...current, value: next } : null));
     if (saving.current) {
@@ -222,17 +229,13 @@ export default function TaskModelSection() {
           id={id}
           label={t('settings.general.taskModel')}
           description={t('settings.general.taskModelDescription')}
-          value={loaded.value}
-          onChange={change}
-          defaultValue={INSTANCE_DEFAULT}
-          defaultLabel={
-            instanceModel
-              ? t('settings.general.taskModelInstanceDefault', {
-                  model: instanceModel,
-                })
-              : unnamed
+          value={
+            loaded.value === INSTANCE_DEFAULT
+              ? (instanceOption ?? '')
+              : loaded.value
           }
-          defaultShortLabel={unnamed}
+          onChange={change}
+          placeholder={t('conversation.selectModel')}
           groups={[
             {
               label: t('settings.customModels.modelsGroup.builtin'),

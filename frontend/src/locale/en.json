@@ -4055,8 +4055,6 @@
       "taskModelDescription": "Drafts forms, builds knowledge graphs and checks monitors. Chats use the agent's model.",
       "taskModelFailed": "{{model}} couldn't run your last task: its provider refused the API key. Pick another model, or ask an admin to check the key.",
       "taskModelFailedItem": "· key refused",
-      "taskModelInstanceDefault": "Use instance default ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Use instance default",
       "taskModelLoadError": "Could not load the task model.",
       "taskModelSaveFailed": "Couldn't save the task model. Try again.",
       "taskModelUnavailable": "Your task model can't run any more (it was disabled or removed), so the instance default runs. If the model comes back, it runs again; pick an option here to replace it.",
