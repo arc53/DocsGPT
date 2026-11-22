@@ -178,11 +178,21 @@ def merge(own: list[tuple[str, Optional[str]]], folder_list: list[dict[str, str]
 
 
 def agent_sources(conn, agent: dict) -> list[dict]:
-    """The sources an agent retrieves from (``source_id`` and ``extra_source_ids``), with their structure."""
+    """The sources an agent retrieves from, with their structure, each once.
+
+    Its ``source_id`` and ``extra_source_ids``, then the sources its knowledge folders (``knowledge_folder_ids``)
+    feed, resolved as a run of the agent resolves them.
+    """
+    from docsgpt.api.user.folder_knowledge import folder_source_ids
+    from docsgpt.api.user.resource_access import reader_sources
     from docsgpt.storage.db.repositories.sources import SourcesRepository
 
     ids = [agent.get("source_id")] + list(agent.get("extra_source_ids") or [])
-    ids = list(dict.fromkeys(str(i) for i in ids if i))
+    if agent.get("knowledge_folder_ids"):
+        ids += reader_sources(
+            conn, "agent", agent, folder_source_ids(conn, agent.get("knowledge_folder_ids"), "agent", agent)
+        )
+    ids = list(dict.fromkeys(str(i).lower() for i in ids if i))
     return SourcesRepository(conn).list_by_ids(ids) if ids else []
 
 
