@@ -78,7 +78,9 @@ def one_conn():
         tracker.opened += 1
         yield tracker.conn
 
-    with patch("docsgpt.storage.db.session.db_readonly", _readonly), patch.object(agent_recipe, "load_models"):
+    with patch("docsgpt.storage.db.session.db_readonly", _readonly), patch.object(
+        agent_recipe, "load_models"
+    ), patch.object(agent_recipe, "load_folders"):
         yield tracker
 
 
@@ -1656,3 +1658,59 @@ class TestKnowledgeFolderLoad:
         with _through(pg_conn), patch("docsgpt.decisions.available", return_value=True):
             ws = AGENT_RECIPE.load_workspace(KF_USER, context)
         assert sorted(f["name"] for f in ws.folders) == ["billing", "install"]
+
+
+class TestKnowledgeFolderCatalogue:
+    def test_the_agent_recipe_lists_the_folders_it_may_attach_and_reads_them(self, pg_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        listed = _kfolder(pg_conn, KF_USER, "Carriers")
+        rates = _filed(pg_conn, listed, KF_USER, "Rates guide")
+        on_form = _kfolder(pg_conn, KF_USER, "Fresh")
+        context = parse_context({"form": {"folders": [on_form]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+            # The form's folder is listed first, even with nothing filed in it yet.
+            assert [row["id"] for row in ws.folder_rows] == [on_form, listed]
+            assert ws.counts()["folders"] == 2
+            req = _kf_req(KF_USER, context)
+            assert "get_folder" in AGENT_RECIPE.offered_tools(req, ws)
+            assert "get_folder lists the sources" in instructions(req, ws)
+            assert run_read_tool("get_folder", ws, {"folder_id": listed})["sources"] == [
+                {"id": rates, "name": "Rates guide"}]
+        assert ws.proposable_folders() == {on_form, listed}
+        assert ws.folder_sources(listed) == [rates] and ws.folder_sources(on_form) == []
+
+    def test_a_form_that_offers_no_folders_lists_none_but_still_reads_its_own(self, pg_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        listed = _kfolder(pg_conn, KF_USER, "Carriers")
+        _filed(pg_conn, listed, KF_USER, "Rates guide")
+        on_form = _kfolder(pg_conn, KF_USER, "Fresh")
+        fresh = _filed(pg_conn, on_form, KF_USER, "Fresh notes")
+        context = parse_context({"form": {"folders": [on_form], "folders_offered": False}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+            assert ws.folder_rows == [] and "folders" not in ws.counts() and "folders" not in ws.summary()
+            assert [f["id"] for f in ws.knowledge_folders] == [on_form]
+            assert "error" in run_read_tool("get_folder", ws, {"folder_id": listed})
+            assert run_read_tool("get_folder", ws, {"folder_id": on_form})["sources"] == [
+                {"id": fresh, "name": "Fresh notes"}]
+            assert "error" in run_read_tool("list_workspace", ws, {"kind": "folders"})
+        assert ws.proposable_folders() == {on_form}
+
+    def test_a_saved_agents_folder_feeds_what_its_run_reads(self, pg_conn):
+        from tests.api.user.test_resource_sponsors import _agent, EDITOR, OWNER
+
+        folder = _kfolder(pg_conn, OWNER, "Owner docs")
+        private = _filed(pg_conn, folder, OWNER, "Owner private")
+        agent_id, _team = _agent(pg_conn, knowledge_folder_ids=[folder])
+        context = parse_context({"agent_id": agent_id, "form": {"folders": [folder]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+        # Not the editor's to list, but on the form: a proposal may keep it, and it feeds the owner's source.
+        assert folder not in ws.ids("folders") and ws.proposable_folders() == {folder}
+        assert ws.folder_sources(folder) == [private]
+
+    def test_no_folders_offer_no_folder_read(self):
+        assert "get_folder" not in AGENT_RECIPE.offered_tools(_req(), _ws())

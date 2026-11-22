@@ -486,3 +486,129 @@ def test_get_prompt_is_not_for_a_prompt_the_form_already_holds_whole():
 
     [definition] = tool_definitions(("get_prompt",))
     assert "not a prompt whose whole text the form data already holds" in definition["function"]["description"]
+
+
+# ---------------------------------------------------------------------------
+# Knowledge folders (the agent recipe's ``folders`` kind)
+# ---------------------------------------------------------------------------
+
+
+def _folder(conn, name, owner=ALICE, parent=None):
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+    return str(FoldersRepository(conn).create(owner, name, resource_type="source", parent_id=parent)["id"])
+
+
+def _file_into(conn, folder_id, source_id, user=ALICE):
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+
+    FolderItemsRepository(conn).file(user, "source", str(source_id), folder_id)
+
+
+def _agent_ws(conn, user=ALICE, pinned=()):
+    """The agent recipe's workspace with its knowledge folders, as its load reads them."""
+    from docsgpt.drafter.agent_recipe import AgentWorkspace
+    from docsgpt.drafter.catalog import load_folders
+
+    ws = AgentWorkspace(**vars(read_workspace(conn, user)))
+    load_folders(conn, user, ws, pinned)
+    return ws
+
+
+class TestKnowledgeFolderCatalogue:
+    @pytest.fixture
+    def tree(self, pg_conn):
+        """Carriers > EU > Rail, Other and an empty folder of Alice's; one of Bob's; a source Alice can't use."""
+        ids = {"carriers": _folder(pg_conn, "Carriers")}
+        ids["eu"] = _folder(pg_conn, "EU", parent=ids["carriers"])
+        ids["rail"] = _folder(pg_conn, "Rail", parent=ids["eu"])
+        ids["other"] = _folder(pg_conn, "Other")
+        ids["empty"] = _folder(pg_conn, "Empty")
+        ids["bobs"] = _folder(pg_conn, "Bob's deals", owner=BOB)
+        for name, folder in (("Rates", "carriers"), ("EU guide", "eu"), ("Rail notes", "rail"),
+                             ("Misc", "other")):
+            ids[name] = str(_source(pg_conn, name, ALICE)["id"])
+            _file_into(pg_conn, ids[folder], ids[name])
+        # Filed by Alice but Bob's and not shared: no agent of hers reads it.
+        ids["foreign"] = str(_source(pg_conn, "Bob's contracts", BOB)["id"])
+        _file_into(pg_conn, ids["eu"], ids["foreign"])
+        _file_into(pg_conn, ids["bobs"], _source(pg_conn, "Bob's file", BOB)["id"], user=BOB)
+        return ids
+
+    def test_rows_name_their_path_and_count_their_subtrees_sources(self, pg_conn, tree):
+        ws = _agent_ws(pg_conn)
+        assert ws.folder_rows == [
+            {"id": tree["carriers"], "name": "Carriers", "sources": 3},
+            {"id": tree["eu"], "name": "EU", "path": "Carriers", "sources": 2},
+            {"id": tree["rail"], "name": "Rail", "path": "Carriers / EU", "sources": 1},
+            {"id": tree["other"], "name": "Other", "sources": 1},
+        ]
+        assert ws.summary()["folders"] == ws.folder_rows and ws.counts()["folders"] == 4
+        dumped = json.dumps(ws.summary())
+        assert "Bob" not in dumped and tree["bobs"] not in dumped and tree["empty"] not in dumped
+        # An empty folder is attachable, just not listed.
+        assert tree["empty"] in ws.ids("folders") and tree["bobs"] not in ws.ids("folders")
+
+    def test_the_overview_is_capped_with_the_forms_folders_first_and_the_rest_browsed(self, pg_conn, tree,
+                                                                                     monkeypatch):
+        from docsgpt.drafter import catalog
+
+        monkeypatch.setattr(catalog, "MAX_FOLDERS", 2)
+        ws = _agent_ws(pg_conn, pinned=[tree["empty"], tree["bobs"]])
+        assert [row["name"] for row in ws.folder_rows] == ["Empty", "Carriers"]
+        assert ws.summary()["not_shown"] == {"folders": 3} and ws.partial()
+        with _db(pg_conn):
+            listed = run_read_tool("list_workspace", ws, {"kind": "folders"})
+            found = run_read_tool("list_workspace", ws, {"kind": "folders", "query": "eu"})
+        assert listed["total"] == 5 and [r["name"] for r in found["rows"]] == ["EU", "Rail"]
+
+    def test_get_folder_names_its_sources_and_subfolders(self, pg_conn, tree, monkeypatch):
+        from docsgpt.drafter import catalog
+
+        ws = _agent_ws(pg_conn)
+        with _db(pg_conn):
+            detail = run_read_tool("get_folder", ws, {"folder_id": tree["carriers"].upper()})
+            assert detail == {
+                "id": tree["carriers"], "name": "Carriers",
+                "sources": [{"id": tree["Rates"], "name": "Rates"}, {"id": tree["EU guide"], "name": "EU guide"},
+                            {"id": tree["Rail notes"], "name": "Rail notes"}],
+                "subfolders": [{"id": tree["eu"], "name": "EU", "sources": 2}],
+            }
+            # A named source reads like a listed one.
+            assert run_read_tool("get_source", ws, {"source_id": tree["Rail notes"]})["name"] == "Rail notes"
+            monkeypatch.setattr(catalog, "MAX_FOLDER_SOURCES", 1)
+            capped = run_read_tool("get_folder", ws, {"folder_id": tree["eu"]})
+            assert capped["sources"] == [{"id": tree["EU guide"], "name": "EU guide"}]
+            assert capped["more_sources"] == 1 and capped["path"] == "Carriers"
+            unknown = {"error": "No folder with that id in the workspace."}
+            assert run_read_tool("get_folder", ws, {"folder_id": tree["bobs"]}) == unknown
+            assert run_read_tool("get_folder", ws, {"folder_id": str(uuid.uuid4())}) == unknown
+
+    def test_the_catalogue_reads_the_tree_in_two_queries(self, pg_conn, tree):
+        from docsgpt.drafter.catalog import load_folders
+
+        ws = read_workspace(pg_conn, ALICE)
+        statements = []
+
+        def _count(conn, cursor, statement, *args):
+            statements.append(statement)
+
+        from sqlalchemy import event
+
+        event.listen(pg_conn, "before_cursor_execute", _count)
+        try:
+            load_folders(pg_conn, ALICE, ws)
+        finally:
+            event.remove(pg_conn, "before_cursor_execute", _count)
+        assert len(statements) == 2
+
+    def test_other_workspaces_and_recipes_carry_no_folders(self, pg_conn, tree):
+        from docsgpt.drafter.prompt_recipe import PROMPT_RECIPE
+        from docsgpt.drafter.topics_recipe import TOPICS_RECIPE
+
+        ws = _load(pg_conn)
+        assert "folders" not in ws.summary() and "folders" not in ws.counts() and not ws.partial()
+        with _db(pg_conn):
+            assert "error" in run_read_tool("list_workspace", ws, {"kind": "folders"})
+            assert "error" in run_read_tool("get_folder", ws, {"folder_id": tree["carriers"]})
+        assert PROMPT_RECIPE.read_tools == () and TOPICS_RECIPE.read_tools == ()

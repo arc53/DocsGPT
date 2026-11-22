@@ -78,13 +78,17 @@ from docsgpt.drafter.agent_instructions import (
     SKIPPED,
     STARTERS,
     STEP_GUIDES,
+    WORKSPACE_FOLDERS,
 )
 from docsgpt.drafter.catalog import (
+    FOLDER_KIND,
     is_template,
+    load_folders,
     load_models,
     prompt_text,
     PROMPT_CHARS,
     read_workspace,
+    subtree_sources,
     Workspace,
 )
 from docsgpt.drafter.fencing import clean_text
@@ -187,6 +191,7 @@ class AgentWorkspace(Workspace):
             model reads them: ``{id, name, sources: [{id, name}], more_sources?, stopped?}``. Not the topic folders
             of ``folders``.
         knowledge_folder_sources: Every source those knowledge folders feed, each once, named or not.
+        knowledge_folder_feeds: Each kept knowledge folder's id -> every source it feeds, named or not.
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
@@ -203,21 +208,45 @@ class AgentWorkspace(Workspace):
     focus_row: Optional[dict] = None
     knowledge_folders: list[dict] = field(default_factory=list)
     knowledge_folder_sources: list[str] = field(default_factory=list)
+    knowledge_folder_feeds: dict[str, list[str]] = field(default_factory=dict)
 
     def reads_insights(self) -> bool:
         """Whether this turn has the agent's gap summary to work from."""
         return bool(self.gaps and self.gaps.get("available"))
 
     def counts(self) -> dict[str, int]:
-        """The ``reading`` status, with the conversations Insights analysed when the summary was read."""
+        """The ``reading`` status, with the knowledge folders it lists to attach and the conversations Insights
+        analysed when the summary was read."""
         out = super().counts()
+        folders = len(self.folder_rows) + self.hidden.get(FOLDER_KIND, 0)
+        if folders:
+            out["folders"] = folders
         if self.reads_insights():
             out["insights_conversations"] = int(self.gaps["conversations"])
         return out
 
+    def partial(self) -> bool:
+        """Whether the overview leaves out rows of the caller's, knowledge folders included."""
+        return super().partial() or bool(self.hidden.get(FOLDER_KIND))
+
+    def proposable_folders(self) -> set[str]:
+        """The knowledge folder ids a proposal may list: those the caller may attach here and those the server kept
+        on the form."""
+        return self.ids(FOLDER_KIND) | {folder["id"] for folder in self.knowledge_folders}
+
+    def folder_sources(self, folder_id: str) -> list[str]:
+        """Every source a knowledge folder feeds: a folder kept on the form as the agent reads it (sources the
+        caller can't attach included), any other as its subtree holds the caller's (:func:`subtree_sources`)."""
+        if folder_id in self.knowledge_folder_feeds:
+            return list(self.knowledge_folder_feeds[folder_id])
+        return subtree_sources(self, folder_id)
+
     def summary(self) -> dict[str, Any]:
-        """The compact catalog, with the agent's gap summary when it was read."""
+        """The compact catalog, with the knowledge folders the caller may attach and the agent's gap summary when
+        it was read."""
         out = super().summary()
+        if self.folder_rows:
+            out["folders"] = self.folder_rows
         if self.reads_insights():
             out["insights"] = {
                 "days": self.gaps["days"],
@@ -470,24 +499,22 @@ def read_knowledge_folders(conn, user_id: str, ws: Workspace, folder_ids: list[s
         agent: The saved agent's row when the caller may edit it, else None.
 
     Returns:
-        ``(folders, source_ids)``: ``[{id, name, sources: [{id, name}], more_sources?, stopped?}]`` in the form's
-        order, and the ids of every source they feed, each once.
+        ``(folders, feeds)``: ``[{id, name, sources: [{id, name}], more_sources?, stopped?}]`` in the form's
+        order, and ``folder_id -> [source_id]``: every source each kept folder feeds, named or not.
     """
     from docsgpt.api.user.folder_knowledge import expand_folders, folder_details
-    from docsgpt.drafter.catalog import attachable_folders, NAME_CHARS
+    from docsgpt.drafter.catalog import attachable_folders, NAME_CHARS, source_rows
 
     ids = list(dict.fromkeys(str(fid).strip().lower() for fid in folder_ids or [] if fid))
     on_agent = {str(fid).lower() for fid in (agent or {}).get("knowledge_folder_ids") or []}
     attachable = set(attachable_folders(conn, user_id, ids, ws.owner_id))
     kept = [fid for fid in ids if fid in on_agent or fid in attachable]
     if not kept:
-        return [], []
+        return [], {}
     holder_type, holder = ("agent", {**agent, "knowledge_folder_ids": kept}) if agent else (None, None)
     details = folder_details(conn, kept, user_id, holder_type, holder)
     fed = expand_folders(conn, kept, holder_type, holder)
     allowed = ws.ids("sources")
-    names = {str(row["id"]): row.get("name") for row in ws.sources}
-    names.update({sid: row.get("name") for sid, row in ws.found.get("sources", {}).items()})
     budget = FOLDER_SOURCES_TOTAL
     plan: list[tuple[dict, list[str], list[str]]] = []
     for detail in details:
@@ -495,23 +522,18 @@ def read_knowledge_folders(conn, user_id: str, ws: Workspace, folder_ids: list[s
         named = [sid for sid in sources if sid in allowed][:max(0, min(FOLDER_SOURCES_NAMED, budget))]
         budget -= len(named)
         plan.append((detail, sources, named))
-    unread = list(dict.fromkeys(sid for _, _, named in plan for sid in named if sid not in names))
-    if unread and ws.reader is not None:
-        rows = ws.reader.rows("sources", unread, conn)
-        ws.found.setdefault("sources", {}).update({row["id"]: row for row in rows})
-        names.update({row["id"]: row.get("name") for row in rows})
+    rows = source_rows(ws, [sid for _, _, named in plan for sid in named], conn)
     folders: list[dict] = []
     for detail, sources, named in plan:
-        named = [sid for sid in named if sid in names]
+        named = [sid for sid in named if sid in rows]
         entry: dict[str, Any] = {"id": detail["id"], "name": clean_text(detail.get("name"), NAME_CHARS) or None,
-                                 "sources": [{"id": sid, "name": names[sid]} for sid in named]}
+                                 "sources": [{"id": sid, "name": rows[sid].get("name")} for sid in named]}
         if len(sources) > len(named):
             entry["more_sources"] = len(sources) - len(named)
         if detail.get("stopped"):
             entry["stopped"] = detail.get("reason")
         folders.append(entry)
-    every = list(dict.fromkeys(sid for sources in fed.values() for sid in sources))
-    return folders, every
+    return folders, {fid: fed.get(fid, []) for fid in kept}
 
 
 def saved_prompt_text(conn, user_id: str, prompt_id: str) -> Optional[str]:
@@ -535,7 +557,8 @@ def _load(user_id: str, context: dict, *, team_id: Optional[str] = None) -> Agen
     """The caller's workspace plus what this request's step needs, read in one read-only transaction.
 
     Every step reads the text of the form's saved prompt, the one prompt the model is always shown: whole when
-    edits may change it, and the form's knowledge folders with the sources they feed (:func:`read_knowledge_folders`).
+    edits may change it, the form's knowledge folders with the sources they feed (:func:`read_knowledge_folders`)
+    and, unless the form offers none, the knowledge folders the caller may attach (``catalog.load_folders``).
     The safety step also reads the instance's guardrail menu and Insights switch, the topic folders of the agent's
     sources (those its knowledge folders feed too), and whether a saved agent has enough conversations for Suggest
     from conversations; the saved agent's row is read once for all of them. A new agent reads the items of
@@ -567,8 +590,13 @@ def _load(user_id: str, context: dict, *, team_id: Optional[str] = None) -> Agen
         agent = editable_saved_agent(conn, user_id, ws.agent["id"]) \
             if ws.agent and (step is None or safety or form.get("folders")) else None
         if form.get("folders"):
-            out.knowledge_folders, out.knowledge_folder_sources = read_knowledge_folders(
+            out.knowledge_folders, out.knowledge_folder_feeds = read_knowledge_folders(
                 conn, user_id, out, form["folders"], agent)
+            out.knowledge_folder_sources = list(dict.fromkeys(
+                sid for sources in out.knowledge_folder_feeds.values() for sid in sources))
+        if form.get("folders_offered") is not False:
+            # The folders the caller may attach here, the form's kept ones first.
+            load_folders(conn, user_id, out, [f["id"] for f in out.knowledge_folders], out.owner_id)
         if step is None and agent:
             _read_insights(conn, agent, context, out)
         if safety:
@@ -818,6 +846,8 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
     parts = [AGENT_FIELDS, never, DESIGN_RULES]
     if folders:
         parts.append(KNOWLEDGE_FOLDERS)
+    if ws.folder_rows:
+        parts.append(WORKSPACE_FOLDERS)
     if ws.partial():
         parts.append(PARTIAL_WORKSPACE)
     if step:
@@ -1501,6 +1531,8 @@ def _drop_unchanged(fields: dict, form: dict) -> None:
 #: The read tools every turn offers, and those only an improve turn with the agent's gap summary does.
 WORKSPACE_READS = ("get_prompt", "get_source", "get_tool")
 BROWSE_READS = ("list_workspace",)
+#: The read only a turn with knowledge folders offers: listed to attach, or kept on the form.
+FOLDER_READS = ("get_folder",)
 INSIGHTS_READS = ("get_gap_examples", "get_conversations")
 
 
@@ -1510,10 +1542,12 @@ def asks(req: DraftRequest) -> bool:
 
 
 def read_tools_for(req: DraftRequest, ws: Workspace) -> tuple[str, ...]:
-    """The read tools a turn offers: the workspace listing only when the overview leaves rows out, the Insights
-    reads only in improve mode with the agent's gap summary."""
+    """The read tools a turn offers: the workspace listing only when the overview leaves rows out, ``get_folder``
+    only with knowledge folders to read, the Insights reads only in improve mode with the agent's gap summary."""
     reader = isinstance(ws, AgentWorkspace) and ws.reads_insights() and ws.insights_reader is not None
     names = (BROWSE_READS if ws.partial() else ()) + WORKSPACE_READS
+    if ws.attachable.get(FOLDER_KIND) or getattr(ws, "knowledge_folders", None):
+        names += FOLDER_READS
     return names + INSIGHTS_READS if reader and not req.context["step"] else names
 
 
@@ -1525,7 +1559,7 @@ AGENT_RECIPE = register(Recipe(
     context_data=context_data,
     proposal_schema=PROPOSAL_SCHEMA,
     validate=validate,
-    read_tools=BROWSE_READS + WORKSPACE_READS + INSIGHTS_READS,
+    read_tools=BROWSE_READS + WORKSPACE_READS + FOLDER_READS + INSIGHTS_READS,
     tools_for=read_tools_for,
     proposal_description="Fill the agent form with your draft. Ends your turn.",
     questions=asks,

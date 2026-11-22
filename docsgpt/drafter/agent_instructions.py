@@ -63,6 +63,12 @@ needs some attached, when a folder feeds it, and never add a source a folder alr
 source's files with get_source when its name doesn't say what it covers. A folder with stopped feeds nothing: \
 deleted means it is gone, sponsor_cannot_edit_agent that its owner can no longer edit the agent."""
 
+#: Added when the workspace overview lists knowledge folders (``Workspace.folder_rows``).
+WORKSPACE_FOLDERS = """folders in the workspace are the user's knowledge folders, largest first: path names the \
+folders above one, sources counts the sources filed in it and its subfolders. get_folder lists the sources a folder \
+holds and its subfolders; a source it names is read with get_source and attached by its id like any other. A \
+folder's id is not a source id: never put one in sources."""
+
 #: Added when the workspace overview leaves rows out (``Workspace.partial``).
 PARTIAL_WORKSPACE = """The workspace lists only part of what the user has: the sources, tools and prompts the form \
 already uses, then the newest. not_shown counts the ones it leaves out. Never tell the user that something doesn't \
