@@ -378,3 +378,21 @@ class TestAmbiguousCommit:
                                batch=1)
         texts = sorted(c["text"] for c in store.chunks.values())
         assert texts == ["one", "three", "two"]
+
+
+    def test_a_cleanup_that_leaves_strays_stops_the_retry(self, monkeypatch):
+        monkeypatch.setattr(incremental, "_sleep", lambda s: None)
+        store = _Store.make()
+        real = store.add_texts
+        calls = {"n": 0}
+
+        def add_texts(texts, metadatas=None, *a, **k):
+            calls["n"] += 1
+            real(texts, metadatas)
+            raise RuntimeError("commit reply lost")
+
+        monkeypatch.setattr(store, "add_texts", add_texts)
+        monkeypatch.setattr(store, "delete_chunks", lambda ids: 0)  # reports nothing deleted, deletes nothing
+        with pytest.raises(RuntimeError, match="not retrying"):
+            incremental.add_chunks(store, [("one", {"source": "a"})])
+        assert calls["n"] == 1 and len(store.chunks) == 1

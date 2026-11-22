@@ -794,7 +794,12 @@ def add_chunks(
             strays = [cid for ids in found.values() for cid in ids if cid not in confirmed]
             if strays:
                 logging.warning(f"Deleting {len(strays)} chunk(s) a failed write may have left, before retrying it")
-                store.delete_chunks(strays)
+                if int(store.delete_chunks(strays) or 0) < len(strays):
+                    left = chunk_ids_by_path(store, {key(meta) for meta in part_metas}, key)
+                    if set(strays) & {cid for ids in left.values() for cid in ids}:
+                        # A retry now would add them twice: stop, and let the
+                        # pending manifest make the next sync redo these files.
+                        raise RuntimeError("Could not delete what a failed write left; not retrying it")
 
         return undo
 
