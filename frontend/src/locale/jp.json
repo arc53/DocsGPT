@@ -1842,6 +1842,7 @@
         "other_step": "別のステップで行う変更"
       },
       "fields": {
+        "folders": "ナレッジフォルダ",
         "limits": "利用制限"
       },
       "formEdited": "フォームで {{fields}} を変更しました。",
@@ -1910,6 +1911,7 @@
     "changeModel": "モデルを変更",
     "counts": {
       "agents_other": "エージェント {{count}} 件",
+      "folders_other": "フォルダ {{count}} 件",
       "models_other": "モデル {{count}} 件",
       "prompts_other": "プロンプト {{count}} 件",
       "sources_other": "ナレッジ {{count}} 件",

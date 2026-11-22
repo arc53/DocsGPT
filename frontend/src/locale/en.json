@@ -1874,6 +1874,7 @@
         "other_step": "a change for another step"
       },
       "fields": {
+        "folders": "Knowledge folders",
         "limits": "Usage limit"
       },
       "formEdited": "You changed {{fields}} in the form.",
@@ -1943,6 +1944,8 @@
     "counts": {
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
+      "folders_one": "{{count}} folder",
+      "folders_other": "{{count}} folders",
       "models_one": "{{count}} model",
       "models_other": "{{count}} models",
       "prompts_one": "{{count}} prompt",

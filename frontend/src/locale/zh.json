@@ -1842,6 +1842,7 @@
         "other_step": "属于其他步骤的更改"
       },
       "fields": {
+        "folders": "知识库文件夹",
         "limits": "使用限制"
       },
       "formEdited": "你在表单中更改了 {{fields}}。",
@@ -1910,6 +1911,7 @@
     "changeModel": "更换模型",
     "counts": {
       "agents_other": "{{count}} 个智能体",
+      "folders_other": "{{count}} 个文件夹",
       "models_other": "{{count}} 个模型",
       "prompts_other": "{{count}} 个提示词",
       "sources_other": "{{count}} 个知识源",

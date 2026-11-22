@@ -5,21 +5,31 @@ import { type DraftedFields, useDraftedFields } from './useDraftedFields';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
-type Field = 'name' | 'tools';
+type Field = 'name' | 'tools' | 'tags';
 type Form = Record<Field, unknown>;
 
 const harness: {
   drafted: DraftedFields<Field> | null;
   form: Form;
   setForm: (next: (prev: Form) => Form) => void;
-} = { drafted: null, form: { name: '', tools: [] }, setForm: () => undefined };
+} = {
+  drafted: null,
+  form: { name: '', tools: [], tags: [] },
+  setForm: () => undefined,
+};
 
-function Harness() {
-  const [form, setForm] = useState<Form>({ name: 'Old', tools: ['a'] });
+function Harness({ linked }: { linked?: Field[][] }) {
+  const [form, setForm] = useState<Form>({
+    name: 'Old',
+    tools: ['a'],
+    tags: ['x'],
+  });
   harness.form = form;
   harness.setForm = setForm;
-  harness.drafted = useDraftedFields<Field>(form, (field, previous) =>
-    setForm((prev) => ({ ...prev, [field]: previous })),
+  harness.drafted = useDraftedFields<Field>(
+    form,
+    (field, previous) => setForm((prev) => ({ ...prev, [field]: previous })),
+    linked,
   );
   return null;
 }
@@ -68,7 +78,11 @@ describe('useDraftedFields', () => {
     await draft('tools', ['a', 'b']);
     expect(harness.drafted!.fields).toEqual(['name', 'tools']);
     await act(async () => harness.drafted!.undo('name'));
-    expect(harness.form).toEqual({ name: 'Old', tools: ['a', 'b'] });
+    expect(harness.form).toEqual({
+      name: 'Old',
+      tools: ['a', 'b'],
+      tags: ['x'],
+    });
     expect(harness.drafted!.isDrafted('name')).toBe(false);
     expect(harness.drafted!.isDrafted('tools')).toBe(true);
   });
@@ -77,7 +91,7 @@ describe('useDraftedFields', () => {
     await draft('name', 'New');
     await draft('name', 'Newer');
     await act(async () => harness.drafted!.undo('name'));
-    expect(harness.form).toEqual({ name: 'Old', tools: ['a'] });
+    expect(harness.form).toEqual({ name: 'Old', tools: ['a'], tags: ['x'] });
     expect(harness.drafted!.fields).toEqual([]);
   });
 
@@ -140,6 +154,92 @@ describe('useDraftedFields', () => {
     expect(harness.drafted!.fields).toEqual(['tools']);
     await act(async () => harness.drafted!.undo('tools'));
     expect(harness.form.tools).toEqual(['a']);
+  });
+
+  // Fields one control shows (a picker of sources and folders) are one
+  // drafted value: editing either by hand, or undoing either, ends both.
+  describe('linked fields', () => {
+    beforeEach(async () => {
+      await act(async () =>
+        root.render(<Harness linked={[['tools', 'tags']]} />),
+      );
+    });
+
+    it('drops both marks when either marked one is edited by hand', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      await draft('name', 'New');
+      await act(async () =>
+        harness.setForm((prev) => ({ ...prev, tags: ['y', 'z'] })),
+      );
+      expect(harness.drafted!.fields).toEqual(['name']);
+      // Undo has nothing to put back for either.
+      await act(async () => harness.drafted!.undo('tools'));
+      expect(harness.form.tools).toEqual(['b']);
+    });
+
+    it('undoes both from either, and only the marked one when one is', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      await act(async () => harness.drafted!.undo('tags'));
+      expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
+      expect(harness.drafted!.fields).toEqual([]);
+      await draft('tags', ['y']);
+      await act(async () => harness.drafted!.undo('tools'));
+      expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
+      expect(harness.drafted!.fields).toEqual([]);
+    });
+
+    it('drops the mark when the unmarked one is edited by hand', async () => {
+      await draft('tags', ['y']);
+      await act(async () =>
+        harness.setForm((prev) => ({ ...prev, tools: ['a', 'b'] })),
+      );
+      expect(harness.drafted!.fields).toEqual([]);
+      // Undo puts nothing back over the hand edit.
+      await act(async () => harness.drafted!.undo('tags'));
+      expect(harness.form).toMatchObject({ tools: ['a', 'b'], tags: ['y'] });
+    });
+
+    it('keeps both marks of one draft that sets both at once, and undoes both', async () => {
+      await act(async () => {
+        harness.setForm((prev) => ({ ...prev, tools: ['b'] }));
+        harness.drafted!.mark('tools', ['a'], ['b']);
+        harness.setForm((prev) => ({ ...prev, tags: ['y'] }));
+        harness.drafted!.mark('tags', ['x'], ['y']);
+      });
+      expect(harness.drafted!.fields).toEqual(['tools', 'tags']);
+      await act(async () => harness.drafted!.undo('tools'));
+      expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
+    });
+
+    it('keeps the other mark while a draft changes only one', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      await draft('tags', ['y', 'z']);
+      expect(harness.drafted!.fields).toEqual(['tools', 'tags']);
+    });
+
+    it('clears both marks after a save that sent both', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      const saved = { ...harness.form };
+      await act(async () => harness.drafted!.clear(saved));
+      expect(harness.drafted!.fields).toEqual([]);
+    });
+
+    it('keeps both marks after a save when one was drafted again while it was out', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      const saved = { ...harness.form };
+      await draft('tags', ['y', 'z']);
+      await act(async () => harness.drafted!.clear(saved));
+      expect(harness.drafted!.fields).toEqual(['tools', 'tags']);
+      // Undo puts both back to before the draft, as one drafted value.
+      await act(async () => harness.drafted!.undo('tags'));
+      expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
+      expect(harness.drafted!.fields).toEqual([]);
+    });
   });
 
   it('clears every mark and keeps the values (a save)', async () => {
