@@ -5881,6 +5881,30 @@ def _apply_connector_plan(
                 if entry.id not in failures and entry.path not in taken:
                     failures[entry.id] = (incremental.PERMANENT, "not a file DocsGPT reads")
     read = {entry.id for entry in to_download if entry.id not in failures}
+    # A file whose new path another file still holds, and that file was not
+    # read this time (its new version failed), waits: the holder keeps its
+    # chunks, and both are tried again by the next sync. Repeated, since a
+    # file that waits keeps holding its own old path.
+    removed_ids = {file_id for file_id, _ in plan.removed}
+    holders = {
+        path: file_id
+        for file_id, record in manifest.items()
+        if file_id not in removed_ids
+        for path in incremental.record_paths(record)
+    }
+    deferred: set = set()
+    waiting = True
+    while waiting:
+        waiting = False
+        for entry in to_download:
+            holder = holders.get(entry.path)
+            if (
+                entry.id in read and entry.id not in deferred and holder and holder != entry.id
+                and (holder not in read or holder in deferred)
+            ):
+                deferred.add(entry.id)
+                waiting = True
+    read -= deferred
     # Indexed without every page (OCR left some out): kept, and tried again.
     partly = {
         by_path[path].id: failure
@@ -5890,7 +5914,6 @@ def _apply_connector_plan(
         if path in by_path
     }
     changed_read = [(record, entry) for record, entry in plan.changed if entry.id in read]
-    removed_ids = {file_id for file_id, _ in plan.removed}
     replaced_ids = {entry.id for _, entry in changed_read}
 
     total_tokens = sum(
@@ -6003,6 +6026,7 @@ def _apply_connector_plan(
         "files_moved": len(plan.moved),
         "files_removed": len(plan.removed),
         "files_failed": len(new_failed),
+        "files_deferred": len(deferred) + plan.deferred,
         "chunks_added": added,
         "chunks_deleted": deleted,
     }

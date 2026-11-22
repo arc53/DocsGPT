@@ -32,7 +32,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from typing import Any, Dict, Iterator, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,10 @@ _STATE_TTL_SECONDS = 3600
 #: Polling interval while waiting for a slot, before jitter.
 _POLL_SECONDS = 0.1
 _KEY_PREFIX = "docsgpt:ocr:inflight"
+
+
+class SlotWaitExpired(TimeoutError):
+    """A request stopped waiting for a slot: its caller's deadline passed."""
 
 
 def _now() -> float:
@@ -159,29 +163,34 @@ class InFlightLimiter:
     def _try_redis_slot(self, client: Any) -> Optional[str]:
         """Take a Redis slot when one is free; ``None`` when all are held.
 
+        The count and the insert are one ``WATCH``ed transaction: a lease is
+        only ever added once it is admitted, so a worker that stops part way
+        never leaves one that nobody uses.
+
         Raises:
-            Exception: Redis failed; a lease this call added is taken back first (best effort).
+            Exception: Redis failed.
         """
         lease = uuid.uuid4().hex
-        now = _now()
-        pipe = client.pipeline(transaction=True)
-        pipe.zremrangebyscore(self._leases, "-inf", now)
-        pipe.zadd(self._leases, {lease: now + self.lease_seconds})
-        pipe.zcard(self._leases)
-        pipe.expire(self._leases, int(self.lease_seconds * 2) + 1)
-        try:
-            held = int(pipe.execute()[2])
-            if held <= self._redis_allowed(client):
-                return lease
-        except Exception:
-            # The lease may be in: a slot nobody uses would block others until it lapses.
-            try:
-                client.zrem(self._leases, lease)
-            except Exception:  # noqa: BLE001 - it lapses on its own
-                pass
-            raise
-        client.zrem(self._leases, lease)
-        return None
+        admitted: Dict[str, bool] = {}
+
+        def admit(pipe: Any) -> None:
+            now = _now()
+            held = int(pipe.zcount(self._leases, f"({now}", "+inf"))
+            allowed = self._parse_allowed(pipe.get(self._limit_key))
+            pipe.multi()
+            if held < allowed:
+                pipe.zremrangebyscore(self._leases, "-inf", now)
+                pipe.zadd(self._leases, {lease: now + self.lease_seconds})
+                pipe.expire(self._leases, self._key_ttl)
+            admitted["ok"] = held < allowed
+
+        client.transaction(admit, self._leases, self._limit_key)
+        return lease if admitted.get("ok") else None
+
+    @property
+    def _key_ttl(self) -> int:
+        """Seconds the lease set outlives its last write: past every live lease."""
+        return int(self.lease_seconds * 2) + 1
 
     def _keep_alive(self, lease: str, stop: threading.Event) -> None:
         """Push a held lease's expiry on until ``stop`` is set (the request finished)."""
@@ -190,15 +199,25 @@ class InFlightLimiter:
             if client is None:
                 continue
             try:
-                client.zadd(self._leases, {lease: _now() + self.lease_seconds}, xx=True)
+                pipe = client.pipeline(transaction=True)
+                pipe.zadd(self._leases, {lease: _now() + self.lease_seconds}, xx=True)
+                # The set's own expiry too, or it could lapse under a live lease.
+                pipe.expire(self._leases, self._key_ttl)
+                pipe.execute()
             except Exception:  # noqa: BLE001 - tried again on the next beat
                 logger.debug("Could not renew an OCR request slot", exc_info=True)
 
     # -- slots --------------------------------------------------------------
 
-    def _acquire(self) -> Tuple[str, Optional[str]]:
-        """Wait for a slot; returns ``("redis", lease)`` or ``("local", None)``."""
+    def _acquire(self, give_up: Optional[Callable[[], bool]] = None) -> Tuple[str, Optional[str]]:
+        """Wait for a slot; returns ``("redis", lease)`` or ``("local", None)``.
+
+        Raises:
+            SlotWaitExpired: ``give_up()`` answered True while all slots were held.
+        """
         while True:
+            if give_up is not None and give_up():
+                raise SlotWaitExpired("gave up waiting for a request slot")
             client = self._redis()
             if client is not None:
                 try:
@@ -232,9 +251,13 @@ class InFlightLimiter:
             logger.debug("Could not give back an OCR request slot; its lease will lapse", exc_info=True)
 
     @contextmanager
-    def slot(self) -> Iterator[None]:
-        """Hold one slot for the duration of a request, renewing a Redis lease while it runs."""
-        where, lease = self._acquire()
+    def slot(self, give_up: Optional[Callable[[], bool]] = None) -> Iterator[None]:
+        """Hold one slot for the duration of a request, renewing a Redis lease while it runs.
+
+        Args:
+            give_up: Asked while waiting; True stops the wait with ``SlotWaitExpired``.
+        """
+        where, lease = self._acquire(give_up)
         stop = threading.Event()
         if where == "redis" and lease:
             threading.Thread(

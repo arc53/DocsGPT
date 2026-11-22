@@ -695,14 +695,20 @@ class DeepseekOcrEngine:
         """
         import requests
 
-        with self.limiter.slot():
-            if deadline is not None and _monotonic() >= deadline:
-                raise OcrRateLimitedError(
-                    f"DeepSeek-OCR endpoint {self.url} rate-limit budget ran out while waiting for a request slot; "
-                    "the page will be tried again later."
-                )
-            self._count("attempts")
-            return requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
+        from docsgpt.parser.file.ocr_limiter import SlotWaitExpired
+
+        expired = (lambda: _monotonic() >= deadline) if deadline is not None else None
+        try:
+            with self.limiter.slot(give_up=expired):
+                if expired is not None and expired():
+                    raise SlotWaitExpired("the budget ran out")
+                self._count("attempts")
+                return requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
+        except SlotWaitExpired as exc:
+            raise OcrRateLimitedError(
+                f"DeepSeek-OCR endpoint {self.url} rate-limit budget ran out while waiting for a request slot; "
+                "the page will be tried again later."
+            ) from exc
 
     def _post(self, body: Dict):
         """POST one page, retrying rate limits, 5xx responses and refused connections.

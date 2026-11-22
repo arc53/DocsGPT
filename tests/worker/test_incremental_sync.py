@@ -572,11 +572,13 @@ class TestIncrementalSafety:
         loader.files["B"].update(path="a.md")
         loader.download_failures["A"] = "transient"
 
-        harness.sync()
+        result = harness.sync()
         by_path = harness.store.by_source()
-        assert all("bravo" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
-        assert "b.md" not in by_path
-        assert "A" not in harness.row()["remote_files"]["files"]
+        # B waits for A's path: both keep their old chunks until A can be read.
+        assert all("alpha" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
+        assert all("bravo" in harness.store.chunks[c]["text"] for c in by_path["b.md"])
+        assert result["files_deferred"] == 1
+        assert harness.row()["remote_files"]["files"]["A"]["path"] == "a.md"
 
         loader.download_failures.clear()
         harness.sync()
@@ -631,6 +633,29 @@ class TestIncrementalSafety:
 
 @pytest.mark.unit
 class TestCodeRabbitFixes:
+
+    def test_chunks_written_before_the_final_save_failed_go_once_the_file_does(self, harness, monkeypatch):
+        harness.sync()
+        harness.loader.files["tmp"] = {"path": "Docs/tmp.md", "version": "v1", "text": "# Tmp\n\ntemporary " * 20}
+        real = worker._save_source_sync_state
+        calls = []
+
+        def save(source_id, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 2:  # the final save, after the chunks are in
+                raise RuntimeError("database gone")
+            return real(source_id, **kwargs)
+
+        monkeypatch.setattr(worker, "_save_source_sync_state", save)
+        with pytest.raises(RuntimeError):
+            harness.sync()
+        monkeypatch.setattr(worker, "_save_source_sync_state", real)
+        assert "Docs/tmp.md" in harness.store.by_source()
+        del harness.loader.files["tmp"]
+
+        harness.sync()
+
+        assert "Docs/tmp.md" not in harness.store.by_source()
 
     def test_a_file_added_by_a_sync_that_died_is_removed_once_gone(self, harness):
         harness.sync()
@@ -888,6 +913,29 @@ class TestRemoteIncrementalSync:
         assert "guide/p3.md" not in after
         assert all("rewritten" in t or "brand new" in t for t in remote.store.embedded)
         assert remote.full_embeds == [4]
+
+    def test_a_page_written_before_the_final_save_failed_goes_once_gone(self, remote, monkeypatch):
+        remote.sync()
+        remote.loader.pages["guide/tmp.md"] = "temporary page " * 30
+        real = worker._save_source_sync_state
+        calls = []
+
+        def save(source_id, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 2:
+                raise RuntimeError("database gone")
+            return real(source_id, **kwargs)
+
+        monkeypatch.setattr(worker, "_save_source_sync_state", save)
+        with pytest.raises(RuntimeError):
+            remote.sync()
+        monkeypatch.setattr(worker, "_save_source_sync_state", real)
+        assert "guide/tmp.md" in remote.store.by_source()
+        del remote.loader.pages["guide/tmp.md"]
+
+        remote.sync()
+
+        assert "guide/tmp.md" not in remote.store.by_source()
 
     def test_a_page_added_by_a_sync_that_died_is_removed_once_gone(self, remote):
         remote.sync()

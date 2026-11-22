@@ -202,7 +202,7 @@ class ConfluenceLoader(BaseConnectorLoader):
                 if not cursor:
                     return True
         except requests.exceptions.HTTPError as e:
-            if e.response is not None and e.response.status_code in (401, 403):
+            if e.response is not None and e.response.status_code == 401:
                 raise
             logger.warning("Could not list the attachments of page %s: %s", page_id, e)
             return False
@@ -233,7 +233,7 @@ class ConfluenceLoader(BaseConnectorLoader):
             try:
                 page = self._get_json(f"/pages/{page_id}")
             except requests.exceptions.HTTPError as e:
-                if e.response is not None and e.response.status_code in (401, 403):
+                if e.response is not None and e.response.status_code == 401:
                     raise
                 if e.response is not None and e.response.status_code == 404:
                     continue
@@ -254,7 +254,7 @@ class ConfluenceLoader(BaseConnectorLoader):
                 try:
                     data = self._get_json(f"/spaces/{space_id}/pages", params)
                 except requests.exceptions.HTTPError as e:
-                    if e.response is not None and e.response.status_code in (401, 403):
+                    if e.response is not None and e.response.status_code == 401:
                         raise
                     logger.warning("Could not list the pages of space %s: %s", space_id, e)
                     unread += 1

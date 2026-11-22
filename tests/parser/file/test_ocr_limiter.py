@@ -15,6 +15,26 @@ class FakeRedis:
         self.lock = threading.RLock()
         self.zsets = {}
         self.values = {}
+        self.expiries = {}
+
+    def _lapse(self):
+        """Drop keys whose ``expire`` passed, on the limiter's clock."""
+        now = ol._now()
+        for key, deadline in list(self.expiries.items()):
+            if deadline <= now:
+                self.zsets.pop(key, None)
+                self.values.pop(key, None)
+                del self.expiries[key]
+
+    def zcount(self, key, low, high):
+        with self.lock:
+            self._lapse()
+            exclusive = str(low).startswith("(")
+            floor = float(str(low).lstrip("(")) if str(low) not in ("-inf",) else float("-inf")
+            return sum(
+                1 for score in self.zsets.get(key, {}).values()
+                if (score > floor if exclusive else score >= floor)
+            )
 
     def zremrangebyscore(self, key, low, high):
         with self.lock:
@@ -34,6 +54,7 @@ class FakeRedis:
 
     def zcard(self, key):
         with self.lock:
+            self._lapse()
             return len(self.zsets.get(key, {}))
 
     def zrem(self, key, member):
@@ -41,10 +62,13 @@ class FakeRedis:
             return 1 if self.zsets.get(key, {}).pop(member, None) is not None else 0
 
     def expire(self, key, seconds):
-        return True
+        with self.lock:
+            self.expiries[key] = ol._now() + seconds
+            return True
 
     def get(self, key):
         with self.lock:
+            self._lapse()
             value = self.values.get(key)
             return None if value is None else str(value).encode()
 
@@ -250,12 +274,29 @@ class TestReviewFixes:
             thread.join()
         assert limiter.allowed() == 2
 
-    def test_a_lease_whose_count_cannot_be_read_is_taken_back(self, fake_redis, monkeypatch):
-        limiter = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
-        monkeypatch.setattr(limiter, "_redis_allowed", lambda client: (_ for _ in ()).throw(ConnectionError("x")))
-        with pytest.raises(ConnectionError):
-            limiter._try_redis_slot(fake_redis)
-        assert fake_redis.zcard(limiter._leases) == 0
+    def test_a_lease_is_added_only_once_admitted(self, fake_redis):
+        first = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
+        assert first._try_redis_slot(fake_redis) is not None
+        # The slot is held: a second request adds nothing, not even for a moment.
+        adds = []
+        real = fake_redis.zadd
+        fake_redis.zadd = lambda *a, **k: (adds.append(a), real(*a, **k))[1]
+        assert ol.InFlightLimiter("k", cap=1, lease_seconds=60)._try_redis_slot(fake_redis) is None
+        assert adds == [] and fake_redis.zcard(first._leases) == 1
+
+    def test_a_long_request_keeps_its_slot_past_the_sets_first_expiry(self, fake_redis, monkeypatch):
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(ol, "_now", lambda: clock["now"])
+        holder = ol.InFlightLimiter("k", cap=1, lease_seconds=3)
+        other = ol.InFlightLimiter("k", cap=1, lease_seconds=3)
+        with holder.slot():
+            [lease] = fake_redis.zsets[holder._leases]
+            clock["now"] = 1006.0  # the set was first due to lapse at 1007
+            deadline = time.time() + 3
+            while fake_redis.zsets.get(holder._leases, {}).get(lease, 0) < 1009 and time.time() < deadline:
+                time.sleep(0.05)
+            clock["now"] = 1008.0
+            assert other._try_redis_slot(fake_redis) is None
 
     def test_a_slow_request_keeps_its_lease(self, fake_redis, monkeypatch):
         clock = {"now": 1000.0}

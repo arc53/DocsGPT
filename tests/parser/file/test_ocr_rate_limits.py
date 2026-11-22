@@ -561,3 +561,25 @@ class TestMixedPageFailures:
         parser = op.NativeOcrPdfParser(engine=Engine())
         with pytest.raises(op.OcrRateLimitedError):
             parser.ocr_pages(pdf, [0, 1], skip_failed=True)
+
+
+class TestSlotWaitDeadline:
+    def test_a_retry_stops_waiting_for_a_slot_when_the_budget_runs_out(self, budget, monkeypatch, clock):
+        engine = op.DeepseekOcrEngine()
+
+        class Full:
+            def _acquire(self, give_up=None):
+                while not give_up():
+                    clock[0] += 10  # time passes while every slot stays held
+                raise ocr_limiter.SlotWaitExpired("gave up")
+
+        import contextlib
+
+        @contextlib.contextmanager
+        def slot(give_up=None):
+            Full()._acquire(give_up)
+            yield
+
+        monkeypatch.setattr(engine.limiter, "slot", slot)
+        with pytest.raises(op.OcrRateLimitedError):
+            engine._send({}, {}, deadline=op._monotonic() + 30)

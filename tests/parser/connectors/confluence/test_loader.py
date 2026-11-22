@@ -1124,3 +1124,15 @@ class TestForbiddenItem:
             result = loader.download_files(str(tmp_path), ["attachment:a1"])
         assert result["failures"]["attachment:a1"]["kind"] == "transient"
         loader._refresh_rejected_token.assert_not_called()
+
+
+class TestForbiddenListing:
+    @pytest.mark.unit
+    def test_a_forbidden_page_is_left_out_not_fatal(self, loader):
+        routes = TestListSelection()._routes()
+        routes[f"{TestListSelection.BASE}/pages/2/attachments"] = _mock_response({}, 403)
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   side_effect=TestListSelection()._get(routes, [])):
+            listing = loader.list_selection({"folder_ids": ["S"]})
+        assert not listing.complete and listing.unread == 1
+        assert "page:1" in listing.by_id()
