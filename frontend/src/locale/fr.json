@@ -1903,6 +1903,7 @@
         "other_step": "une modification pour une autre étape"
       },
       "fields": {
+        "folders": "Dossiers de connaissances",
         "limits": "Limite d’utilisation"
       },
       "formEdited": "Vous avez modifié {{fields}} dans le formulaire.",
@@ -1979,6 +1980,9 @@
       "agents_many": "{{count}} agents",
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
+      "folders_many": "{{count}} dossiers",
+      "folders_one": "{{count}} dossier",
+      "folders_other": "{{count}} dossiers",
       "models_many": "{{count}} modèles",
       "models_one": "{{count}} modèle",
       "models_other": "{{count}} modèles",
@@ -4171,8 +4175,6 @@
       "taskModelDescription": "Rédige des formulaires, construit des graphes de connaissances et vérifie les moniteurs. Les conversations utilisent le modèle de l’agent.",
       "taskModelFailed": "{{model}} n’a pas pu exécuter votre dernière tâche : son fournisseur a refusé la clé d’API. Choisissez un autre modèle, ou demandez à un administrateur de vérifier la clé.",
       "taskModelFailedItem": "· clé refusée",
-      "taskModelInstanceDefault": "Utiliser la valeur par défaut de l’instance ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Utiliser la valeur par défaut de l’instance",
       "taskModelLoadError": "Impossible de charger le modèle de tâches.",
       "taskModelSaveFailed": "Impossible d’enregistrer le modèle de tâches. Réessayez.",
       "taskModelUnavailable": "Votre modèle de tâches ne peut plus s’exécuter (il a été désactivé ou supprimé) ; la valeur par défaut de l’instance est donc utilisée. Si le modèle revient, il sera de nouveau utilisé ; choisissez une option ici pour le remplacer.",

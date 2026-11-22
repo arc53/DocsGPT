@@ -1903,6 +1903,7 @@
         "other_step": "un cambio para otro paso"
       },
       "fields": {
+        "folders": "Carpetas de conocimiento",
         "limits": "Límite de uso"
       },
       "formEdited": "Cambiaste {{fields}} en el formulario.",
@@ -1979,6 +1980,9 @@
       "agents_many": "{{count}} agentes",
       "agents_one": "{{count}} agente",
       "agents_other": "{{count}} agentes",
+      "folders_many": "{{count}} carpetas",
+      "folders_one": "{{count}} carpeta",
+      "folders_other": "{{count}} carpetas",
       "models_many": "{{count}} modelos",
       "models_one": "{{count}} modelo",
       "models_other": "{{count}} modelos",
@@ -4171,8 +4175,6 @@
       "taskModelDescription": "Redacta formularios, crea grafos de conocimiento y revisa monitores. Los chats usan el modelo del agente.",
       "taskModelFailed": "{{model}} no pudo ejecutar tu última tarea: su proveedor rechazó la clave de API. Elige otro modelo o pide a un administrador que revise la clave.",
       "taskModelFailedItem": "· clave rechazada",
-      "taskModelInstanceDefault": "Usar el valor predeterminado de la instancia ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Usar el valor predeterminado de la instancia",
       "taskModelLoadError": "No se pudo cargar el modelo de tareas.",
       "taskModelSaveFailed": "No se pudo guardar el modelo de tareas. Inténtalo de nuevo.",
       "taskModelUnavailable": "Tu modelo de tareas ya no puede ejecutarse (se desactivó o se eliminó), así que se usa el valor predeterminado de la instancia. Si el modelo vuelve, se usará de nuevo; elige una opción aquí para reemplazarlo.",

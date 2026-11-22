@@ -74,7 +74,7 @@ type ModelDefaultsBody = {
   models: BuiltinModel[];
 };
 
-/** The Select value for "no instance task model". */
+/** No instance task model (saved as null): the fallback runs, and shows as the picked one. */
 export const TASK_MODEL_UNSET = '__unset__';
 
 /** The form: the retrieval options, the new-agent guardrails and the task model. */
@@ -242,9 +242,9 @@ export default function Defaults() {
     JSON.stringify(value.agentGuardrails) !==
     JSON.stringify(saved.agentGuardrails);
   const taskModelChanged = value.taskModel !== saved.taskModel;
-  const fallbackName =
-    models.models.find((m) => m.id === models.fallback_model_id)
-      ?.display_name ?? models.fallback_model_id;
+  // The fallback as an option; null when no model can run.
+  const fallbackOption =
+    models.models.find((m) => m.id === models.fallback_model_id)?.id ?? null;
   const valid =
     isPrescreenConfigValid(value.retrieval) &&
     !guardrailsIncomplete(value.agentGuardrails);
@@ -398,13 +398,21 @@ export default function Defaults() {
               id="defaults-task-model"
               label="Task model"
               description="Drafts forms, builds knowledge graphs and checks monitors. Built-in models only. Chats use the agent's model."
-              value={value.taskModel}
-              onChange={(taskModel) => setValue({ ...value, taskModel })}
-              defaultValue={TASK_MODEL_UNSET}
-              defaultLabel={
-                fallbackName ? `Not set (${fallbackName})` : 'Not set'
+              // Nothing stored shows the fallback as picked, and picking the
+              // fallback stores nothing, so the instance keeps following it.
+              value={
+                value.taskModel === TASK_MODEL_UNSET
+                  ? (fallbackOption ?? '')
+                  : value.taskModel
               }
-              defaultShortLabel="Not set"
+              onChange={(modelId) =>
+                setValue({
+                  ...value,
+                  taskModel:
+                    modelId === fallbackOption ? TASK_MODEL_UNSET : modelId,
+                })
+              }
+              placeholder="Select model"
               groups={[{ models: models.models }]}
               // A model whose provider refused its key on its last task:
               // marked in the list, and named in a warning while it runs.
@@ -412,7 +420,7 @@ export default function Defaults() {
               refusedModelId={refusedModel(models.task_model_error)}
               unavailableValue="Unavailable model"
               refusedSuffix="· key refused"
-              unavailableNote="The stored task model can't run (it was disabled or removed), so the fallback runs. It runs again if it comes back: pick Not set or another model and save to replace it."
+              unavailableNote="The stored task model can't run (it was disabled or removed), so the fallback runs. It runs again if it comes back: pick a model and save to replace it."
               refusedNote={(model) =>
                 `${model} couldn't run its last task: its provider refused the API key. Check the key, or pick another model.`
               }

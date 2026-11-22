@@ -62,12 +62,14 @@ export type DrafterErrorCode =
 
 /**
  * The counts a `reading` status reports ("6 knowledge sources, 11 tools…");
- * `insights_conversations` is the analyzed conversations it read from the
+ * `folders` is the knowledge folders it could attach, and
+ * `insights_conversations` the analyzed conversations it read from the
  * agent's Insights.
  */
 export type DrafterCounts = Partial<
   Record<
     | 'sources'
+    | 'folders'
     | 'tools'
     | 'prompts'
     | 'models'
