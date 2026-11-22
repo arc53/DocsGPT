@@ -5892,19 +5892,31 @@ def _apply_connector_plan(
         if file_id not in removed_ids
         for path in incremental.record_paths(record)
     }
+    # Only while the holder may still be read: a holder out of retries (or
+    # failed for good) gives its path up, as the plan's contested rule then
+    # clears its chunks, so nothing waits on it forever.
+    provisional = incremental.record_failures(failed, to_download, failures, listing, parse_key=parse_key)
+
+    def holds_on(file_id: str) -> bool:
+        if file_id in deferred:
+            return True
+        outcome = provisional.get(file_id)
+        return file_id not in read and outcome is not None and outcome.retryable(parse_key)
+
     deferred: set = set()
     waiting = True
     while waiting:
         waiting = False
         for entry in to_download:
             holder = holders.get(entry.path)
-            if (
-                entry.id in read and entry.id not in deferred and holder and holder != entry.id
-                and (holder not in read or holder in deferred)
-            ):
+            if entry.id in read and entry.id not in deferred and holder and holder != entry.id and holds_on(holder):
                 deferred.add(entry.id)
                 waiting = True
     read -= deferred
+    for entry in to_download:
+        if entry.id in deferred:
+            # Shown with the failed files; the next sync plans it again.
+            failures[entry.id] = (incremental.TRANSIENT, "waits for the file that held its path to be read")
     # Indexed without every page (OCR left some out): kept, and tried again.
     partly = {
         by_path[path].id: failure

@@ -624,6 +624,39 @@ class TestIncrementalSafety:
         assert harness.loader.single_downloads == [["id3"]]
         assert "failed_files" not in harness.row()["remote_data"]
 
+    def test_a_file_never_waits_on_one_that_failed_for_good(self, harness):
+        loader = harness.loader
+        loader.files.clear()
+        loader.files["A"] = {"path": "a.md", "version": "v1", "text": "# A\n\nalpha " * 20}
+        harness.sync()
+        # A is renamed and its new version can't be parsed; a new file takes its old name.
+        loader.files["A"].update(version="v2", path="x.md", text="# A\n\nbroken " * 20)
+        loader.files["E"] = {"path": "a.md", "version": "v1", "text": "# E\n\nepsilon " * 20}
+        harness.parser.broken["x.md"] = "permanent"
+
+        harness.sync()
+        harness.reset()
+        harness.sync()
+
+        by_path = harness.store.by_source()
+        assert all("epsilon" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
+        assert harness.row()["remote_files"]["files"]["E"]["path"] == "a.md"
+        # Settled: the next sync downloads nothing.
+        assert harness.loader.single_downloads == []
+
+    def test_a_waiting_file_is_shown_with_the_failed_files(self, harness):
+        loader = harness.loader
+        loader.files.clear()
+        loader.files["A"] = {"path": "a.md", "version": "v1", "text": "# A\n\nalpha " * 20}
+        loader.files["B"] = {"path": "b.md", "version": "v1", "text": "# B\n\nbravo " * 20}
+        harness.sync()
+        loader.files["A"].update(version="v2", path="b.md")
+        loader.files["B"].update(path="a.md")
+        loader.download_failures["A"] = "transient"
+        harness.sync()
+        failed = {f["id"]: f for f in harness.row()["remote_data"]["failed_files"]}
+        assert set(failed) == {"A", "B"} and failed["B"]["kind"] == "transient"
+
     def test_a_pending_files_other_path_is_not_handed_to_another_file(self, harness):
         harness.sync()
         repo = SourcesRepository(harness.pg)

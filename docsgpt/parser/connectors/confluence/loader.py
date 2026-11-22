@@ -59,6 +59,8 @@ def _retry_on_auth_failure(func):
         try:
             return func(self, *args, **kwargs)
         except requests.exceptions.HTTPError as e:
+            # A 403 is retried once with a fresh token too (as before), but
+            # only a 401 that persists means the sign-in itself is refused.
             if e.response is not None and e.response.status_code in (401, 403):
                 logger.info(
                     "Auth failure in %s, refreshing token and retrying", func.__name__
@@ -74,7 +76,7 @@ def _retry_on_auth_failure(func):
                     return func(self, *args, **kwargs)
                 except requests.exceptions.HTTPError as retry_err:
                     status = retry_err.response.status_code if retry_err.response is not None else None
-                    if status in (401, 403):
+                    if status == 401:
                         # Still refused with a fresh token: the sign-in itself.
                         raise ConnectorAuthError(f"Confluence rejected the refreshed access token ({status})") from retry_err
                     raise

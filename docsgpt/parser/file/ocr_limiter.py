@@ -184,7 +184,18 @@ class InFlightLimiter:
                 pipe.expire(self._leases, self._key_ttl)
             admitted["ok"] = held < allowed
 
-        client.transaction(admit, self._leases, self._limit_key)
+        try:
+            # A short pause between WATCH conflicts: every admission, release
+            # and renewal touches the set, so waiters would otherwise spin.
+            client.transaction(admit, self._leases, self._limit_key, watch_delay=0.01)
+        except Exception:
+            # The EXEC may have landed with its reply lost: take the lease back,
+            # or it would hold a slot nobody uses until it lapses.
+            try:
+                client.zrem(self._leases, lease)
+            except Exception:  # noqa: BLE001 - it lapses on its own
+                pass
+            raise
         return lease if admitted.get("ok") else None
 
     @property

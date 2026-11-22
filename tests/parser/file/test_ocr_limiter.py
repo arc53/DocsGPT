@@ -85,7 +85,7 @@ class FakeRedis:
     def pipeline(self, transaction=True):
         return FakePipeline(self)
 
-    def transaction(self, func, *watches):
+    def transaction(self, func, *watches, watch_delay=None):
         # WATCH ... MULTI/EXEC: the reads and the queued writes run with nothing in between.
         with self.lock:
             pipe = FakeWatchPipeline(self)
