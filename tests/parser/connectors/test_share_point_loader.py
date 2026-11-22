@@ -1425,3 +1425,86 @@ class TestListSelectionDuplicates:
             listing = loader.list_selection({"file_ids": ["x"], "folder_ids": ["folder"]})
         assert [(e.id, e.path) for e in listing.entries] == [("x", os.path.join("F", "a.pdf"))]
         assert loader._listed == listing.by_id()
+
+
+class TestListSelectionFailures:
+    BASE = TestListSelection.BASE
+
+    @pytest.mark.unit
+    def test_what_it_cannot_read_is_counted(self, loader):
+        tree = TestListSelection()._tree()
+        tree[f"{self.BASE}/me/drive/items/broken"] = _graph_response(500)
+        tree[f"{self.BASE}/me/drive/items/badfolder"] = _graph_response(500)
+        graph, _ = TestListSelection()._graph(tree)
+        with graph:
+            listing = loader.list_selection({"file_ids": "broken", "folder_ids": "badfolder"})
+        assert not listing.complete and listing.unread == 2 and listing.entries == []
+
+    @pytest.mark.unit
+    def test_a_missing_picked_file_is_just_absent(self, loader):
+        graph, _ = TestListSelection()._graph({})
+        with graph:
+            listing = loader.list_selection({"file_ids": ["gone"]})
+        assert listing.complete and listing.entries == []
+
+    @pytest.mark.unit
+    def test_a_rejected_sign_in_propagates(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        with patch.object(loader, "_graph_request", side_effect=ConnectorAuthError("401")):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"file_ids": ["x"]})
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"folder_ids": ["f"]})
+
+    @pytest.mark.unit
+    def test_download_failures_are_kept_per_file(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import FileEntry
+
+        loader._listed = {
+            "big": FileEntry(id="big", path="big.pdf"),
+            "flaky": FileEntry(id="flaky", path="flaky.pdf"),
+            "evil": FileEntry(id="evil", path="../evil.pdf"),
+            "ok": FileEntry(id="ok", path="d/ok.pdf", url="https://sp/ok"),
+        }
+        base = TestListSelection.BASE
+        routes = {
+            f"{base}/me/drive/items/big/content": _graph_response(413),
+            f"{base}/me/drive/items/flaky/content": _graph_response(503),
+            f"{base}/me/drive/items/ok/content": _graph_response(content=b"OK"),
+        }
+        graph, _ = TestListSelection()._graph(routes)
+        with graph:
+            result = loader.download_files(str(tmp_path), ["big", "flaky", "evil", "ok"])
+        kinds = {k: v["kind"] for k, v in result["failures"].items()}
+        assert kinds == {"big": "permanent", "flaky": "transient", "evil": "permanent"}
+        assert result["file_urls"] == {"d/ok.pdf": "https://sp/ok"}
+        assert (tmp_path / "d" / "ok.pdf").read_bytes() == b"OK"
+
+    @pytest.mark.unit
+    def test_a_rejected_sign_in_stops_the_download(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError, FileEntry
+
+        loader._listed = {"x": FileEntry(id="x", path="x.pdf")}
+        with patch.object(loader, "_graph_request", side_effect=ConnectorAuthError("401")):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_files(str(tmp_path), ["x"])
+
+    @pytest.mark.unit
+    def test_a_subfolder_listing_that_fails_on_auth_propagates(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        calls = {"n": 0}
+        folder = _graph_response(data={"value": [{"id": "sub", "name": "Sub", "folder": {}}]})
+
+        def request(method, url, **kwargs):
+            calls["n"] += 1
+            if url.endswith("/sub/children"):
+                raise ConnectorAuthError("401")
+            if url.endswith("/children"):
+                return folder
+            return _graph_response(data={"id": "f", "name": "F"})
+
+        with patch.object(loader, "_graph_request", side_effect=request):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"folder_ids": ["f"]})

@@ -1086,3 +1086,145 @@ class TestReingestParsesOnlyChangedFiles:
         structure = SourcesRepository(pg_conn).get(str(src["id"]), "dave")["directory_structure"]
         assert structure["a.md"]["token_count"] == 51
         assert all("bravo" in text for text in store.embedded)
+
+
+# ---------------------------------------------------------------------------
+# The edges: a source deleted mid-sync, failed deletes, unreadable state
+# ---------------------------------------------------------------------------
+
+
+def _gone_after(n, real):
+    """A ``_save_source_sync_state`` that finds the row gone from its ``n``-th call on."""
+    calls = []
+
+    def save(source_id, **kwargs):
+        calls.append(kwargs)
+        return False if len(calls) >= n else real(source_id, **kwargs)
+
+    return save
+
+
+@pytest.mark.unit
+class TestConnectorEdges:
+
+    @pytest.mark.parametrize("gone_at", [1, 2], ids=["before-the-edits", "after-the-edits"])
+    def test_a_source_deleted_mid_sync_is_skipped(self, harness, monkeypatch, gone_at):
+        harness.sync()
+        harness.loader.files["id1"]["version"] = "v2"
+        monkeypatch.setattr(worker, "_save_source_sync_state", _gone_after(gone_at, worker._save_source_sync_state))
+        discarded = []
+        monkeypatch.setattr(worker, "_discard_orphan_index", discarded.append)
+        result = harness.sync()
+        assert result == {"id": harness.source_id, "status": "skipped", "reason": "gone"}
+        assert discarded == ([harness.source_id] if gone_at == 2 else [])
+
+    def test_chunks_that_cannot_be_deleted_fail_the_sync(self, harness, monkeypatch):
+        harness.sync()
+        harness.loader.files["id1"]["version"] = "v2"
+        monkeypatch.setattr(harness.store, "delete_chunks", lambda ids: 0)
+        with pytest.raises(RuntimeError, match="Could not delete"):
+            harness.sync()
+
+    def test_a_fingerprint_that_fails_is_not_stored(self, harness, monkeypatch):
+        harness.sync()
+        harness.loader.files["id1"]["version"] = "v2"
+        monkeypatch.setattr(harness.loader, "sync_fingerprint", lambda config: (_ for _ in ()).throw(OSError("x")))
+        harness.sync()
+        assert "sync_fingerprint" not in harness.row()["remote_data"]
+
+    def test_a_download_that_claims_a_file_it_never_wrote_records_it(self, harness, monkeypatch):
+        harness.sync()
+        harness.loader.files["id1"]["version"] = "v2"
+        monkeypatch.setattr(harness.loader, "_write", lambda local_dir, fid: None)
+        harness.sync()
+        failed = {f["id"]: f for f in harness.row()["remote_data"]["failed_files"]}
+        assert failed["id1"]["error"] == "not downloaded"
+
+    def test_unreadable_parse_settings_only_cost_the_retry_rule(self, harness, monkeypatch):
+        import docsgpt.parser.parse_cache as parse_cache
+
+        monkeypatch.setattr(parse_cache, "settings_key", lambda: (_ for _ in ()).throw(RuntimeError("x")))
+        assert worker._parse_settings_key() is None
+        harness.parser.broken["doc1.md"] = "transient"
+        harness.sync()
+        assert harness.row()["remote_data"]["failed_files"][0]["parse_key"] is None
+
+    def test_an_unreadable_source_gives_no_failed_files(self, monkeypatch):
+        monkeypatch.setattr(worker, "db_readonly", lambda: (_ for _ in ()).throw(RuntimeError("db down")))
+        assert worker._source_failed_files("s", "u") == {}
+
+    def test_a_wait_passes_along_a_chain(self, harness):
+        loader = harness.loader
+        loader.files.clear()
+        for fid, path in (("A", "a.md"), ("B", "b.md"), ("C", "c.md")):
+            loader.files[fid] = {"path": path, "version": "v1", "text": f"# {fid}\n\n{fid} text " * 20}
+        harness.sync()
+        # A fails and keeps a.md; B wants a.md (waits), C wants b.md (waits behind B).
+        loader.files["A"].update(version="v2", path="z.md")
+        loader.files["B"]["path"] = "a.md"
+        loader.files["C"]["path"] = "b.md"
+        loader.download_failures["A"] = "transient"
+        result = harness.sync()
+        assert result["files_deferred"] == 2
+        by_path = harness.store.by_source()
+        # Nobody moved: each path still holds its old file.
+        for path, name in (("a.md", "A"), ("b.md", "B"), ("c.md", "C")):
+            assert all(f"{name} text" in harness.store.chunks[c]["text"] for c in by_path[path])
+
+
+@pytest.mark.unit
+class TestRemoteEdges:
+
+    @pytest.mark.parametrize("gone_at", [1, 2], ids=["before-the-edits", "after-the-edits"])
+    def test_a_source_deleted_mid_sync_is_skipped(self, remote, monkeypatch, gone_at):
+        remote.sync()
+        remote.loader.pages["guide/p1.md"] = "rewritten " * 30
+        monkeypatch.setattr(worker, "_save_source_sync_state", _gone_after(gone_at, worker._save_source_sync_state))
+        discarded = []
+        monkeypatch.setattr(worker, "_discard_orphan_index", discarded.append)
+        result = remote.sync()
+        assert result["status"] == "skipped" and result["reason"] == "gone"
+        assert len(discarded) == (1 if gone_at == 2 else 0)
+
+    def test_chunks_that_cannot_be_deleted_fail_the_sync(self, remote, monkeypatch):
+        remote.sync()
+        remote.loader.pages["guide/p1.md"] = "rewritten " * 30
+        monkeypatch.setattr(remote.store, "delete_chunks", lambda ids: 0)
+        with pytest.raises(RuntimeError, match="Could not delete"):
+            remote.sync()
+
+    def test_a_chunk_that_names_no_file_rebuilds_the_index(self, remote, monkeypatch):
+        remote.sync()
+        remote.loader.load_data = lambda inputs: [Document(text="untitled page " * 30, extra_info={})]
+        remote.sync()
+        assert len(remote.full_embeds) == 2
+
+    def test_a_website_keeps_its_report_and_a_connection_its_link(self, remote, monkeypatch):
+        remote.sync()
+        linked, reported = [], []
+        monkeypatch.setattr(worker, "_link_source_to_connection", lambda sid, cid: linked.append(cid))
+        monkeypatch.setattr(worker, "_record_website_report", lambda *a: reported.append(a) or {"pages": 4})
+        source_id = remote.row()["id"]
+        key = incremental.settings_key(None, worker._REMOTE_INGEST_VERSION, worker.settings.EMBEDDINGS_NAME)
+        manifest = remote.row()["remote_files"]["files"]
+        unchanged = {path: {"docs": [], "sha256": record["sha256"], "tokens": 0} for path, record in manifest.items()}
+        result = worker._sync_remote_changes(
+            MagicMock(), user="dave", actor_id=None, name_job="crawl", loader="website", source_id=str(source_id),
+            docs=[], content_files=unchanged, key=key, cfg=MagicMock(), tokens=0, directory_structure={},
+            connection_id="conn-1", remote_loader=remote.loader, fetched_at="now",
+        )
+        assert result["incremental"] is True and result["files_changed"] == 0
+        assert linked == ["conn-1"] and len(reported) == 1
+
+
+@pytest.mark.unit
+def test_an_orphaned_faiss_index_is_removed(monkeypatch):
+    removed = []
+    monkeypatch.setattr(worker.settings, "VECTOR_STORE", "faiss")
+    monkeypatch.setattr("docsgpt.vectorstore.faiss.delete_stored_index", lambda storage, path: removed.append(path))
+    monkeypatch.setattr(worker.StorageCreator, "get_storage", lambda: object())
+    worker._discard_orphan_index("s1")
+    assert removed == ["indexes/s1"]
+    monkeypatch.setattr(worker.settings, "VECTOR_STORE", "pgvector")
+    worker._discard_orphan_index("s2")
+    assert removed == ["indexes/s1"]

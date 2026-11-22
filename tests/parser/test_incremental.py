@@ -1,5 +1,6 @@
 """The diffs and bookkeeping behind incremental syncs (docsgpt/parser/incremental.py)."""
 
+import json
 import os
 from unittest.mock import MagicMock
 
@@ -297,3 +298,61 @@ class TestRetryRules:
         listing = SelectionListing([_entry("a", "a.md")])
         assert incremental.plan_connector_sync({}, listing, failed).empty
         assert [e.id for e in incremental.plan_connector_sync({}, listing, failed, retry_failed=True).added] == ["a"]
+
+
+@pytest.mark.unit
+class TestEdges:
+    def test_settings_key_hashes_text_that_is_not_json(self):
+        assert incremental.settings_key("not json", 1) != incremental.settings_key("other", 1)
+
+    def test_a_garbled_attempt_count_reads_as_one(self):
+        assert incremental.FailedFile.from_dict({"id": "a", "attempts": "many"}).attempts == 1
+
+    def test_stored_failed_files_read_the_manifest_then_remote_data(self):
+        listed = [{"id": "a", "path": "a.md"}]
+        assert set(incremental.stored_failed_files({}, {"failed": listed})) == {"a"}
+        assert set(incremental.stored_failed_files({}, json.dumps({"failed": listed}))) == {"a"}
+        assert set(incremental.stored_failed_files({"failed_files": listed}, "not json")) == {"a"}
+        assert incremental.stored_failed_files(None, None) == {}
+
+    def test_a_manifest_whose_files_are_not_a_mapping_is_not_used(self):
+        raw = {"format": incremental.MANIFEST_FORMAT, "kind": "connector", "settings": "k", "files": []}
+        assert incremental.load_manifest(raw, "connector", "k") is None
+
+    def test_a_stuck_file_at_a_new_path_keeps_its_chunks_moving(self):
+        failure = incremental.FailedFile(id="a", path="a.md", version="v2", kind="permanent")
+        listing = SelectionListing([_entry("a", "moved/a.md", "v2")])
+        plan = incremental.plan_connector_sync({"a": _record("a.md", "v1")}, listing, {"a": failure})
+        assert [e.path for _, e in plan.moved] == ["moved/a.md"] and not plan.changed
+
+    def test_a_stuck_file_in_place_is_left_alone(self):
+        failure = incremental.FailedFile(id="a", path="a.md", version="v2", kind="permanent")
+        listing = SelectionListing([_entry("a", "a.md", "v2")])
+        plan = incremental.plan_connector_sync({"a": _record("a.md", "v1")}, listing, {"a": failure})
+        assert plan.empty and plan.unchanged == 1
+
+    def test_structure_files_of_something_else_is_empty(self):
+        assert incremental.structure_files(["not", "a", "dict"]) == {}
+
+    def test_structure_from_files_skips_an_empty_path(self):
+        assert incremental.structure_from_files({"": {"type": "t", "size_bytes": 1}}) == {}
+
+    def test_a_delete_that_raises_lists_what_is_left(self, monkeypatch):
+        store = _Store.make()
+        store.add_texts(["a"], [{"source": "a"}])
+        monkeypatch.setattr(store, "delete_chunks", lambda ids: (_ for _ in ()).throw(RuntimeError("down")))
+        assert incremental.delete_chunk_ids(store, {"a": ["1"]}) == (0, {"a"})
+
+    def test_a_delete_whose_relisting_fails_counts_every_path(self, monkeypatch):
+        store = _Store.make()
+        monkeypatch.setattr(store, "delete_chunks", lambda ids: 0)
+        monkeypatch.setattr(store, "get_chunks", lambda: (_ for _ in ()).throw(RuntimeError("down")))
+        assert incremental.delete_chunk_ids(store, {"a": ["1"], "b": ["2"]}) == (0, {"a", "b"})
+
+    def test_the_retry_sleep_waits(self, monkeypatch):
+        import time
+
+        slept = []
+        monkeypatch.setattr(time, "sleep", slept.append)
+        incremental._sleep(1.5)
+        assert slept == [1.5]

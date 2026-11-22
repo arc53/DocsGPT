@@ -310,3 +310,50 @@ class TestReviewFixes:
                 time.sleep(0.05)
             assert fake_redis.zsets[limiter._leases][lease] >= clock["now"] + 2
         assert fake_redis.zcard(limiter._leases) == 0
+
+
+class TestRedisClientAndFailures:
+    def test_the_limiters_own_client_gives_up_fast(self, monkeypatch):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(ol, "_client", None)
+        monkeypatch.setattr(settings, "CACHE_REDIS_URL", "redis://127.0.0.1:1/0")
+        client = ol._redis_client()
+        assert client.connection_pool.connection_kwargs["socket_timeout"] == ol._REDIS_COMMAND_SECONDS
+        assert ol._redis_client() is client
+        monkeypatch.setattr(ol, "_client", None)
+        monkeypatch.setattr(settings, "CACHE_REDIS_URL", "")
+        assert ol._redis_client() is None
+        monkeypatch.setattr(settings, "CACHE_REDIS_URL", "not a url")
+        assert ol._redis_client() is None
+
+    def test_redis_errors_fall_back_to_the_process(self, monkeypatch):
+        monkeypatch.setattr(ol, "_redis_client", lambda: BrokenRedis())
+        limiter = ol.InFlightLimiter("k", cap=4, lease_seconds=60)
+        assert limiter.allowed() == 4
+        limiter._redis_down_until = 0
+        assert limiter.record_rate_limited() == 2
+        limiter._redis_down_until = 0
+        limiter.record_success()
+        limiter._release("redis", "lease")  # a failed give-back is left to lapse
+
+    def test_a_garbled_limit_reads_as_the_cap(self, fake_redis):
+        limiter = ol.InFlightLimiter("k", cap=5, lease_seconds=60)
+        fake_redis.set(limiter._limit_key, "garbage")
+        fake_redis.set(limiter._clean_key, "garbage")
+        assert limiter.allowed() == 5
+        assert limiter.record_rate_limited() == 2
+
+    def test_a_wait_gives_up_when_told(self, fake_redis, no_wait):
+        holder = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
+        other = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
+        with holder.slot():
+            with pytest.raises(ol.SlotWaitExpired):
+                with other.slot(give_up=lambda: True):
+                    pass
+
+    def test_the_wait_sleeps(self, monkeypatch):
+        slept = []
+        monkeypatch.setattr(time, "sleep", slept.append)
+        ol._sleep(0.25)
+        assert slept == [0.25]

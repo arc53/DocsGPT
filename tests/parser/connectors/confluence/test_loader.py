@@ -1159,3 +1159,95 @@ class TestListingAuth:
                    return_value=_mock_response({}, 401)):
             with pytest.raises(ConnectorAuthError):
                 loader.list_selection({"file_ids": ["1"]})
+
+
+class TestListSelectionEdges:
+    """The listing's other paths: picked pages, paged spaces, and what it can't read."""
+
+    BASE = TestListSelection.BASE
+
+    def _run(self, loader, routes, config, errors=None):
+        errors = errors or {}
+
+        def get(url, **kwargs):
+            if url in errors:
+                raise errors[url]
+            cursor = (kwargs.get("params") or {}).get("cursor")
+            return routes.get((url, cursor)) or routes.get(url) or _mock_response({}, 404)
+
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=get):
+            return loader.list_selection(config)
+
+    @pytest.mark.unit
+    def test_picked_pages_given_as_one_id_and_a_paged_space(self, loader):
+        routes = {
+            f"{self.BASE}/pages/7": _mock_response({"id": "7", "title": "Seven", "version": {"number": 2},
+                                                    "_links": {"webui": "https://acme/p/7"}}),
+            f"{self.BASE}/pages/7/attachments": _mock_response({"results": [
+                {"id": "x", "title": "x.pdf", "mediaType": "application/pdf",
+                 "_links": {"download": "/d/x", "webui": "https://acme/a/x"}},
+            ]}),
+            (f"{self.BASE}/spaces/S/pages", None): _mock_response({
+                "results": [{"id": "8", "title": "Eight"}],
+                "_links": {"next": "/wiki/api/v2/spaces/S/pages?cursor=c2"},
+            }),
+            (f"{self.BASE}/spaces/S/pages", "c2"): _mock_response({"results": [{"id": "9", "title": "Nine"}]}),
+            f"{self.BASE}/pages/8/attachments": _mock_response({"results": []}),
+            f"{self.BASE}/pages/9/attachments": _mock_response({"results": []}),
+        }
+        listing = self._run(loader, routes, {"file_ids": "7", "folder_ids": "S"})
+        assert listing.complete
+        assert sorted(e.id for e in listing.entries) == ["attachment:x", "page:7", "page:8", "page:9"]
+        assert listing.by_id()["attachment:x"].url == "https://acme/a/x"
+
+    @pytest.mark.unit
+    def test_what_it_cannot_read_is_counted_and_the_rest_listed(self, loader):
+        routes = {
+            f"{self.BASE}/pages/gone": _mock_response({}, 404),
+            f"{self.BASE}/pages/broken": _mock_response({}, 500),
+            f"{self.BASE}/spaces/bad/pages": _mock_response({}, 500),
+            f"{self.BASE}/pages/ok": _mock_response({"id": "ok", "title": "Ok"}),
+        }
+        errors = {
+            f"{self.BASE}/pages/flaky": requests.exceptions.ConnectionError("reset"),
+            f"{self.BASE}/spaces/down/pages": requests.exceptions.ConnectionError("reset"),
+            f"{self.BASE}/pages/ok/attachments": requests.exceptions.ConnectionError("reset"),
+        }
+        listing = self._run(
+            loader, routes, {"file_ids": ["gone", "broken", "flaky", "ok"], "folder_ids": ["bad", "down"]}, errors,
+        )
+        # broken, flaky, ok's attachments, bad and down; a missing page is simply not there.
+        assert listing.unread == 5 and not listing.complete
+        assert [e.id for e in listing.entries] == ["page:ok"]
+
+    @pytest.mark.unit
+    def test_relative_links_take_the_sites_address(self, loader):
+        routes = {
+            f"{self.BASE}/pages/1": _mock_response({"id": "1", "title": "One", "_links": {"webui": "/spaces/S/1"}}),
+            f"{self.BASE}/pages/1/attachments": _mock_response({"results": []}),
+            f"{self.BASE}/spaces": _mock_response({"_links": {"base": "https://acme.atlassian.net/wiki"}}),
+        }
+        listing = self._run(loader, routes, {"file_ids": ["1"]})
+        assert listing.by_id()["page:1"].url == "https://acme.atlassian.net/wiki/spaces/S/1"
+
+
+class TestDownloadFilesEdges:
+    @pytest.mark.unit
+    def test_an_unlisted_id_and_a_path_outside_the_directory_fail_alone(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import FileEntry
+
+        loader._listed = {"page:evil": FileEntry(id="page:evil", path="../escape.html")}
+        result = loader.download_files(str(tmp_path), ["page:evil", "page:unknown"])
+        assert result["failures"]["page:evil"]["kind"] == "permanent"
+        assert result["failures"]["page:unknown"]["kind"] == "transient"
+        assert not (tmp_path.parent / "escape.html").exists()
+
+    @pytest.mark.unit
+    def test_a_refresh_that_fails_is_an_auth_error(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError, FileEntry
+
+        loader._listed = {"page:1": FileEntry(id="page:1", path="One.html")}
+        loader._refresh_rejected_token = MagicMock(side_effect=RuntimeError("revoked"))
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_files(str(tmp_path), ["page:1"])

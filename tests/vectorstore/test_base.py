@@ -1093,3 +1093,27 @@ class TestSupportsChunkEdits:
         assert VectorCreator.supports_chunk_edits("PGVector")
         assert not VectorCreator.supports_chunk_edits("elasticsearch")
         assert not VectorCreator.supports_chunk_edits("nope")
+
+
+@pytest.mark.unit
+class TestUpdateChunksMetadataFallback:
+    def test_a_store_without_its_own_rewrite_goes_through_update_chunk(self):
+        from unittest.mock import MagicMock
+
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        class Store(BaseVectorStore):
+            def search(self, *args, **kwargs):
+                return []
+
+            def add_texts(self, *args, **kwargs):
+                return []
+
+            def get_chunks(self, *args, **kwargs):
+                return [{"doc_id": "1", "text": "one", "metadata": {}}]
+
+        store = Store()
+        store.update_chunk = MagicMock(return_value="1")
+        assert store.update_chunks_metadata({}) == 0
+        assert store.update_chunks_metadata({"1": {"source": "b"}, "missing": {}}) == 1
+        store.update_chunk.assert_called_once_with("1", "one", {"source": "b"})
