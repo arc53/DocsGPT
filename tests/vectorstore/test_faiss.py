@@ -332,6 +332,37 @@ def _assert_rows_match_documents(store):
 
 
 @pytest.mark.unit
+class TestFaissUpdateChunksMetadata:
+    def test_rewrites_metadata_without_embedding_and_saves_once(self, populated):
+        chunks = populated.get_chunks()
+        import numpy as np
+
+        target, other = chunks[0]["doc_id"], chunks[1]["doc_id"]
+        vectors = populated.index.reconstruct_n(0, populated.index.ntotal).copy()
+
+        with patch.object(populated.embeddings, "embed_documents") as embed, patch.object(
+            populated, "_save_to_storage",
+        ) as save:
+            count = populated.update_chunks_metadata({target: {"source": "moved.txt"}, "missing": {}})
+
+        assert count == 1
+        embed.assert_not_called()
+        save.assert_called_once()
+        assert populated.documents[target]["metadata"] == {"source": "moved.txt", "source_id": "src"}
+        assert populated.documents[target]["page_content"] == chunks[0]["text"]
+        assert populated.documents[other]["metadata"] == chunks[1]["metadata"]
+        assert np.allclose(populated.index.reconstruct_n(0, populated.index.ntotal), vectors)
+
+    def test_a_failed_save_puts_the_metadata_back(self, populated):
+        target = populated.get_chunks()[0]["doc_id"]
+        before = dict(populated.documents[target])
+        with patch.object(populated, "_save_to_storage", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                populated.update_chunks_metadata({target: {"source": "moved.txt"}})
+        assert populated.documents[target] == before
+
+
+@pytest.mark.unit
 class TestFaissUpdateChunk:
     def test_keeps_id_and_position(self, populated):
         before = [c["doc_id"] for c in populated.get_chunks()]

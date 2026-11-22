@@ -350,6 +350,21 @@ describe('source.ingest.completed', () => {
     expect(state.tasks[0].itemsNotDownloaded).toBeUndefined();
   });
 
+  it('keeps how many files a sync could not read, partial or not', () => {
+    let state = stateWithTask(makeTask({ status: 'training' }));
+    state = reducer(
+      state,
+      ingest('source.ingest.completed', {
+        incremental: true,
+        files_failed: 2,
+        folders_failed: 5,
+      }),
+    );
+    expect(state.tasks[0].status).toBe('completed');
+    // Folders count only for a partial download.
+    expect(state.tasks[0].itemsNotDownloaded).toBe(2);
+  });
+
   it('with limited=true transitions training -> failed and flags tokenLimitReached', () => {
     let state = stateWithTask(
       makeTask({ status: 'training', dismissed: true }),

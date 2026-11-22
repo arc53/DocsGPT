@@ -196,6 +196,14 @@ Two cases re-embed every file once:
 - **A chunking change.** After you change the chunking settings, the next reingest rebuilds the chunks of every file.
 - **A source ingested before content hashes were stored.** Its first reingest re-embeds every file and stores their hashes. Later ones re-embed only what changed.
 
+### What a sync re-embeds
+
+A sync of a connector source (Google Drive, SharePoint and OneDrive, Confluence) lists the selection without downloading it and compares each file's version with what the last sync indexed. Only new and edited files are downloaded and embedded; a renamed or moved file keeps its chunks, and a file that left the selection loses them. A file that could not be read is retried on its own by the next syncs; see [Google Drive sync](/Sources/Connectors/google-drive#sync).
+
+A sync of a GitHub repository, a crawled site, an S3 bucket or another remote source reads every file again, since those services have no cheaper listing, but embeds only the files whose content changed and deletes the chunks of removed ones.
+
+Both rebuild the whole index once after a chunking change.
+
 To replace all of a source's files at once, for example from a script, send the new set with the `sync` operation of `POST /api/manage_source_files`. Files and ZIP archives are accepted, with the same limits as an upload, and a ZIP keeps its folders. Files that are not in the new set are removed, and the source keeps its ID, so agents that use it keep working.
 
 ### Sync only the files that changed

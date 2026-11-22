@@ -17,8 +17,12 @@ _SCALAR_COLUMNS = {
     "name", "type", "retriever", "sync_frequency", "tokens", "file_path",
     "language", "model", "date",
 }
-_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "sync_manifest", "config"}
+_JSONB_COLUMNS = {
+    "metadata", "remote_data", "remote_files", "directory_structure", "file_name_map", "sync_manifest", "config",
+}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
+# Every column a listing returns: all but the sync manifest (``remote_files``).
+_LISTED_COLUMNS = tuple(column for column in sources_table.c if column.name != "remote_files")
 
 # Whitelist for sort columns exposed via ``list_for_user``. Anything not in
 # this set falls back to ``date`` so user-supplied sort params can't be
@@ -448,7 +452,9 @@ class SourcesRepository:
         ascending = sort_order.lower() == "asc"
 
         stmt = (
-            select(sources_table, _ingest_status_case())
+            # Not ``remote_files``: a large selection's manifest runs to
+            # megabytes, and no listing reads it.
+            select(*_LISTED_COLUMNS, _ingest_status_case())
             .select_from(
                 sources_table.outerjoin(
                     ingest_chunk_progress_table,

@@ -238,16 +238,20 @@ export function ingestFailureMessage(payload: Record<string, unknown>): string {
 }
 
 /**
- * How many files and folders a partial connector download left out, from
- * its ``source.ingest.completed`` payload; 0 for a complete one.
+ * How many files (and, for a partial download, folders) a connector ingest
+ * or sync left out, from its ``source.ingest.completed`` payload: files that
+ * failed to download or to parse (``files_failed``), which the next sync
+ * retries. 0 when none were.
  */
 export function itemsNotDownloaded(payload: Record<string, unknown>): number {
-  if (payload.partial !== true) return 0;
   const count = (value: unknown) =>
     typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : 0;
-  return count(payload.files_failed) + count(payload.folders_failed);
+  const files = count(payload.files_failed);
+  return payload.partial === true
+    ? files + count(payload.folders_failed)
+    : files;
 }
 
 /**

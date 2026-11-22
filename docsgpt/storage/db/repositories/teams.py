@@ -46,6 +46,11 @@ _USER_FK_SQL = """
 """
 
 
+#: Tables with the principal's rows that never keep a team from being deleted:
+#: its chats go with the team, and its stored parses are only a cache.
+_NOT_HOLDINGS = frozenset({"conversations", "parsed_files"})
+
+
 class TeamNotEmpty(Exception):
     """A team delete refused because its principal still owns rows.
 
@@ -356,7 +361,7 @@ class TeamsRepository:
         principal = principal_id(team_id)
         counts: dict[str, int] = {}
         for table, column, in_chat in self._conn.execute(text(_USER_FK_SQL)).fetchall():
-            if table == "conversations":
+            if table in _NOT_HOLDINGS:
                 continue
             # Rows of the principal's own chats cascade with them.
             not_in_its_chats = (
@@ -389,8 +394,8 @@ class TeamsRepository:
 
         Args:
             team_id: Team UUID.
-            artifact_paths: When given, receives the storage keys of the deleted artifacts' bytes, for the
-                caller to remove once the transaction commits.
+            artifact_paths: When given, receives the storage keys of the deleted artifacts' bytes (and of the
+                principal's stored parses), for the caller to remove once the transaction commits.
 
         Returns:
             True when the team was deleted; False when it doesn't exist.
@@ -420,6 +425,14 @@ class TeamsRepository:
         self._conn.execute(text(f"DELETE FROM artifacts a WHERE {in_team}"), params)
         self._conn.execute(text(f"DELETE FROM request_traces WHERE conversation_id IN ({chats})"), params)
         self._conn.execute(text("DELETE FROM conversations WHERE user_id = :p"), {"p": principal})
+        # The principal's stored parses of source files; their side files go with the artifacts' bytes.
+        parse_paths = [
+            path for path in self._conn.execute(
+                text("DELETE FROM parsed_files WHERE user_id = :p RETURNING storage_path"), {"p": principal},
+            ).scalars().all() if path
+        ]
+        if artifact_paths is not None:
+            artifact_paths.extend(parse_paths)
         self._conn.execute(text("DELETE FROM users WHERE user_id = :p AND kind = 'team'"), {"p": principal})
         result = self._conn.execute(
             text("DELETE FROM teams WHERE id = CAST(:id AS uuid)"),

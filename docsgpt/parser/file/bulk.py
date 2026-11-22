@@ -1,11 +1,12 @@
 """Simple reader that reads files of different formats from a directory."""
 import hashlib
 import logging
+import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from docsgpt.parser.file.base import BaseReader
-from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError, module_available
+from docsgpt.parser.file.base_parser import BaseParser, DocumentParseError, TransientParseError, module_available
 from docsgpt.parser.file.docs_parser import DocxParser, PDFParser
 from docsgpt.parser.file.epub_parser import EpubParser
 from docsgpt.parser.file.html_parser import HTMLParser
@@ -21,6 +22,11 @@ from docsgpt.parser.tokenization import count_tokens_windowed
 from docsgpt.stt.constants import SUPPORTED_AUDIO_EXTENSIONS
 from docsgpt.core.settings import settings
 from docsgpt.core.optional_deps import install_hint
+
+
+def _sleep(seconds: float) -> None:
+    """The cool-down before rate-limited files are parsed again; a module attribute so tests can skip it."""
+    time.sleep(seconds)
 
 
 def _build_audio_parser_mapping() -> Dict[str, BaseParser]:
@@ -382,6 +388,11 @@ class SimpleDirectoryReader(BaseReader):
         file_metadata (Optional[Callable[str, Dict]]): A function that takes
             in a filename and returns a Dict of metadata for the Document.
             Default is None.
+        parse_cache_user (Optional[str]): The user whose stored parses
+            (``docsgpt.parser.parse_cache``) are reused and added to: a file
+            whose bytes and parser settings match one they already parsed is
+            not parsed again. None, or ``PARSE_CACHE_ENABLED`` off, reads and
+            writes no cache.
     """
 
     def __init__(
@@ -395,6 +406,7 @@ class SimpleDirectoryReader(BaseReader):
             file_extractor: Optional[Dict[str, BaseParser]] = None,
             num_files_limit: Optional[int] = None,
             file_metadata: Optional[Callable[[str], Dict]] = None,
+            parse_cache_user: Optional[str] = None,
     ) -> None:
         """Initialize with parameters."""
         super().__init__()
@@ -426,6 +438,20 @@ class SimpleDirectoryReader(BaseReader):
         self.file_metadata = file_metadata
         # (path, message) per file skipped by ``load_data`` as unparseable.
         self.failed_files: List[Tuple[Path, str]] = []
+        # The paths in ``failed_files`` whose failure may pass on a later try
+        # (``TransientParseError``: a rate limit, a 5xx, a timeout).
+        self.transient_failures: Set[Path] = set()
+        self._parse_cache = None
+        if parse_cache_user:
+            from docsgpt.parser import parse_cache
+
+            if parse_cache.cache_enabled():
+                self._parse_cache = parse_cache.ParseCache(parse_cache_user)
+        # Files answered from the parse cache instead of a parser, per ``load_data``.
+        self.cache_hits = 0
+        # SHA-256 per resolved file path, so a file hashed for the cache is
+        # not read again for ``directory_structure``.
+        self._file_hashes: Dict[str, str] = {}
 
     def _add_files(self, input_dir: Path) -> List[Path]:
         """Add files."""
@@ -477,6 +503,14 @@ class SimpleDirectoryReader(BaseReader):
                 begins. Exceptions raised by the callback are swallowed so
                 progress reporting can never fail ingestion.
 
+        A file whose OCR ran out of its rate-limit budget
+        (``OcrRateLimitedError``) is not given up on: after every other file,
+        and ``OCR_RATE_LIMIT_COOLDOWN`` seconds, it is parsed again, one file
+        at a time; the OCR parsers keep the pages they already recognised, so
+        only the missing ones are sent. Only a file that still fails is
+        listed in ``failed_files``, and in ``transient_failures`` when its
+        failure may pass later.
+
         Returns:
             List[Document]: A list of documents.
 
@@ -488,12 +522,16 @@ class SimpleDirectoryReader(BaseReader):
                 raises, since skipping there would only defer the failure to
                 an empty result.
         """
-        data: Union[str, List[str]] = ""
         data_list: List[str] = []
-        metadata_list = []
+        metadata_list: List[Dict[str, Any]] = []
         first_error: Optional[DocumentParseError] = None
         self.file_token_counts = {}
         self.failed_files = []
+        self.transient_failures = set()
+        self.cache_hits = 0
+        # Files whose OCR ran out of its rate-limit budget: parsed again,
+        # one at a time, after every other file and a cool-down.
+        deferred: List[Path] = []
 
         total_files = len(self.input_files)
 
@@ -505,77 +543,43 @@ class SimpleDirectoryReader(BaseReader):
             except Exception:
                 logging.warning("load_data progress callback failed", exc_info=True)
 
+        def record_failure(input_file: Path, error: DocumentParseError) -> None:
+            nonlocal first_error
+            logging.warning(f"Skipping unreadable file {input_file.name}: {error}")
+            self.failed_files.append((input_file, str(error)))
+            if isinstance(error, TransientParseError):
+                self.transient_failures.add(input_file)
+            first_error = first_error or error
+
+        from docsgpt.parser.file.ocr_parser import OcrRateLimitedError
+
         for file_index, input_file in enumerate(self.input_files):
-            suffix_lower = input_file.suffix.lower()
-            parser_metadata = {}
             try:
-                if suffix_lower in self.file_extractor:
-                    parser = self.file_extractor[suffix_lower]
-                    if not parser.parser_config_set:
-                        parser.init_parser()
-                    data = parser.parse_file(input_file, errors=self.errors)
-                    parser_metadata = parser.get_file_metadata(input_file)
-                else:
-                    from docsgpt.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
-
-                    if suffix_lower in ANYDOC_GAINED_SUFFIXES:
-                        # Binary office formats only anydoc reads; without it
-                        # the standard read would index OLE/zip bytes as text.
-                        raise DocumentParseError(
-                            f"No parser is available for {suffix_lower} files: "
-                            "firecrawl-anydoc is not installed (pip install firecrawl-anydoc)"
-                        )
-                    # do standard read
-                    with open(input_file, "r", encoding="utf-8", errors=self.errors) as f:
-                        data = f.read()
+                data, parser_metadata = self._read_file(input_file)
+            except OcrRateLimitedError as e:
+                logging.info(f"OCR of {input_file.name} is rate limited; parsing it again after the other files: {e}")
+                deferred.append(input_file)
             except DocumentParseError as e:
-                logging.warning(f"Skipping unreadable file {input_file.name}: {e}")
-                self.failed_files.append((input_file, str(e)))
-                first_error = first_error or e
-                report_progress(file_index + 1)
-                continue
-
-            # Calculate token count for this file
-            if isinstance(data, List):
-                file_tokens = sum(count_tokens_windowed(str(d)) for d in data)
+                record_failure(input_file, e)
             else:
-                file_tokens = count_tokens_windowed(str(data))
-            
-            full_path = str(input_file.resolve())
-            self.file_token_counts[full_path] = file_tokens
-            
-            base_metadata = {
-                'title': input_file.name,
-                'token_count': file_tokens,
-            }
-            if parser_metadata:
-                base_metadata.update(parser_metadata)
-            
-            if hasattr(self, 'input_dir'):
-                try:
-                    relative_path = str(input_file.relative_to(self.input_dir))
-                    base_metadata['source'] = relative_path
-                except ValueError:
-                    base_metadata['source'] = str(input_file)
-            else:
-                base_metadata['source'] = str(input_file)
-
-            if self.file_metadata is not None:
-                custom_metadata = self.file_metadata(input_file.name)
-                base_metadata.update(custom_metadata)
-
-            if isinstance(data, List):
-                # Extend data_list with each item in the data list
-                data_list.extend([str(d) for d in data])
-                # copy(): chunking writes token_count into this dict in
-                # place, so a shared reference gives every chunk the last
-                # chunk's count.
-                metadata_list.extend([base_metadata.copy() for _ in data])
-            else:
-                data_list.append(str(data))
-                metadata_list.append(base_metadata.copy())
-
+                self._add_parsed(input_file, data, parser_metadata, data_list, metadata_list)
             report_progress(file_index + 1)
+
+        if deferred:
+            from docsgpt.core.settings import settings
+
+            cooldown = max(0.0, float(settings.OCR_RATE_LIMIT_COOLDOWN))
+            logging.info(
+                f"Waiting {cooldown:.0f}s for the OCR rate limit before parsing {len(deferred)} file(s) again"
+            )
+            _sleep(cooldown)
+            for input_file in deferred:
+                try:
+                    data, parser_metadata = self._read_file(input_file)
+                except DocumentParseError as e:
+                    record_failure(input_file, e)
+                else:
+                    self._add_parsed(input_file, data, parser_metadata, data_list, metadata_list)
 
         # Every file failed: there is nothing to ingest, so this is a failed
         # read rather than an empty one. Callers (the attachment worker, the
@@ -606,6 +610,141 @@ class SimpleDirectoryReader(BaseReader):
             return [Document(d, extra_info=m) for d, m in zip(data_list, metadata_list)]
         else:
             return [Document(d) for d in data_list]
+
+    def _read_file(self, input_file: Path) -> Tuple[Union[str, List[str]], Dict[str, Any]]:
+        """Parse one file with the parser for its suffix, or read it as text.
+
+        Returns:
+            ``(data, parser_metadata)``: the text (or rows) and the parser's metadata for the file.
+
+        Raises:
+            DocumentParseError: The file could not be parsed.
+        """
+        suffix_lower = input_file.suffix.lower()
+        if suffix_lower in self.file_extractor:
+            return self._parse_one(self.file_extractor[suffix_lower], input_file)
+        from docsgpt.parser.file.anydoc_parser import ANYDOC_GAINED_SUFFIXES
+
+        if suffix_lower in ANYDOC_GAINED_SUFFIXES:
+            # Binary office formats only anydoc reads; without it
+            # the standard read would index OLE/zip bytes as text.
+            raise DocumentParseError(
+                f"No parser is available for {suffix_lower} files: "
+                "firecrawl-anydoc is not installed (pip install firecrawl-anydoc)"
+            )
+        # do standard read
+        with open(input_file, "r", encoding="utf-8", errors=self.errors) as f:
+            return f.read(), {}
+
+    def _add_parsed(
+        self,
+        input_file: Path,
+        data: Union[str, List[str]],
+        parser_metadata: Dict[str, Any],
+        data_list: List[str],
+        metadata_list: List[Dict[str, Any]],
+    ) -> None:
+        """Count a parsed file's tokens and append its text and metadata to the lists ``load_data`` builds."""
+        if isinstance(data, List):
+            file_tokens = sum(count_tokens_windowed(str(d)) for d in data)
+        else:
+            file_tokens = count_tokens_windowed(str(data))
+
+        full_path = str(input_file.resolve())
+        self.file_token_counts[full_path] = file_tokens
+
+        base_metadata = {
+            'title': input_file.name,
+            'token_count': file_tokens,
+        }
+        if parser_metadata:
+            base_metadata.update(parser_metadata)
+
+        if hasattr(self, 'input_dir'):
+            try:
+                relative_path = str(input_file.relative_to(self.input_dir))
+                base_metadata['source'] = relative_path
+            except ValueError:
+                base_metadata['source'] = str(input_file)
+        else:
+            base_metadata['source'] = str(input_file)
+
+        if self.file_metadata is not None:
+            custom_metadata = self.file_metadata(input_file.name)
+            base_metadata.update(custom_metadata)
+
+        if isinstance(data, List):
+            # Extend data_list with each item in the data list
+            data_list.extend([str(d) for d in data])
+            # copy(): chunking writes token_count into this dict in
+            # place, so a shared reference gives every chunk the last
+            # chunk's count.
+            metadata_list.extend([base_metadata.copy() for _ in data])
+        else:
+            data_list.append(str(data))
+            metadata_list.append(base_metadata.copy())
+
+    def _file_hash(self, path: Path) -> str:
+        """SHA-256 of a file's bytes, hashed once per reader."""
+        hashes = self.__dict__.setdefault("_file_hashes", {})
+        key = str(Path(path).resolve())
+        digest = hashes.get(key)
+        if digest is None:
+            digest = hashes[key] = _file_sha256(Path(path))
+        return digest
+
+    def _parse_one(self, parser: BaseParser, input_file: Path) -> Tuple[Union[str, List[str]], Dict]:
+        """Parse one file, or reuse the user's stored parse of the same bytes.
+
+        A hit skips the parser entirely (no init, no OCR). A miss parses and
+        stores the result when it is complete; a parser that raises stores
+        nothing, and the error propagates as before.
+
+        Args:
+            parser: The parser for the file's suffix.
+            input_file: The file.
+
+        Returns:
+            ``(parser output, parser metadata)``.
+        """
+        cache = getattr(self, "_parse_cache", None)
+        content_sha256 = None
+        if cache is not None:
+            from docsgpt.parser.parse_cache import worth_caching
+
+            if worth_caching(input_file):
+                try:
+                    content_sha256 = self._file_hash(input_file)
+                except OSError:
+                    content_sha256 = None
+        if content_sha256 is not None:
+            hit = cache.lookup(content_sha256, parser)
+            if hit is not None:
+                self.cache_hits = getattr(self, "cache_hits", 0) + 1
+                logging.info(f"Reusing the stored parse of {input_file.name}")
+                return hit
+        if not parser.parser_config_set:
+            parser.init_parser()
+        data = parser.parse_file(input_file, errors=self.errors)
+        parser_metadata = parser.get_file_metadata(input_file)
+        if content_sha256 is not None:
+            cache.store(content_sha256, parser, data, parser_metadata)
+        return data, parser_metadata
+
+    def scan_directory(self) -> dict:
+        """Build ``directory_structure`` (each file's type, size and SHA-256) without parsing any file.
+
+        A reingest compares it with what the index was built from and parses
+        only the files that changed; entries carry no ``token_count``.
+
+        Returns:
+            The structure, also kept as ``self.directory_structure``; ``{}``
+            for a reader given ``input_files`` instead of a directory.
+        """
+        self.directory_structure = (
+            self.build_directory_structure(self.input_dir) if hasattr(self, "input_dir") else {}
+        )
+        return self.directory_structure
 
     def build_directory_structure(self, base_path):
         """Build a dictionary representing the directory structure.
@@ -642,7 +781,7 @@ class SimpleDirectoryReader(BaseReader):
                         "type": mime_type,
                         "size_bytes": file_size_bytes,
                         # Lets a reingest tell an edited file from an unchanged one at the same path.
-                        "sha256": _file_sha256(item),
+                        "sha256": self._file_hash(item),
                     }
                     
                     if hasattr(self, 'file_token_counts') and full_path in self.file_token_counts:

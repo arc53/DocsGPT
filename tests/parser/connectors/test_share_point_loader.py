@@ -1302,3 +1302,106 @@ class TestDownloadReportsWhatItLost:
 
         assert result["files_downloaded"] == 6
         assert (result["files_failed"], result["folders_failed"], result["files_skipped"]) == (0, 0, 0)
+
+
+class TestListSelection:
+    """``list_selection`` lists from metadata alone, with the paths a full download writes."""
+
+    BASE = "https://graph.microsoft.com/v1.0"
+
+    def _graph(self, routes):
+        """Patch ``requests.get`` to answer each URL from ``routes`` (url -> response)."""
+        calls = []
+
+        def get(url, **kwargs):
+            calls.append(url)
+            response = routes.get(url)
+            return response if response is not None else _graph_response(404)
+
+        return patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get), calls
+
+    def _tree(self):
+        pdf = {"mimeType": "application/pdf"}
+        return {
+            f"{self.BASE}/me/drive/items/folder": _graph_response(data={"id": "folder", "name": "Docs"}),
+            f"{self.BASE}/me/drive/items/folder/children": _graph_response(data={"value": [
+                {"id": "a", "name": "a.pdf", "file": pdf, "cTag": "c1", "eTag": "e1", "webUrl": "https://sp/a"},
+                {"id": "sub", "name": "Sub", "folder": {}},
+                {"id": "exe", "name": "x.exe", "file": {"mimeType": "application/x-msdownload"}},
+            ]}),
+            f"{self.BASE}/me/drive/items/sub/children": _graph_response(data={"value": [
+                {"id": "b", "name": "b.pdf", "file": pdf, "eTag": "e2"},
+            ]}),
+            f"{self.BASE}/me/drive/items/one": _graph_response(
+                data={"id": "one", "name": "top.pdf", "file": pdf, "cTag": "c3", "webUrl": "https://sp/one"}
+            ),
+            f"{self.BASE}/me/drive/items/a/content": _graph_response(content=b"A"),
+            f"{self.BASE}/me/drive/items/b/content": _graph_response(content=b"B"),
+            f"{self.BASE}/me/drive/items/one/content": _graph_response(content=b"ONE"),
+        }
+
+    @pytest.mark.unit
+    def test_lists_files_with_versions_and_download_paths(self, loader):
+        graph, _ = self._graph(self._tree())
+        with graph:
+            listing = loader.list_selection({"folder_ids": ["folder"], "file_ids": ["one"], "recursive": True})
+        assert listing.complete
+        assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
+            ("a", os.path.join("Docs", "a.pdf"), "c1", "https://sp/a"),
+            ("b", os.path.join("Docs", "Sub", "b.pdf"), "e2", None),
+            ("one", "top.pdf", "c3", "https://sp/one"),
+        ]
+
+    @pytest.mark.unit
+    def test_paths_match_the_full_download(self, loader, tmp_path):
+        tree = self._tree()
+        graph, _ = self._graph(tree)
+        config = {"folder_ids": ["folder"], "file_ids": ["one"], "recursive": True}
+        with graph:
+            listing = loader.list_selection(config)
+        # The full download asks for each file's metadata again; answer as the listing saw it.
+        tree[f"{self.BASE}/me/drive/items/a"] = _graph_response(data={"id": "a", "name": "a.pdf", "file": {"mimeType": "application/pdf"}})
+        tree[f"{self.BASE}/me/drive/items/b"] = _graph_response(data={"id": "b", "name": "b.pdf", "file": {"mimeType": "application/pdf"}})
+        graph, _ = self._graph(tree)
+        with graph:
+            loader.download_to_directory(str(tmp_path), config)
+        written = sorted(
+            os.path.relpath(os.path.join(root, name), tmp_path)
+            for root, _, names in os.walk(tmp_path) for name in names
+        )
+        assert written == sorted(e.path for e in listing.entries)
+
+    @pytest.mark.unit
+    def test_incomplete_when_a_subfolder_cannot_be_listed(self, loader):
+        tree = self._tree()
+        tree[f"{self.BASE}/me/drive/items/sub/children"] = _graph_response(500)
+        graph, _ = self._graph(tree)
+        with graph:
+            listing = loader.list_selection({"folder_ids": ["folder"]})
+        assert not listing.complete
+        assert [e.id for e in listing.entries] == ["a"]
+
+    @pytest.mark.unit
+    def test_download_files_fetches_only_the_given_ids(self, loader, tmp_path):
+        graph, calls = self._graph(self._tree())
+        with graph:
+            loader.list_selection({"folder_ids": ["folder"], "recursive": True})
+            calls.clear()
+            result = loader.download_files(str(tmp_path), ["b", "missing"])
+        assert calls == [f"{self.BASE}/me/drive/items/b/content"]
+        assert (tmp_path / "Docs" / "Sub" / "b.pdf").read_bytes() == b"B"
+        assert result["file_ids"] == {os.path.join("Docs", "Sub", "b.pdf"): "b"}
+        assert result["failures"]["missing"]["kind"] == "transient"
+
+    @pytest.mark.unit
+    def test_children_of_a_shared_drive_folder_keep_its_drive(self, loader):
+        tree = {
+            f"{self.BASE}/drives/d1/items/f": _graph_response(data={"id": "f", "name": "Shared"}),
+            f"{self.BASE}/drives/d1/items/f/children": _graph_response(data={"value": [
+                {"id": "x", "name": "x.pdf", "file": {"mimeType": "application/pdf"}, "parentReference": {"driveId": "d1"}},
+            ]}),
+        }
+        graph, _ = self._graph(tree)
+        with graph:
+            listing = loader.list_selection({"folder_ids": ["d1:f"]})
+        assert [e.id for e in listing.entries] == ["d1:x"]

@@ -995,3 +995,70 @@ class TestRetryOnAuthFailure:
         assert tokens.called
 
 
+
+
+class TestListSelection:
+    """``list_selection`` reads page and attachment versions without downloading bodies."""
+
+    BASE = "https://api.atlassian.com/ex/confluence/test_cloud/wiki/api/v2"
+
+    def _routes(self):
+        return {
+            f"{self.BASE}/spaces/S/pages": _mock_response({
+                "results": [
+                    {"id": "1", "title": "Intro", "version": {"number": 3}, "_links": {"webui": "/p/1"}},
+                    {"id": "2", "title": "Guide/Setup", "version": {"number": 1}},
+                ],
+                "_links": {"base": "https://acme.atlassian.net/wiki"},
+            }),
+            f"{self.BASE}/pages/1/attachments": _mock_response({"results": [
+                {"id": "a1", "title": "spec.pdf", "mediaType": "application/pdf", "version": {"number": 2},
+                 "_links": {"download": "/download/a1"}},
+                {"id": "a2", "title": "x.bin", "mediaType": "application/octet-stream",
+                 "_links": {"download": "/download/a2"}},
+            ]}),
+            f"{self.BASE}/pages/2/attachments": _mock_response({"results": []}),
+        }
+
+    def _get(self, routes, calls):
+        def get(url, **kwargs):
+            calls.append(url)
+            return routes.get(url) or _mock_response({}, 404)
+
+        return get
+
+    @pytest.mark.unit
+    def test_lists_pages_and_attachments_with_versions(self, loader):
+        calls = []
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=self._get(self._routes(), calls)):
+            listing = loader.list_selection({"folder_ids": ["S"]})
+        assert listing.complete
+        assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
+            ("attachment:a1", "spec.pdf", "2", None),
+            ("page:1", "Intro.html", "3", "https://acme.atlassian.net/wiki/p/1"),
+            ("page:2", "Guide_Setup.html", "1", None),
+        ]
+        assert not any("body-format" in str(c) for c in calls)
+
+    @pytest.mark.unit
+    def test_incomplete_when_attachments_cannot_be_listed(self, loader):
+        routes = self._routes()
+        routes[f"{self.BASE}/pages/2/attachments"] = _mock_response({}, 500)
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=self._get(routes, [])):
+            listing = loader.list_selection({"folder_ids": ["S"]})
+        assert not listing.complete
+
+    @pytest.mark.unit
+    def test_download_files_fetches_only_the_given_ids(self, loader, tmp_path):
+        routes = self._routes()
+        attachment = MagicMock(status_code=200)
+        attachment.iter_content.return_value = [b"PDF"]
+        routes["https://api.atlassian.com/ex/confluence/test_cloud/wiki/download/a1"] = attachment
+        calls = []
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=self._get(routes, calls)):
+            loader.list_selection({"folder_ids": ["S"]})
+            calls.clear()
+            result = loader.download_files(str(tmp_path), ["attachment:a1"])
+        assert calls == ["https://api.atlassian.com/ex/confluence/test_cloud/wiki/download/a1"]
+        assert (tmp_path / "spec.pdf").read_bytes() == b"PDF"
+        assert result["file_ids"] == {"spec.pdf": "attachment:a1"}

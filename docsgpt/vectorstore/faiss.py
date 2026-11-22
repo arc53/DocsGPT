@@ -679,6 +679,30 @@ class FaissStore(BaseVectorStore):
         self._save_or_undo(undo)
         return chunk_id
 
+    def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
+        """Replace several chunks' metadata, keeping their text and vectors; saved to storage once.
+
+        A failed save puts the metadata back (``_save_or_undo``).
+
+        Args:
+            updates: ``{chunk id: complete new metadata}``; ids not in this index are skipped.
+
+        Returns:
+            How many chunks were updated.
+        """
+        present = {cid: meta for cid, meta in updates.items() if cid in self.documents}
+        if not present:
+            return 0
+        before = {cid: self.documents[cid] for cid in present}
+        for cid, metadata in present.items():
+            self.documents[cid] = {**before[cid], "metadata": self._own_metadata(metadata)}
+
+        def undo() -> None:
+            self.documents.update(before)
+
+        self._save_or_undo(undo)
+        return len(present)
+
     def _replace_vector(self, chunk_id: str, vector: np.ndarray) -> None:
         """Swap one chunk's vector, renumbering the rows to match.
 

@@ -1033,6 +1033,8 @@ def setup_periodic_tasks(sender, **kwargs):
     # Vectors of ingests that ended without a source, once they are
     # INGEST_ORPHAN_TTL_HOURS old.
     sender.add_periodic_task(timedelta(hours=1), cleanup_orphaned_ingests.s(), name="cleanup-orphaned-ingests")
+    # Stored parses of source files unused for PARSE_CACHE_TTL_DAYS.
+    sender.add_periodic_task(timedelta(hours=24), cleanup_parsed_files.s(), name="cleanup-parsed-files")
     # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
     # digest run on ANALYTICS_QUEUE and are only scheduled while
     # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
@@ -1309,6 +1311,18 @@ def cleanup_content_scores(self):
     with engine.begin() as conn:
         deleted = ContentScoresRepository(conn).purge_unseen_for(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_parsed_files(self):
+    """Delete stored parses of source files unused for ``PARSE_CACHE_TTL_DAYS``, with their storage files."""
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.parser.parse_cache import cleanup_stale_parses
+
+    return cleanup_stale_parses(settings.PARSE_CACHE_TTL_DAYS)
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)

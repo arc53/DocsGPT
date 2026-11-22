@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterator, List, Optional, Set, Tuple
 from googleapiclient.http import MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
-from docsgpt.parser.connectors.base import BaseConnectorLoader
+from docsgpt.parser.connectors.base import BaseConnectorLoader, FileEntry, SelectionListing
 from docsgpt.parser.connectors.google_drive.auth import GoogleDriveAuth
 from docsgpt.parser.schema.base import Document
 
@@ -89,8 +89,12 @@ class GoogleDriveLoader(BaseConnectorLoader):
             self.service = None
 
         self.next_page_token = None
-
-
+        # The last listed selection, so a fingerprint, a download or a
+        # ``download_files`` after ``list_selection`` doesn't walk it again.
+        self._listing_key: Optional[str] = None
+        self._listed: List[Tuple[Dict[str, Any], Tuple[str, ...], Any]] = []
+        self._listed_complete = True
+        self._listed_stats: Tuple[int, int] = (0, 0)
 
     def _process_file(self, file_metadata: Dict[str, Any], load_content: bool = True) -> Optional[Document]:
         try:
@@ -708,6 +712,39 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 os.remove(path)
             raise
 
+    def _walk_cached(self, source_config: Dict[str, Any]) -> Tuple[List[Tuple[Dict[str, Any], Tuple[str, ...], Any]], bool]:
+        """Walk the selection once per loader and config; later calls reuse that walk.
+
+        Returns:
+            ``([(file_metadata, path_parts, service), ...], complete)``; ``complete`` is
+            False when an item or folder could not be read.
+        """
+        key = _config_key(source_config)
+        if self._listing_key != key:
+            self._ensure_service()
+            stats = _WalkStats()
+            self._listed = list(self._walk_selection(source_config, stats))
+            self._listed_complete = not stats.failed
+            self._listed_stats = (stats.failed, stats.skipped)
+            self._listing_key = key
+        return self._listed, self._listed_complete
+
+    def list_selection(self, source_config: Dict[str, Any]) -> SelectionListing:
+        """List the selection from file metadata alone; each file's version is its ``modifiedTime``."""
+        walked, complete = self._walk_cached(source_config)
+        return SelectionListing(
+            entries=[
+                FileEntry(
+                    id=str(meta.get('id')),
+                    path=os.path.join(*parts),
+                    version=meta.get('modifiedTime'),
+                    url=meta.get('webViewLink'),
+                )
+                for meta, parts, _ in walked
+            ],
+            complete=complete,
+        )
+
     def sync_fingerprint(self, source_config: Dict[str, Any]) -> Optional[str]:
         """Fingerprint the selection from file metadata alone, without downloading.
 
@@ -715,20 +752,59 @@ class GoogleDriveLoader(BaseConnectorLoader):
         ``None`` when part of the selection could not be read, since the
         fingerprint would then not describe all of it.
         """
-        self._ensure_service()
-        stats = _WalkStats()
-        entries = [
-            (parts, meta.get('id'), meta.get('modifiedTime'))
-            for meta, parts, _ in self._walk_selection(source_config, stats)
-        ]
-        return None if stats.failed else _fingerprint(entries)
+        walked, complete = self._walk_cached(source_config)
+        if not complete:
+            return None
+        return _fingerprint([(parts, meta.get('id'), meta.get('modifiedTime')) for meta, parts, _ in walked])
+
+    def download_files(self, local_dir: str, file_ids) -> Dict[str, Any]:
+        """Download the given files of the last listed selection, each to its listed path.
+
+        Args:
+            local_dir: Directory to write into; nothing is written outside it.
+            file_ids: Ids from :meth:`list_selection`; one not in that listing fails as ``transient``.
+
+        Returns:
+            ``files_downloaded``, ``files_failed``, ``file_ids``, ``file_urls`` and ``failures``
+            (see :meth:`BaseConnectorLoader.download_files`).
+        """
+        listed = {str(meta.get('id')): (meta, parts, reader) for meta, parts, reader in self._listed}
+        downloaded = 0
+        paths: Dict[str, str] = {}
+        file_urls: Dict[str, str] = {}
+        failures: Dict[str, Dict[str, str]] = {}
+        os.makedirs(local_dir, exist_ok=True)
+        for file_id in dict.fromkeys(str(i) for i in file_ids):
+            if file_id not in listed:
+                failures[file_id] = {"kind": "transient", "error": "not in the listed selection"}
+                continue
+            meta, parts, reader = listed[file_id]
+            try:
+                self._download_file(meta, _safe_join(local_dir, parts), reader)
+            except Exception as e:
+                logging.warning(f"Could not download Google Drive file {meta.get('name')!r}: {e}")
+                failures[file_id] = {"kind": _failure_kind(e), "error": str(e)[:300]}
+                continue
+            downloaded += 1
+            rel_path = os.path.join(*parts)
+            paths[rel_path] = file_id
+            if meta.get('webViewLink'):
+                file_urls[rel_path] = meta['webViewLink']
+        return {
+            "files_downloaded": downloaded,
+            "files_failed": len(failures),
+            "file_ids": paths,
+            "file_urls": file_urls,
+            "failures": failures,
+        }
 
     def download_to_directory(self, local_dir: str, source_config: dict = None) -> dict:
         """Download the selected files and folders into ``local_dir``.
 
         Each file is downloaded on its own: one that fails (an export over
         Google's size limit, a file type Google cannot download) is logged and
-        counted, and the rest still arrive.
+        counted, and the rest still arrive. A selection already walked by
+        :meth:`list_selection` (or :meth:`sync_fingerprint`) is not walked again.
 
         Args:
             local_dir: Directory to write into; nothing is written outside it.
@@ -737,12 +813,13 @@ class GoogleDriveLoader(BaseConnectorLoader):
         Returns:
             The download summary: ``files_downloaded``, ``files_failed``,
             ``files_skipped``, ``sync_fingerprint``, ``directory_path``,
-            ``empty_result``, ``source_type``, ``config_used`` and
-            ``file_urls`` (each downloaded file's path under ``local_dir`` →
-            its Drive link), plus ``error`` when the download could not run. ``sync_fingerprint``
-            is ``None`` when a file or folder failed, or a file was refused
-            for a reason other than its content (sharing, permissions), since
-            that can change without the file's ``modifiedTime`` changing.
+            ``empty_result``, ``source_type``, ``config_used``, ``file_urls``
+            and ``file_ids`` (each downloaded file's path under ``local_dir`` →
+            its Drive link / its id), ``failures`` (id → ``{"kind", "error"}``
+            for each file whose download failed or was refused), plus ``error``
+            when the download could not run. ``sync_fingerprint`` describes
+            every listed file, downloaded or not, and is ``None`` only when
+            part of the selection could not be listed.
         """
         if source_config is None:
             source_config = {}
@@ -750,28 +827,32 @@ class GoogleDriveLoader(BaseConnectorLoader):
         config = source_config if source_config else getattr(self, 'config', {})
         stats = _WalkStats()
         files_downloaded = 0
-        entries = []
         file_urls = {}
-        fingerprintable = True
+        file_ids = {}
+        failures: Dict[str, Dict[str, str]] = {}
+        walked: List[Tuple[Dict[str, Any], Tuple[str, ...], Any]] = []
+        complete = True
 
         try:
             if not config.get('file_ids') and not config.get('folder_ids'):
                 raise ValueError("No folder_ids or file_ids provided for download")
 
-            self._ensure_service()
+            walked, complete = self._walk_cached(config)
+            # What the walk could not read, or left out on purpose.
+            stats.failed, stats.skipped = self._listed_stats
             os.makedirs(local_dir, exist_ok=True)
 
-            for file_metadata, parts, reader in self._walk_selection(config, stats):
-                entries.append((parts, file_metadata.get('id'), file_metadata.get('modifiedTime')))
+            for file_metadata, parts, reader in walked:
                 try:
                     self._download_file(file_metadata, _safe_join(local_dir, parts), reader)
                     files_downloaded += 1
+                    rel_path = os.path.join(*parts)
+                    file_ids[rel_path] = file_metadata.get('id')
                     if file_metadata.get('webViewLink'):
-                        file_urls[os.path.join(*parts)] = file_metadata['webViewLink']
+                        file_urls[rel_path] = file_metadata['webViewLink']
                 except Exception as e:
                     stats.record_failure(file_metadata.get('name'), e)
-                    if not _error_reasons(e) & _CONTENT_REFUSAL_REASONS:
-                        fingerprintable = False
+                    failures[str(file_metadata.get('id'))] = {"kind": _failure_kind(e), "error": str(e)[:300]}
 
             logging.info(
                 f"Google Drive download finished: downloaded={files_downloaded} "
@@ -781,12 +862,17 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 "files_downloaded": files_downloaded,
                 "files_failed": stats.failed,
                 "files_skipped": stats.skipped,
-                "sync_fingerprint": _fingerprint(entries) if fingerprintable and not stats.failed else None,
+                "sync_fingerprint": (
+                    _fingerprint([(parts, meta.get('id'), meta.get('modifiedTime')) for meta, parts, _ in walked])
+                    if complete else None
+                ),
                 "directory_path": local_dir,
                 "empty_result": files_downloaded == 0,
                 "source_type": "google_drive",
                 "config_used": config,
                 "file_urls": file_urls,
+                "file_ids": file_ids,
+                "failures": failures,
             }
 
         except Exception as e:
@@ -800,6 +886,8 @@ class GoogleDriveLoader(BaseConnectorLoader):
                 "source_type": "google_drive",
                 "config_used": config,
                 "file_urls": file_urls,
+                "file_ids": file_ids,
+                "failures": failures,
                 "error": str(e)
             }
 
@@ -837,6 +925,21 @@ def _is_permanent_error(error: Exception) -> bool:
     if status in (401, 429) or status >= 500:
         return False
     return not _error_reasons(error) & _RATE_LIMIT_REASONS
+
+
+def _failure_kind(error: Exception) -> str:
+    """``permanent`` for a download refused because of the file's content, else ``transient``.
+
+    Only a content refusal (an export over Google's size limit, a file Google
+    cannot download) follows the file's ``modifiedTime``; a refusal for sharing
+    or permissions can lift without the file changing, so it is retried.
+    """
+    return "permanent" if _error_reasons(error) & _CONTENT_REFUSAL_REASONS else "transient"
+
+
+def _config_key(config: Dict[str, Any]) -> str:
+    """A key for a selection config, to tell whether a cached walk covers it."""
+    return json.dumps(config or {}, sort_keys=True, default=str)
 
 
 def _error_reasons(error: Exception) -> Set[str]:
