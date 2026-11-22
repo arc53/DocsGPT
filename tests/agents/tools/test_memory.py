@@ -459,14 +459,16 @@ class TestDeleteAction:
 
     def test_delete_whitespace_only_path_keeps_files(self, memory_tool):
         """A blank path is invalid: it must not be read as the root and delete everything."""
-        memory_tool.execute_action("create", path="/a.txt", file_text="a")
-        memory_tool.execute_action("create", path="/b.txt", file_text="b")
+        memory_tool.execute_action("create", path="/a.txt", file_text="alpha")
+        memory_tool.execute_action("create", path="/b.txt", file_text="beta")
+        assert memory_tool.execute_action("view", path="/a.txt") == "alpha"
+        assert memory_tool.execute_action("view", path="/b.txt") == "beta"
 
         result = memory_tool.execute_action("delete", path="   ")
 
         assert "Error" in result
-        assert "a" in memory_tool.execute_action("view", path="/a.txt")
-        assert "b" in memory_tool.execute_action("view", path="/b.txt")
+        assert memory_tool.execute_action("view", path="/a.txt") == "alpha"
+        assert memory_tool.execute_action("view", path="/b.txt") == "beta"
 
 
 # =====================================================================
