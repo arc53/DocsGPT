@@ -84,6 +84,7 @@ from docsgpt.drafter.agent_instructions import (
 from docsgpt.drafter.catalog import (
     FOLDER_KIND,
     is_template,
+    lists_folders,
     load_folders,
     load_models,
     prompt_text,
@@ -503,7 +504,7 @@ def read_knowledge_folders(conn, user_id: str, ws: Workspace, folder_ids: list[s
         ``(folders, feeds)``: ``[{id, name, sources: [{id, name}], more_sources?, stopped?}]`` in the form's
         order, and ``folder_id -> [source_id]``: every source each kept folder feeds, named or not.
     """
-    from docsgpt.api.user.folder_knowledge import expand_folders, folder_details
+    from docsgpt.api.user.folder_knowledge import folder_details_and_sources
     from docsgpt.drafter.catalog import attachable_folders, NAME_CHARS, source_rows
 
     ids = list(dict.fromkeys(str(fid).strip().lower() for fid in folder_ids or [] if fid))
@@ -513,8 +514,7 @@ def read_knowledge_folders(conn, user_id: str, ws: Workspace, folder_ids: list[s
     if not kept:
         return [], {}
     holder_type, holder = ("agent", {**agent, "knowledge_folder_ids": kept}) if agent else (None, None)
-    details = folder_details(conn, kept, user_id, holder_type, holder)
-    fed = expand_folders(conn, kept, holder_type, holder)
+    details, fed = folder_details_and_sources(conn, kept, user_id, holder_type, holder)
     allowed = ws.ids("sources")
     budget = FOLDER_SOURCES_TOTAL
     plan: list[tuple[dict, list[str], list[str]]] = []
@@ -840,7 +840,7 @@ def folders_settable(form: dict, ws: Workspace) -> bool:
     """Whether a turn may set ``folders``: the form offers folders (``folders_offered``) and there are some to pick
     (listed in the workspace) or to keep (on the form, as the server kept them)."""
     return form.get("folders_offered") is not False and isinstance(ws, AgentWorkspace) \
-        and bool(ws.folder_rows or ws.knowledge_folders)
+        and (lists_folders(ws) or bool(ws.knowledge_folders))
 
 
 def instructions(req: DraftRequest, ws: Workspace) -> str:
@@ -855,7 +855,7 @@ def instructions(req: DraftRequest, ws: Workspace) -> str:
     parts = [agent_fields(settable), never, DESIGN_RULES]
     if folders:
         parts.append(KNOWLEDGE_FOLDERS)
-    if ws.folder_rows:
+    if lists_folders(ws):
         parts.append(WORKSPACE_FOLDERS)
     if settable:
         parts.append(FOLDER_RULES)
@@ -1508,7 +1508,9 @@ def validate(args: dict, req: DraftRequest, ws: Workspace) -> dict:
         _covered_reason(reasons, covered, fields, ws)
     message = clean_text(args.get("message"), MESSAGE_MAX)
     if step and req.can_correct:
-        unbacked = unbacked_claims(message, step, fields, form)
+        # The form's folders count as the server kept them: an id the caller sent backs no claim.
+        kept = [folder["id"] for folder in getattr(ws, "knowledge_folders", ())]
+        unbacked = unbacked_claims(message, step, fields, {**form, "folders": kept})
         if unbacked:
             raise ProposalInvalid([CLAIMS_UNSET.format(parts=", ".join(unbacked))])
     steps, next_step = _progress(step, fields, form)
@@ -1638,7 +1640,7 @@ def read_tools_for(req: DraftRequest, ws: Workspace) -> tuple[str, ...]:
     only with knowledge folders to read, the Insights reads only in improve mode with the agent's gap summary."""
     reader = isinstance(ws, AgentWorkspace) and ws.reads_insights() and ws.insights_reader is not None
     names = (BROWSE_READS if ws.partial() else ()) + WORKSPACE_READS
-    if ws.attachable.get(FOLDER_KIND) or getattr(ws, "knowledge_folders", None):
+    if lists_folders(ws) or getattr(ws, "knowledge_folders", None):
         names += FOLDER_READS
     return names + INSIGHTS_READS if reader and not req.context["step"] else names
 

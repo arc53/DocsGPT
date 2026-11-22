@@ -172,10 +172,16 @@ def _rows(ws: Workspace, kind: str) -> list[dict]:
     return ws.folder_rows if kind == FOLDER_KIND else getattr(ws, kind)
 
 
+def lists_folders(ws: Workspace) -> bool:
+    """Whether the overview lists knowledge folders (shown or counted in ``not_shown``): a tree whose folders hold
+    no source the caller may attach, or only agents, lists none."""
+    return bool(ws.folder_rows or ws.hidden.get(FOLDER_KIND))
+
+
 def kinds(ws: Workspace) -> tuple[str, ...]:
-    """The kinds ``list_workspace`` lists in this workspace: knowledge folders only once :func:`load_folders` read
-    them."""
-    return KINDS + (FOLDER_KIND,) if FOLDER_KIND in ws.attachable else KINDS
+    """The kinds ``list_workspace`` lists in this workspace: knowledge folders only when the overview lists some
+    (:func:`lists_folders`)."""
+    return KINDS + (FOLDER_KIND,) if lists_folders(ws) else KINDS
 
 
 def _cap(rows: list, limit: int, kind: str, ws: Workspace) -> list:
