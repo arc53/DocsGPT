@@ -146,6 +146,10 @@ class Workspace:
         listed too."""
         return {str(row["id"]) for row in _rows(self, kind)} | set(self.attachable.get(kind, ()))
 
+    def folder_sources(self, folder_id: str) -> list[str]:
+        """Every source one of the caller's knowledge folders feeds (:func:`subtree_sources`)."""
+        return subtree_sources(self, folder_id)
+
     def partial(self) -> bool:
         """Whether the overview leaves out sources, tools or prompts of the caller's (``list_workspace`` lists
         them)."""
@@ -831,8 +835,8 @@ def source_rows(ws: Workspace, source_ids: Iterable[str], conn: Any = None) -> d
 
 
 def folder_detail(ws: Workspace, folder_id: str) -> Optional[dict]:
-    """``get_folder``'s answer for a knowledge folder the caller may attach: its row, the sources it feeds and its
-    direct subfolders.
+    """``get_folder``'s answer for a knowledge folder the caller may attach: its row, the sources it feeds
+    (``ws.folder_sources``) and its direct subfolders.
 
     ``{id, name, path?, sources: [{id, name}], more_sources?, subfolders: [{id, name, sources}], more_subfolders?}``,
     up to :data:`MAX_FOLDER_SOURCES` sources and :data:`MAX_SUBFOLDERS` subfolders named.
@@ -850,7 +854,7 @@ def folder_detail(ws: Workspace, folder_id: str) -> Optional[dict]:
     row = row_of(ws, FOLDER_KIND, folder_id)
     if row is None or ws.folder_tree is None:
         return None
-    sources = subtree_sources(ws, folder_id)
+    sources = ws.folder_sources(folder_id)
     named = source_rows(ws, sources[:MAX_FOLDER_SOURCES])
     out: dict[str, Any] = {key: row[key] for key in ("id", "name", "path") if key in row}
     out["sources"] = [{"id": sid, "name": named[sid].get("name")} for sid in sources if sid in named]

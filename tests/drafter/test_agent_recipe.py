@@ -1869,29 +1869,52 @@ def test_an_editor_keeps_the_owners_folder_and_adds_their_own(pg_conn):
     assert proposal["fields"] == {"folders": [owners, theirs], "sources": []}
 
 
-def test_an_editors_drafted_folder_takes_off_only_what_it_would_feed_the_owners_agent(pg_conn):
-    # The editor may use the shared source but not sponsor it, and the owner can't use it: their folder would feed
-    # the owner's agent none of it, so its direct attachment stays.
+@pytest.fixture
+def editors_folder(pg_conn):
+    """An editor's folder holding their own source and one shared with them for use only, which the owner of the
+    agent they edit can't use (it is on the agent directly): ``(editor, folder, shared, own, context)``."""
     from docsgpt.storage.db.repositories.folders import FolderItemsRepository
     from docsgpt.storage.db.repositories.sources import SourcesRepository
     from tests.api.user.test_folder_knowledge import _share
     from tests.api.user.test_resource_sponsors import _agent, EDITOR, OTHER
 
-    theirs = _kfolder(pg_conn, EDITOR, "Editor docs")
+    folder = _kfolder(pg_conn, EDITOR, "Editor docs")
     shared = str(SourcesRepository(pg_conn).create("Shared runbook", user_id=OTHER)["id"])
     _share(pg_conn, shared, OTHER, EDITOR)
-    FolderItemsRepository(pg_conn).file(EDITOR, "source", shared, theirs)
-    own = _filed(pg_conn, theirs, EDITOR, "Editor notes")
+    FolderItemsRepository(pg_conn).file(EDITOR, "source", shared, folder)
+    own = _filed(pg_conn, folder, EDITOR, "Editor notes")
     agent_id, _team = _agent(pg_conn, source_id=shared)
     context = parse_context({"agent_id": agent_id, "form": {"sources": [shared, own]}})
+    return EDITOR, folder, shared, own, context
+
+
+def test_an_editors_drafted_folder_takes_off_only_what_it_would_feed_the_owners_agent(pg_conn, editors_folder):
+    # The editor may use the shared source but not sponsor it, and the owner can't use it: their folder would feed
+    # the owner's agent none of it, so its direct attachment stays.
+    editor, folder, shared, _own, context = editors_folder
     with _through(pg_conn):
-        ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+        ws = AGENT_RECIPE.load_workspace(editor, context)
         assert shared in ws.ids("sources")
-        proposal = validate({"message": "m", "fields": {"folders": [theirs]}}, _kf_req(EDITOR, context), ws)
+        proposal = validate({"message": "m", "fields": {"folders": [folder]}}, _kf_req(editor, context), ws)
     # The editor's own source the folder feeds still comes off; the shared one stays.
-    assert proposal["fields"] == {"folders": [theirs], "sources": [shared]}
+    assert proposal["fields"] == {"folders": [folder], "sources": [shared]}
     reason = next(r["summary"] for r in proposal["reasons"] if r["field"] == "sources")
     assert "Editor notes" in reason and "Shared runbook" not in reason
+
+
+def test_get_folder_lists_what_the_folder_would_feed_the_saved_agent(pg_conn, editors_folder):
+    from docsgpt.drafter.read_tools import run_read_tool
+
+    editor, folder, _shared, own, context = editors_folder
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(editor, context)
+        detail = run_read_tool("get_folder", ws, {"folder_id": folder})
+    assert detail["sources"] == [{"id": own, "name": "Editor notes"}] and "more_sources" not in detail
+    # A new agent's form reads the caller's tree: the editor will own the agent, so both feed it.
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(editor, parse_context({"form": {}}))
+        detail = run_read_tool("get_folder", ws, {"folder_id": folder})
+    assert len(detail["sources"]) == 2
 
 
 

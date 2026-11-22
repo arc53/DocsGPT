@@ -90,7 +90,6 @@ from docsgpt.drafter.catalog import (
     prompt_text,
     PROMPT_CHARS,
     read_workspace,
-    subtree_sources,
     Workspace,
 )
 from docsgpt.drafter.fencing import clean_text
@@ -243,16 +242,18 @@ class AgentWorkspace(Workspace):
 
     def folder_sources(self, folder_id: str) -> list[str]:
         """Every source a knowledge folder feeds: a folder kept on the form as the agent reads it (sources the
-        caller can't attach included), a drafted one :meth:`read_drafted_feeds` read as the saved agent would read
-        it, any other (a new agent's) as its subtree holds the caller's (:func:`subtree_sources`)."""
+        caller can't attach included), any other as the saved agent would read it (:meth:`read_drafted_feeds`),
+        and a new agent's as its subtree holds the caller's (:func:`subtree_sources`)."""
         if folder_id in self.knowledge_folder_feeds:
             return list(self.knowledge_folder_feeds[folder_id])
+        self.read_drafted_feeds([folder_id])
         if folder_id in self.drafted_feeds:
             return list(self.drafted_feeds[folder_id])
-        return subtree_sources(self, folder_id)
+        return super().folder_sources(folder_id)
 
     def read_drafted_feeds(self, folders: list[str]) -> None:
-        """Read what a proposal's folders not on the form would feed the saved agent, by the rules its run applies.
+        """Read what folders not on the form would feed the saved agent, by the rules its run applies; each is
+        read once a turn.
 
         The caller's tree view isn't the agent's: an editor's folder feeds someone else's agent only the sources
         its owner may use or the editor may sponsor, and an agent with outside access none its owner borrows.
@@ -260,7 +261,8 @@ class AgentWorkspace(Workspace):
         nothing, so no source is taken off for them.
 
         Args:
-            folders: The proposal's whole folder list, as the agent's row would hold it.
+            folders: The folders (a proposal's whole list, or the one ``get_folder`` reads), on the agent's row
+                while they are read.
         """
         from docsgpt.api.user.folder_knowledge import expand_folders
         from docsgpt.storage.db.session import db_readonly
