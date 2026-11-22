@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
-from docsgpt.parser.connectors.base import BaseConnectorLoader, FileEntry, SelectionListing
+from docsgpt.parser.connectors.base import BaseConnectorLoader, ConnectorAuthError, FileEntry, SelectionListing
 from docsgpt.parser.connectors.confluence.auth import ConfluenceAuth
 from docsgpt.parser.schema.base import Document
 
@@ -227,7 +227,7 @@ class ConfluenceLoader(BaseConnectorLoader):
             folder_ids = [folder_ids]
         entries: List[FileEntry] = []
         links: Dict[str, str] = {}
-        complete = True
+        unread = 0
         self._listed_downloads = {}
         for page_id in file_ids:
             try:
@@ -238,13 +238,13 @@ class ConfluenceLoader(BaseConnectorLoader):
                 if e.response is not None and e.response.status_code == 404:
                     continue
                 logger.warning("Could not read Confluence page %s: %s", page_id, e)
-                complete = False
+                unread += 1
                 continue
             except Exception as e:
                 logger.warning("Could not read Confluence page %s: %s", page_id, e)
-                complete = False
+                unread += 1
                 continue
-            complete = self._list_page(page, entries, links) and complete
+            unread += 0 if self._list_page(page, entries, links) else 1
         for space_id in folder_ids:
             cursor = None
             while True:
@@ -257,14 +257,14 @@ class ConfluenceLoader(BaseConnectorLoader):
                     if e.response is not None and e.response.status_code in (401, 403):
                         raise
                     logger.warning("Could not list the pages of space %s: %s", space_id, e)
-                    complete = False
+                    unread += 1
                     break
                 except Exception as e:
                     logger.warning("Could not list the pages of space %s: %s", space_id, e)
-                    complete = False
+                    unread += 1
                     break
                 for page in data.get("results", []):
-                    complete = self._list_page(page, entries, links) and complete
+                    unread += 0 if self._list_page(page, entries, links) else 1
                 cursor = self._extract_cursor(data.get("_links", {}).get("next"))
                 if not cursor:
                     break
@@ -278,13 +278,41 @@ class ConfluenceLoader(BaseConnectorLoader):
             if link and not link.startswith(absolute):
                 link = f"{base.rstrip('/')}/{link.lstrip('/')}" if base else None
             resolved[entry.path] = FileEntry(id=entry.id, path=entry.path, version=entry.version, url=link)
-        listing = SelectionListing(entries=list(resolved.values()), complete=complete)
+        listing = SelectionListing(entries=list(resolved.values()), complete=not unread, unread=unread).deduplicated()
         self._listed = listing.by_id()
         return listing
 
+    def _authorized_get(self, url: str, **kwargs: Any) -> requests.Response:
+        """GET with the connection's token; on 401/403 the token is refreshed once and the GET sent again.
+
+        Raises:
+            ConnectorAuthError: Confluence still refuses the refreshed token, or it could not be refreshed.
+            requests.HTTPError: Any other error status.
+        """
+        kwargs.setdefault("timeout", 30)
+        response = requests.get(url, headers=self._headers(), **kwargs)
+        if response.status_code in (401, 403):
+            try:
+                self.access_token = self._refresh_rejected_token(self.access_token)["access_token"]
+            except Exception as exc:
+                raise ConnectorAuthError(f"Confluence rejected the access token and it could not be refreshed: {exc}") from exc
+            response = requests.get(url, headers=self._headers(), **kwargs)
+            if response.status_code in (401, 403):
+                raise ConnectorAuthError(f"Confluence rejected the refreshed access token ({response.status_code})")
+        response.raise_for_status()
+        return response
+
     def download_files(self, local_dir: str, file_ids: Iterable[str]) -> Dict[str, Any]:
-        """Download the given pages and attachments of the last listed selection."""
+        """Download the given pages and attachments of the last listed selection, each to its listed path.
+
+        A page renamed since the listing still lands at its listed path, so it
+        never overwrites another file of the same download.
+
+        Raises:
+            ConnectorAuthError: Confluence rejects the connection's sign-in even after a refresh.
+        """
         os.makedirs(local_dir, exist_ok=True)
+        root = os.path.realpath(local_dir)
         downloaded = 0
         paths: Dict[str, str] = {}
         file_urls: Dict[str, str] = {}
@@ -294,20 +322,27 @@ class ConfluenceLoader(BaseConnectorLoader):
             if entry is None:
                 failures[file_id] = {"kind": "transient", "error": "not in the listed selection"}
                 continue
-            target = os.path.join(local_dir, entry.path)
+            target = os.path.realpath(os.path.join(root, entry.path))
+            if os.path.commonpath([root, target]) != root or target == root:
+                failures[file_id] = {"kind": "permanent", "error": "path outside the download directory"}
+                continue
             try:
                 if file_id.startswith("page:"):
-                    if not self._download_page(file_id.split(":", 1)[1], local_dir) or not os.path.isfile(target):
-                        raise RuntimeError("the page could not be downloaded")
+                    page = self._authorized_get(
+                        f"{self.base_url}/pages/{file_id.split(':', 1)[1]}", params={"body-format": "storage"},
+                    ).json()
+                    body = page.get("body", {}).get("storage", {}).get("value", "")
+                    with open(target, "w", encoding="utf-8") as f:
+                        f.write(body)
                 else:
-                    response = requests.get(
-                        f"{self.download_base}{self._listed_downloads[file_id]}",
-                        headers=self._headers(), timeout=60, stream=True,
+                    response = self._authorized_get(
+                        f"{self.download_base}{self._listed_downloads[file_id]}", timeout=60, stream=True,
                     )
-                    response.raise_for_status()
                     with open(target, "wb") as f:
                         for chunk in response.iter_content(chunk_size=8192):
                             f.write(chunk)
+            except ConnectorAuthError:
+                raise
             except Exception as e:
                 logger.warning("Could not download Confluence file %s: %s", entry.path, e)
                 failures[file_id] = {"kind": "transient", "error": str(e)[:300]}

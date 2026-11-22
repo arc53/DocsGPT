@@ -1062,3 +1062,46 @@ class TestListSelection:
         assert calls == ["https://api.atlassian.com/ex/confluence/test_cloud/wiki/download/a1"]
         assert (tmp_path / "spec.pdf").read_bytes() == b"PDF"
         assert result["file_ids"] == {"spec.pdf": "attachment:a1"}
+
+
+class TestDownloadFilesSafety:
+    BASE = TestListSelection.BASE
+
+    def _listed(self, loader):
+        routes = TestListSelection()._routes()
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   side_effect=TestListSelection()._get(routes, [])):
+            loader.list_selection({"folder_ids": ["S"]})
+
+    @pytest.mark.unit
+    def test_a_page_renamed_since_the_listing_lands_at_its_listed_path(self, loader, tmp_path):
+        self._listed(loader)
+        page = _mock_response({"id": "1", "title": "Renamed", "body": {"storage": {"value": "<p>hi</p>"}}})
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", return_value=page):
+            result = loader.download_files(str(tmp_path), ["page:1"])
+        assert (tmp_path / "Intro.html").read_text() == "<p>hi</p>"
+        assert not (tmp_path / "Renamed.html").exists()
+        assert result["file_ids"] == {"Intro.html": "page:1"}
+
+    @pytest.mark.unit
+    def test_a_rejected_token_is_refreshed_once_then_raises(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        self._listed(loader)
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new"})
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_files(str(tmp_path), ["attachment:a1"])
+        loader._refresh_rejected_token.assert_called_once()
+
+    @pytest.mark.unit
+    def test_a_refreshed_token_carries_on(self, loader, tmp_path):
+        self._listed(loader)
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new"})
+        ok = MagicMock(status_code=200)
+        ok.iter_content.return_value = [b"PDF"]
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   side_effect=[_mock_response({}, 401), ok]):
+            result = loader.download_files(str(tmp_path), ["attachment:a1"])
+        assert result["failures"] == {} and loader.access_token == "new"

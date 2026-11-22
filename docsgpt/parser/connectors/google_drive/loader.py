@@ -733,6 +733,7 @@ class GoogleDriveLoader(BaseConnectorLoader):
         """List the selection from file metadata alone; each file's version is its ``modifiedTime``."""
         walked, complete = self._walk_cached(source_config)
         return SelectionListing(
+            unread=self._listed_stats[0],
             entries=[
                 FileEntry(
                     id=str(meta.get('id')),

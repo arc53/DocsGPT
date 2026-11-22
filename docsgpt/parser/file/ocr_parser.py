@@ -680,12 +680,27 @@ class DeepseekOcrEngine:
             for key in ("prompt_tokens", "completion_tokens"):
                 self._usage[key] += _token_count(usage.get(key))
 
-    def _send(self, body: Dict, headers: Dict[str, str]):
-        """One request, holding a slot of the endpoint's shared in-flight limit."""
+    def _send(self, body: Dict, headers: Dict[str, str], deadline: Optional[float] = None):
+        """One request, holding a slot of the endpoint's shared in-flight limit.
+
+        Args:
+            body: The request body.
+            headers: The request headers.
+            deadline: For a retry after a 429: the ``_monotonic()`` time the
+                rate-limit budget runs out; past it once a slot is free, nothing is sent.
+
+        Raises:
+            OcrRateLimitedError: The budget ran out while this waited for a slot.
+        """
         import requests
 
-        self._count("attempts")
         with self.limiter.slot():
+            if deadline is not None and _monotonic() >= deadline:
+                raise OcrRateLimitedError(
+                    f"DeepSeek-OCR endpoint {self.url} rate-limit budget ran out while waiting for a request slot; "
+                    "the page will be tried again later."
+                )
+            self._count("attempts")
             return requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
 
     def _post(self, body: Dict):
@@ -712,7 +727,8 @@ class DeepseekOcrEngine:
         rate_limited = 0
         while True:
             try:
-                response = self._send(body, headers)
+                # Only a retry after a 429 is bound by the budget; the first try always goes.
+                response = self._send(body, headers, deadline=started + budget if rate_limited else None)
             except requests.exceptions.ConnectionError as exc:
                 # ConnectTimeout lands here too; a read timeout does not.
                 if attempt < self.max_retries:
@@ -738,13 +754,16 @@ class DeepseekOcrEngine:
                 self._count("rate_limited")
                 self.limiter.record_rate_limited()
                 left = budget - (_monotonic() - started)
-                if left <= 0:
+                wait_s = _rate_limit_wait(response, rate_limited)
+                if left <= 0 or wait_s >= left:
+                    # The wait would end past the budget: give the page up now
+                    # rather than sleep and send a request that can't count.
                     raise OcrRateLimitedError(
-                        f"DeepSeek-OCR endpoint {self.url} was still rate limiting after {budget:.0f}s "
+                        f"DeepSeek-OCR endpoint {self.url} was still rate limiting after "
+                        f"{budget - max(0.0, left):.0f}s of a {budget:.0f}s budget "
                         f"({rate_limited + 1} rate-limited answers); the page will be tried again later. "
                         "Lower OCR_MAX_IN_FLIGHT or raise the provider's quota."
                     )
-                wait_s = min(_rate_limit_wait(response, rate_limited), left)
                 logger.debug(f"DeepSeek-OCR endpoint {self.url} returned 429; retrying in {wait_s:.1f}s")
                 self._wait(wait_s)
                 rate_limited += 1
@@ -971,7 +990,12 @@ _KEPT_FILES = 16
 
 
 def _missing_pages_error(
-    path: Path, engine_name: str, failures: Dict[int, BaseException], missing: int, total: int
+    path: Path,
+    engine_name: str,
+    failures: Dict[int, BaseException],
+    missing: int,
+    total: int,
+    rate_limit_first: bool = False,
 ) -> DocumentParseError:
     """The error for a parse that could not OCR every page it needed.
 
@@ -979,8 +1003,18 @@ def _missing_pages_error(
     refuses) makes the file fail for good; otherwise a rate limit makes it a
     file to try again later (``OcrRateLimitedError``), as does any other
     transient failure.
+
+    Args:
+        rate_limit_first: A rate-limited page wins over one that failed for
+            good: a caller that skips failed pages (``ocr_pages(skip_failed=True)``)
+            still wants the file set aside and tried again after the cool-down.
     """
     errors = list(failures.values())
+    if rate_limit_first and any(isinstance(error, OcrRateLimitedError) for error in errors):
+        return OcrRateLimitedError(
+            f"{path.name}: {missing} of {total} scanned page(s) could not be OCR'd yet: the OCR endpoint is "
+            f"rate limiting. The {total - missing} page(s) recognised are kept for the retry."
+        )
     for error in errors:
         if isinstance(error, OcrUnavailableError):
             return error
@@ -1310,7 +1344,9 @@ class NativeOcrPdfParser(BaseParser):
         if missing and (rate_limited or not skip_failed):
             # Kept for the retry: only the missing pages are sent again.
             self._keep(key, kept)
-            raise _missing_pages_error(path, engine.name, failures, len(missing), len(requested))
+            raise _missing_pages_error(
+                path, engine.name, failures, len(missing), len(requested), rate_limit_first=skip_failed,
+            )
         self._keep(key, {})
         for index, error in failures.items():
             logger.warning(f"OCR of page {index + 1} of {path.name} failed ({error}); skipping that page")

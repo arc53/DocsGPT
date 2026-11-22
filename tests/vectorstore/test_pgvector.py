@@ -545,23 +545,25 @@ class TestPGVectorPrecomputedQueryVector:
 class TestPGVectorStoreUpdateChunksMetadata:
     def test_rewrites_metadata_only_in_one_transaction(self):
         store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
-        mock_cursor.rowcount = 1
+        mock_cursor.rowcount = 2
 
         with patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: ("jsonb", v)):
             count = store.update_chunks_metadata({"4": {"source": "b.md"}, "7": {"source": "c.md"}, "x": {}})
 
         assert count == 2
-        calls = mock_cursor.execute.call_args_list
-        assert len(calls) == 2
-        sql, params = calls[0][0]
+        mock_cursor.executemany.assert_called_once()
+        sql, params = mock_cursor.executemany.call_args[0]
         assert sql.strip().upper().startswith("UPDATE") and "embedding" not in sql.lower()
-        assert params == (("jsonb", {"source": "b.md", "source_id": "src1"}), 4, "src1")
+        assert params == [
+            (("jsonb", {"source": "b.md", "source_id": "src1"}), 4, "src1"),
+            (("jsonb", {"source": "c.md", "source_id": "src1"}), 7, "src1"),
+        ]
         mock_emb.embed_documents.assert_not_called()
         mock_conn.commit.assert_called_once()
 
     def test_an_error_rolls_back(self):
         store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
-        mock_cursor.execute.side_effect = RuntimeError("db down")
+        mock_cursor.executemany.side_effect = RuntimeError("db down")
         with patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: v), pytest.raises(RuntimeError):
             store.update_chunks_metadata({"4": {}})
         mock_conn.rollback.assert_called_once()

@@ -307,7 +307,12 @@ def _files_failed(row: dict) -> int:
             remote_data = json.loads(remote_data)
         except ValueError:
             return 0
-    failed = remote_data.get("failed_files") if isinstance(remote_data, dict) else None
+    if not isinstance(remote_data, dict):
+        return 0
+    count = remote_data.get("files_failed")
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        return count
+    failed = remote_data.get("failed_files")
     return len(failed) if isinstance(failed, list) else 0
 
 

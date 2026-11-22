@@ -62,7 +62,7 @@ class ParsedFilesRepository:
         storage_path: Optional[str] = None,
         page_count: Optional[int] = None,
         billed_pages: Optional[int] = None,
-    ) -> None:
+    ) -> Optional[str]:
         """Insert a parse, or replace the one stored under the same user, content and parser key.
 
         Args:
@@ -74,7 +74,18 @@ class ParsedFilesRepository:
             storage_path: Where a large output is kept instead of ``content``.
             page_count: Pages in the file, when the parser said.
             billed_pages: Pages sent to a paid OCR service, when the parser said.
+
+        Returns:
+            The storage path of the parse this replaced, when it had one other
+            than ``storage_path``: nothing refers to that file any more.
         """
+        previous = self._conn.execute(
+            text(
+                "SELECT storage_path FROM parsed_files "
+                "WHERE user_id = :user_id AND content_sha256 = :sha AND parser_key = :key FOR UPDATE"
+            ),
+            {"user_id": user_id, "sha": content_sha256, "key": parser_key},
+        ).scalar()
         self._conn.execute(
             text(
                 """
@@ -106,6 +117,7 @@ class ParsedFilesRepository:
                 "billed_pages": billed_pages,
             },
         )
+        return previous if previous and previous != storage_path else None
 
     def delete_stale(self, days: int) -> List[Optional[str]]:
         """Delete rows unused for ``days`` days.

@@ -54,14 +54,14 @@ const slot = (overrides: Partial<ScheduleEvent>): ScheduleEvent => ({
   ...overrides,
 });
 
-const sync = (dayOffset: number): SyncEvent => ({
+const sync = (dayOffset: number, hour = 3): SyncEvent => ({
   kind: 'sync',
   schedule_id: 'sync:daily',
   name: null,
   agent_id: null,
   agent_name: null,
   frequent: false,
-  at: at(dayOffset, 3),
+  at: at(dayOffset, hour),
   state: 'planned',
   frequency: 'daily',
   sources: [
@@ -94,7 +94,9 @@ const WINDOW: PlannedWindow = {
       state: 'failed',
       run_id: 'r9',
     }),
-    sync(1),
+    // Tomorrow, unless today is Sunday: the week view ends with it, so the
+    // sync goes late today instead.
+    new Date().getDay() === 0 ? sync(0, 23) : sync(1),
   ],
   monitors: [
     {

@@ -87,9 +87,19 @@ class TestRateLimitBudget:
         with pytest.raises(op.OcrRateLimitedError) as caught:
             op.DeepseekOcrEngine().ocr_image(_image())
         assert isinstance(caught.value, TransientParseError)
-        # 30 s apart until 300 s have gone: the first try plus ten retries.
-        assert len(post.calls) == 11
-        assert clock[0] == pytest.approx(300.0)
+        # 30 s apart while the next answer can still come inside 300 s: the
+        # wait that would end at the budget is not taken, nothing is sent past it.
+        assert len(post.calls) == 10
+        assert clock[0] == pytest.approx(270.0)
+
+    def test_a_wait_longer_than_the_budget_left_defers_at_once(self, budget, monkeypatch, clock):
+        budget.OCR_RATE_LIMIT_MAX_WAIT = 50
+        post = FakePost(FakeResponse(status=429, headers={"Retry-After": "55"}), FakeResponse())
+        monkeypatch.setattr("requests.post", post)
+        with pytest.raises(op.OcrRateLimitedError):
+            op.DeepseekOcrEngine().ocr_image(_image())
+        assert len(post.calls) == 1
+        assert clock[0] == pytest.approx(0.0)
 
     def test_429_succeeds_inside_the_budget(self, budget, monkeypatch, clock):
         post = FakePost(*(FakeResponse(status=429, headers={"Retry-After": "40"}) for _ in range(5)), FakeResponse())
@@ -497,3 +507,26 @@ class TestDeferredFiles:
         reader.load_data()
         reader.load_data()
         assert reader.transient_failures == set()
+
+
+class TestMixedPageFailures:
+    def test_skipping_failed_pages_still_defers_a_rate_limited_file(self, tmp_path):
+        from PIL import Image
+
+        from docsgpt.parser.file.base_parser import DocumentParseError
+
+        pages = [Image.new("RGB", (200, 200), "white") for _ in range(2)]
+        pdf = tmp_path / "mixed.pdf"
+        pages[0].save(pdf, save_all=True, append_images=pages[1:])
+        outcomes = [DocumentParseError("the model refused this page"), op.OcrRateLimitedError("429")]
+
+        class Engine:
+            name = "fake"
+            concurrency = 1
+
+            def ocr_image(self, image):
+                raise outcomes.pop(0)
+
+        parser = op.NativeOcrPdfParser(engine=Engine())
+        with pytest.raises(op.OcrRateLimitedError):
+            parser.ocr_pages(pdf, [0, 1], skip_failed=True)

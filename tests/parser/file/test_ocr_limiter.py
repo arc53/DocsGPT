@@ -24,9 +24,12 @@ class FakeRedis:
                 del zset[member]
             return len(gone)
 
-    def zadd(self, key, mapping):
+    def zadd(self, key, mapping, xx=False):
         with self.lock:
-            self.zsets.setdefault(key, {}).update(mapping)
+            zset = self.zsets.setdefault(key, {})
+            if xx:
+                mapping = {member: score for member, score in mapping.items() if member in zset}
+            zset.update(mapping)
             return len(mapping)
 
     def zcard(self, key):
@@ -58,6 +61,13 @@ class FakeRedis:
     def pipeline(self, transaction=True):
         return FakePipeline(self)
 
+    def transaction(self, func, *watches):
+        # WATCH ... MULTI/EXEC: the reads and the queued writes run with nothing in between.
+        with self.lock:
+            pipe = FakeWatchPipeline(self)
+            func(pipe)
+            return pipe.execute()
+
 
 class FakePipeline:
     def __init__(self, redis):
@@ -74,6 +84,22 @@ class FakePipeline:
     def execute(self):
         with self.redis.lock:  # MULTI/EXEC: nothing interleaves
             return [getattr(self.redis, name)(*args, **kwargs) for name, args, kwargs in self.calls]
+
+
+class FakeWatchPipeline(FakePipeline):
+    """Commands run at once until ``multi()``, then queue, as a WATCHed redis-py pipeline does."""
+
+    def __init__(self, redis):
+        super().__init__(redis)
+        self.queued = False
+
+    def multi(self):
+        self.queued = True
+
+    def __getattr__(self, name):
+        if not self.queued:
+            return getattr(self.redis, name)
+        return super().__getattr__(name)
 
 
 class BrokenRedis:
@@ -201,3 +227,34 @@ class TestWithoutRedis:
         limiter = ol.InFlightLimiter("k", cap=2, lease_seconds=60)
         assert _hammer([limiter]) <= 2
         assert limiter.record_rate_limited() == 1
+
+
+class TestReviewFixes:
+    def test_two_429s_at_once_halve_twice(self, fake_redis):
+        limiter = ol.InFlightLimiter("k", cap=8, lease_seconds=60)
+        threads = [threading.Thread(target=limiter.record_rate_limited) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert limiter.allowed() == 2
+
+    def test_a_lease_whose_count_cannot_be_read_is_taken_back(self, fake_redis, monkeypatch):
+        limiter = ol.InFlightLimiter("k", cap=1, lease_seconds=60)
+        monkeypatch.setattr(limiter, "_redis_allowed", lambda client: (_ for _ in ()).throw(ConnectionError("x")))
+        with pytest.raises(ConnectionError):
+            limiter._try_redis_slot(fake_redis)
+        assert fake_redis.zcard(limiter._leases) == 0
+
+    def test_a_slow_request_keeps_its_lease(self, fake_redis, monkeypatch):
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(ol, "_now", lambda: clock["now"])
+        limiter = ol.InFlightLimiter("k", cap=1, lease_seconds=3)
+        with limiter.slot():
+            [lease] = fake_redis.zsets[limiter._leases]
+            clock["now"] += 2.5
+            deadline = time.time() + 3
+            while fake_redis.zsets[limiter._leases][lease] < clock["now"] + 2 and time.time() < deadline:
+                time.sleep(0.05)
+            assert fake_redis.zsets[limiter._leases][lease] >= clock["now"] + 2
+        assert fake_redis.zcard(limiter._leases) == 0

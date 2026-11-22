@@ -1405,3 +1405,22 @@ class TestListSelection:
         with graph:
             listing = loader.list_selection({"folder_ids": ["d1:f"]})
         assert [e.id for e in listing.entries] == ["d1:x"]
+
+
+class TestListSelectionDuplicates:
+    @pytest.mark.unit
+    def test_a_file_picked_and_in_a_picked_folder_is_listed_once(self, loader):
+        base = TestListSelection.BASE
+        pdf = {"mimeType": "application/pdf"}
+        routes = {
+            f"{base}/me/drive/items/x": _graph_response(data={"id": "x", "name": "a.pdf", "file": pdf, "cTag": "c"}),
+            f"{base}/me/drive/items/folder": _graph_response(data={"id": "folder", "name": "F"}),
+            f"{base}/me/drive/items/folder/children": _graph_response(data={"value": [
+                {"id": "x", "name": "a.pdf", "file": pdf, "cTag": "c"},
+            ]}),
+        }
+        graph, _ = TestListSelection()._graph(routes)
+        with graph:
+            listing = loader.list_selection({"file_ids": ["x"], "folder_ids": ["folder"]})
+        assert [(e.id, e.path) for e in listing.entries] == [("x", os.path.join("F", "a.pdf"))]
+        assert loader._listed == listing.by_id()

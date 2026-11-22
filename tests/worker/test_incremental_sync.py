@@ -114,12 +114,15 @@ class FakeDriveLoader(BaseConnectorLoader):
         return []
 
     def list_selection(self, source_config):
+        hidden = getattr(self, "hidden", set())
         return SelectionListing(
             entries=[
                 FileEntry(id=fid, path=f["path"], version=f["version"], url=f"https://drive/{fid}")
                 for fid, f in self.files.items()
+                if fid not in hidden
             ],
-            complete=True,
+            complete=not hidden,
+            unread=len(hidden),
         )
 
     def sync_fingerprint(self, source_config):
@@ -175,7 +178,11 @@ class FlakyParser(BaseParser):
     def __init__(self) -> None:
         super().__init__()
         self.broken: Dict[str, str] = {}
+        self.partial: set = set()
         self.parsed: List[str] = []
+
+    def get_file_metadata(self, file):
+        return {"ocr_pages_failed": 1} if Path(file).name in self.partial else {}
 
     def _init_parser(self):
         return {}
@@ -618,6 +625,113 @@ class TestIncrementalSafety:
         assert harness.store.delete_calls == 1
 
 
+@pytest.mark.unit
+class TestCodeRabbitFixes:
+
+    def test_a_file_added_by_a_sync_that_died_is_removed_once_gone(self, harness):
+        harness.sync()
+        harness.loader.files["tmp"] = {"path": "Docs/tmp.md", "version": "v1", "text": "# Tmp\n\ntemporary " * 20}
+        harness.store.fail_adds = True
+        with pytest.raises(RuntimeError):
+            harness.sync()
+        harness.store.fail_adds = False
+        del harness.loader.files["tmp"]
+
+        harness.sync()
+
+        assert "Docs/tmp.md" not in harness.store.by_source()
+        assert "tmp" not in harness.row()["remote_files"]["files"]
+
+    def test_a_move_cut_short_leaves_nothing_behind_when_the_file_goes(self, harness):
+        harness.sync()
+        harness.loader.files["id1"]["path"] = "Docs/Moved/one.md"
+        harness.loader.files["new"] = {"path": "Docs/new.md", "version": "v1", "text": "# N\n\nnew " * 20}
+        harness.store.fail_adds = True  # dies after the move's rewrite, adding the new file
+        with pytest.raises(RuntimeError):
+            harness.sync()
+        harness.store.fail_adds = False
+        del harness.loader.files["id1"]
+
+        harness.sync()
+
+        paths = harness.store.by_source()
+        assert "Docs/Moved/one.md" not in paths and os.path.join("Docs", "doc1.md") not in paths
+
+    def test_an_incomplete_listing_is_not_reported_as_unchanged(self, harness):
+        harness.sync()
+        harness.loader.hidden = {"id4"}
+
+        result = harness.sync()
+
+        assert result["status"] == "partial"
+        payload = harness.events[-1][1]
+        assert "no_changes" not in payload and payload["partial"] is True and payload["folders_failed"] == 1
+        # Nothing it couldn't see was removed.
+        assert os.path.join("Docs", "doc4.md") in harness.store.by_source()
+
+    def test_a_listing_that_read_nothing_fails_the_sync(self, harness):
+        harness.sync()
+        harness.loader.hidden = set(harness.loader.files)
+        with pytest.raises(worker.ConnectorDownloadError):
+            harness.sync()
+        assert len(harness.store.by_source()) == 5
+
+    def test_failed_files_past_the_display_cap_keep_their_state(self, harness, monkeypatch):
+        monkeypatch.setattr(incremental, "MAX_FAILED_FILES", 1)
+        harness.parser.broken.update({"doc1.md": "permanent", "doc2.md": "permanent"})
+        harness.sync()
+        row = harness.row()
+        assert len(row["remote_data"]["failed_files"]) == 1 and row["remote_data"]["files_failed"] == 2
+        harness.parser.broken.clear()
+        harness.reset()
+
+        harness.sync()
+
+        assert harness.loader.single_downloads == []
+
+    def test_a_full_rebuild_drops_the_fingerprint_until_it_is_stored(self, harness, monkeypatch):
+        harness.sync()
+        seen = {}
+
+        def _embed(docs, folder, source_id, task, **kwargs):
+            seen["remote_data"] = SourcesRepository(harness.pg).get(harness.source_id, "dave")["remote_data"]
+            raise RuntimeError("embedding down")
+
+        monkeypatch.setattr(worker, "embed_and_store_documents", _embed)
+        _set_config(harness, {"chunking": {"strategy": "classic_chunk", "max_tokens": 600, "min_tokens": 50}})
+        with pytest.raises(RuntimeError):
+            harness.sync(config={"chunking": {"strategy": "classic_chunk", "max_tokens": 600, "min_tokens": 50}})
+        assert "sync_fingerprint" not in seen["remote_data"]
+
+    def test_a_partly_ocrd_file_is_indexed_and_read_again(self, harness):
+        harness.parser.partial.add("doc3.md")
+        harness.sync()
+        path = os.path.join("Docs", "doc3.md")
+        assert path in harness.store.by_source()
+        [failed] = harness.row()["remote_data"]["failed_files"]
+        assert (failed["id"], failed["kind"]) == ("id3", "transient")
+        harness.parser.partial.clear()
+        harness.reset()
+
+        harness.sync()
+
+        assert harness.loader.single_downloads == [["id3"]]
+        assert "failed_files" not in harness.row()["remote_data"]
+        assert len(harness.store.by_source()[path]) >= 1
+
+    def test_a_full_ingest_indexes_only_what_the_listing_names(self, harness, monkeypatch):
+        original = harness.loader.download_to_directory
+
+        def download(local_dir, source_config=None):
+            result = original(local_dir, source_config)
+            Path(local_dir, "stray.md").write_text("# Stray\n\n" + "a second copy " * 20)
+            return result
+
+        monkeypatch.setattr(harness.loader, "download_to_directory", download)
+        harness.sync()
+        assert "stray.md" not in harness.store.by_source()
+
+
 # ---------------------------------------------------------------------------
 # Remote sources (GitHub, crawlers, S3...)
 # ---------------------------------------------------------------------------
@@ -638,6 +752,7 @@ class FakeRemoteLoader:
 @pytest.fixture
 def remote(pg_conn, patch_worker_db, task_self, published, monkeypatch, tmp_path):
     store = MemoryStore()
+    monkeypatch.setattr(incremental, "_sleep", lambda seconds: None)
     loader = FakeRemoteLoader({f"guide/p{i}.md": f"page {i} text " * 30 for i in range(4)})
     monkeypatch.setattr(worker.RemoteCreator, "create_loader", staticmethod(lambda kind: loader))
     monkeypatch.setattr(
@@ -713,6 +828,19 @@ class TestRemoteIncrementalSync:
         assert "guide/p3.md" not in after
         assert all("rewritten" in t or "brand new" in t for t in remote.store.embedded)
         assert remote.full_embeds == [4]
+
+    def test_a_page_added_by_a_sync_that_died_is_removed_once_gone(self, remote):
+        remote.sync()
+        remote.loader.pages["guide/tmp.md"] = "temporary page " * 30
+        remote.store.fail_adds = True
+        with pytest.raises(RuntimeError):
+            remote.sync()
+        remote.store.fail_adds = False
+        del remote.loader.pages["guide/tmp.md"]
+
+        remote.sync()
+
+        assert "guide/tmp.md" not in remote.store.by_source()
 
     def test_a_settings_change_rebuilds(self, remote):
         remote.sync()

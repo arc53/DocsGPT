@@ -50,6 +50,26 @@ class SelectionListing:
 
     entries: List[FileEntry] = field(default_factory=list)
     complete: bool = True
+    #: Items or folders that could not be read (what ``complete`` is False for).
+    unread: int = 0
+
+    def deduplicated(self) -> "SelectionListing":
+        """One entry per path and per id, as a download leaves the files.
+
+        A download that writes two files to one path keeps the later one; a
+        file reached twice (picked, and in a picked folder) is kept at its later
+        path, the copy at the earlier path being one a full download also
+        writes but no sync tracks.
+        """
+        by_path: Dict[str, FileEntry] = {}
+        for entry in self.entries:
+            by_path.pop(entry.path, None)
+            by_path[entry.path] = entry
+        by_id: Dict[str, FileEntry] = {}
+        for entry in by_path.values():
+            by_id.pop(entry.id, None)
+            by_id[entry.id] = entry
+        return SelectionListing(entries=list(by_id.values()), complete=self.complete, unread=self.unread)
 
     def by_id(self) -> Dict[str, FileEntry]:
         """The entries keyed by file id."""

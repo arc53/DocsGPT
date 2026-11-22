@@ -854,14 +854,14 @@ class PGVectorStore(BaseVectorStore):
             return 0
         conn = self._get_connection()
         cursor = conn.cursor()
+        # Only internal names are interpolated; every value is a bound parameter.
+        statement = (
+            f"UPDATE {self._table_name} SET {self._metadata_column} = %s "  # nosec B608
+            "WHERE id = %s AND source_id = %s;"
+        )
         try:
-            updated = 0
-            for metadata, chunk_id in rows:
-                cursor.execute(
-                    f"UPDATE {self._table_name} SET {self._metadata_column} = %s WHERE id = %s AND source_id = %s;",
-                    (metadata, chunk_id, self._source_id),
-                )
-                updated += max(0, cursor.rowcount or 0)
+            cursor.executemany(statement, [(metadata, chunk_id, self._source_id) for metadata, chunk_id in rows])
+            updated = max(0, cursor.rowcount or 0)
             conn.commit()
             return updated
         except Exception:

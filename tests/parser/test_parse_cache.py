@@ -228,6 +228,27 @@ class TestWhatIsStored:
         assert docs[0].text == "z" * 50
 
 
+class TestStorageFiles:
+    def test_a_failed_row_write_removes_its_file(self, tmp_path, cache_db, storage, monkeypatch):
+        from docsgpt.storage.db.repositories.parsed_files import ParsedFilesRepository
+
+        monkeypatch.setattr(parse_cache, "INLINE_MAX_BYTES", 10)
+        monkeypatch.setattr(
+            ParsedFilesRepository, "store", lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("commit failed")),
+        )
+        _read(_folder(tmp_path, "one", {"a.pdf": b"x"}), CountingParser(output="z" * 50))
+        assert storage.files == {}
+
+    def test_a_replaced_parse_leaves_one_file(self, tmp_path, cache_db, storage, monkeypatch):
+        monkeypatch.setattr(parse_cache, "INLINE_MAX_BYTES", 10)
+        parser = CountingParser(output="z" * 50)
+        cache = parse_cache.ParseCache("alice")
+        cache.store("sha", parser, "z" * 50, {})
+        cache.store("sha", parser, "w" * 50, {})
+        [path] = storage.files
+        assert cache_db.execute(text("SELECT storage_path FROM parsed_files")).scalar() == path
+
+
 class TestOff:
     def test_disabled_never_reads_or_writes(self, tmp_path, cache_db, monkeypatch):
         monkeypatch.setattr(settings, "PARSE_CACHE_ENABLED", False)

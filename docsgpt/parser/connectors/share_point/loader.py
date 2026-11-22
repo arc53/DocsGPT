@@ -674,6 +674,7 @@ class SharePointLoader(BaseConnectorLoader):
                         except Exception as e:
                             logging.warning(f"Could not list SharePoint folder {name!r}: {e}")
                             listing.complete = False
+                            listing.unread += 1
                     continue
                 entry = self._listed_file(item_ref, item, rel_dir)
                 if entry is not None:
@@ -713,6 +714,7 @@ class SharePointLoader(BaseConnectorLoader):
             except Exception as e:
                 logging.warning(f"Could not read SharePoint file {file_id}: {e}")
                 listing.complete = False
+                listing.unread += 1
         for folder_id in folder_ids:
             try:
                 response = self._graph_request('GET', self._get_item_url(folder_id), params={'$select': 'id,name'})
@@ -724,7 +726,8 @@ class SharePointLoader(BaseConnectorLoader):
             except Exception as e:
                 logging.warning(f"Could not list SharePoint folder {folder_id}: {e}")
                 listing.complete = False
-        listing.entries = list({entry.path: entry for entry in listing.entries}.values())
+                listing.unread += 1
+        listing = listing.deduplicated()
         self._listed = listing.by_id()
         return listing
 

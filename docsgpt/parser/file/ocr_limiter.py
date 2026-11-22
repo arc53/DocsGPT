@@ -16,7 +16,11 @@ limit and adaptation apply within the process.
 Taking a slot is three commands in one ``MULTI``: drop lapsed leases, add
 ours, count. A count over the limit removes ours again and waits. Every
 holder saw a count that included every earlier holder, so no more than the
-limit ever hold a slot at once, without a Lua script.
+limit ever hold a slot at once, without a Lua script. A held lease is renewed
+while its request runs, so a slow response never outlives it; only a worker
+that died stops renewing. The allowed count and the run of clean responses
+change together in one ``WATCH``ed transaction, so two 429s at once halve it
+twice.
 """
 
 from __future__ import annotations
@@ -110,8 +114,7 @@ class InFlightLimiter:
     def _clean_key(self) -> str:
         return f"{self.key}:clean"
 
-    def _redis_allowed(self, client: Any) -> int:
-        raw = client.get(self._limit_key)
+    def _parse_allowed(self, raw: Any) -> int:
         if raw is None:
             return self.cap
         try:
@@ -119,8 +122,15 @@ class InFlightLimiter:
         except (TypeError, ValueError):
             return self.cap
 
+    def _redis_allowed(self, client: Any) -> int:
+        return self._parse_allowed(client.get(self._limit_key))
+
     def _try_redis_slot(self, client: Any) -> Optional[str]:
-        """Take a Redis slot when one is free; ``None`` when all are held."""
+        """Take a Redis slot when one is free; ``None`` when all are held.
+
+        Raises:
+            Exception: Redis failed; a lease this call added is taken back first (best effort).
+        """
         lease = uuid.uuid4().hex
         now = _now()
         pipe = client.pipeline(transaction=True)
@@ -128,11 +138,30 @@ class InFlightLimiter:
         pipe.zadd(self._leases, {lease: now + self.lease_seconds})
         pipe.zcard(self._leases)
         pipe.expire(self._leases, int(self.lease_seconds * 2) + 1)
-        held = int(pipe.execute()[2])
-        if held <= self._redis_allowed(client):
-            return lease
+        try:
+            held = int(pipe.execute()[2])
+            if held <= self._redis_allowed(client):
+                return lease
+        except Exception:
+            # The lease may be in: a slot nobody uses would block others until it lapses.
+            try:
+                client.zrem(self._leases, lease)
+            except Exception:  # noqa: BLE001 - it lapses on its own
+                pass
+            raise
         client.zrem(self._leases, lease)
         return None
+
+    def _keep_alive(self, lease: str, stop: threading.Event) -> None:
+        """Push a held lease's expiry on until ``stop`` is set (the request finished)."""
+        while not stop.wait(self.lease_seconds / 3):
+            client = _redis_client()
+            if client is None:
+                continue
+            try:
+                client.zadd(self._leases, {lease: _now() + self.lease_seconds}, xx=True)
+            except Exception:  # noqa: BLE001 - tried again on the next beat
+                logger.debug("Could not renew an OCR request slot", exc_info=True)
 
     # -- slots --------------------------------------------------------------
 
@@ -173,11 +202,17 @@ class InFlightLimiter:
 
     @contextmanager
     def slot(self) -> Iterator[None]:
-        """Hold one slot for the duration of a request."""
+        """Hold one slot for the duration of a request, renewing a Redis lease while it runs."""
         where, lease = self._acquire()
+        stop = threading.Event()
+        if where == "redis" and lease:
+            threading.Thread(
+                target=self._keep_alive, args=(lease, stop), name="ocr-slot-lease", daemon=True,
+            ).start()
         try:
             yield
         finally:
+            stop.set()
             self._release(where, lease)
 
     # -- adaptation ---------------------------------------------------------
@@ -193,15 +228,36 @@ class InFlightLimiter:
         with self._cond:
             return self._local_allowed
 
+    def _redis_adapt(self, client: Any, rate_limited: bool) -> int:
+        """Change the shared allowed count and clean run together, in one ``WATCH``ed transaction."""
+        result: Dict[str, int] = {}
+
+        def update(pipe: Any) -> None:
+            current = self._parse_allowed(pipe.get(self._limit_key))
+            try:
+                clean = int(pipe.get(self._clean_key) or 0)
+            except (TypeError, ValueError):
+                clean = 0
+            if rate_limited:
+                allowed, clean = max(1, current // 2), 0
+            else:
+                allowed, clean = current, clean + 1
+                if clean >= CLEAN_RUN_TO_GROW:
+                    allowed, clean = min(self.cap, current + 1), 0
+            pipe.multi()
+            pipe.set(self._limit_key, allowed, ex=_STATE_TTL_SECONDS)
+            pipe.set(self._clean_key, clean, ex=_STATE_TTL_SECONDS)
+            result["allowed"] = allowed
+
+        client.transaction(update, self._limit_key, self._clean_key)
+        return result["allowed"]
+
     def record_rate_limited(self) -> int:
         """Halve the allowed count after a 429 (never below one); returns the new count."""
         client = self._redis()
         if client is not None:
             try:
-                halved = max(1, self._redis_allowed(client) // 2)
-                client.set(self._limit_key, halved, ex=_STATE_TTL_SECONDS)
-                client.set(self._clean_key, 0, ex=_STATE_TTL_SECONDS)
-                return halved
+                return self._redis_adapt(client, rate_limited=True)
             except Exception as err:  # noqa: BLE001
                 self._redis_failed(err)
         with self._cond:
@@ -214,13 +270,7 @@ class InFlightLimiter:
         client = self._redis()
         if client is not None:
             try:
-                clean = int(client.incr(self._clean_key))
-                client.expire(self._clean_key, _STATE_TTL_SECONDS)
-                if clean >= CLEAN_RUN_TO_GROW:
-                    client.set(self._clean_key, 0, ex=_STATE_TTL_SECONDS)
-                    current = self._redis_allowed(client)
-                    if current < self.cap:
-                        client.set(self._limit_key, current + 1, ex=_STATE_TTL_SECONDS)
+                self._redis_adapt(client, rate_limited=False)
                 return
             except Exception as err:  # noqa: BLE001
                 self._redis_failed(err)

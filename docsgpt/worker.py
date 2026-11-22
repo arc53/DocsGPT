@@ -1142,7 +1142,7 @@ def ingest_worker(
             # reingest counts it as edited and tries it again; the others it
             # leaves unparsed.
             stored_entries = _structure_files(directory_structure)
-            for rel_path in _reader_failures(reader, temp_dir):
+            for rel_path in {**_reader_failures(reader, temp_dir), **_incomplete_files(raw_docs, temp_dir)}:
                 stored_entries.get(rel_path, {}).pop("sha256", None)
             logging.info(f"Directory structure from reader: {directory_structure}")
             file_name_map = _normalize_file_name_map(file_name_map)
@@ -1626,6 +1626,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                 os.path.relpath(str(failed_path), start=temp_dir)
                                 for failed_path, _ in reader_new.failed_files
                             }
+                            # Read without every page (OCR left some out): indexed, and read again next time.
+                            unread |= set(_incomplete_files(raw_docs_new, temp_dir))
                             unsynced.update(unread)
                             scanned_all = scanned_all and not unread
                             chunker_new = ChunkerCreator.create_chunker(
@@ -2522,7 +2524,9 @@ def _sync_remote_changes(
         # Before the index changes: the files about to change lose their
         # hash, so a sync that dies part way redoes them.
         pending = {path: dict(record) for path, record in manifest.items()}
-        for path in [*plan.changed, *plan.removed]:
+        # Added paths too: if this sync dies after writing their chunks and the
+        # file is gone by the next one, that one still finds and removes them.
+        for path in [*plan.changed, *plan.removed, *plan.added]:
             pending[path] = {**pending.get(path, {}), "sha256": None}
         if not _save_source_sync_state(source_id, remote_files=incremental.build_manifest("content", key, pending)):
             return _skip_refused_sync(task, user, source_id, name_job, loader, "gone", actor_id)
@@ -5388,8 +5392,19 @@ def _save_source_sync_state(
         if failed_files is not _UNSET:
             if failed_files:
                 remote["failed_files"] = incremental.dump_failed_files(failed_files)
+                remote["files_failed"] = len(failed_files)
             else:
                 remote.pop("failed_files", None)
+                remote.pop("files_failed", None)
+            # The full list, which decides retries, goes with the manifest.
+            manifest = remote_files if remote_files is not _UNSET else repo.get_remote_files(str(row["id"]))
+            if isinstance(manifest, dict):
+                manifest = {k: v for k, v in manifest.items() if k != "failed"}
+                if failed_files:
+                    manifest["failed"] = [
+                        f.to_dict() for f in sorted(failed_files.values(), key=lambda f: (f.path, f.id))
+                    ]
+                remote_files = manifest
         if fingerprint is not _UNSET:
             if fingerprint:
                 remote["sync_fingerprint"] = fingerprint
@@ -5454,6 +5469,70 @@ def _connector_unchanged(
     return {"user": user, "name": job_name, "type": source_type, "id": source_id, "status": "unchanged"}
 
 
+def _listing_partial(listing: Optional[SelectionListing]) -> Dict[str, Any]:
+    """The completed event's ``partial`` fields for a listing that couldn't read everything; ``{}`` otherwise."""
+    if listing is None or listing.complete:
+        return {}
+    return {"partial": True, "folders_failed": max(1, int(listing.unread or 0))}
+
+
+def _connector_partial_listing(
+    task: Any, user: str, actor_id: Optional[str], source_id: str, job_name: str, source_type: str,
+    listing: SelectionListing, files_failed: int = 0,
+) -> Dict[str, Any]:
+    """Close a sync that found nothing to change in the part of the selection it could read."""
+    logging.warning(f"Part of {source_type} source {source_id} could not be listed; its index was kept")
+    _mark_source_synced(source_id, user)
+    partial = _listing_partial(listing)
+    _publish_source_event(
+        user, actor_id,
+        "source.ingest.completed",
+        {
+            "source_id": source_id,
+            "job_name": job_name,
+            "loader": source_type,
+            "operation": "sync",
+            **_task_id_field(task),
+            "tokens": 0,
+            **partial,
+            **({"files_failed": files_failed} if files_failed else {}),
+        },
+        scope={"kind": "source", "id": source_id},
+    )
+    return {"user": user, "name": job_name, "type": source_type, "id": source_id, "status": "partial", **partial}
+
+
+def _incomplete_files(docs: Iterable[Any], base_dir: Optional[str] = None) -> Dict[str, Tuple[str, str]]:
+    """``{path: (kind, error)}`` for files indexed without every page: OCR left some out (``ocr_pages_failed``).
+
+    They count as passing failures, so a later sync reads them again.
+    """
+    out: Dict[str, Tuple[str, str]] = {}
+    for doc in docs:
+        meta = getattr(doc, "extra_info", None) or {}
+        missing = meta.get("ocr_pages_failed")
+        source = meta.get("source")
+        if missing and source:
+            path = os.path.relpath(source, start=base_dir) if base_dir and os.path.isabs(source) else str(source)
+            out[path] = (incremental.TRANSIENT, f"{missing} page(s) could not be OCR'd")
+    return out
+
+
+def _prune_unlisted(base_dir: str, listing: Optional[SelectionListing]) -> None:
+    """Delete downloaded files the listing doesn't name (a second copy of a file picked twice).
+
+    What a full ingest indexes is then exactly the listing its manifest records.
+    """
+    if listing is None:
+        return
+    listed = {os.path.normpath(entry.path) for entry in listing.entries}
+    for root, _, names in os.walk(base_dir):
+        for name in names:
+            path = os.path.join(root, name)
+            if os.path.normpath(os.path.relpath(path, base_dir)) not in listed:
+                os.remove(path)
+
+
 def _reader_failures(reader: Any, base_dir: str) -> Dict[str, Tuple[str, str]]:
     """``{relative path: (kind, error)}`` for the files a reader could not parse.
 
@@ -5501,15 +5580,17 @@ def _connector_chunks(raw_docs: List[Document], cfg: Any, base_dir: str, urls: D
     return chunks
 
 
-def _source_remote_data(source_id: str, user: str) -> Any:
-    """A source's ``remote_data`` as stored, or ``None`` when it can't be read."""
+def _source_failed_files(source_id: str, user: str) -> Dict[str, "incremental.FailedFile"]:
+    """The failed files a source recorded, for their attempt counts; ``{}`` when it can't be read."""
     try:
         with db_readonly() as conn:
-            row = SourcesRepository(conn).get_any(source_id, user)
+            repo = SourcesRepository(conn)
+            row = repo.get_any(source_id, user)
+            manifest = repo.get_remote_files(source_id) if row else None
     except Exception:  # noqa: BLE001 - only costs the failed files their attempt counts
         logging.warning(f"Could not read source {source_id}", exc_info=True)
-        return None
-    return (row or {}).get("remote_data")
+        return {}
+    return incremental.stored_failed_files(_json_object((row or {}).get("remote_data")), manifest)
 
 
 def _connector_failed_files(
@@ -5632,7 +5713,7 @@ def _sync_connector_changes(
         # Built with another embedding model: rebuild it whole.
         return None
     remote_data = _json_object(row.get("remote_data"))
-    failed = incremental.load_failed_files(remote_data.get("failed_files"))
+    failed = incremental.stored_failed_files(remote_data, stored_manifest)
     if listing is None:
         if _connector_selection_unchanged(loader, selection, config, source_id, user):
             return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(failed))
@@ -5665,6 +5746,11 @@ def _sync_connector_changes(
     plan = incremental.plan_connector_sync(
         manifest, listing, failed, parse_key=parse_key, retry_failed=retry_failed,
     )
+    if not listing.complete and not listing.entries and manifest:
+        # Nothing could be read: an outage, not a selection emptied.
+        raise ConnectorDownloadError(
+            f"None of the selected files could be listed from {source_type}. Try again later."
+        )
     if plan.empty:
         remaining = incremental.record_failures(failed, [], {}, listing)
         if record_manifest or remaining.keys() != failed.keys():
@@ -5673,6 +5759,11 @@ def _sync_connector_changes(
                 remote_files=incremental.build_manifest("connector", key, manifest) if record_manifest else _UNSET,
                 failed_files=remaining,
             )
+        if not listing.complete:
+            # Part of the selection couldn't be read: the index is kept, but
+            # this sync can't say nothing changed.
+            return _connector_partial_listing(task, user, actor_id, source_id, job_name, source_type, listing,
+                                              len(remaining))
         return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(remaining))
     return _apply_connector_plan(
         task, user=user, actor_id=actor_id, job_name=job_name, source_type=source_type, source_id=source_id,
@@ -5771,6 +5862,14 @@ def _apply_connector_plan(
             for doc in _connector_chunks(raw_docs, cfg, temp_dir, urls):
                 docs_by_path.setdefault(str((doc.extra_info or {}).get("source") or ""), []).append(doc)
     read = {entry.id for entry in to_download if entry.id not in failures}
+    # Indexed without every page (OCR left some out): kept, and tried again.
+    partly = {
+        by_path[path].id: failure
+        for path, failure in _incomplete_files(
+            [doc for docs in docs_by_path.values() for doc in docs]
+        ).items()
+        if path in by_path
+    }
     changed_read = [(record, entry) for record, entry in plan.changed if entry.id in read]
     removed_ids = {file_id for file_id, _ in plan.removed}
     replaced_ids = {entry.id for _, entry in changed_read}
@@ -5786,20 +5885,27 @@ def _apply_connector_plan(
     # pending (no version), so a sync that dies part way redoes them.
     pending = dict(manifest)
     for record, entry in [*plan.changed, *plan.moved]:
-        pending[entry.id] = {**record, "version": None}
+        pending[entry.id] = incremental.pending_record(record, entry)
     for file_id, record in plan.removed:
         pending[file_id] = {**record, "version": None}
+    for entry in plan.added:
+        if entry.id in read:
+            # Its chunks are about to be written: recorded, so a sync that
+            # dies before the end still finds (and, if it is gone, removes) them.
+            pending[entry.id] = incremental.pending_record(None, entry)
     if not _save_source_sync_state(
-        source_id, remote_files=incremental.build_manifest("connector", key, pending),
+        source_id, remote_files=incremental.build_manifest("connector", key, pending, failed),
     ):
         return _skip_refused_sync(task, user, source_id, job_name, source_type, "gone", actor_id)
 
     task.update_state(state="PROGRESS", meta={"current": 60, "status": "Storing documents"})
     store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
     moved_from = {record["path"]: entry for record, entry in plan.moved if record.get("path")}
-    stale = {record.get("path") for _, record in plan.removed}
+    stale: set = set()
+    for _, record in plan.removed:
+        stale |= incremental.record_paths(record)
     for record, entry in changed_read:
-        stale.update({record.get("path"), entry.path})
+        stale |= incremental.record_paths(record) | {entry.path}
     # An added file's path may hold chunks a sync that died left there.
     stale.update(entry.path for entry in plan.added if entry.id in read)
     # A moved file's chunks are at its old path, which an added file may now take.
@@ -5829,7 +5935,7 @@ def _apply_connector_plan(
 
     new_manifest = {file_id: record for file_id, record in manifest.items() if file_id not in removed_ids}
     for record, entry in plan.changed:
-        if entry.id not in read and record.get("path") in stale:
+        if entry.id not in read and incremental.record_paths(record) & stale:
             # Its old chunks went with a path another file took; it is
             # recorded as failed, and the next sync adds it again.
             new_manifest.pop(entry.id, None)
@@ -5838,7 +5944,9 @@ def _apply_connector_plan(
     for entry in to_download:
         if entry.id in read:
             new_manifest[entry.id] = incremental.connector_record(entry, tokens_by_path.get(entry.path, 0))
-    new_failed = incremental.record_failures(failed, to_download, failures, listing, parse_key=parse_key)
+    new_failed = incremental.record_failures(
+        failed, to_download, {**failures, **partly}, listing, parse_key=parse_key,
+    )
 
     files = incremental.structure_files(_json_object(row.get("directory_structure")))
     for _, record in plan.removed:
@@ -5896,6 +6004,7 @@ def _apply_connector_plan(
             "tokens": tokens,
             "incremental": True,
             **counts,
+            **_listing_partial(listing),
         },
         scope={"kind": "source", "id": source_id},
     )
@@ -6213,9 +6322,7 @@ def _ingest_connector(
                 )
                 if outcome is not None:
                     return outcome
-                previous_failed = incremental.load_failed_files(
-                    _json_object(_source_remote_data(source_id_for_events, user)).get("failed_files")
-                )
+                previous_failed = _source_failed_files(source_id_for_events, user)
             else:
                 previous_failed = {}
 
@@ -6284,6 +6391,7 @@ def _ingest_connector(
             self.update_state(
                 state="PROGRESS", meta={"current": 40, "status": "Processing files"}
             )
+            _prune_unlisted(temp_dir, listing)
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
                 recursive=True,
@@ -6308,9 +6416,13 @@ def _ingest_connector(
                     f"{source_id_for_events}: {', '.join(unparsed['unparsed_files'])}"
                 )
             directory_structure = getattr(reader, "directory_structure", {})
+            # A file indexed without every page counts as failed too, so a
+            # later sync reads it again; its chunks stay.
+            partly = _incomplete_files(raw_docs, temp_dir)
             failed_files = _connector_failed_files(
-                listing, download_info, _reader_failures(reader, temp_dir), temp_dir, previous_failed,
+                listing, download_info, {**_reader_failures(reader, temp_dir), **partly}, temp_dir, previous_failed,
             )
+            indexed_anyway = {listing.by_path()[p].id for p in partly if p in listing.by_path()} if listing else set()
 
             # Step 4: Process documents (chunking, embedding, etc.), each
             # chunk keeping its file's path and its link in the service.
@@ -6337,10 +6449,10 @@ def _ingest_connector(
             os.makedirs(vector_store_path, exist_ok=True)
 
             if operation_mode == "sync":
-                # The index is rebuilt now: until it is stored again, no
-                # manifest vouches for it, so a sync that dies here leaves
-                # the next one a full sync.
-                _save_source_sync_state(source_id_for_events, remote_files=None)
+                # The index is rebuilt now: until it is stored again, neither a
+                # manifest nor a fingerprint vouches for it, so a sync that dies
+                # here leaves the next one a full sync.
+                _save_source_sync_state(source_id_for_events, remote_files=None, fingerprint=None)
             self.update_state(
                 state="PROGRESS", meta={"current": 60, "status": "Storing documents"}
             )
@@ -6373,7 +6485,10 @@ def _ingest_connector(
                 remote_files = incremental.build_manifest(
                     "connector",
                     incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME),
-                    incremental.manifest_from_listing(listing, _tokens_by_path(reader, temp_dir), left_out=failed_files),
+                    incremental.manifest_from_listing(
+                        listing, _tokens_by_path(reader, temp_dir),
+                        left_out=set(failed_files) - indexed_anyway,
+                    ),
                 )
 
             # Step 6: Upload index files

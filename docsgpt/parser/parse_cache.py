@@ -30,6 +30,7 @@ import hashlib
 import io
 import json
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -180,9 +181,13 @@ def _storage():
 
 
 def storage_path_for(user_id: str, content_sha256: str, key: str) -> str:
-    """Where a large parse of ``content_sha256`` under ``key`` is kept; the user's id is hashed into it."""
+    """Where one write of a large parse of ``content_sha256`` under ``key`` is kept.
+
+    The user's id is hashed into it, and each write gets a path of its own, so
+    a write that fails can remove its file without touching one a row refers to.
+    """
     user_dir = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[:32]
-    return f"parse_cache/{user_dir}/{content_sha256}/{key}.json"
+    return f"parse_cache/{user_dir}/{content_sha256}/{key}-{uuid.uuid4().hex[:12]}.json"
 
 
 def _as_int(value: Any) -> Optional[int]:
@@ -313,17 +318,23 @@ class ParseCache:
                 storage_path = storage_path_for(self.user_id, content_sha256, key)
                 _storage().save_file(io.BytesIO(encoded), storage_path)
                 inline = None
-            with db_session() as conn:
-                ParsedFilesRepository(conn).store(
-                    self.user_id,
-                    content_sha256,
-                    key,
-                    content=inline,
-                    parser_metadata=metadata,
-                    storage_path=storage_path,
-                    page_count=page_count,
-                    billed_pages=billed,
-                )
+            try:
+                with db_session() as conn:
+                    replaced = ParsedFilesRepository(conn).store(
+                        self.user_id,
+                        content_sha256,
+                        key,
+                        content=inline,
+                        parser_metadata=metadata,
+                        storage_path=storage_path,
+                        page_count=page_count,
+                        billed_pages=billed,
+                    )
+            except Exception:
+                # No row refers to this write's file: it goes too.
+                remove_stored_files([storage_path])
+                raise
+            remove_stored_files([replaced])
         except Exception as exc:  # noqa: BLE001 - the parse itself succeeded
             self._fail("store", exc)
             return False

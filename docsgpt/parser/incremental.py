@@ -158,9 +158,10 @@ def load_failed_files(raw: Any) -> Dict[str, FailedFile]:
 
 
 def dump_failed_files(failed: Dict[str, FailedFile]) -> List[Dict[str, Any]]:
-    """The failed files as stored in ``remote_data``, by path, capped at ``MAX_FAILED_FILES``.
+    """The failed files as shown from ``remote_data``, by path, capped at ``MAX_FAILED_FILES``.
 
-    Past the cap the rest are not recorded, so each sync tries them again as new files.
+    The manifest keeps them all (``build_manifest``); this copy only feeds the
+    source listing, which also gets the full count (``files_failed``).
     """
     return [f.to_dict() for f in sorted(failed.values(), key=lambda f: (f.path, f.id))][:MAX_FAILED_FILES]
 
@@ -254,14 +255,61 @@ def load_manifest(raw: Any, kind: str, key: str) -> Optional[Dict[str, Dict[str,
     return {str(k): v for k, v in files.items() if isinstance(v, dict)}
 
 
-def build_manifest(kind: str, key: str, files: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    """A manifest to store in ``sources.remote_files``."""
-    return {"format": MANIFEST_FORMAT, "kind": kind, "settings": key, "files": files}
+def build_manifest(
+    kind: str, key: str, files: Dict[str, Dict[str, Any]], failed: Optional[Dict[str, "FailedFile"]] = None,
+) -> Dict[str, Any]:
+    """A manifest to store in ``sources.remote_files``.
+
+    Args:
+        kind: ``connector`` or ``content``.
+        key: The :func:`settings_key` it was built under.
+        files: The indexed files' records.
+        failed: Every failed file, uncapped: what decides retries. ``remote_data``
+            keeps only the first ``MAX_FAILED_FILES`` of them, for display.
+    """
+    manifest = {"format": MANIFEST_FORMAT, "kind": kind, "settings": key, "files": files}
+    if failed:
+        manifest["failed"] = [f.to_dict() for f in sorted(failed.values(), key=lambda f: (f.path, f.id))]
+    return manifest
+
+
+def stored_failed_files(remote_data: Any, manifest: Any) -> Dict[str, "FailedFile"]:
+    """The failed files a source recorded: the manifest's full list, else ``remote_data``'s capped one."""
+    if isinstance(manifest, str):
+        try:
+            manifest = json.loads(manifest)
+        except ValueError:
+            manifest = None
+    if isinstance(manifest, dict) and isinstance(manifest.get("failed"), list):
+        return load_failed_files(manifest["failed"])
+    return load_failed_files(remote_data.get("failed_files") if isinstance(remote_data, dict) else None)
 
 
 def connector_record(entry: FileEntry, tokens: int = 0) -> Dict[str, Any]:
     """A connector manifest's record of one indexed file."""
     return {"path": entry.path, "version": entry.version, "url": entry.url, "tokens": int(tokens or 0)}
+
+
+def record_paths(record: Dict[str, Any]) -> Set[str]:
+    """Every path a manifest record's file may have chunks at.
+
+    Its path, and while it is pending (``version`` ``None``) the paths a sync
+    that died part way may have left them at (``pending_paths``: a move's
+    destination, an added file's path).
+    """
+    paths = {record.get("path")} | set(record.get("pending_paths") or [])
+    return {path for path in paths if isinstance(path, str) and path}
+
+
+def pending_record(record: Optional[Dict[str, Any]], entry: FileEntry) -> Dict[str, Any]:
+    """A record marked pending before a sync changes its file's chunks.
+
+    It has no version, so the next sync redoes the file, and it names both the
+    old and the new path, so whatever this sync leaves at either is found.
+    """
+    base = dict(record) if record else {"path": entry.path, "url": entry.url, "tokens": 0}
+    paths = record_paths(base) | {entry.path}
+    return {**base, "version": None, "pending_paths": sorted(paths)}
 
 
 def manifest_from_listing(
@@ -363,9 +411,14 @@ def plan_connector_sync(
     for entry in listing.entries:
         record = manifest.get(entry.id)
         failure = failed.get(entry.id)
+        due = failure is not None and failure.version == entry.version and (
+            retry_failed or failure.retryable(parse_key)
+        )
+        # A pending record (a sync died part way) is always redone: where its
+        # chunks are is only known by its paths, which the redo clears.
         stuck = (
-            failure is not None and failure.version == entry.version and not retry_failed
-            and not failure.retryable(parse_key) and entry.id not in contested
+            failure is not None and failure.version == entry.version and not due
+            and entry.id not in contested and (record is None or record.get("version") is not None)
         )
         if record is None:
             if stuck:
@@ -388,7 +441,11 @@ def plan_connector_sync(
             if failure is not None:
                 plan.retrying.add(entry.id)
             continue
-        if record.get("path") != entry.path:
+        if due:
+            # Indexed, but not whole (a page OCR left out): read again.
+            plan.changed.append((record, entry))
+            plan.retrying.add(entry.id)
+        elif record.get("path") != entry.path:
             plan.moved.append((record, entry))
         else:
             plan.unchanged += 1
