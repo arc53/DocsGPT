@@ -2010,11 +2010,13 @@ class UpdateAgent(Resource):
                             final_value = update_fields.get(
                                 req_field, existing_agent.get(req_field)
                             )
-                            # 0 chunks is a value: it turns retrieval off.
+                            # 0 chunks is a value: it turns retrieval off. A
+                            # draft may hold a blank description, so text is
+                            # judged stripped.
                             missing = (
                                 final_value in (None, "")
                                 if req_field == "chunks"
-                                else not final_value
+                                else not final_value or not str(final_value).strip()
                             )
                             if missing:
                                 missing_published_fields.append(field_label)

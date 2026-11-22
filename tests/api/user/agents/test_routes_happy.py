@@ -662,7 +662,7 @@ class TestUpdateAgent:
             ({"chunks": "not-an-int"}, "chunks"),
             ({"tools": "not-a-list"}, "tools"),
             ({"prompt_id": "not-a-uuid"}, "prompt_id"),
-            ({"description": "   "}, "description"),
+            ({"description": "   ", "status": "published"}, "description"),
         ],
     )
     def test_validation_rejection_is_logged(
@@ -819,12 +819,13 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
-    def test_publishing_draft_with_empty_description_returns_400(self, app, pg_conn):
+    @pytest.mark.parametrize("description", ["", "   "])
+    def test_publishing_draft_with_blank_description_returns_400(self, app, pg_conn, description):
         from docsgpt.api.user.agents.routes import UpdateAgent
 
         user = "u-publish-no-description"
         agent = _seed_agent(
-            pg_conn, user=user, with_source=False, status="draft", description="",
+            pg_conn, user=user, with_source=False, status="draft", description=description,
         )
 
         with _patch_db(pg_conn), app.test_request_context(
