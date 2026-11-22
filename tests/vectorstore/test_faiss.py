@@ -332,6 +332,16 @@ def _assert_rows_match_documents(store):
 
 
 @pytest.mark.unit
+class TestFaissShortEmbeddings:
+    def test_a_short_embedding_answer_adds_nothing(self, populated):
+        before = (populated.index.ntotal, dict(populated.documents))
+        with patch.object(populated.embeddings, "embed_documents", side_effect=lambda texts: [[0.0] * populated.index.d]):
+            with pytest.raises(ValueError):
+                populated.add_texts(["one", "two"], [{}, {}])
+        assert (populated.index.ntotal, dict(populated.documents)) == before
+
+
+@pytest.mark.unit
 class TestFaissUpdateChunksMetadata:
     def test_rewrites_metadata_without_embedding_and_saves_once(self, populated):
         chunks = populated.get_chunks()

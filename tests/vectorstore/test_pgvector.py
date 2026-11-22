@@ -542,6 +542,17 @@ class TestPGVectorPrecomputedQueryVector:
 
 
 @pytest.mark.unit
+class TestPGVectorStoreShortEmbeddings:
+    def test_a_short_embedding_answer_writes_nothing(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1, 0.2]]
+        with pytest.raises(ValueError, match="1 embeddings for 2 texts"):
+            store.add_texts(["a", "b"], [{}, {}])
+        mock_cursor.execute.assert_not_called()
+        mock_conn.commit.assert_not_called()
+
+
+@pytest.mark.unit
 class TestPGVectorStoreUpdateChunksMetadata:
     def test_rewrites_metadata_only_in_one_transaction(self):
         store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")

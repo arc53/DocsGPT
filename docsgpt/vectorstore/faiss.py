@@ -444,6 +444,9 @@ class FaissStore(BaseVectorStore):
     def _append(self, texts, metadatas, vectors, ids=None) -> List[str]:
         """Add embedded rows to the index and docstore, returning their ids."""
         ids = list(ids) if ids else [str(uuid.uuid4()) for _ in texts]
+        if len(vectors) != len(texts) or len(ids) != len(texts):
+            # Rows and docstore entries must pair one to one: write nothing.
+            raise ValueError(f"Got {len(vectors)} vectors and {len(ids)} ids for {len(texts)} texts")
         self.index.add(np.array(vectors, dtype=np.float32))
         start = len(self.index_to_docstore_id)
         for offset, (text, metadata, doc_id) in enumerate(zip(texts, metadatas, ids)):

@@ -581,6 +581,10 @@ class PGVectorStore(BaseVectorStore):
 
         texts = [strip_null_bytes(text) for text in texts]
         embeddings = self._embedding.embed_documents(texts)
+        if len(embeddings) != len(texts):
+            # A short answer from the embeddings service: write nothing, rather
+            # than commit fewer rows than the caller believes it added.
+            raise ValueError(f"Got {len(embeddings)} embeddings for {len(texts)} texts")
         metadatas = [strip_null_bytes(metadata or {}) for metadata in (metadatas or [{}] * len(texts))]
 
         self._ensure_schema_once()

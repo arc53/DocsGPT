@@ -644,6 +644,34 @@ class TestIncrementalSafety:
         # Settled: the next sync downloads nothing.
         assert harness.loader.single_downloads == []
 
+    def test_after_a_sync_dies_a_path_both_records_claim_stays_with_the_failing_one(self, harness, monkeypatch):
+        loader = harness.loader
+        loader.files.clear()
+        loader.files["A"] = {"path": "a.md", "version": "v1", "text": "# A\n\nalpha " * 20}
+        harness.sync()
+        loader.files["A"].update(version="v2", path="b.md", text="# A\n\nalpha two " * 20)
+        loader.files["B"] = {"path": "a.md", "version": "v1", "text": "# B\n\nbravo " * 20}
+        real = incremental.chunk_ids_by_path
+        state = {"die": True}
+
+        def listing(*args, **kwargs):
+            if state["die"]:
+                state["die"] = False
+                raise RuntimeError("worker killed after the pending save")
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(incremental, "chunk_ids_by_path", listing)
+        with pytest.raises(RuntimeError):
+            harness.sync()
+        files = harness.row()["remote_files"]["files"]
+        assert files["A"]["version"] is None and files["B"]["version"] is None
+
+        loader.download_failures["A"] = "transient"
+        harness.sync()
+
+        by_path = harness.store.by_source()
+        assert all("alpha" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
+
     def test_a_waiting_file_is_shown_with_the_failed_files(self, harness):
         loader = harness.loader
         loader.files.clear()

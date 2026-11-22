@@ -5886,12 +5886,13 @@ def _apply_connector_plan(
     # chunks, and both are tried again by the next sync. Repeated, since a
     # file that waits keeps holding its own old path.
     removed_ids = {file_id for file_id, _ in plan.removed}
-    holders = {
-        path: file_id
-        for file_id, record in manifest.items()
-        if file_id not in removed_ids
-        for path in incremental.record_paths(record)
-    }
+    # Every record that may own each path: after a sync that died, a pending
+    # record and another file's record can both name one.
+    holders: Dict[str, set] = {}
+    for file_id, record in manifest.items():
+        if file_id not in removed_ids:
+            for path in incremental.record_paths(record):
+                holders.setdefault(path, set()).add(file_id)
     # Only while the holder may still be read: a holder out of retries (or
     # failed for good) gives its path up, as the plan's contested rule then
     # clears its chunks, so nothing waits on it forever.
@@ -5908,8 +5909,8 @@ def _apply_connector_plan(
     while waiting:
         waiting = False
         for entry in to_download:
-            holder = holders.get(entry.path)
-            if entry.id in read and entry.id not in deferred and holder and holder != entry.id and holds_on(holder):
+            others = holders.get(entry.path, set()) - {entry.id}
+            if entry.id in read and entry.id not in deferred and any(holds_on(other) for other in others):
                 deferred.add(entry.id)
                 waiting = True
     read -= deferred
