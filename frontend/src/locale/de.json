@@ -1853,6 +1853,7 @@
         "other_step": "eine Änderung für einen anderen Schritt"
       },
       "fields": {
+        "folders": "Wissensordner",
         "limits": "Nutzungslimit"
       },
       "formEdited": "Du hast {{fields}} im Formular geändert.",
@@ -1922,6 +1923,8 @@
     "counts": {
       "agents_one": "{{count}} Agent",
       "agents_other": "{{count}} Agenten",
+      "folders_one": "{{count}} Ordner",
+      "folders_other": "{{count}} Ordner",
       "models_one": "{{count}} Modell",
       "models_other": "{{count}} Modelle",
       "prompts_one": "{{count}} Prompt",

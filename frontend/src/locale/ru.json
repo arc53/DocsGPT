@@ -1953,6 +1953,7 @@
         "other_step": "изменение для другого шага"
       },
       "fields": {
+        "folders": "Папки знаний",
         "limits": "Лимит использования"
       },
       "formEdited": "Вы изменили в форме: {{fields}}.",
@@ -2036,6 +2037,10 @@
       "agents_many": "{{count}} агентов",
       "agents_one": "{{count}} агент",
       "agents_other": "{{count}} агента",
+      "folders_few": "{{count}} папки",
+      "folders_many": "{{count}} папок",
+      "folders_one": "{{count}} папка",
+      "folders_other": "{{count}} папки",
       "models_few": "{{count}} модели",
       "models_many": "{{count}} моделей",
       "models_one": "{{count}} модель",

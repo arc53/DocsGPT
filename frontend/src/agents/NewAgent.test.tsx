@@ -3450,6 +3450,75 @@ describe('NewAgent drafter', () => {
     expect(drafted()).toEqual([]);
   });
 
+  /** The knowledge picker's drafted frame. */
+  const knowledgeField = () =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="drafted-field"]'),
+    ).find(
+      (el) =>
+        el.querySelector('label')?.textContent === 'agents.form.labels.sources',
+    )!;
+
+  it('fills the knowledge picker from drafted sources and folders under one mark, and undoes both', async () => {
+    stream.scripts = [
+      [proposal({ sources: ['s1'], folders: ['ops'] }), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    await ask('Use the ops folder');
+    // One mark on the picker for both fields.
+    expect(drafted()).toEqual(['agents.form.labels.sources']);
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: ['s1'],
+      folders: ['ops'],
+      folders_offered: true,
+    });
+    await click(buttonByLabel('drafter.undoField', knowledgeField())!);
+    expect(drafted()).toEqual([]);
+    await ask('And now?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: [],
+      folders: [],
+    });
+  });
+
+  it('drops the knowledge mark when the folder list is edited by hand', async () => {
+    stream.scripts = [
+      [proposal({ sources: ['s1'], folders: ['ops', 'f2'] }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await ask('Add the handbook and the policies folder');
+    expect(drafted()).toEqual(['agents.form.labels.sources']);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    expect(drafted()).toEqual([]);
+  });
+
+  it('leaves drafted folders off an agent whose picker offers none', async () => {
+    stream.scripts = [
+      [proposal({ name: 'Team desk', folders: ['ops'] }), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      workspace: { kind: 'team', team_id: 'team-elsewhere' },
+    });
+    await ask('Use the ops folder');
+    expect(drafted()).toEqual(['agents.form.labels.name']);
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      folders: [],
+      folders_offered: false,
+    });
+  });
+
   // A prompt it writes opens in the prompt view beside the drawer; Use this
   // prompt saves it and sets it on the agent.
   describe('the prompt step', () => {
@@ -3886,6 +3955,41 @@ describe('NewAgent drafter', () => {
         .closest('[data-slot="drafted-field"]')!
         .hasAttribute('data-drafted'),
     ).toBe(false);
+  });
+
+  it('keeps drafted sources and folders off the picker when it was edited while the turn ran', async () => {
+    let land: (events: DrafterEvent[]) => void = () => undefined;
+    stream.scripts = [
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await ask('Add the policies folder and the handbook');
+    // Taken off by hand while the draft runs.
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    await act(async () =>
+      land([
+        proposal({ sources: ['s1'], folders: ['ops', 'policies'] }),
+        { type: 'end' },
+      ]),
+    );
+    // Neither half lands: the sources were trimmed for those folders.
+    expect(drafted()).not.toContain('agents.form.labels.sources');
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: [],
+      folders: [],
+    });
   });
 
   it('steps the sheet aside on a phone and keeps the step in a strip', async () => {

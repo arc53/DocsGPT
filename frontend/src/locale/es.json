@@ -1903,6 +1903,7 @@
         "other_step": "un cambio para otro paso"
       },
       "fields": {
+        "folders": "Carpetas de conocimiento",
         "limits": "Límite de uso"
       },
       "formEdited": "Cambiaste {{fields}} en el formulario.",
@@ -1979,6 +1980,9 @@
       "agents_many": "{{count}} agentes",
       "agents_one": "{{count}} agente",
       "agents_other": "{{count}} agentes",
+      "folders_many": "{{count}} carpetas",
+      "folders_one": "{{count}} carpeta",
+      "folders_other": "{{count}} carpetas",
       "models_many": "{{count}} modelos",
       "models_one": "{{count}} modelo",
       "models_other": "{{count}} modelos",

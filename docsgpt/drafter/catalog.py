@@ -24,6 +24,11 @@ in memory, so theirs is there from the start. The agent recipe's Insights reads
 go to the database during the turn too, through its ``insights_reader``. Tool
 configs and secrets are never read into it: a tool is its name, description
 and actions.
+
+The agent recipe also lists the knowledge folders the caller may attach
+(:func:`load_folders`): the whole tree and its filings are read with the
+overview in two queries, so ``list_workspace`` and ``get_folder`` answer
+them from memory. The other recipes never read them.
 """
 
 from __future__ import annotations
@@ -44,6 +49,11 @@ MAX_SOURCES = 25
 MAX_TOOLS = 20
 MAX_PROMPTS = 15
 MAX_MODELS = 30
+#: Knowledge folders the agent recipe's overview lists (the form's first, then the largest), and the sources and
+#: subfolders ``get_folder`` names; the rest are counted.
+MAX_FOLDERS = 15
+MAX_FOLDER_SOURCES = 30
+MAX_SUBFOLDERS = 30
 #: Most actions listed per tool, and characters of one action description.
 MAX_ACTIONS = 30
 ACTION_DESCRIPTION_CHARS = 300
@@ -57,6 +67,11 @@ MAX_SOURCE_FILES = 50
 #: The kinds ``list_workspace`` lists, and the words of a query it matches rows by.
 KINDS = ("sources", "tools", "prompts")
 QUERY_TERMS = 8
+#: The agent recipe's extra kind: the knowledge folders the caller may attach (:func:`load_folders`). Not the
+#: Insights topic folders the agent recipe calls ``folders``.
+FOLDER_KIND = "folders"
+#: Characters of a knowledge folder's path (the names of the folders above it).
+PATH_CHARS = 200
 
 #: Built-in prompts, by id, with what tells them apart.
 PRESET_PROMPTS: dict[str, str] = {
@@ -92,6 +107,9 @@ class Workspace:
         source_file_counts: Source id -> how many files its tree lists, beside ``source_files``.
         reader: Reads the rows and the detail the overview leaves out; None for a workspace built in memory,
             which holds only what it was given.
+        folder_rows: Overview rows of the knowledge folders ``{id, name, path?, sources}``; only the agent recipe
+            reads them (:func:`load_folders`), and only its workspace puts them in the summary.
+        folder_tree: The tree those rows come from, for ``get_folder``; None when the folders weren't read.
     """
 
     sources: list[dict] = field(default_factory=list)
@@ -111,6 +129,8 @@ class Workspace:
     source_files: dict[str, list[str]] = field(default_factory=dict)
     source_file_counts: dict[str, int] = field(default_factory=dict)
     reader: Optional["DetailReader"] = None
+    folder_rows: list[dict] = field(default_factory=list)
+    folder_tree: Optional["FolderTree"] = None
 
     def counts(self) -> dict[str, int]:
         """How many of each kind the drafter looked at (the ``reading`` status event)."""
@@ -122,8 +142,13 @@ class Workspace:
         }
 
     def ids(self, kind: str) -> set[str]:
-        """The ids of one kind (``sources``, ``tools``, ``prompts``) the caller may attach, those not listed too."""
-        return {str(row["id"]) for row in getattr(self, kind)} | set(self.attachable.get(kind, ()))
+        """The ids of one kind (``sources``, ``tools``, ``prompts``, ``folders``) the caller may attach, those not
+        listed too."""
+        return {str(row["id"]) for row in _rows(self, kind)} | set(self.attachable.get(kind, ()))
+
+    def folder_sources(self, folder_id: str) -> list[str]:
+        """Every source one of the caller's knowledge folders feeds (:func:`subtree_sources`)."""
+        return subtree_sources(self, folder_id)
 
     def partial(self) -> bool:
         """Whether the overview leaves out sources, tools or prompts of the caller's (``list_workspace`` lists
@@ -143,6 +168,24 @@ class Workspace:
         if self.hidden:
             out["not_shown"] = dict(self.hidden)
         return out
+
+
+def _rows(ws: Workspace, kind: str) -> list[dict]:
+    """The overview rows of one kind (``folders`` are ``folder_rows``: an agent workspace's ``folders`` are topic
+    folders)."""
+    return ws.folder_rows if kind == FOLDER_KIND else getattr(ws, kind)
+
+
+def lists_folders(ws: Workspace) -> bool:
+    """Whether the overview lists knowledge folders (shown or counted in ``not_shown``): a tree whose folders hold
+    no source the caller may attach, or only agents, lists none."""
+    return bool(ws.folder_rows or ws.hidden.get(FOLDER_KIND))
+
+
+def kinds(ws: Workspace) -> tuple[str, ...]:
+    """The kinds ``list_workspace`` lists in this workspace: knowledge folders only when the overview lists some
+    (:func:`lists_folders`)."""
+    return KINDS + (FOLDER_KIND,) if lists_folders(ws) else KINDS
 
 
 def _cap(rows: list, limit: int, kind: str, ws: Workspace) -> list:
@@ -368,17 +411,19 @@ def row_of(ws: Workspace, kind: str, item_id: str) -> Optional[dict]:
 
     Args:
         ws: The turn's workspace.
-        kind: ``sources``, ``tools`` or ``prompts``.
+        kind: ``sources``, ``tools``, ``prompts`` or ``folders``.
         item_id: The id asked about.
 
     Returns:
         The row, or None when the id is not the caller's to attach (or its row could not be read).
     """
-    for row in getattr(ws, kind):
+    for row in _rows(ws, kind):
         if row["id"] == item_id:
             return row
     found = ws.found.setdefault(kind, {})
-    if item_id not in found and ws.reader is not None and item_id in ws.attachable.get(kind, ()):
+    # Every folder row is read with the tree, so a folder id is never read again.
+    if item_id not in found and ws.reader is not None and kind != FOLDER_KIND \
+            and item_id in ws.attachable.get(kind, ()):
         try:
             found.update({row["id"]: row for row in ws.reader.rows(kind, [item_id])})
         except Exception:
@@ -404,7 +449,7 @@ def listing(ws: Workspace, kind: str) -> list[dict]:
         Exception: The rows could not be read; nothing is kept, so a later ask reads again.
     """
     if kind not in ws.listings:
-        rows = list(getattr(ws, kind))
+        rows = list(_rows(ws, kind))
         if ws.reader is not None and ws.hidden.get(kind):
             builtin = [row for row in rows if row.get("kind") == "built-in"]
             in_memory = {row["id"] for row in builtin}
@@ -418,7 +463,8 @@ def listing(ws: Workspace, kind: str) -> list[dict]:
 def find_rows(ws: Workspace, kind: str, query: str = "") -> list[dict]:
     """The rows of :func:`listing` a query matches, best first; every row without a query.
 
-    A row matches when its name, description, type or kind holds one of the query's words, whatever the case.
+    A row matches when its name, description, type, kind or path holds one of the query's words, whatever the
+    case.
     Rows holding more of the words come first, then the listing's order.
 
     Args:
@@ -435,7 +481,8 @@ def find_rows(ws: Workspace, kind: str, query: str = "") -> list[dict]:
         return rows
     scored = []
     for index, row in enumerate(rows):
-        text = " ".join(str(row.get(key) or "") for key in ("name", "description", "type", "kind")).casefold()
+        text = " ".join(str(row.get(key) or "") for key in ("name", "description", "type", "kind", "path")
+                        ).casefold()
         score = sum(term in text for term in terms)
         if score:
             scored.append((-score, index))
@@ -653,6 +700,196 @@ def load_agent(conn, user_id: str, agent_id: Optional[str], ws: Workspace) -> No
         "status": str(row.get("status") or ""),
         "agent_type": str(row.get("agent_type") or ""),
     }
+
+
+# ---------------------------------------------------------------------------
+# Knowledge folders (the agent recipe's ``folders`` kind)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FolderTree:
+    """The knowledge folder tree of the workspace's owner, as :func:`load_folders` read it.
+
+    Attributes:
+        names: Folder id -> cleaned name, for every folder of the tree.
+        parents: Folder id -> its parent's id, or None at the top.
+        children: Folder id -> its direct subfolders' ids, by name.
+        filed: Folder id -> the sources filed straight into it that the caller may attach, newest first.
+    """
+
+    names: dict[str, str] = field(default_factory=dict)
+    parents: dict[str, Optional[str]] = field(default_factory=dict)
+    children: dict[str, list[str]] = field(default_factory=dict)
+    filed: dict[str, list[str]] = field(default_factory=dict)
+
+    def above(self, folder_id: str) -> list[str]:
+        """The folders above ``folder_id``, its parent first; a corrupt cycle stops the walk."""
+        out: list[str] = []
+        parent = self.parents.get(folder_id)
+        while parent in self.names and parent != folder_id and parent not in out:
+            out.append(parent)
+            parent = self.parents.get(parent)
+        return out
+
+
+def load_folders(conn, user_id: str, ws: Workspace, pinned: Iterable[str] = (),
+                 owner_id: Optional[str] = None) -> None:
+    """Fill ``ws.folder_rows``: the knowledge folders the caller may attach to an agent of this workspace.
+
+    The attach rule of :func:`attachable_folders`: the caller's own tree in Personal, the team principal's in a
+    team (``owner_id``). The tree and its source filings are read in two queries, however large; every count is
+    worked out from them. A row is ``{id, name, path?, sources}``: ``path`` names the folders above it (so two
+    folders of one name can be told apart) and ``sources`` counts the sources the caller may attach that are filed
+    anywhere in its subtree, which is what a new agent of theirs reads through it. Every folder counts as
+    attachable (``get_folder`` reads any of them), but only those holding a source are listed, largest first,
+    after the ``pinned`` ones (the form's), which are listed whatever they hold; the rest past :data:`MAX_FOLDERS`
+    are counted in ``ws.hidden`` and reached with ``list_workspace``. Needs ``ws``'s sources read first.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+        ws: The workspace to fill.
+        pinned: Folder ids listed first whatever the cap; ones the caller may not attach are left out.
+        owner_id: The workspace's team principal, or None for Personal.
+    """
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+    from docsgpt.workspaces.principal import is_principal_id
+
+    owner = owner_id if is_principal_id(owner_id) else user_id
+    tree = FolderTree()
+    for row in FoldersRepository(conn).list_for_user(owner):
+        fid = str(row["id"]).lower()
+        tree.names[fid] = clean_text(row.get("name"), NAME_CHARS)
+        tree.parents[fid] = str(row["parent_id"]).lower() if row.get("parent_id") else None
+    for fid in sorted(tree.names, key=lambda f: (tree.names[f].casefold(), f)):
+        if tree.parents[fid] in tree.names:
+            tree.children.setdefault(tree.parents[fid], []).append(fid)
+    order = {sid: i for i, sid in enumerate(ws.attachable.get("sources", ()))}
+    for sid, fid in FolderItemsRepository(conn).filings(owner, "source").items():
+        sid, fid = sid.lower(), fid.lower()
+        if sid in order and fid in tree.names:
+            tree.filed.setdefault(fid, []).append(sid)
+    held: dict[str, set[str]] = {}
+    for fid, sids in tree.filed.items():
+        sids.sort(key=order.__getitem__)
+        for holder in [fid] + tree.above(fid):
+            held.setdefault(holder, set()).update(sids)
+    rows: dict[str, dict] = {}
+    for fid, name in tree.names.items():
+        row: dict[str, Any] = {"id": fid, "name": name}
+        path = " / ".join(tree.names[f] for f in reversed(tree.above(fid)))
+        if path:
+            row["path"] = clean_text(path, PATH_CHARS)
+        row["sources"] = len(held.get(fid, ()))
+        rows[fid] = row
+    first = [fid for fid in dict.fromkeys(str(p).lower() for p in pinned) if fid in rows]
+    # Largest first, then by where it sits: a parent before its subfolders, which hold no more than it.
+    rest = sorted((fid for fid in rows if rows[fid]["sources"] and fid not in first),
+                  key=lambda f: (-rows[f]["sources"], [tree.names[a].casefold() for a in reversed(tree.above(f))]
+                                 + [tree.names[f].casefold()]))
+    listing = [rows[fid] for fid in first + rest]
+    shown = listing[:len(first)] + listing[len(first):][:max(0, MAX_FOLDERS - len(first))]
+    if len(shown) < len(listing):
+        ws.hidden[FOLDER_KIND] = len(listing) - len(shown)
+    ws.attachable[FOLDER_KIND] = list(rows)
+    ws.found[FOLDER_KIND] = rows
+    ws.listings[FOLDER_KIND] = listing
+    ws.folder_rows = shown
+    ws.folder_tree = tree
+
+
+def subtree_sources(ws: Workspace, folder_id: str) -> list[str]:
+    """The sources the caller may attach filed anywhere in one of their knowledge folders' subtree: the folder's
+    own first, then each level down; empty when :func:`load_folders` didn't list it as attachable."""
+    tree = ws.folder_tree
+    if tree is None or folder_id not in tree.names:
+        return []
+    out: list[str] = []
+    level, seen = [folder_id], {folder_id}
+    while level:
+        for fid in level:
+            out.extend(sid for sid in tree.filed.get(fid, ()) if sid not in out)
+        level = [child for fid in level for child in tree.children.get(fid, ()) if child not in seen]
+        seen.update(level)
+    return out
+
+
+def source_rows(ws: Workspace, source_ids: Iterable[str], conn: Any = None) -> dict[str, dict]:
+    """The overview rows of those of ``source_ids`` the caller may attach, by id; the ones the overview leaves
+    out are read in one query and kept in ``ws.found``, so ``get_source`` reads them like listed ones.
+
+    Raises:
+        Exception: The rows could not be read.
+    """
+    allowed = ws.ids("sources")
+    known = {str(row["id"]): row for row in ws.sources}
+    known.update(ws.found.get("sources", {}))
+    wanted = [sid for sid in dict.fromkeys(source_ids) if sid in allowed]
+    unread = [sid for sid in wanted if sid not in known]
+    if unread and ws.reader is not None:
+        rows = {row["id"]: row for row in ws.reader.rows("sources", unread, conn)}
+        ws.found.setdefault("sources", {}).update(rows)
+        known.update(rows)
+    return {sid: known[sid] for sid in wanted if sid in known}
+
+
+def folder_detail(ws: Workspace, folder_id: str) -> Optional[dict]:
+    """``get_folder``'s answer for a knowledge folder the caller may attach: its row, the sources it feeds
+    (``ws.folder_sources``) and its direct subfolders.
+
+    ``{id, name, path?, sources: [{id, name}], more_sources?, subfolders: [{id, name, sources}], more_subfolders?}``,
+    up to :data:`MAX_FOLDER_SOURCES` sources and :data:`MAX_SUBFOLDERS` subfolders named.
+
+    Args:
+        ws: The turn's workspace.
+        folder_id: The folder's id, lower-case.
+
+    Returns:
+        The detail, or None when the folder is not one the caller may attach here.
+
+    Raises:
+        Exception: The sources' rows could not be read.
+    """
+    row = row_of(ws, FOLDER_KIND, folder_id)
+    if row is None or ws.folder_tree is None:
+        return None
+    sources = ws.folder_sources(folder_id)
+    named = source_rows(ws, sources[:MAX_FOLDER_SOURCES])
+    out: dict[str, Any] = {key: row[key] for key in ("id", "name", "path") if key in row}
+    out["sources"] = [{"id": sid, "name": named[sid].get("name")} for sid in sources if sid in named]
+    if len(sources) > len(out["sources"]):
+        out["more_sources"] = len(sources) - len(out["sources"])
+    children = ws.folder_tree.children.get(folder_id, [])
+    rows = ws.found.get(FOLDER_KIND, {})
+    out["subfolders"] = [{"id": c, "name": rows[c]["name"], "sources": rows[c]["sources"]}
+                         for c in children[:MAX_SUBFOLDERS]]
+    if len(children) > MAX_SUBFOLDERS:
+        out["more_subfolders"] = len(children) - MAX_SUBFOLDERS
+    return out
+
+
+def attachable_folders(conn, user_id: str, folder_ids: Iterable[Any], owner_id: Optional[str] = None) -> list[str]:
+    """The ids among ``folder_ids`` the caller may attach to an agent of this workspace, lower-case, in order.
+
+    The rule a save applies (``folder_knowledge.unattachable_folder``): the caller's own knowledge folders in
+    Personal; in a team workspace (``owner_id`` the team's principal) the team's own tree, whoever filed into it.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+        folder_ids: Folder ids; anything that isn't one is left out.
+        owner_id: The workspace's team principal, or None for Personal.
+
+    Returns:
+        list[str]: The attachable ids.
+    """
+    from docsgpt.api.user.folder_knowledge import holder_owned_folders, owned_source_folders
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if is_principal_id(owner_id):
+        return holder_owned_folders(conn, folder_ids, owner_id)
+    return owned_source_folders(conn, folder_ids, user_id)
 
 
 def workspace_owner(conn, user_id: str, agent_id: Optional[str] = None, *,
