@@ -1869,6 +1869,31 @@ def test_an_editor_keeps_the_owners_folder_and_adds_their_own(pg_conn):
     assert proposal["fields"] == {"folders": [owners, theirs], "sources": []}
 
 
+def test_an_editors_drafted_folder_takes_off_only_what_it_would_feed_the_owners_agent(pg_conn):
+    # The editor may use the shared source but not sponsor it, and the owner can't use it: their folder would feed
+    # the owner's agent none of it, so its direct attachment stays.
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+    from tests.api.user.test_folder_knowledge import _share
+    from tests.api.user.test_resource_sponsors import _agent, EDITOR, OTHER
+
+    theirs = _kfolder(pg_conn, EDITOR, "Editor docs")
+    shared = str(SourcesRepository(pg_conn).create("Shared runbook", user_id=OTHER)["id"])
+    _share(pg_conn, shared, OTHER, EDITOR)
+    FolderItemsRepository(pg_conn).file(EDITOR, "source", shared, theirs)
+    own = _filed(pg_conn, theirs, EDITOR, "Editor notes")
+    agent_id, _team = _agent(pg_conn, source_id=shared)
+    context = parse_context({"agent_id": agent_id, "form": {"sources": [shared, own]}})
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+        assert shared in ws.ids("sources")
+        proposal = validate({"message": "m", "fields": {"folders": [theirs]}}, _kf_req(EDITOR, context), ws)
+    # The editor's own source the folder feeds still comes off; the shared one stays.
+    assert proposal["fields"] == {"folders": [theirs], "sources": [shared]}
+    reason = next(r["summary"] for r in proposal["reasons"] if r["field"] == "sources")
+    assert "Editor notes" in reason and "Shared runbook" not in reason
+
+
 
 # ---------------------------------------------------------------------------
 # Review follow-ups

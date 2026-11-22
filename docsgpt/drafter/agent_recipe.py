@@ -194,6 +194,9 @@ class AgentWorkspace(Workspace):
             of ``folders``.
         knowledge_folder_sources: Every source those knowledge folders feed, each once, named or not.
         knowledge_folder_feeds: Each kept knowledge folder's id -> every source it feeds, named or not.
+        saved_agent: The saved agent's row when the caller may edit it (:func:`editable_saved_agent`), else None.
+        drafted_feeds: Each drafted knowledge folder not on the form -> every source it would feed the saved agent
+            (:meth:`read_drafted_feeds`).
     """
 
     guardrail_menu: list[str] = field(default_factory=list)
@@ -211,6 +214,8 @@ class AgentWorkspace(Workspace):
     knowledge_folders: list[dict] = field(default_factory=list)
     knowledge_folder_sources: list[str] = field(default_factory=list)
     knowledge_folder_feeds: dict[str, list[str]] = field(default_factory=dict)
+    saved_agent: Optional[dict] = None
+    drafted_feeds: dict[str, list[str]] = field(default_factory=dict)
 
     def reads_insights(self) -> bool:
         """Whether this turn has the agent's gap summary to work from."""
@@ -238,10 +243,41 @@ class AgentWorkspace(Workspace):
 
     def folder_sources(self, folder_id: str) -> list[str]:
         """Every source a knowledge folder feeds: a folder kept on the form as the agent reads it (sources the
-        caller can't attach included), any other as its subtree holds the caller's (:func:`subtree_sources`)."""
+        caller can't attach included), a drafted one :meth:`read_drafted_feeds` read as the saved agent would read
+        it, any other (a new agent's) as its subtree holds the caller's (:func:`subtree_sources`)."""
         if folder_id in self.knowledge_folder_feeds:
             return list(self.knowledge_folder_feeds[folder_id])
+        if folder_id in self.drafted_feeds:
+            return list(self.drafted_feeds[folder_id])
         return subtree_sources(self, folder_id)
+
+    def read_drafted_feeds(self, folders: list[str]) -> None:
+        """Read what a proposal's folders not on the form would feed the saved agent, by the rules its run applies.
+
+        The caller's tree view isn't the agent's: an editor's folder feeds someone else's agent only the sources
+        its owner may use or the editor may sponsor, and an agent with outside access none its owner borrows.
+        Nothing is read for a new agent, which the caller will own. A failed read counts the folders as feeding
+        nothing, so no source is taken off for them.
+
+        Args:
+            folders: The proposal's whole folder list, as the agent's row would hold it.
+        """
+        from docsgpt.api.user.folder_knowledge import expand_folders
+        from docsgpt.storage.db.session import db_readonly
+
+        if self.saved_agent is None:
+            return
+        unread = [fid for fid in folders if fid not in self.knowledge_folder_feeds and fid not in self.drafted_feeds]
+        if not unread:
+            return
+        holder = {**self.saved_agent, "knowledge_folder_ids": folders}
+        try:
+            with db_readonly() as conn:
+                fed = expand_folders(conn, unread, "agent", holder)
+        except Exception:
+            logger.warning("drafter: could not read what drafted folders feed the agent", exc_info=True)
+            fed = {}
+        self.drafted_feeds.update({fid: fed.get(fid, []) for fid in unread})
 
     def summary(self) -> dict[str, Any]:
         """The compact catalog, with the knowledge folders the caller may attach and the agent's gap summary when
@@ -587,9 +623,11 @@ def _load(user_id: str, context: dict, *, team_id: Optional[str] = None) -> Agen
             prompt_text(out, form.get("prompt_id") or "default", conn)
         step = context.get("step")
         safety = step == "safety" and out.insights
-        # The saved agent's row, read once for whatever needs it, when the caller may edit it.
-        agent = editable_saved_agent(conn, user_id, ws.agent["id"]) \
-            if ws.agent and (step is None or safety or form.get("folders")) else None
+        # The saved agent's row, read once for whatever needs it, when the caller may edit it; a form that offers
+        # folders keeps it, to read a drafted folder as the agent would.
+        agent = editable_saved_agent(conn, user_id, ws.agent["id"]) if ws.agent and (
+            step is None or safety or form.get("folders") or form.get("folders_offered") is not False) else None
+        out.saved_agent = agent
         if form.get("folders"):
             out.knowledge_folders, out.knowledge_folder_feeds = read_knowledge_folders(
                 conn, user_id, out, form["folders"], agent)
@@ -1551,6 +1589,7 @@ def _covered_sources(fields: dict, form: dict, ws: Workspace) -> list[str]:
         drafted = set(fields["folders"])
         fields["folders"] = [fid for fid in fields["folders"] if not drafted.intersection(_folders_above(ws, fid))]
         folders = fields["folders"]
+        ws.read_drafted_feeds(folders)
     else:
         folders = [folder["id"] for folder in ws.knowledge_folders]
     fed = {sid for fid in folders for sid in ws.folder_sources(fid)}
