@@ -712,8 +712,8 @@ Textarea, SelectTrigger `field`, Button `combobox` `default | field | lg` and
 CommandInput. The `sm` sizes stay 14px. A highlighted list row is
 `bg-accent` in Select, Command and DropdownMenu alike. A select list stops at
 the window edge and scrolls; one that can grow long (the landing page's model
-picker) passes `SelectContent capped`, which also stops it at CommandList's
-`max-h-75`. A `max-h-*` in `className` replaces the window limit rather than
+picker, the task model row) passes `SelectContent capped`, which also stops it
+at CommandList's `max-h-75`. A `max-h-*` in `className` replaces the window limit rather than
 adding to it. A list is as wide as its trigger; a page filter pill whose
 options run longer than its value (Logs' level, event and label filters,
 Guardrail activity, the analytics window, Token usage's Group by) passes
