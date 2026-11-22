@@ -138,9 +138,10 @@ describe('agentDraft', () => {
   it('leaves drafted folders out where the picker offers none', () => {
     const fields = { sources: ['s1'], folders: ['f1'], name: 'N' };
     expect(fieldsToApply(fields, true)).toBe(fields);
-    expect(fieldsToApply(fields, false)).toEqual({
+    // The server trimmed the sources for those folders: neither applies.
+    expect(fieldsToApply(fields, false)).toEqual({ name: 'N' });
+    expect(fieldsToApply({ sources: ['s1'] }, false)).toEqual({
       sources: ['s1'],
-      name: 'N',
     });
   });
 
@@ -1092,6 +1093,54 @@ describe('agentDraft', () => {
     ]);
     // A later proposal of the same turn takes this one's values as sent.
     expect(plan.sent).toMatchObject({ name: 'Old', description: 'New' });
+  });
+
+  it('keeps sources and folders together when either moved while the turn ran', () => {
+    // Sent with sources S and T; folder H ticked by hand meanwhile. The
+    // server took S off because the drafted folder G feeds it.
+    const sent = form({ sources: ['S', 'T'], description: 'Was' });
+    const now = form({
+      sources: ['S', 'T'],
+      folders: ['H'],
+      description: 'Was',
+    });
+    const plan = planAgentProposal(
+      { folders: ['G'], sources: ['T'], description: 'New' },
+      now,
+      sent,
+      [],
+      () => null,
+    );
+    expect(plan.changes.map((change) => change.field)).toEqual(['description']);
+    expect(plan.kept).toEqual([
+      { field: 'sources', previous: ['S', 'T'], applied: ['T'] },
+      { field: 'folders', previous: [], applied: ['G'] },
+    ]);
+    expect(plan.sent).toMatchObject({ sources: ['S', 'T'], folders: [] });
+    // "You changed Knowledge… in the form" names what still differs.
+    expect(
+      editedSinceFields(plan.applied, plan.kept, agentDraftValues(now)),
+    ).toEqual(['sources', 'folders']);
+    // Sources alone were normalised against the folders sent: kept too.
+    const sourcesOnly = planAgentProposal(
+      { sources: ['T'] },
+      now,
+      sent,
+      [],
+      () => null,
+    );
+    expect(sourcesOnly.changes).toEqual([]);
+    expect(sourcesOnly.kept.map((change) => change.field)).toEqual(['sources']);
+    // Sources picked by hand hold back drafted folders the same way.
+    const picked = planAgentProposal(
+      { folders: ['G'] },
+      form({ sources: ['S', 'T', 'U'] }),
+      sent,
+      [],
+      () => null,
+    );
+    expect(picked.changes).toEqual([]);
+    expect(picked.kept.map((change) => change.field)).toEqual(['folders']);
   });
 
   it('tells an undone field from an edited one', () => {

@@ -3957,6 +3957,41 @@ describe('NewAgent drafter', () => {
     ).toBe(false);
   });
 
+  it('keeps drafted sources and folders off the picker when it was edited while the turn ran', async () => {
+    let land: (events: DrafterEvent[]) => void = () => undefined;
+    stream.scripts = [
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await ask('Add the policies folder and the handbook');
+    // Taken off by hand while the draft runs.
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    await act(async () =>
+      land([
+        proposal({ sources: ['s1'], folders: ['ops', 'policies'] }),
+        { type: 'end' },
+      ]),
+    );
+    // Neither half lands: the sources were trimmed for those folders.
+    expect(drafted()).not.toContain('agents.form.labels.sources');
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: [],
+      folders: [],
+    });
+  });
+
   it('steps the sheet aside on a phone and keeps the step in a strip', async () => {
     media.isMobile = true;
     media.isDesktop = false;

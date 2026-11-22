@@ -89,6 +89,22 @@ export const AGENT_STEP_FIELDS: Record<
   safety: ['limits', 'guardrails', 'analytics'],
 };
 
+/**
+ * Drafted fields one control shows and the server works out together: the
+ * knowledge picker holds sources and folders, and a proposal's sources
+ * leave out what its folders feed. They apply, are kept, are marked and
+ * are undone as one.
+ */
+export const AGENT_LINKED_FIELDS: readonly (readonly AgentDraftField[])[] = [
+  ['sources', 'folders'],
+];
+
+/** The field and the fields linked with it (AGENT_LINKED_FIELDS). */
+export const linkedFields = (
+  field: AgentDraftField,
+): readonly AgentDraftField[] =>
+  AGENT_LINKED_FIELDS.find((group) => group.includes(field)) ?? [field];
+
 const AGENT_TYPES = ['classic', 'research'];
 
 /** A guardrail control a draft adds: which check runs where, and what it does. */
@@ -568,7 +584,7 @@ export function planAgentPatch(
 /**
  * The proposal's fields the form may take: drafted knowledge folders are
  * left out while its picker offers none (an agent of another workspace
- * than the one open).
+ * than the one open), and with them the sources worked out beside them.
  *
  * Args:
  *   fields: The proposal's fields.
@@ -583,7 +599,7 @@ export function fieldsToApply(
 ): AgentProposalFields {
   if (foldersOffered || !fields.folders) return fields;
   const rest = { ...fields };
-  delete rest.folders;
+  linkedFields('folders').forEach((field) => delete rest[field]);
   return rest;
 }
 
@@ -615,7 +631,8 @@ export type AgentProposalPlan = {
 /**
  * Work out how a proposal fills the form: its changes (planAgentPatch),
  * less any field the user changed while the turn ran, which keeps their
- * value.
+ * value. Linked fields go together: sources and folders both keep the
+ * user's values when either moved.
  *
  * Args:
  *   fields: The proposal's fields.
@@ -641,9 +658,12 @@ export function planAgentProposal(
 ): AgentProposalPlan {
   const planned = planAgentPatch(fields, form, toolOptions);
   const movedSinceSent = (field: AgentDraftField) =>
-    !isEqual(
-      draftValueOf(field, form[field] as never),
-      draftValueOf(field, sent[field] as never),
+    linkedFields(field).some(
+      (each) =>
+        !isEqual(
+          draftValueOf(each, form[each] as never),
+          draftValueOf(each, sent[each] as never),
+        ),
     );
   const changes = planned.filter((change) => !movedSinceSent(change.field));
   return {

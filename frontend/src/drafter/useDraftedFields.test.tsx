@@ -165,7 +165,7 @@ describe('useDraftedFields', () => {
       );
     });
 
-    it('drops both marks when either is edited by hand', async () => {
+    it('drops both marks when either marked one is edited by hand', async () => {
       await draft('tools', ['b']);
       await draft('tags', ['y']);
       await draft('name', 'New');
@@ -188,6 +188,29 @@ describe('useDraftedFields', () => {
       await act(async () => harness.drafted!.undo('tools'));
       expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
       expect(harness.drafted!.fields).toEqual([]);
+    });
+
+    it('drops the mark when the unmarked one is edited by hand', async () => {
+      await draft('tags', ['y']);
+      await act(async () =>
+        harness.setForm((prev) => ({ ...prev, tools: ['a', 'b'] })),
+      );
+      expect(harness.drafted!.fields).toEqual([]);
+      // Undo puts nothing back over the hand edit.
+      await act(async () => harness.drafted!.undo('tags'));
+      expect(harness.form).toMatchObject({ tools: ['a', 'b'], tags: ['y'] });
+    });
+
+    it('keeps both marks of one draft that sets both at once, and undoes both', async () => {
+      await act(async () => {
+        harness.setForm((prev) => ({ ...prev, tools: ['b'] }));
+        harness.drafted!.mark('tools', ['a'], ['b']);
+        harness.setForm((prev) => ({ ...prev, tags: ['y'] }));
+        harness.drafted!.mark('tags', ['x'], ['y']);
+      });
+      expect(harness.drafted!.fields).toEqual(['tools', 'tags']);
+      await act(async () => harness.drafted!.undo('tools'));
+      expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
     });
 
     it('keeps the other mark while a draft changes only one', async () => {
