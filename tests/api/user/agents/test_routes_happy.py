@@ -755,6 +755,87 @@ class TestUpdateAgent:
             response = UpdateAgent().put(str(agent["id"]))
         assert response.status_code == 400
 
+    def test_updates_published_agent_with_zero_chunks(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-zero-chunks"
+        agent = _seed_agent(pg_conn, user=user, with_source=False, chunks=0)
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"tools": []},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+
+    def test_publishes_agent_with_zero_chunks(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-publish-zero-chunks"
+        agent = _seed_agent(pg_conn, user=user, with_source=False, status="draft")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"status": "published", "chunks": "0"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+        assert AgentsRepository(pg_conn).get(str(agent["id"]), user)["chunks"] == 0
+
+    def test_draft_saves_with_empty_description(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-draft-no-description"
+        agent = _seed_agent(
+            pg_conn, user=user, with_source=False, status="draft", description="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"name": "renamed", "description": "", "status": "draft"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+
+    def test_published_agent_rejects_empty_description(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-published-no-description"
+        agent = _seed_agent(pg_conn, user=user, with_source=False)
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"description": ""},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 400
+
+    def test_publishing_draft_with_empty_description_returns_400(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-publish-no-description"
+        agent = _seed_agent(
+            pg_conn, user=user, with_source=False, status="draft", description="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"status": "published"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 400
+
     def test_tools_must_be_list(self, app, pg_conn):
         from docsgpt.api.user.agents.routes import UpdateAgent
 
