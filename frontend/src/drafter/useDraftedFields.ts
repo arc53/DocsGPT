@@ -23,7 +23,10 @@ export type DraftedFields<K extends string> = {
    * field stays unmarked.
    */
   follow: (field: K, applied: unknown) => void;
-  /** Put a field's previous value back and drop its mark. */
+  /**
+   * Put a field's previous value back and drop its mark, and the same for
+   * the fields linked with it.
+   */
   undo: (field: K) => void;
   /**
    * What undo would put back for a marked field (from before its first
@@ -44,9 +47,14 @@ export type DraftedFields<K extends string> = {
  * `restore`, and the value the draft set, so a field the user then edits by
  * hand loses its mark (compared with `values` after each render).
  *
+ * Fields one control shows (the knowledge picker's sources and folders) can
+ * be linked: a hand edit to one drops the marks of all, and undo of one puts
+ * back every marked one.
+ *
  * Args:
  *   values: Each markable field's current value, in a comparable shape.
  *   restore: Writes a previous value back into the form.
+ *   linked: Groups of fields that share one control.
  *
  * Returns:
  *   The marks and their actions.
@@ -54,6 +62,7 @@ export type DraftedFields<K extends string> = {
 export function useDraftedFields<K extends string>(
   values: Record<K, unknown>,
   restore: (field: K, previous: unknown) => void,
+  linked: readonly (readonly K[])[] = [],
 ): DraftedFields<K> {
   const [markers, setMarkers] = useState<Map<K, Marker>>(() => new Map());
   const restoreRef = useRef(restore);
@@ -62,6 +71,14 @@ export function useDraftedFields<K extends string>(
   markersRef.current = markers;
   const valuesRef = useRef(values);
   valuesRef.current = values;
+  const linkedRef = useRef(linked);
+  linkedRef.current = linked;
+  /** The field and the fields linked with it. */
+  const withLinked = useCallback(
+    (field: K): readonly K[] =>
+      linkedRef.current.find((group) => group.includes(field)) ?? [field],
+    [],
+  );
 
   // A field whose value moved off what the draft set was edited by hand.
   useEffect(() => {
@@ -71,10 +88,12 @@ export function useDraftedFields<K extends string>(
     if (edited.length === 0) return;
     setMarkers((prev) => {
       const next = new Map(prev);
-      edited.forEach(([field]) => next.delete(field));
+      edited.forEach(([field]) =>
+        withLinked(field).forEach((each) => next.delete(each)),
+      );
       return next;
     });
-  }, [markers, values]);
+  }, [markers, values, withLinked]);
 
   const mark = useCallback((field: K, previous: unknown, applied: unknown) => {
     // Compared as `values` has it, not as the form holds it (`previous`).
@@ -100,16 +119,23 @@ export function useDraftedFields<K extends string>(
     });
   }, []);
 
-  const undo = useCallback((field: K) => {
-    const marker = markersRef.current.get(field);
-    if (!marker) return;
-    restoreRef.current(field, marker.previous);
-    setMarkers((prev) => {
-      const next = new Map(prev);
-      next.delete(field);
-      return next;
-    });
-  }, []);
+  const undo = useCallback(
+    (field: K) => {
+      const fields = withLinked(field).filter((each) =>
+        markersRef.current.has(each),
+      );
+      if (fields.length === 0) return;
+      fields.forEach((each) =>
+        restoreRef.current(each, markersRef.current.get(each)!.previous),
+      );
+      setMarkers((prev) => {
+        const next = new Map(prev);
+        fields.forEach((each) => next.delete(each));
+        return next;
+      });
+    },
+    [withLinked],
+  );
 
   const undoValue = useCallback((field: K) => {
     const marker = markersRef.current.get(field);

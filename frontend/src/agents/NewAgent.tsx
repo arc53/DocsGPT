@@ -282,6 +282,11 @@ const ADVANCED_BLOCKERS: PublishBlocker[] = [
   'contextLimit',
   'origins',
 ];
+/**
+ * Drafted fields one control shows: the knowledge picker holds sources and
+ * folders, so a hand edit or Undo there ends both marks.
+ */
+const LINKED_DRAFT_FIELDS: AgentDraftField[][] = [['sources', 'folders']];
 /** A phone sheet's slide out (300ms), after which it hands focus back. */
 const SHEET_CLOSE_MS = 350;
 /** What "Go to" focuses inside a blocker's part of the form. */
@@ -1009,6 +1014,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         case 'sources':
           setSelectedSourceIds(new Set(value as string[]));
           return;
+        case 'folders':
+          setSelectedFolderIds(value as string[]);
+          return;
         case 'tools':
           setSelectedTools(value as ToolSummary[]);
           return;
@@ -1039,6 +1047,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const drafted = useDraftedFields<AgentDraftField>(
     draftValues,
     writeDraftField,
+    LINKED_DRAFT_FIELDS,
   );
 
   // Tools a draft can name: the caller's, and those already on the agent.
@@ -1086,6 +1095,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     form: draftForm,
     values: draftValues,
     toolOptions: draftToolOptions,
+    foldersOffered: !pickerScope.holderElsewhere,
     drafted,
     writeField: writeDraftField,
     onApplied: (proposal, raw, changed) => {
@@ -1361,8 +1371,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     build.next();
   };
 
+  // A field linked with another (the knowledge picker's sources and
+  // folders) shows one mark for both, named by the field's own label.
   const draftedProps = (field: AgentDraftField) => ({
-    drafted: drafted.isDrafted(field),
+    drafted: (
+      LINKED_DRAFT_FIELDS.find((group) => group.includes(field)) ?? [field]
+    ).some(drafted.isDrafted),
     onUndo: () => drafted.undo(field),
     fieldLabel: t(AGENT_FIELD_LABEL_KEYS[field]),
   });

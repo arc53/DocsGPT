@@ -1842,6 +1842,7 @@
         "other_step": "別のステップで行う変更"
       },
       "fields": {
+        "folders": "ナレッジフォルダ",
         "limits": "利用制限"
       },
       "formEdited": "フォームで {{fields}} を変更しました。",

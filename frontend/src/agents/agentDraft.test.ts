@@ -2,13 +2,17 @@ import i18next from 'i18next';
 
 import { DEFAULT_ANALYTICS } from './analyticsConfig';
 import {
+  AGENT_DRAFT_FIELDS,
+  AGENT_STEP_FIELDS,
   type AgentDraftForm,
   type GuardrailControlToAdd,
   agentDraftContext,
   agentDraftValues,
   agentProposalSummary,
   agentStepResult,
+  draftValueOf,
   editedSinceFields,
+  fieldsToApply,
   gapLine,
   gapRequest,
   gapTitle,
@@ -86,6 +90,58 @@ describe('agentDraft', () => {
     expect(proposal.next_step).toBe('prompt');
     expect(parseAgentProposal('text')).toBeNull();
     expect(parseAgentProposal({ fields: {} })!.next_step).toBeNull();
+  });
+
+  it('reads drafted knowledge folders as the whole list, like sources', () => {
+    const proposal = parseAgentProposal({
+      fields: { sources: ['s1'], folders: ['f1', 7, 'f2'] },
+      reasons: [
+        { field: 'folders', summary: 'Live: what is filed later reaches it' },
+      ],
+      gaps: [{ gap_type: 'docs gap', fields: ['folders', 'tools'] }],
+      dropped: [{ field: 'folders', id: 'gone', reason: 'not_found' }],
+    })!;
+    expect(proposal.fields).toEqual({ sources: ['s1'], folders: ['f1', 'f2'] });
+    // A gap names only the fields the proposal sets.
+    expect(proposal.gaps[0].fields).toEqual(['folders']);
+    expect(proposal.dropped).toEqual([
+      { field: 'folders', id: 'gone', reason: 'not_found' },
+    ]);
+    expect(parseAgentProposal({ fields: { folders: 'f1' } })!.fields).toEqual(
+      {},
+    );
+  });
+
+  it('drafts knowledge folders in the knowledge step, right after sources', () => {
+    expect(AGENT_DRAFT_FIELDS.slice(0, 3)).toEqual([
+      'sources',
+      'folders',
+      'tools',
+    ]);
+    expect(AGENT_STEP_FIELDS.knowledge).toContain('folders');
+    // Compared in any order, like sources.
+    expect(draftValueOf('folders', ['b', 'a'])).toEqual(['a', 'b']);
+    const now = form({ sources: ['s1', 's2'], folders: ['f1'] });
+    // The server takes fed sources off when it adds their folder: both change.
+    const changes = planAgentPatch(
+      { sources: ['s2'], folders: ['f2', 'f1', 'f2'] },
+      now,
+      [],
+    );
+    expect(changes).toEqual([
+      { field: 'sources', next: ['s2'], previous: ['s1', 's2'] },
+      { field: 'folders', next: ['f2', 'f1'], previous: ['f1'] },
+    ]);
+    expect(planAgentPatch({ folders: ['f1'] }, now, [])).toEqual([]);
+  });
+
+  it('leaves drafted folders out where the picker offers none', () => {
+    const fields = { sources: ['s1'], folders: ['f1'], name: 'N' };
+    expect(fieldsToApply(fields, true)).toBe(fields);
+    expect(fieldsToApply(fields, false)).toEqual({
+      sources: ['s1'],
+      name: 'N',
+    });
   });
 
   it('reads limits, guardrail checks and topics from the safety step', () => {
@@ -622,6 +678,31 @@ describe('agentDraft', () => {
         null,
       ).form.guardrails.controls,
     ).toEqual([{ check: 'injection', stage: 'input' }]);
+  });
+
+  it('labels drafted and dropped knowledge folders as their own field', () => {
+    const proposal = parseAgentProposal({
+      fields: { sources: ['s2'], folders: ['f1'] },
+      reasons: [
+        { field: 'sources', summary: 'The handbook' },
+        { field: 'folders', summary: 'Live: new policies reach it' },
+      ],
+      dropped: [{ field: 'folders', id: 'gone', reason: 'not_found' }],
+    })!;
+    const fields: unknown[] = [];
+    const record = ((key: string, options?: Record<string, unknown>) => {
+      if (key === 'drafter.agent.droppedLine') fields.push(options?.field);
+      return key;
+    }) as never;
+    const { rows } = agentProposalSummary(proposal, record, [
+      'sources',
+      'folders',
+    ]);
+    expect(rows.map((row) => [row.key, row.label])).toEqual([
+      ['sources-0', 'agents.form.labels.sources'],
+      ['folders-1', 'drafter.agent.fields.folders'],
+    ]);
+    expect(fields).toEqual(['drafter.agent.fields.folders']);
   });
 
   it('gives a reason row only for the fields the draft changed', () => {

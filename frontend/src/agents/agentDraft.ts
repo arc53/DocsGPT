@@ -65,6 +65,7 @@ export type AgentBuildStep = (typeof AGENT_BUILD_STEPS)[number];
 /** The agent fields the drafter may fill, in the order a draft applies them. */
 export const AGENT_DRAFT_FIELDS = [
   'sources',
+  'folders',
   'tools',
   'agent_type',
   'name',
@@ -83,7 +84,7 @@ export const AGENT_STEP_FIELDS: Record<
   readonly AgentDraftField[]
 > = {
   basics: ['name', 'description'],
-  knowledge: ['sources', 'tools', 'agent_type'],
+  knowledge: ['sources', 'folders', 'tools', 'agent_type'],
   prompt: ['prompt', 'starters'],
   safety: ['limits', 'guardrails', 'analytics'],
 };
@@ -103,6 +104,8 @@ export type AgentProposalFields = {
   description?: string;
   agent_type?: string;
   sources?: string[];
+  /** Knowledge folders, the whole list; the agent reads them live. */
+  folders?: string[];
   tools?: string[];
   prompt?:
     | { kind: 'existing'; id: string }
@@ -319,6 +322,8 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
     fields.agent_type = rawFields.agent_type;
   const sources = stringList(rawFields.sources);
   if (sources) fields.sources = sources;
+  const folders = stringList(rawFields.folders);
+  if (folders) fields.folders = folders;
   const tools = stringList(rawFields.tools);
   if (tools) fields.tools = tools;
   const starters = stringList(rawFields.starters);
@@ -376,15 +381,17 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
 }
 
 /**
- * A field's value in a comparable shape: tools by id in order, sources by id
- * in any order, starters as a save cleans them, limits with every key set.
+ * A field's value in a comparable shape: tools by id in order, sources and
+ * folders by id in any order, starters as a save cleans them, limits with
+ * every key set.
  */
 export function draftValueOf<K extends AgentDraftField>(
   field: K,
   value: AgentDraftForm[K],
 ): unknown {
   if (field === 'tools') return (value as ToolSummary[]).map((tool) => tool.id);
-  if (field === 'sources') return [...(value as string[])].sort();
+  if (field === 'sources' || field === 'folders')
+    return [...(value as string[])].sort();
   if (field === 'starters') return cleanStarters(value as string[]);
   if (field === 'limits') {
     const limits = value as AgentLimitsValue;
@@ -505,11 +512,12 @@ function analyticsWith(
 
 /**
  * Work out what a proposal changes on the form, field by field in the order
- * they apply (sources, tools, type, name, description, starters, prompt,
- * limits, guardrails, Insights). Fields the proposal leaves out, or sets to
- * what the form already holds, are not changes. A tool id the caller has no
- * row for is left out. A new prompt is no change either: the host opens it
- * in the prompt view, and the form's prompt changes once it is saved there.
+ * they apply (sources, folders, tools, type, name, description, starters,
+ * prompt, limits, guardrails, Insights). Fields the proposal leaves out, or
+ * sets to what the form already holds, are not changes. A tool id the caller
+ * has no row for is left out. A new prompt is no change either: the host
+ * opens it in the prompt view, and the form's prompt changes once it is saved
+ * there.
  *
  * Args:
  *   fields: The proposal's fields.
@@ -526,6 +534,7 @@ export function planAgentPatch(
 ): AgentDraftChange[] {
   const next: Partial<AgentDraftForm> = {};
   if (fields.sources) next.sources = [...new Set(fields.sources)];
+  if (fields.folders) next.folders = [...new Set(fields.folders)];
   if (fields.tools) {
     const byId = new Map<string, ToolSummary>();
     [...toolOptions, ...form.tools].forEach((tool) => byId.set(tool.id, tool));
@@ -554,6 +563,28 @@ export function planAgentPatch(
     changes.push({ field, next: value, previous: form[field] } as never);
   });
   return changes;
+}
+
+/**
+ * The proposal's fields the form may take: drafted knowledge folders are
+ * left out while its picker offers none (an agent of another workspace
+ * than the one open).
+ *
+ * Args:
+ *   fields: The proposal's fields.
+ *   foldersOffered: Whether the form's knowledge picker offers folders.
+ *
+ * Returns:
+ *   The fields to plan from; `fields` itself when nothing is left out.
+ */
+export function fieldsToApply(
+  fields: AgentProposalFields,
+  foldersOffered: boolean,
+): AgentProposalFields {
+  if (foldersOffered || !fields.folders) return fields;
+  const rest = { ...fields };
+  delete rest.folders;
+  return rest;
 }
 
 /**
@@ -881,6 +912,7 @@ export const AGENT_FIELD_LABEL_KEYS: Record<AgentDraftField, string> = {
   description: 'agents.form.labels.description',
   agent_type: 'agents.form.sections.agentType',
   sources: 'agents.form.labels.sources',
+  folders: 'drafter.agent.fields.folders',
   tools: 'agents.form.sections.tools',
   prompt: 'agents.form.sections.prompt',
   starters: 'agents.form.sections.starters',

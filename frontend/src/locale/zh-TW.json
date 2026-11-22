@@ -1842,6 +1842,7 @@
         "other_step": "屬於其他步驟的變更"
       },
       "fields": {
+        "folders": "知識庫資料夾",
         "limits": "使用限制"
       },
       "formEdited": "你在表單中變更了 {{fields}}。",

@@ -1842,6 +1842,7 @@
         "other_step": "属于其他步骤的更改"
       },
       "fields": {
+        "folders": "知识库文件夹",
         "limits": "使用限制"
       },
       "formEdited": "你在表单中更改了 {{fields}}。",

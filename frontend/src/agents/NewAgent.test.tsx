@@ -3450,6 +3450,75 @@ describe('NewAgent drafter', () => {
     expect(drafted()).toEqual([]);
   });
 
+  /** The knowledge picker's drafted frame. */
+  const knowledgeField = () =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="drafted-field"]'),
+    ).find(
+      (el) =>
+        el.querySelector('label')?.textContent === 'agents.form.labels.sources',
+    )!;
+
+  it('fills the knowledge picker from drafted sources and folders under one mark, and undoes both', async () => {
+    stream.scripts = [
+      [proposal({ sources: ['s1'], folders: ['ops'] }), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    await ask('Use the ops folder');
+    // One mark on the picker for both fields.
+    expect(drafted()).toEqual(['agents.form.labels.sources']);
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: ['s1'],
+      folders: ['ops'],
+      folders_offered: true,
+    });
+    await click(buttonByLabel('drafter.undoField', knowledgeField())!);
+    expect(drafted()).toEqual([]);
+    await ask('And now?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: [],
+      folders: [],
+    });
+  });
+
+  it('drops the knowledge mark when the folder list is edited by hand', async () => {
+    stream.scripts = [
+      [proposal({ sources: ['s1'], folders: ['ops', 'f2'] }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await ask('Add the handbook and the policies folder');
+    expect(drafted()).toEqual(['agents.form.labels.sources']);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    expect(drafted()).toEqual([]);
+  });
+
+  it('leaves drafted folders off an agent whose picker offers none', async () => {
+    stream.scripts = [
+      [proposal({ name: 'Team desk', folders: ['ops'] }), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      workspace: { kind: 'team', team_id: 'team-elsewhere' },
+    });
+    await ask('Use the ops folder');
+    expect(drafted()).toEqual(['agents.form.labels.name']);
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      folders: [],
+      folders_offered: false,
+    });
+  });
+
   // A prompt it writes opens in the prompt view beside the drawer; Use this
   // prompt saves it and sets it on the agent.
   describe('the prompt step', () => {

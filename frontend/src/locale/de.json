@@ -1853,6 +1853,7 @@
         "other_step": "eine Änderung für einen anderen Schritt"
       },
       "fields": {
+        "folders": "Wissensordner",
         "limits": "Nutzungslimit"
       },
       "formEdited": "Du hast {{fields}} im Formular geändert.",

@@ -1874,6 +1874,7 @@
         "other_step": "a change for another step"
       },
       "fields": {
+        "folders": "Knowledge folders",
         "limits": "Usage limit"
       },
       "formEdited": "You changed {{fields}} in the form.",
