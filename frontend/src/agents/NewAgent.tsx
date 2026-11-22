@@ -967,6 +967,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       description: agent.description ?? '',
       agent_type: agent.agent_type ?? '',
       sources: Array.from(selectedSourceIds),
+      folders: selectedFolderIds,
       tools: selectedTools,
       starters: agent.starters ?? [],
       prompt: agent.prompt_id || 'default',
@@ -992,6 +993,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.config?.guardrails,
       agent.config?.analytics,
       selectedSourceIds,
+      selectedFolderIds,
       selectedTools,
     ],
   );
@@ -1135,6 +1137,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         buildRef.current.context(),
         promptView.draft,
         improveFocusRef.current,
+        !pickerScope.holderElsewhere,
       );
     },
     onProposal: proposals.apply,

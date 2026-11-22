@@ -28,6 +28,7 @@ const form = (over: Partial<AgentDraftForm> = {}): AgentDraftForm => ({
   description: '',
   agent_type: 'classic',
   sources: [],
+  folders: [],
   tools: [],
   starters: [],
   prompt: 'default',
@@ -380,10 +381,11 @@ describe('agentDraft', () => {
     });
   });
 
-  it('reads an untouched form as empty, and a picked source as not', () => {
+  it('reads an untouched form as empty, and a picked source or folder as not', () => {
     expect(isAgentFormEmpty(form())).toBe(true);
     expect(isAgentFormEmpty(form({ starters: ['  '] }))).toBe(true);
     expect(isAgentFormEmpty(form({ sources: ['s1'] }))).toBe(false);
+    expect(isAgentFormEmpty(form({ folders: ['f1'] }))).toBe(false);
     expect(isAgentFormEmpty(form({ prompt: 'p1' }))).toBe(false);
   });
 
@@ -450,6 +452,10 @@ describe('agentDraft', () => {
         promptDraft: true,
       }),
     ).toEqual(['tightenPrompt']);
+    // A knowledge folder is something to answer from too.
+    expect(
+      improveSuggestions(form({ folders: ['f1'], starters: ['Hi'] }), none),
+    ).toEqual(['writePrompt']);
   });
 
   it('sends the form and the step as the contract context', () => {
@@ -522,6 +528,8 @@ describe('agentDraft', () => {
         description: '',
         agent_type: 'classic',
         sources: [],
+        folders: [],
+        folders_offered: true,
         tools: ['t1'],
         // The prompt view's unsaved text goes beside the picked prompt.
         prompt_id: 'p1',
@@ -559,6 +567,30 @@ describe('agentDraft', () => {
       limits: { mode: 'none', value: null },
       guardrails: { enabled: false, mode: 'monitor_only', controls: [] },
     });
+    // The form's knowledge folders go beside its sources; an agent of
+    // another workspace has a picker that offers none.
+    expect(
+      agentDraftContext(
+        'a1',
+        form({ sources: ['s1'], folders: ['f1', 'f2'] }),
+        { step: null, earlier: [] },
+        null,
+      ).form,
+    ).toMatchObject({
+      sources: ['s1'],
+      folders: ['f1', 'f2'],
+      folders_offered: true,
+    });
+    expect(
+      agentDraftContext(
+        'a1',
+        form({ folders: ['f1'] }),
+        { step: null, earlier: [] },
+        null,
+        {},
+        false,
+      ).form,
+    ).toMatchObject({ folders: ['f1'], folders_offered: false });
     // A control switched off runs no check: the recipe may offer it again,
     // and a check on at one stage only can get its other stage.
     expect(
@@ -808,6 +840,15 @@ describe('agentDraft', () => {
     expect(agentStepResult('knowledge', form(), t, '')).toBe(
       'drafter.agent.build.result.none',
     );
+    // Knowledge folders count beside sources and tools, or on their own.
+    expect(
+      agentStepResult('knowledge', { ...filled, folders: ['f1'] }, t, ''),
+    ).toBe(
+      'drafter.counts.sources:2, drafter.counts.folders:1, and Tracking API',
+    );
+    expect(
+      agentStepResult('knowledge', form({ folders: ['f1', 'f2'] }), t, ''),
+    ).toBe('drafter.counts.folders:2');
     expect(agentStepResult('safety', form(), t, '')).toBe(
       'drafter.agent.build.result.noLimit',
     );

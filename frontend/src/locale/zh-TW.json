@@ -1910,6 +1910,7 @@
     "changeModel": "更換模型",
     "counts": {
       "agents_other": "{{count}} 個代理",
+      "folders_other": "{{count}} 個資料夾",
       "models_other": "{{count}} 個模型",
       "prompts_other": "{{count}} 個提示詞",
       "sources_other": "{{count}} 個知識來源",

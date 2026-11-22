@@ -162,6 +162,8 @@ export type AgentDraftForm = {
   description: string;
   agent_type: string;
   sources: string[];
+  /** The knowledge folders the agent reads live, by id. */
+  folders: string[];
   tools: ToolSummary[];
   starters: string[];
   /** The picked prompt's id. */
@@ -700,6 +702,7 @@ export function isAgentFormEmpty(form: AgentDraftForm): boolean {
     !form.name.trim() &&
     !form.description.trim() &&
     form.sources.length === 0 &&
+    form.folders.length === 0 &&
     form.tools.length === 0 &&
     cleanStarters(form.starters).length === 0 &&
     (!form.prompt || form.prompt === 'default')
@@ -751,7 +754,10 @@ export function improveSuggestions(
     promptDraft || (!!form.prompt && !PRESET_PROMPT_IDS.includes(form.prompt));
   const rows: (ImproveSuggestion | false)[] = [
     safety && 'safety',
-    form.sources.length === 0 && form.tools.length === 0 && 'knowledge',
+    form.sources.length === 0 &&
+      form.folders.length === 0 &&
+      form.tools.length === 0 &&
+      'knowledge',
     !ownPrompt && 'writePrompt',
     form.starters.length === 0 && 'starters',
     form.description.trim().length > SHORTEN_FROM && 'shorter',
@@ -803,6 +809,8 @@ export type AgentImproveFocus = {
  *   promptDraft: The prompt view's unsaved name and text, or null.
  *   focus: The gap or conversation an improve started from; only a saved
  *     agent outside a step sends it.
+ *   foldersOffered: Whether the form's knowledge picker offers folders;
+ *     false for an agent of another workspace than the one open.
  *
  * Returns:
  *   `{ agent_id, step, earlier, starter, form }` as the drafter contract
@@ -818,6 +826,7 @@ export function agentDraftContext(
   },
   promptDraft: PromptDraft | null,
   focus: AgentImproveFocus = {},
+  foldersOffered = true,
 ) {
   const guardrails = form.guardrails ?? DEFAULT_GUARDRAILS;
   const improving = !!agentId && build.step === null;
@@ -838,6 +847,8 @@ export function agentDraftContext(
       description: form.description,
       agent_type: form.agent_type,
       sources: form.sources,
+      folders: form.folders,
+      folders_offered: foldersOffered,
       tools: form.tools.map((tool) => tool.id),
       prompt_id: form.prompt || null,
       prompt_draft: promptDraft,
@@ -995,6 +1006,8 @@ export function agentStepResult(
     case 'knowledge': {
       if (form.sources.length > 0)
         parts.push(t('drafter.counts.sources', { count: form.sources.length }));
+      if (form.folders.length > 0)
+        parts.push(t('drafter.counts.folders', { count: form.folders.length }));
       if (form.tools.length > 2)
         parts.push(t('drafter.counts.tools', { count: form.tools.length }));
       else form.tools.forEach((tool) => parts.push(getToolDisplayName(tool)));
