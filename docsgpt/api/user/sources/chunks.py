@@ -488,7 +488,14 @@ class DeleteChunk(Resource):
                 # Only a chunk this source lists is deleted, as an update
                 # checks: a store whose delete isn't scoped to the source
                 # would otherwise remove another source's chunk by its id.
-                chunks = store.get_chunks() or []
+                if SourceConfig.parse(doc.get("config")).kind == "graphrag":
+                    # A lenient get_chunks() can turn a read failure into an
+                    # empty list. On GraphRAG that would look like a stale
+                    # vector id and tombstone still-live graph links.
+                    scan_chunks = getattr(store, "_scan_chunks", None)
+                    chunks = scan_chunks() if callable(scan_chunks) else store.get_chunks() or []
+                else:
+                    chunks = store.get_chunks() or []
                 target = next((c for c in chunks if c.get("doc_id") == chunk_id), None)
                 if target is not None:
                     # Clear siblings before deleting the source of their parent

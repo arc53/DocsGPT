@@ -889,6 +889,7 @@ class TestDeleteChunk:
         chunk = {"doc_id": "chunk-1", "text": "still present", "metadata": {}}
         store = MagicMock()
         store.get_chunks.return_value = [chunk]
+        store._scan_chunks.return_value = [chunk]
         if failure == "false":
             store.delete_chunk.return_value = False
         else:
@@ -918,6 +919,7 @@ class TestDeleteChunk:
         remaining = [{"doc_id": "chunk-1", "text": "text", "metadata": {}}]
         store = MagicMock()
         store.get_chunks.side_effect = lambda: list(remaining)
+        store._scan_chunks.side_effect = lambda: list(remaining)
 
         def delete_chunk(chunk_id):
             remaining[:] = [c for c in remaining if c["doc_id"] != chunk_id]
@@ -951,6 +953,34 @@ class TestDeleteChunk:
             ((str(src["id"]), ["chunk-1"]),),
             ((str(src["id"]), ["chunk-1"]),),
         ]
+
+    def test_graph_listing_failure_does_not_delete_chunk_or_graph_links(self, app, pg_conn):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        user = "u-graph-delete-listing-failure"
+        src = _graph_source(pg_conn, user)
+        store = MagicMock()
+        # The public listing hides backend errors as an empty list; the strict
+        # scan must raise before an empty result is treated as a missing chunk.
+        store.get_chunks.return_value = []
+        store._scan_chunks.side_effect = RuntimeError("vector listing failed")
+        graph = MagicMock()
+        graph.apply_pending_chunk_remaps.return_value = {}
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+            f"/api/delete_chunk?id={src['id']}&chunk_id=chunk-1", method="DELETE"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == 500
+        store._scan_chunks.assert_called_once_with()
+        store.delete_chunk.assert_not_called()
+        graph.delete_chunks.assert_not_called()
 
     def test_returns_404_inaccessible_source(self, app, pg_conn):
         # No ownership and no team grant: the source isn't visible → 404
