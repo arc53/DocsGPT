@@ -1695,7 +1695,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                     meta["title"] = display_name
 
                                 new_chunks.append((d.text, meta))
-                            added = incremental.add_chunks(vector_store, new_chunks)
+                            added = incremental.add_chunks(vector_store, new_chunks, source_id=source_id)
                             logging.info(
                                 f"Added {added} chunks from {len(files_to_embed)} new or edited files"
                             )
@@ -2265,7 +2265,7 @@ def remote_worker(
             f"{list(directory_structure.keys())}"
         )
 
-        content_key = incremental.settings_key(config, _REMOTE_INGEST_VERSION)
+        content_key = incremental.settings_key(config, _REMOTE_INGEST_VERSION, settings.EMBEDDINGS_NAME)
         content_files = _content_files(docs)
         if operation_mode == "sync" and doc_id and content_files is not None:
             outcome = _sync_remote_changes(
@@ -2505,10 +2505,12 @@ def _sync_remote_changes(
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
     with db_readonly() as conn:
-        row = SourcesRepository(conn).get_any(source_id, user)
-    if row is None:
+        repo = SourcesRepository(conn)
+        row = repo.get_any(source_id, user)
+        stored_manifest = repo.get_remote_files(source_id) if row is not None else None
+    if row is None or not _can_edit_index_in_place(row):
         return None
-    manifest = incremental.load_manifest(row.get("remote_files"), "content", key)
+    manifest = incremental.load_manifest(stored_manifest, "content", key)
     if manifest is None:
         return None
     plan = incremental.plan_content_sync(manifest, {path: group["sha256"] for path, group in content_files.items()})
@@ -2528,12 +2530,15 @@ def _sync_remote_changes(
         store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
         touched = {*plan.added, *plan.changed, *plan.removed}
         ids = incremental.chunk_ids_by_path(store, touched, key=lambda metadata: legacy_path_key(metadata) or "")
-        deleted, undeleted = incremental.delete_chunk_ids(store, ids)
+        deleted, undeleted = incremental.delete_chunk_ids(
+            store, ids, key=lambda metadata: legacy_path_key(metadata) or "",
+        )
         if undeleted:
             raise RuntimeError(f"Could not delete the old chunks of {len(undeleted)} file(s); the sync will redo them")
         added = incremental.add_chunks(
             store,
-            [
+            source_id=source_id,
+            chunks=[
                 (doc.page_content, dict(doc.metadata))
                 for path in [*plan.added, *plan.changed]
                 for doc in content_files[path]["docs"]
@@ -5399,6 +5404,25 @@ def _save_source_sync_state(
         return True
 
 
+def _can_edit_index_in_place(row: Dict[str, Any]) -> bool:
+    """Whether a sync may change a source's index file by file rather than rebuild it.
+
+    Not when the vector store can't list, add and delete single chunks
+    (``supports_chunk_edits``), and not when the index was embedded with
+    another model than the one configured now: new chunks would sit beside
+    vectors of another model.
+
+    Args:
+        row: The source's row.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return False
+    model = row.get("model")
+    return not model or model == settings.EMBEDDINGS_NAME
+
+
 def _lists_selection(loader: Any) -> bool:
     """Whether a connector loader can list its selection without downloading it."""
     method = getattr(type(loader), "list_selection", None)
@@ -5535,7 +5559,18 @@ def _connector_failed_files(
         if entry is not None:
             failures[entry.id] = failure
     # A full ingest tried every listed file.
-    return incremental.record_failures(previous, entries, failures, listing)
+    return incremental.record_failures(previous, entries, failures, listing, parse_key=_parse_settings_key())
+
+
+def _parse_settings_key() -> Optional[str]:
+    """The parse settings now (``parse_cache.settings_key``), recorded on failed files; ``None`` if unreadable."""
+    try:
+        from docsgpt.parser.parse_cache import settings_key
+
+        return settings_key()
+    except Exception:  # noqa: BLE001 - a failure then waits for its file to change, as before
+        logging.warning("Could not read the parse settings", exc_info=True)
+        return None
 
 
 def _listing_of(loader: Any, selection: Dict[str, Any]) -> Optional[SelectionListing]:
@@ -5557,6 +5592,7 @@ def _sync_connector_changes(
     selection: Dict[str, Any],
     listing: Optional[SelectionListing],
     config: Any,
+    retry_failed: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Sync a connector source by changing only what changed, when its record of the index allows.
 
@@ -5578,13 +5614,22 @@ def _sync_connector_changes(
         selection: The stored selection.
         listing: ``loader.list_selection(selection)``, or ``None``.
         config: The source's ``SourceConfig`` dict.
+        retry_failed: Try every failed file again, whatever its kind and
+            attempts (someone asked for this sync).
 
     Returns:
-        The sync's result, or ``None`` when it must download the whole selection.
+        The sync's result, or ``None`` when it must download the whole selection
+        (no usable manifest, another embedding model, or a vector store that
+        can't edit single chunks).
     """
     with db_readonly() as conn:
-        row = SourcesRepository(conn).get_any(source_id, user)
+        repo = SourcesRepository(conn)
+        row = repo.get_any(source_id, user)
+        stored_manifest = repo.get_remote_files(source_id) if row is not None else None
     if row is None:
+        return None
+    if row.get("model") and row["model"] != settings.EMBEDDINGS_NAME:
+        # Built with another embedding model: rebuild it whole.
         return None
     remote_data = _json_object(row.get("remote_data"))
     failed = incremental.load_failed_files(remote_data.get("failed_files"))
@@ -5592,8 +5637,11 @@ def _sync_connector_changes(
         if _connector_selection_unchanged(loader, selection, config, source_id, user):
             return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(failed))
         return None
-    key = incremental.settings_key(config, _CONNECTOR_INGEST_VERSION)
-    manifest = incremental.load_manifest(row.get("remote_files"), "connector", key)
+    key = incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME)
+    if not _can_edit_index_in_place(row):
+        # The index must be rebuilt whole (see ``_can_edit_index_in_place``).
+        return None
+    manifest = incremental.load_manifest(stored_manifest, "connector", key)
     record_manifest = False
     if manifest is None:
         previous = remote_data.get("sync_fingerprint")
@@ -5613,7 +5661,10 @@ def _sync_connector_changes(
         }
         manifest = incremental.manifest_from_listing(listing, tokens, left_out=failed)
         record_manifest = True
-    plan = incremental.plan_connector_sync(manifest, listing, failed)
+    parse_key = _parse_settings_key()
+    plan = incremental.plan_connector_sync(
+        manifest, listing, failed, parse_key=parse_key, retry_failed=retry_failed,
+    )
     if plan.empty:
         remaining = incremental.record_failures(failed, [], {}, listing)
         if record_manifest or remaining.keys() != failed.keys():
@@ -5626,7 +5677,7 @@ def _sync_connector_changes(
     return _apply_connector_plan(
         task, user=user, actor_id=actor_id, job_name=job_name, source_type=source_type, source_id=source_id,
         loader=loader, selection=selection, row=row, listing=listing, manifest=manifest, failed=failed,
-        plan=plan, config=config, key=key,
+        plan=plan, config=config, key=key, parse_key=parse_key,
     )
 
 
@@ -5647,6 +5698,7 @@ def _apply_connector_plan(
     plan: "incremental.ConnectorPlan",
     config: Any,
     key: str,
+    parse_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Bring a connector source's index to its listed selection by changing only the files that differ.
 
@@ -5754,6 +5806,8 @@ def _apply_connector_plan(
     stale = {path for path in stale if path and path not in moved_from}
     ids = incremental.chunk_ids_by_path(store, stale | set(moved_from))
     deleted, undeleted = incremental.delete_chunk_ids(store, {path: ids[path] for path in stale if path in ids})
+    # The plan never lets two files share a path, so the paths cleared here
+    # belonged only to the files being replaced, added or removed.
     if undeleted:
         raise RuntimeError(f"Could not delete the old chunks of {len(undeleted)} file(s); the sync will redo them")
     moved_chunks = incremental.rewrite_chunk_paths(
@@ -5771,15 +5825,20 @@ def _apply_connector_plan(
         for doc in docs_by_path.get(entry.path, [])
         if str(doc.text or "").strip()
     ]
-    added = incremental.add_chunks(store, chunks)
+    added = incremental.add_chunks(store, chunks, source_id=source_id)
 
     new_manifest = {file_id: record for file_id, record in manifest.items() if file_id not in removed_ids}
+    for record, entry in plan.changed:
+        if entry.id not in read and record.get("path") in stale:
+            # Its old chunks went with a path another file took; it is
+            # recorded as failed, and the next sync adds it again.
+            new_manifest.pop(entry.id, None)
     for record, entry in plan.moved:
         new_manifest[entry.id] = {**record, "path": entry.path, "url": entry.url}
     for entry in to_download:
         if entry.id in read:
             new_manifest[entry.id] = incremental.connector_record(entry, tokens_by_path.get(entry.path, 0))
-    new_failed = incremental.record_failures(failed, to_download, failures, listing)
+    new_failed = incremental.record_failures(failed, to_download, failures, listing, parse_key=parse_key)
 
     files = incremental.structure_files(_json_object(row.get("directory_structure")))
     for _, record in plan.removed:
@@ -5968,6 +6027,7 @@ def ingest_connector(
     notify_skip: bool = True,
     actor_id: Optional[str] = None,
     folder_id: Optional[str] = None,
+    retry_failed: bool = False,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -6006,6 +6066,8 @@ def ingest_connector(
         actor_id: The user who asked for the ingest or sync (a team editor),
             who gets its ``source.ingest.*`` events too; ``None`` for the owner.
         folder_id: One of the uploader's source folders to file a new source in.
+        retry_failed: For a sync someone asked for: try every file the last
+            sync could not read again, whatever its kind and attempts.
 
     Returns:
         The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
@@ -6038,7 +6100,7 @@ def ingest_connector(
             selection.get("file_ids", file_ids), selection.get("folder_ids", folder_ids),
             selection.get("recursive", recursive), row.get("retriever") or retriever, operation_mode, doc_id,
             row.get("sync_frequency") or sync_frequency, row.get("config") or None, idempotency_key, source_id,
-            connection_id, actor_id=actor_id,
+            connection_id, actor_id=actor_id, retry_failed=retry_failed,
         )
 
     return _run_locked_sync(
@@ -6065,6 +6127,7 @@ def _ingest_connector(
     connection_id: Optional[str],
     actor_id: Optional[str] = None,
     folder_id: Optional[str] = None,
+    retry_failed: bool = False,
 ) -> Dict[str, Any]:
     """The body of ``ingest_connector`` (same arguments); a sync runs it holding the source's index lock."""
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
@@ -6146,7 +6209,7 @@ def _ingest_connector(
                 outcome = _sync_connector_changes(
                     self, user=user, actor_id=actor_id, job_name=job_name, source_type=source_type,
                     source_id=source_id_for_events, loader=remote_loader, selection=api_source_config,
-                    listing=listing, config=config,
+                    listing=listing, config=config, retry_failed=retry_failed,
                 )
                 if outcome is not None:
                     return outcome
@@ -6309,7 +6372,7 @@ def _ingest_connector(
             if listing is not None:
                 remote_files = incremental.build_manifest(
                     "connector",
-                    incremental.settings_key(config, _CONNECTOR_INGEST_VERSION),
+                    incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME),
                     incremental.manifest_from_listing(listing, _tokens_by_path(reader, temp_dir), left_out=failed_files),
                 )
 

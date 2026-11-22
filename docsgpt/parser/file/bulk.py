@@ -547,11 +547,13 @@ class SimpleDirectoryReader(BaseReader):
             nonlocal first_error
             logging.warning(f"Skipping unreadable file {input_file.name}: {error}")
             self.failed_files.append((input_file, str(error)))
-            if isinstance(error, TransientParseError):
+            # An OCR endpoint that refused the key or the model is a setting
+            # to fix, not the file's fault: worth trying again later.
+            if isinstance(error, (TransientParseError, OcrUnavailableError)):
                 self.transient_failures.add(input_file)
             first_error = first_error or error
 
-        from docsgpt.parser.file.ocr_parser import OcrRateLimitedError
+        from docsgpt.parser.file.ocr_parser import OcrRateLimitedError, OcrUnavailableError
 
         for file_index, input_file in enumerate(self.input_files):
             try:

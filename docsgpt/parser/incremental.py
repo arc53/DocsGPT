@@ -39,14 +39,12 @@ MANIFEST_FORMAT = 1
 MAX_TRANSIENT_ATTEMPTS = 3
 #: Failed files kept on a source; a selection with more keeps the first ones and counts the rest.
 MAX_FAILED_FILES = 1000
-#: Chunks sent to the vector store per write.
-ADD_BATCH_CHUNKS = 256
 
 TRANSIENT = "transient"
 PERMANENT = "permanent"
 
 
-def settings_key(config: Any, ingest_version: int) -> str:
+def settings_key(config: Any, ingest_version: int, embeddings: Optional[str] = None) -> str:
     """A key that changes whenever a source's processing settings or the ingest version do.
 
     ``retrieval.show_links`` is left out: it only decides what a search
@@ -55,6 +53,8 @@ def settings_key(config: Any, ingest_version: int) -> str:
     Args:
         config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
         ingest_version: The loader family's ingest version.
+        embeddings: The embedding model the index is built with; another
+            model's vectors can't share it.
 
     Returns:
         A hex digest.
@@ -67,7 +67,9 @@ def settings_key(config: Any, ingest_version: int) -> str:
     if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
         retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
         config = {**config, "retrieval": retrieval}
-    payload = json.dumps({"config": config or {}, "version": ingest_version}, sort_keys=True, default=str)
+    payload = json.dumps(
+        {"config": config or {}, "version": ingest_version, "embeddings": embeddings}, sort_keys=True, default=str,
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -88,6 +90,9 @@ class FailedFile:
             changes with the file).
         attempts: Syncs that tried this version and failed.
         error: What went wrong, shortened.
+        parse_key: The parse settings it failed under (``parse_cache.settings_key``):
+            a file that failed for good is tried again once they change (an OCR
+            engine configured, a parser installed).
     """
 
     id: str
@@ -96,10 +101,17 @@ class FailedFile:
     kind: str = TRANSIENT
     attempts: int = 1
     error: str = ""
+    parse_key: Optional[str] = None
 
-    @property
-    def retryable(self) -> bool:
-        """Whether a sync that finds the file unchanged tries it again."""
+    def retryable(self, parse_key: Optional[str] = None) -> bool:
+        """Whether a sync that finds the file unchanged tries it again.
+
+        Args:
+            parse_key: The parse settings now; a failure recorded under other
+                ones is tried again whatever its kind.
+        """
+        if parse_key is not None and self.parse_key is not None and parse_key != self.parse_key:
+            return True
         return self.kind == TRANSIENT and self.attempts < MAX_TRANSIENT_ATTEMPTS
 
     def to_dict(self) -> Dict[str, Any]:
@@ -110,6 +122,7 @@ class FailedFile:
             "kind": self.kind,
             "attempts": self.attempts,
             "error": self.error[:300],
+            "parse_key": self.parse_key,
         }
 
     @classmethod
@@ -129,6 +142,7 @@ class FailedFile:
             kind=kind,
             attempts=attempts,
             error=str(raw.get("error") or ""),
+            parse_key=str(raw["parse_key"]) if raw.get("parse_key") else None,
         )
 
 
@@ -144,7 +158,10 @@ def load_failed_files(raw: Any) -> Dict[str, FailedFile]:
 
 
 def dump_failed_files(failed: Dict[str, FailedFile]) -> List[Dict[str, Any]]:
-    """The failed files as stored in ``remote_data``, by path, capped at ``MAX_FAILED_FILES``."""
+    """The failed files as stored in ``remote_data``, by path, capped at ``MAX_FAILED_FILES``.
+
+    Past the cap the rest are not recorded, so each sync tries them again as new files.
+    """
     return [f.to_dict() for f in sorted(failed.values(), key=lambda f: (f.path, f.id))][:MAX_FAILED_FILES]
 
 
@@ -153,6 +170,7 @@ def record_failures(
     attempted: Iterable[FileEntry],
     failures: Dict[str, Tuple[str, str]],
     listing: Optional[SelectionListing] = None,
+    parse_key: Optional[str] = None,
 ) -> Dict[str, FailedFile]:
     """The failed files after a sync: this run's outcomes over what was recorded before.
 
@@ -166,6 +184,7 @@ def record_failures(
         attempted: The files this run downloaded or tried to.
         failures: ``{id: (kind, error)}`` for the attempted files that failed.
         listing: The selection as listed now; ``None`` keeps every untried record.
+        parse_key: The parse settings this run used, recorded on each new failure.
 
     Returns:
         ``{id: FailedFile}``.
@@ -182,7 +201,7 @@ def record_failures(
             if current is not None:
                 failed = FailedFile(
                     id=failed.id, path=current.path, version=failed.version, kind=failed.kind,
-                    attempts=failed.attempts, error=failed.error,
+                    attempts=failed.attempts, error=failed.error, parse_key=failed.parse_key,
                 )
             out[file_id] = failed
     for entry in attempted:
@@ -191,10 +210,14 @@ def record_failures(
         kind, error = failures[entry.id]
         before = previous.get(entry.id)
         attempts = 1
-        if before is not None and before.version == entry.version and before.kind == kind == TRANSIENT:
+        if (
+            before is not None and before.version == entry.version and before.kind == kind == TRANSIENT
+            and before.parse_key == parse_key
+        ):
             attempts = before.attempts + 1
         out[entry.id] = FailedFile(
             id=entry.id, path=entry.path, version=entry.version, kind=kind, attempts=attempts, error=error,
+            parse_key=parse_key,
         )
     return out
 
@@ -293,29 +316,57 @@ class ConnectorPlan:
 
 
 def plan_connector_sync(
-    manifest: Dict[str, Dict[str, Any]], listing: SelectionListing, failed: Dict[str, FailedFile],
+    manifest: Dict[str, Dict[str, Any]],
+    listing: SelectionListing,
+    failed: Dict[str, FailedFile],
+    *,
+    parse_key: Optional[str] = None,
+    retry_failed: bool = False,
 ) -> ConnectorPlan:
     """Diff the manifest of the indexed files against the selection as listed now.
 
     A file whose current version already failed, and isn't due a retry
     (a ``permanent`` failure, or a ``transient`` one tried
-    ``MAX_TRANSIENT_ATTEMPTS`` times), is left as the index holds it until
-    its version changes. A file the manifest marks pending (no version, as a
-    sync that died part way leaves it) counts as changed.
+    ``MAX_TRANSIENT_ATTEMPTS`` times, both under the same parse settings), is
+    left as the index holds it until its version changes. A file the manifest
+    marks pending (no version, as a sync that died part way leaves it) counts
+    as changed.
+
+    Chunks are found by path, so two files may never trade paths in one
+    sync: every file on a path that another file had or takes (a swap, or a
+    file moving onto a removed one's path) is downloaded again, and the
+    chunks on those paths rebuilt.
 
     Args:
         manifest: ``{id: record}`` of the indexed files.
         listing: The selection now.
         failed: The failed files recorded so far.
+        parse_key: The parse settings now (``parse_cache.settings_key``).
+        retry_failed: Try every failed file again, whatever its kind and attempts
+            (someone asked for a sync).
 
     Returns:
         The plan.
     """
     plan = ConnectorPlan()
+    removable = listing.complete
+    listed = listing.by_id()
+    # Paths held by more than one file across the manifest and the listing.
+    holders: Dict[str, Set[str]] = {}
+    for file_id, record in manifest.items():
+        if record.get("path") and (file_id in listed or removable):
+            holders.setdefault(record["path"], set()).add(file_id)
+    for entry in listing.entries:
+        holders.setdefault(entry.path, set()).add(entry.id)
+    contested = {file_id for ids in holders.values() if len(ids) > 1 for file_id in ids}
+
     for entry in listing.entries:
         record = manifest.get(entry.id)
         failure = failed.get(entry.id)
-        stuck = failure is not None and failure.version == entry.version and not failure.retryable
+        stuck = (
+            failure is not None and failure.version == entry.version and not retry_failed
+            and not failure.retryable(parse_key) and entry.id not in contested
+        )
         if record is None:
             if stuck:
                 plan.unchanged += 1
@@ -325,7 +376,7 @@ def plan_connector_sync(
                 plan.retrying.add(entry.id)
             continue
         version = record.get("version")
-        if version is None or version != entry.version or entry.version is None:
+        if entry.id in contested or version is None or version != entry.version or entry.version is None:
             if stuck:
                 # The new version failed for good; the index keeps the old one.
                 if record.get("path") != entry.path and version is not None:
@@ -341,8 +392,7 @@ def plan_connector_sync(
             plan.moved.append((record, entry))
         else:
             plan.unchanged += 1
-    if listing.complete:
-        listed = listing.by_id()
+    if removable:
         plan.removed = [(file_id, record) for file_id, record in manifest.items() if file_id not in listed]
     return plan
 
@@ -480,6 +530,21 @@ def source_path_key(metadata: dict) -> str:
     return str(raw) if raw else ""
 
 
+def _list_chunks(store: Any) -> List[Any]:
+    """Every chunk of the store, raising when it can't list them.
+
+    A real store is read with ``_scan_chunks``: several stores' ``get_chunks``
+    log a failed query and answer ``[]``, which would read as "no chunks" and
+    leave old ones beside new ones.
+    """
+    if _is_store(store):
+        return store._scan_chunks()
+    chunks = store.get_chunks()
+    if chunks is None:
+        raise NotImplementedError(f"{type(store).__name__} cannot list its chunks")
+    return chunks
+
+
 def chunk_ids_by_path(
     store: Any, paths: Iterable[str], key: Callable[[dict], str] = source_path_key,
 ) -> Dict[str, List[str]]:
@@ -500,11 +565,8 @@ def chunk_ids_by_path(
     wanted = {p for p in paths if p}
     if not wanted:
         return {}
-    chunks = store.get_chunks()
-    if chunks is None:
-        raise NotImplementedError(f"{type(store).__name__} cannot list its chunks")
     found: Dict[str, List[str]] = {}
-    for chunk in chunks:
+    for chunk in _list_chunks(store):
         path = key(_metadata_of(chunk))
         cid = _chunk_id(chunk)
         if path in wanted and cid:
@@ -519,32 +581,42 @@ def _is_store(store: Any) -> bool:
     return isinstance(store, BaseVectorStore)
 
 
-def delete_chunk_ids(store: Any, ids_by_path: Dict[str, List[str]]) -> Tuple[int, Set[str]]:
-    """Delete the given chunks; a store's batched delete when it has one.
+def delete_chunk_ids(
+    store: Any, ids_by_path: Dict[str, List[str]], key: Callable[[dict], str] = source_path_key,
+) -> Tuple[int, Set[str]]:
+    """Delete the given chunks, in one batched delete on a real store.
+
+    A store that saves its whole index on every write (FAISS) is written once.
 
     Args:
         store: The source's vector store.
         ids_by_path: ``{path: [chunk id, ...]}``.
+        key: Reads a chunk's path from its metadata, to find what a short delete left.
 
     Returns:
         ``(deleted, paths with a chunk that could not be deleted)``.
     """
+    ids_by_path = {path: ids for path, ids in ids_by_path.items() if ids}
+    if not ids_by_path:
+        return 0, set()
+    if _is_store(store):
+        wanted = [cid for ids in ids_by_path.values() for cid in ids]
+        try:
+            deleted = int(store.delete_chunks(wanted) or 0)
+        except Exception as err:  # noqa: BLE001 - what is left is found below
+            logging.error(f"Failed deleting {len(wanted)} chunks: {err}")
+            deleted = 0
+        if deleted >= len(wanted):
+            return deleted, set()
+        try:
+            left = chunk_ids_by_path(store, ids_by_path, key)
+        except Exception:  # noqa: BLE001 - can't tell which: count them all
+            return deleted, set(ids_by_path)
+        remaining = {path for path, ids in left.items() if set(ids) & set(ids_by_path[path])}
+        return deleted, remaining
     deleted = 0
     undeleted: Set[str] = set()
     for path, ids in ids_by_path.items():
-        if not ids:
-            continue
-        if _is_store(store):
-            try:
-                count = store.delete_chunks(ids)
-            except Exception as err:  # noqa: BLE001 - reported per path
-                logging.error(f"Failed deleting the chunks of {path}: {err}")
-                undeleted.add(path)
-                continue
-            deleted += int(count or 0)
-            if int(count or 0) < len(ids):
-                undeleted.add(path)
-            continue
         for cid in ids:
             try:
                 store.delete_chunk(cid)
@@ -555,39 +627,80 @@ def delete_chunk_ids(store: Any, ids_by_path: Dict[str, List[str]]) -> Tuple[int
     return deleted, undeleted
 
 
-def add_chunks(store: Any, chunks: Sequence[Tuple[str, dict]], batch: int = ADD_BATCH_CHUNKS) -> int:
-    """Add ``(text, metadata)`` chunks, in batches when the store writes batches.
+#: Tries per batch write, and the wait before the second (doubled after it); a test patches ``_sleep``.
+ADD_TRIES = 3
+ADD_RETRY_SECONDS = 5.0
 
-    A store that saves its whole index on every write (FAISS) is written once
-    per batch rather than once per chunk.
+
+def _sleep(seconds: float) -> None:
+    import time
+
+    time.sleep(seconds)
+
+
+def _with_retries(write: Callable[[], Any]) -> Any:
+    """Run a batch write, retrying a failure (an embeddings rate limit, an outage) with backoff."""
+    wait = ADD_RETRY_SECONDS
+    for attempt in range(1, ADD_TRIES + 1):
+        try:
+            return write()
+        except Exception as err:  # noqa: BLE001 - re-raised on the last try
+            if attempt == ADD_TRIES:
+                raise
+            logging.warning(f"Adding chunks failed ({err}); retrying in {wait:.0f}s")
+            _sleep(wait)
+            wait *= 2
+    return None
+
+
+def add_chunks(
+    store: Any, chunks: Sequence[Tuple[str, dict]], source_id: Optional[str] = None, batch: Optional[int] = None,
+) -> int:
+    """Add ``(text, metadata)`` chunks in batches, each retried with backoff.
+
+    A store with its own ``add_chunks`` (FAISS, which saves its whole index
+    on every write) gets every chunk in one call, so it is saved once. Other
+    stores get ``add_texts`` per ``EMBEDDINGS_BATCH_SIZE`` chunks: one
+    embeddings request and one write each. Each batch lands whole or not at all.
 
     Args:
         store: The source's vector store.
         chunks: The chunks.
-        batch: Chunks per write.
+        source_id: Stamped on each chunk's metadata as ``source_id``.
+        batch: Chunks per write; ``EMBEDDINGS_BATCH_SIZE`` when unset.
 
     Returns:
         How many were added.
 
     Raises:
-        Exception: Whatever adding raised; a batch either lands whole or not at all.
+        Exception: Whatever adding raised after the retries; batches before it stay added.
     """
-    from docsgpt.parser.embedding_pipeline import sanitize_content
+    from docsgpt.parser.embedding_pipeline import _resolve_batch_size, sanitize_content
     from docsgpt.utils import strip_null_bytes
+    from docsgpt.vectorstore.base import BaseVectorStore
 
-    added = 0
-    if _is_store(store):
-        for start in range(0, len(chunks), max(1, batch)):
-            part = chunks[start:start + batch]
-            store.add_chunks(
-                [sanitize_content(text) for text, _ in part], [strip_null_bytes(dict(meta)) for _, meta in part],
-            )
-            added += len(part)
-        return added
+    prepared = []
     for text, meta in chunks:
-        store.add_chunk(text, metadata=meta)
-        added += 1
-    return added
+        meta = strip_null_bytes(dict(meta))
+        if source_id:
+            meta["source_id"] = str(source_id)
+        prepared.append((sanitize_content(text), meta))
+    if not prepared:
+        return 0
+    if not _is_store(store):
+        for text, meta in prepared:
+            store.add_chunk(text, metadata=meta)
+        return len(prepared)
+    texts = [text for text, _ in prepared]
+    metas = [meta for _, meta in prepared]
+    if type(store).add_chunks is not BaseVectorStore.add_chunks:
+        _with_retries(lambda: store.add_chunks(texts, metas))
+        return len(texts)
+    size = max(1, int(batch or _resolve_batch_size()))
+    for start in range(0, len(texts), size):
+        part_texts, part_metas = texts[start:start + size], metas[start:start + size]
+        _with_retries(lambda: store.add_texts(part_texts, metadatas=part_metas))
+    return len(texts)
 
 
 def rewrite_chunk_paths(store: Any, moves: Dict[str, Tuple[List[str], Dict[str, Any]]]) -> int:
@@ -600,13 +713,15 @@ def rewrite_chunk_paths(store: Any, moves: Dict[str, Tuple[List[str], Dict[str, 
 
     Returns:
         How many chunks were rewritten.
+
+    Raises:
+        RuntimeError: Fewer chunks were rewritten than asked for; their paths are wrong.
     """
     wanted = {cid: changes for ids, changes in moves.values() for cid in ids}
     if not wanted:
         return 0
-    chunks = store.get_chunks() or []
     updates: Dict[str, Tuple[str, dict]] = {}
-    for chunk in chunks:
+    for chunk in _list_chunks(store):
         cid = _chunk_id(chunk)
         if cid not in wanted:
             continue
@@ -620,9 +735,12 @@ def rewrite_chunk_paths(store: Any, moves: Dict[str, Tuple[List[str], Dict[str, 
         updates[cid] = (text or "", meta)
     rewrite = getattr(store, "update_chunks_metadata", None)
     if _is_store(store) and callable(rewrite):
-        return int(rewrite({cid: meta for cid, (_, meta) in updates.items()}) or 0)
-    count = 0
-    for cid, (text, meta) in updates.items():
-        store.update_chunk(cid, text, meta)
-        count += 1
+        count = int(rewrite({cid: meta for cid, (_, meta) in updates.items()}) or 0)
+    else:
+        count = 0
+        for cid, (text, meta) in updates.items():
+            store.update_chunk(cid, text, meta)
+            count += 1
+    if count < len(wanted):
+        raise RuntimeError(f"Rewrote the paths of {count} of {len(wanted)} moved chunks")
     return count

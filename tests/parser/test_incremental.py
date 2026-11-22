@@ -190,3 +190,110 @@ class TestChunkEdits:
         count = incremental.rewrite_chunk_paths(store, {"a": (["1"], {"source": "b", "url": None})})
         assert count == 1
         store.update_chunk.assert_called_once_with("1", "t", {"source": "b", "x": 1})
+
+
+class _Store:
+    """A real ``BaseVectorStore`` subclass held in a dict, built lazily so the import stays local."""
+
+    @staticmethod
+    def make(add_failures=0, overrides_add_chunks=False):
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        class Store(BaseVectorStore):
+            def __init__(self):
+                super().__init__()
+                self.chunks = {}
+                self.writes = []
+                self.failures_left = add_failures
+
+            def search(self, *a, **k):
+                return []
+
+            def add_texts(self, texts, metadatas=None, *a, **k):
+                if self.failures_left:
+                    self.failures_left -= 1
+                    raise RuntimeError("429")
+                self.writes.append(len(texts))
+                ids = []
+                for text, meta in zip(texts, metadatas):
+                    cid = str(len(self.chunks) + 1)
+                    self.chunks[cid] = {"doc_id": cid, "text": text, "metadata": dict(meta)}
+                    ids.append(cid)
+                return ids
+
+            def get_chunks(self, *a, **k):
+                return list(self.chunks.values())
+
+            def delete_chunk(self, cid, *a, **k):
+                return self.chunks.pop(cid, None) is not None
+
+            def update_chunks_metadata(self, updates):
+                return 0
+
+        if overrides_add_chunks:
+            Store.add_chunks = lambda self, texts, metadatas=None: self.add_texts(texts, metadatas)
+        return Store()
+
+
+@pytest.mark.unit
+class TestBatchedWrites:
+    def test_adds_go_in_embedding_batches_with_the_source_stamped(self, monkeypatch):
+        store = _Store.make()
+        count = incremental.add_chunks(store, [(f"t{i}", {"source": "a"}) for i in range(5)], source_id="s1", batch=2)
+        assert count == 5 and store.writes == [2, 2, 1]
+        assert all(c["metadata"]["source_id"] == "s1" for c in store.chunks.values())
+
+    def test_a_store_with_its_own_add_chunks_is_written_once(self):
+        store = _Store.make(overrides_add_chunks=True)
+        incremental.add_chunks(store, [(f"t{i}", {}) for i in range(5)], batch=2)
+        assert store.writes == [5]
+
+    def test_a_failed_batch_is_retried_with_backoff(self, monkeypatch):
+        waits = []
+        monkeypatch.setattr(incremental, "_sleep", waits.append)
+        store = _Store.make(add_failures=2)
+        assert incremental.add_chunks(store, [("t", {})]) == 1
+        assert waits == [incremental.ADD_RETRY_SECONDS, incremental.ADD_RETRY_SECONDS * 2]
+
+    def test_a_batch_that_keeps_failing_raises(self, monkeypatch):
+        monkeypatch.setattr(incremental, "_sleep", lambda s: None)
+        with pytest.raises(RuntimeError):
+            incremental.add_chunks(_Store.make(add_failures=incremental.ADD_TRIES), [("t", {})])
+
+    def test_a_short_delete_names_the_paths_left(self, monkeypatch):
+        store = _Store.make()
+        store.add_texts(["a", "b"], [{"source": "a"}, {"source": "b"}])
+        monkeypatch.setattr(store, "delete_chunks", lambda ids: (store.chunks.pop("1"), 1)[1])
+        deleted, left = incremental.delete_chunk_ids(store, {"a": ["1"], "b": ["2"]})
+        assert (deleted, left) == (1, {"b"})
+
+    def test_a_short_rewrite_raises(self):
+        store = _Store.make()
+        store.add_texts(["a"], [{"source": "a"}])
+        with pytest.raises(RuntimeError):
+            incremental.rewrite_chunk_paths(store, {"a": (["1"], {"source": "b"})})
+
+
+@pytest.mark.unit
+class TestRetryRules:
+    def test_a_failure_under_other_parse_settings_is_due_a_retry(self):
+        failed = incremental.FailedFile(id="a", path="a", version="v1", kind="permanent", parse_key="old")
+        assert not failed.retryable("old")
+        assert failed.retryable("new")
+
+    def test_files_trading_paths_are_both_downloaded_again(self):
+        manifest = {"A": _record("a.md"), "B": _record("b.md")}
+        listing = SelectionListing([_entry("A", "b.md"), _entry("B", "a.md")])
+        plan = incremental.plan_connector_sync(manifest, listing, {})
+        assert sorted(e.id for _, e in plan.changed) == ["A", "B"] and plan.moved == []
+
+    def test_a_file_moving_onto_a_removed_ones_path_is_downloaded_again(self):
+        manifest = {"A": _record("a.md"), "B": _record("b.md")}
+        plan = incremental.plan_connector_sync(manifest, SelectionListing([_entry("A", "b.md")]), {})
+        assert [e.id for _, e in plan.changed] == ["A"] and [fid for fid, _ in plan.removed] == ["B"]
+
+    def test_retry_failed_tries_every_failed_file(self):
+        failed = {"a": incremental.FailedFile(id="a", path="a.md", version="v1", kind="permanent")}
+        listing = SelectionListing([_entry("a", "a.md")])
+        assert incremental.plan_connector_sync({}, listing, failed).empty
+        assert [e.id for e in incremental.plan_connector_sync({}, listing, failed, retry_failed=True).added] == ["a"]

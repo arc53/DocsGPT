@@ -370,6 +370,8 @@ class TestIngestConnectorTask:
             idempotency_key=None,
             source_id=None,
             actor_id=None,
+            # A sync someone asked for retries every file the last one couldn't read.
+            retry_failed=True,
         )
         assert result == {"status": "ok"}
 

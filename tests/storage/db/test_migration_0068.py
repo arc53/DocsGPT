@@ -24,9 +24,11 @@ def test_round_trip_adds_then_drops_the_column(pg_conn):
         migration.upgrade()
         repo = SourcesRepository(pg_conn)
         src = repo.create("docs", user_id="u")
-        assert src["remote_files"] is None
+        assert repo.get_remote_files(str(src["id"])) is None
         repo.update(str(src["id"]), "u", {"remote_files": {"format": 1, "kind": "connector", "settings": "g", "files": {}}})
-        assert repo.get(str(src["id"]), "u")["remote_files"]["settings"] == "g"
+        assert repo.get_remote_files(str(src["id"]))["settings"] == "g"
+        # Row reads leave the manifest out: it runs to megabytes for a large selection.
+        assert "remote_files" not in repo.get(str(src["id"]), "u")
 
         migration.downgrade()
         migration.downgrade()
@@ -34,4 +36,4 @@ def test_round_trip_adds_then_drops_the_column(pg_conn):
 
         migration.upgrade()
         assert _has_column(pg_conn)
-        assert repo.get(str(src["id"]), "u")["remote_files"] is None
+        assert repo.get_remote_files(str(src["id"])) is None

@@ -30,7 +30,7 @@ from docsgpt.vectorstore.base import BaseVectorStore
 
 
 class MemoryStore(BaseVectorStore):
-    """A vector store held in a dict; counts what it embeds."""
+    """A vector store held in a dict; counts what it embeds and how often it writes."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -38,6 +38,8 @@ class MemoryStore(BaseVectorStore):
         self.embedded: List[str] = []
         self.next_id = 0
         self.fail_adds = False
+        self.listing_broken = False
+        self.delete_calls = 0
 
     def search(self, *args, **kwargs):
         return []
@@ -62,12 +64,21 @@ class MemoryStore(BaseVectorStore):
         return self.add_texts(texts, metadatas)
 
     def get_chunks(self, *args, **kwargs):
+        # Like pgvector, Qdrant, Milvus and MongoDB: a failed query reads as no chunks.
+        if self.listing_broken:
+            return []
         return [dict(c, metadata=dict(c["metadata"])) for c in self.chunks.values()]
+
+    def _scan_chunks(self):
+        if self.listing_broken:
+            raise RuntimeError("statement timeout")
+        return self.get_chunks()
 
     def delete_chunk(self, chunk_id, *args, **kwargs):
         return self.chunks.pop(str(chunk_id), None) is not None
 
     def delete_chunks(self, chunk_ids):
+        self.delete_calls += 1
         return sum(1 for cid in chunk_ids if self.chunks.pop(str(cid), None) is not None)
 
     def delete_index(self, *args, **kwargs):
@@ -196,6 +207,7 @@ def harness(pg_conn, patch_worker_db, task_self, published, monkeypatch):
     store = MemoryStore()
     loader = FakeDriveLoader(_files())
     parser = FlakyParser()
+    monkeypatch.setattr(incremental, "_sleep", lambda seconds: None)
     monkeypatch.setattr(worker.ConnectorCreator, "is_supported", staticmethod(lambda s: True))
     monkeypatch.setattr(
         worker.ConnectorCreator, "create_connector",
@@ -244,14 +256,16 @@ def harness(pg_conn, patch_worker_db, task_self, published, monkeypatch):
     h.store, h.loader, h.parser, h.events, h.pg = store, loader, parser, published, pg_conn
     h.source_id = str(src["id"])
 
-    def sync(config=None):
+    def sync(config=None, retry_failed=False):
         return worker.ingest_connector(
             task_self, "drive", "dave", "google_drive", session_token="tok", folder_ids=["root"],
             operation_mode="sync", doc_id=h.source_id, sync_frequency="daily", config=config,
+            retry_failed=retry_failed,
         )
 
     def row():
-        return SourcesRepository(pg_conn).get(h.source_id, "dave")
+        repo = SourcesRepository(pg_conn)
+        return {**repo.get(h.source_id, "dave"), "remote_files": repo.get_remote_files(h.source_id)}
 
     def reset():
         loader.full_downloads = 0
@@ -498,6 +512,113 @@ class TestConnectorFailedFiles:
 
 
 # ---------------------------------------------------------------------------
+# What the review found
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestIncrementalSafety:
+
+    def test_a_store_that_cannot_edit_chunks_syncs_in_full(self, harness, monkeypatch):
+        harness.sync()
+        monkeypatch.setattr(
+            "docsgpt.vectorstore.vector_creator.VectorCreator.supports_chunk_edits", lambda type_: False,
+        )
+        harness.loader.files["id2"]["version"] = "v2"
+        harness.reset()
+
+        harness.sync()
+        harness.sync()
+
+        assert harness.loader.full_downloads == 2
+        assert harness.loader.single_downloads == []
+
+    def test_a_failed_chunk_listing_changes_nothing_and_the_next_sync_redoes_it(self, harness):
+        harness.sync()
+        path = os.path.join("Docs", "doc2.md")
+        old = harness.store.by_source()[path]
+        harness.loader.files["id2"].update(version="v2", text="# Doc 2\n\nrewritten " * 20)
+        harness.store.listing_broken = True
+
+        with pytest.raises(RuntimeError):
+            harness.sync()
+        harness.store.listing_broken = False
+        assert harness.store.by_source()[path] == old
+        assert harness.row()["remote_files"]["files"]["id2"]["version"] is None
+
+        harness.sync()
+        texts = [harness.store.chunks[c]["text"] for c in harness.store.by_source()[path]]
+        assert texts and all("rewritten" in t for t in texts)
+
+    def test_files_trading_paths_never_lose_an_unchanged_files_chunks(self, harness):
+        loader = harness.loader
+        loader.files.clear()
+        loader.files["A"] = {"path": "a.md", "version": "v1", "text": "# A\n\nalpha " * 20}
+        loader.files["B"] = {"path": "b.md", "version": "v1", "text": "# B\n\nbravo " * 20}
+        harness.sync()
+        # A is edited and the two swap names; A's download fails.
+        loader.files["A"].update(version="v2", path="b.md", text="# A\n\nalpha2 " * 20)
+        loader.files["B"].update(path="a.md")
+        loader.download_failures["A"] = "transient"
+
+        harness.sync()
+        by_path = harness.store.by_source()
+        assert all("bravo" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
+        assert "b.md" not in by_path
+        assert "A" not in harness.row()["remote_files"]["files"]
+
+        loader.download_failures.clear()
+        harness.sync()
+        by_path = harness.store.by_source()
+        assert all("bravo" in harness.store.chunks[c]["text"] for c in by_path["a.md"])
+        assert all("alpha2" in harness.store.chunks[c]["text"] for c in by_path["b.md"])
+
+    def test_another_embedding_model_rebuilds_the_index(self, harness, monkeypatch):
+        harness.sync()
+        SourcesRepository(harness.pg).update(harness.source_id, "dave", {"model": "old-model"})
+        monkeypatch.setattr(worker.settings, "EMBEDDINGS_NAME", "new-model")
+        harness.reset()
+
+        harness.sync()
+
+        assert harness.loader.full_downloads == 1
+
+    def test_a_permanent_failure_is_tried_again_once_the_parse_settings_change(self, harness, monkeypatch):
+        harness.parser.broken["doc3.md"] = "permanent"
+        harness.sync()
+        harness.parser.broken.clear()
+        harness.reset()
+        harness.sync()
+        assert harness.loader.single_downloads == []
+
+        monkeypatch.setattr(worker, "_parse_settings_key", lambda: "ocr-now-configured")
+        harness.sync()
+        assert harness.loader.single_downloads == [["id3"]]
+        assert os.path.join("Docs", "doc3.md") in harness.store.by_source()
+
+    def test_a_sync_someone_asked_for_retries_every_failed_file(self, harness):
+        harness.parser.broken["doc3.md"] = "permanent"
+        harness.sync()
+        harness.parser.broken.clear()
+        harness.reset()
+
+        harness.sync(retry_failed=True)
+
+        assert harness.loader.single_downloads == [["id3"]]
+        assert "failed_files" not in harness.row()["remote_data"]
+
+    def test_deletes_go_to_the_store_in_one_call(self, harness):
+        harness.sync()
+        for fid in ("id0", "id1", "id2"):
+            harness.loader.files[fid]["version"] = "v2"
+        harness.store.delete_calls = 0
+
+        harness.sync()
+
+        assert harness.store.delete_calls == 1
+
+
+# ---------------------------------------------------------------------------
 # Remote sources (GitHub, crawlers, S3...)
 # ---------------------------------------------------------------------------
 
@@ -544,9 +665,12 @@ def remote(pg_conn, patch_worker_db, task_self, published, monkeypatch, tmp_path
             operation_mode="sync", doc_id=source_id, config=config,
         )
 
+    def row():
+        repo = SourcesRepository(pg_conn)
+        return {**repo.get(source_id, "dave"), "remote_files": repo.get_remote_files(source_id)}
+
     return MagicMock(
-        store=store, loader=loader, sync=sync, full_embeds=full_embeds, events=published,
-        row=lambda: SourcesRepository(pg_conn).get(source_id, "dave"),
+        store=store, loader=loader, sync=sync, full_embeds=full_embeds, events=published, row=row,
     )
 
 

@@ -72,6 +72,10 @@ _KEY_SETTINGS = (
     "STT_LANGUAGE",
     "STT_ENABLE_TIMESTAMPS",
     "STT_ENABLE_DIARIZATION",
+    "ANYDOC_TABLEIZE",
+    "PDF_TRUST_CHECK",
+    "DOCLING_TABULAR_MAX_BYTES",
+    "DOCLING_MARKUP_MAX_BYTES",
 )
 
 #: Parser attributes holding a parser it hands files to.
@@ -124,6 +128,24 @@ def _resolved_ocr() -> Dict[str, Any]:
     except Exception:  # noqa: BLE001 - the raw settings are in the key too
         logger.debug("Could not resolve the OCR stack for the parse cache key", exc_info=True)
     return resolved
+
+
+def settings_key() -> str:
+    """Hash the parse settings every parser shares: the OCR stack, the parser engine, speech-to-text.
+
+    A sync records it on each file it could not parse, and tries such a file
+    again once it changes (an OCR engine configured, a parser installed)
+    instead of waiting for the file to be edited.
+
+    Returns:
+        A hex SHA-256.
+    """
+    payload = {
+        "version": PARSER_VERSION,
+        "settings": {name: getattr(settings, name, None) for name in _KEY_SETTINGS},
+        "ocr": _resolved_ocr(),
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
 
 
 def parser_key(parser: Any) -> str:

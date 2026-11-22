@@ -597,11 +597,15 @@ def ingest_connector_task(
     connection_id=None,
     actor_id=None,
     folder_id=None,
+    retry_failed=None,
 ):
     """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
 
     ``actor_id`` is the user who asked, when not the owner (a team editor's
     re-ingest or Sync now): the ``source.ingest.*`` events go to them too.
+    This task runs the syncs someone asks for (scheduled ones run
+    ``sync_connector_source``), so a sync retries every file the last one
+    could not read unless ``retry_failed`` says otherwise.
     """
     from docsgpt.worker import ingest_connector
 
@@ -623,6 +627,10 @@ def ingest_connector_task(
         idempotency_key=idempotency_key,
         source_id=source_id,
         actor_id=actor_id,
+        **(
+            {"retry_failed": True if retry_failed is None else bool(retry_failed)}
+            if operation_mode == "sync" else {}
+        ),
         **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
