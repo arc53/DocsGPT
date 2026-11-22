@@ -104,6 +104,7 @@ const modelsBody = (
   taskModelId: string | null = null,
   unavailable = false,
   refused: string | null = null,
+  fallback: string | null = 'gpt-b',
 ) => ({
   json: async () => ({
     success: true,
@@ -112,7 +113,7 @@ const modelsBody = (
     task_model_error: refused
       ? { model_id: refused, code: 'model_auth', at: '2026-11-10T09:00:00Z' }
       : null,
-    fallback_model_id: 'gpt-b',
+    fallback_model_id: fallback,
     models: [
       { id: 'gpt-a', display_name: 'GPT A', provider: 'openai' },
       { id: 'gpt-b', display_name: 'GPT B', provider: 'openai' },
@@ -311,12 +312,8 @@ describe('Admin Defaults', () => {
     const trigger = container.querySelector<HTMLElement>(
       '#defaults-task-model',
     )!;
-    expect(trigger.textContent).toContain('Not set (GPT B)');
-    // A phone's full-width trigger shows the choice without the model.
-    expect(trigger.querySelector('.sm\\:hidden')?.textContent).toBe('Not set');
-    expect(trigger.querySelector('.sm\\:block')?.textContent).toBe(
-      'Not set (GPT B)',
-    );
+    // Nothing stored: the fallback shows as the picked model.
+    expect(trigger.textContent).toBe('GPT B');
     expect(save().disabled).toBe(true);
     await act(async () => {
       trigger.dispatchEvent(
@@ -330,13 +327,9 @@ describe('Admin Defaults', () => {
     const options = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="option"]'),
     );
-    // Built-in models only, after "Not set".
-    expect(options.map((o) => o.textContent)).toEqual([
-      'Not set (GPT B)',
-      'GPT A',
-      'GPT B',
-    ]);
-    await act(async () => options[1].click());
+    // The built-in models and nothing else.
+    expect(options.map((o) => o.textContent)).toEqual(['GPT A', 'GPT B']);
+    await act(async () => options[0].click());
     expect(save().disabled).toBe(false);
     await act(async () => save().click());
     expect(admin.setModelDefaults).toHaveBeenCalledWith('gpt-a', 'tok');
@@ -347,7 +340,48 @@ describe('Admin Defaults', () => {
     expect(save().disabled).toBe(true);
   });
 
-  it('says when the stored task model can no longer run, and Not set clears it', async () => {
+  it('stores no task model when the fallback is picked', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    admin.getModelDefaults.mockResolvedValue(modelsBody('gpt-a'));
+    admin.setModelDefaults.mockResolvedValue(modelsBody(null));
+    await render();
+    const trigger = container.querySelector<HTMLElement>(
+      '#defaults-task-model',
+    )!;
+    expect(trigger.textContent).toBe('GPT A');
+    await act(async () => {
+      trigger.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          pointerType: 'mouse',
+        }),
+      );
+    });
+    const options = Array.from(
+      document.body.querySelectorAll<HTMLElement>('[role="option"]'),
+    );
+    await act(async () => options[1].click());
+    expect(save().disabled).toBe(false);
+    await act(async () => save().click());
+    expect(admin.setModelDefaults).toHaveBeenCalledWith(null, 'tok');
+    expect(trigger.textContent).toBe('GPT B');
+    expect(save().disabled).toBe(true);
+  });
+
+  it('picks no model when none can run', async () => {
+    admin.getSourceDefaults.mockResolvedValue(body());
+    admin.getModelDefaults.mockResolvedValue(
+      modelsBody(null, false, null, null),
+    );
+    await render();
+    expect(
+      container.querySelector<HTMLElement>('#defaults-task-model')!.textContent,
+    ).toBe('Select model');
+    expect(save().disabled).toBe(true);
+  });
+
+  it('says when the stored task model can no longer run, and the fallback clears it', async () => {
     admin.getSourceDefaults.mockResolvedValue(body());
     admin.getModelDefaults.mockResolvedValue(modelsBody(null, true));
     admin.setModelDefaults.mockResolvedValue(modelsBody(null));
@@ -370,11 +404,12 @@ describe('Admin Defaults', () => {
     const options = Array.from(
       document.body.querySelectorAll<HTMLElement>('[role="option"]'),
     );
-    await act(async () => options[0].click());
+    // GPT B is the fallback: picking it stores no model.
+    await act(async () => options[1].click());
     expect(save().disabled).toBe(false);
     await act(async () => save().click());
     expect(admin.setModelDefaults).toHaveBeenCalledWith(null, 'tok');
-    expect(trigger.textContent).toContain('Not set (GPT B)');
+    expect(trigger.textContent).toBe('GPT B');
     expect(text()).not.toContain("can't run");
     expect(save().disabled).toBe(true);
   });
@@ -390,9 +425,9 @@ describe('Admin Defaults', () => {
     const trigger = container.querySelector<HTMLElement>(
       '#defaults-task-model',
     )!;
-    // Room for the Not set label's model name (B01, D08).
+    // Room for a long model name (B01, D08).
     expect(trigger.className).toContain('sm:max-w-96');
-    expect(trigger.getAttribute('title')).toBe('Not set (GPT B)');
+    expect(trigger.getAttribute('title')).toBe('GPT B');
     await act(async () => {
       trigger.dispatchEvent(
         new PointerEvent('pointerdown', {
@@ -406,7 +441,7 @@ describe('Admin Defaults', () => {
       Array.from(
         document.body.querySelectorAll<HTMLElement>('[role="option"]'),
       ).map((o) => o.textContent),
-    ).toEqual(['Not set (GPT B)', 'GPT A', 'GPT B· key refused']);
+    ).toEqual(['GPT A', 'GPT B· key refused']);
     // The list sizes to its options, not the trigger, so the suffix fits.
     expect(
       document.body

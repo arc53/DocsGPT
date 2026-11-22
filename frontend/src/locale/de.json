@@ -4031,8 +4031,6 @@
       "taskModelDescription": "Entwirft Formulare, erstellt Wissensgraphen und prüft Monitore. Chats verwenden das Modell des Agenten.",
       "taskModelFailed": "{{model}} konnte Ihre letzte Aufgabe nicht ausführen: Der Anbieter hat den API-Schlüssel abgelehnt. Wählen Sie ein anderes Modell oder bitten Sie einen Admin, den Schlüssel zu prüfen.",
       "taskModelFailedItem": "· Schlüssel abgelehnt",
-      "taskModelInstanceDefault": "Instanz-Standard verwenden ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden",
       "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden.",
       "taskModelSaveFailed": "Das Aufgabenmodell konnte nicht gespeichert werden. Versuchen Sie es erneut.",
       "taskModelUnavailable": "Ihr Aufgabenmodell kann nicht mehr ausgeführt werden (es wurde deaktiviert oder entfernt), daher läuft der Instanz-Standard. Ist das Modell wieder verfügbar, läuft es erneut; wählen Sie hier eine Option, um es zu ersetzen.",
