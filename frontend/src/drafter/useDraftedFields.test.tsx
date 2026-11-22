@@ -219,6 +219,27 @@ describe('useDraftedFields', () => {
       await draft('tags', ['y', 'z']);
       expect(harness.drafted!.fields).toEqual(['tools', 'tags']);
     });
+
+    it('clears both marks after a save that sent both', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      const saved = { ...harness.form };
+      await act(async () => harness.drafted!.clear(saved));
+      expect(harness.drafted!.fields).toEqual([]);
+    });
+
+    it('keeps both marks after a save when one was drafted again while it was out', async () => {
+      await draft('tools', ['b']);
+      await draft('tags', ['y']);
+      const saved = { ...harness.form };
+      await draft('tags', ['y', 'z']);
+      await act(async () => harness.drafted!.clear(saved));
+      expect(harness.drafted!.fields).toEqual(['tools', 'tags']);
+      // Undo puts both back to before the draft, as one drafted value.
+      await act(async () => harness.drafted!.undo('tags'));
+      expect(harness.form).toMatchObject({ tools: ['a'], tags: ['x'] });
+      expect(harness.drafted!.fields).toEqual([]);
+    });
   });
 
   it('clears every mark and keeps the values (a save)', async () => {

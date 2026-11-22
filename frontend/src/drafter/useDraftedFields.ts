@@ -41,7 +41,8 @@ export type DraftedFields<K extends string> = {
   /**
    * Drop the marks, keeping the values (after a save). With `saved`, the
    * values a save sent (in the shape of `values`), only the marks whose
-   * value went with it: a field drafted while the save was out keeps its.
+   * value went with it: a field drafted while the save was out keeps its,
+   * and so do the marked fields linked with it.
    */
   clear: (saved?: Partial<Record<K, unknown>>) => void;
 };
@@ -196,20 +197,25 @@ export function useDraftedFields<K extends string>(
     return marker ? { previous: marker.previous } : null;
   }, []);
 
-  const clear = useCallback((saved?: Partial<Record<K, unknown>>) => {
-    if (!saved) {
-      setMarkers(new Map());
-      return;
-    }
-    setMarkers(
-      (prev) =>
-        new Map(
-          [...prev].filter(
-            ([field, marker]) => !isEqual(saved[field], marker.applied),
-          ),
-        ),
-    );
-  }, []);
+  const clear = useCallback(
+    (saved?: Partial<Record<K, unknown>>) => {
+      if (!saved) {
+        setMarkers(new Map());
+        return;
+      }
+      setMarkers((prev) => {
+        // A mark kept keeps the marks linked with it: undo restores them
+        // together.
+        const kept = new Set(
+          [...prev]
+            .filter(([field, marker]) => !isEqual(saved[field], marker.applied))
+            .flatMap(([field]) => withLinked(field)),
+        );
+        return new Map([...prev].filter(([field]) => kept.has(field)));
+      });
+    },
+    [withLinked],
+  );
 
   const isDrafted = useCallback((field: K) => markers.has(field), [markers]);
 
