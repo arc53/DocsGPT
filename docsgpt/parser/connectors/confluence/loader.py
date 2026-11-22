@@ -283,7 +283,7 @@ class ConfluenceLoader(BaseConnectorLoader):
         return listing
 
     def _authorized_get(self, url: str, **kwargs: Any) -> requests.Response:
-        """GET with the connection's token; on 401/403 the token is refreshed once and the GET sent again.
+        """GET with the connection's token; on 401 the token is refreshed once and the GET sent again.
 
         Raises:
             ConnectorAuthError: Confluence still refuses the refreshed token, or it could not be refreshed.
@@ -291,14 +291,16 @@ class ConfluenceLoader(BaseConnectorLoader):
         """
         kwargs.setdefault("timeout", 30)
         response = requests.get(url, headers=self._headers(), **kwargs)
-        if response.status_code in (401, 403):
+        # Only 401 is about the sign-in: a 403 is one item the account may not
+        # open (restricted since the listing), a failure of that file alone.
+        if response.status_code == 401:
             try:
                 self.access_token = self._refresh_rejected_token(self.access_token)["access_token"]
             except Exception as exc:
                 raise ConnectorAuthError(f"Confluence rejected the access token and it could not be refreshed: {exc}") from exc
             response = requests.get(url, headers=self._headers(), **kwargs)
-            if response.status_code in (401, 403):
-                raise ConnectorAuthError(f"Confluence rejected the refreshed access token ({response.status_code})")
+            if response.status_code == 401:
+                raise ConnectorAuthError("Confluence rejected the refreshed access token (401)")
         response.raise_for_status()
         return response
 

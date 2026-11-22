@@ -5727,9 +5727,6 @@ def _sync_connector_changes(
             return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(failed))
         return None
     key = incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME)
-    if not _can_edit_index_in_place(row):
-        # The index must be rebuilt whole (see ``_can_edit_index_in_place``).
-        return None
     manifest = incremental.load_manifest(stored_manifest, "connector", key)
     record_manifest = False
     if manifest is None:
@@ -5773,6 +5770,11 @@ def _sync_connector_changes(
             return _connector_partial_listing(task, user, actor_id, source_id, job_name, source_type, listing,
                                               len(remaining))
         return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(remaining))
+    if not _can_edit_index_in_place(row):
+        # Something changed, and this index can't be edited file by file
+        # (see ``_can_edit_index_in_place``): rebuild it whole. An unchanged
+        # selection was kept above whatever the store.
+        return None
     return _apply_connector_plan(
         task, user=user, actor_id=actor_id, job_name=job_name, source_type=source_type, source_id=source_id,
         loader=loader, selection=selection, row=row, listing=listing, manifest=manifest, failed=failed,
@@ -6408,7 +6410,13 @@ def _ingest_connector(
             self.update_state(
                 state="PROGRESS", meta={"current": 40, "status": "Processing files"}
             )
-            _prune_unlisted(temp_dir, listing)
+            if listing is not None and listing.complete:
+                # Only a complete listing names every file: an incomplete one
+                # would have files that did download pruned unreported.
+                _prune_unlisted(temp_dir, listing)
+            listing_partial = _listing_partial(listing)
+            if listing_partial and not partial:
+                partial = listing_partial
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
                 recursive=True,
@@ -6514,7 +6522,10 @@ def _ingest_connector(
             if failed_files:
                 remote_data["failed_files"] = incremental.dump_failed_files(failed_files)
             remote_files = None
-            if listing is not None:
+            # From a complete listing only: files an incomplete one missed are
+            # in the index too, and a manifest without them would never remove
+            # them; the next sync is then a full one again.
+            if listing is not None and listing.complete:
                 remote_files = incremental.build_manifest(
                     "connector",
                     incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME),

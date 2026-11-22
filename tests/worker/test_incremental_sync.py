@@ -531,13 +531,17 @@ class TestIncrementalSafety:
         monkeypatch.setattr(
             "docsgpt.vectorstore.vector_creator.VectorCreator.supports_chunk_edits", lambda type_: False,
         )
-        harness.loader.files["id2"]["version"] = "v2"
         harness.reset()
+        # Nothing changed: kept as it is, whatever the store.
+        assert harness.sync()["status"] == "unchanged"
+        assert harness.loader.full_downloads == 0
 
+        harness.loader.files["id2"]["version"] = "v2"
         harness.sync()
         harness.sync()
 
-        assert harness.loader.full_downloads == 2
+        # The change rebuilds the index once; the sync after it finds nothing to do.
+        assert harness.loader.full_downloads == 1
         assert harness.loader.single_downloads == []
 
     def test_a_failed_chunk_listing_changes_nothing_and_the_next_sync_redoes_it(self, harness):
@@ -718,6 +722,16 @@ class TestCodeRabbitFixes:
         assert harness.loader.single_downloads == [["id3"]]
         assert "failed_files" not in harness.row()["remote_data"]
         assert len(harness.store.by_source()[path]) >= 1
+
+    def test_a_full_ingest_keeps_files_an_incomplete_listing_missed(self, harness):
+        harness.loader.hidden = {"id3"}
+
+        result = harness.sync()
+
+        assert os.path.join("Docs", "doc3.md") in harness.store.by_source()
+        assert result["partial"] is True and harness.events[-1][1]["partial"] is True
+        # No manifest from an incomplete listing: the next sync is a full one.
+        assert harness.row()["remote_files"] is None
 
     def test_a_full_ingest_indexes_only_what_the_listing_names(self, harness, monkeypatch):
         original = harness.loader.download_to_directory

@@ -1112,3 +1112,15 @@ class TestDownloadFilesSafety:
                    side_effect=[_mock_response({}, 401), ok]):
             result = loader.download_files(str(tmp_path), ["attachment:a1"])
         assert result["failures"] == {} and loader.access_token == "new"
+
+
+class TestForbiddenItem:
+    @pytest.mark.unit
+    def test_a_403_fails_that_file_alone(self, loader, tmp_path):
+        TestDownloadFilesSafety()._listed(loader)
+        loader._refresh_rejected_token = MagicMock()
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 403)):
+            result = loader.download_files(str(tmp_path), ["attachment:a1"])
+        assert result["failures"]["attachment:a1"]["kind"] == "transient"
+        loader._refresh_rejected_token.assert_not_called()

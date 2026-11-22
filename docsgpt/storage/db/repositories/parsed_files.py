@@ -79,6 +79,12 @@ class ParsedFilesRepository:
             The storage path of the parse this replaced, when it had one other
             than ``storage_path``: nothing refers to that file any more.
         """
+        # Two first writes of one key would both find no row to lock; this
+        # lock makes the second see the first's row (and its file) to replace.
+        self._conn.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:lock_key, 0))"),
+            {"lock_key": f"parsed_files:{user_id}:{content_sha256}:{parser_key}"},
+        )
         previous = self._conn.execute(
             text(
                 "SELECT storage_path FROM parsed_files "
