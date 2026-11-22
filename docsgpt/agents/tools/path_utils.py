@@ -18,6 +18,10 @@ def validate_tool_path(path: str) -> Optional[str]:
     if not path:
         return None
     path = path.strip()
+    # A whitespace-only path is empty too. Without this it would be given a
+    # leading slash and returned as the root.
+    if not path:
+        return None
     is_directory = path.endswith("/")
     if not path.startswith("/"):
         path = "/" + path
