@@ -417,8 +417,10 @@ def plan_connector_sync(
     # Paths held by more than one file across the manifest and the listing.
     holders: Dict[str, Set[str]] = {}
     for file_id, record in manifest.items():
-        if record.get("path") and (file_id in listed or removable):
-            holders.setdefault(record["path"], set()).add(file_id)
+        if file_id in listed or removable:
+            # Every path it may have chunks at: a pending record's destinations too.
+            for path in record_paths(record):
+                holders.setdefault(path, set()).add(file_id)
     for entry in listing.entries:
         holders.setdefault(entry.path, set()).add(entry.id)
     contested = {file_id for ids in holders.values() if len(ids) > 1 for file_id in ids}

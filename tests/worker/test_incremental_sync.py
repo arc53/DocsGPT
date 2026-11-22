@@ -59,6 +59,10 @@ class MemoryStore(BaseVectorStore):
         return self._put(text, metadata)
 
     def add_chunks(self, texts, metadatas=None):
+        if self.fail_adds == "after_write":
+            # The chunks land, then the store answers with an error.
+            self.add_texts(texts, metadatas)
+            raise RuntimeError("connection reset after the write")
         if self.fail_adds:
             raise RuntimeError("embedding service down")
         return self.add_texts(texts, metadatas)
@@ -620,6 +624,23 @@ class TestIncrementalSafety:
         assert harness.loader.single_downloads == [["id3"]]
         assert "failed_files" not in harness.row()["remote_data"]
 
+    def test_a_pending_files_other_path_is_not_handed_to_another_file(self, harness):
+        harness.sync()
+        repo = SourcesRepository(harness.pg)
+        manifest = repo.get_remote_files(harness.source_id)
+        q = os.path.join("Docs", "q.md")
+        # id0 died part way through a move to q; id1 is moving there now, and id0 fails.
+        manifest["files"]["id0"] = {**manifest["files"]["id0"], "version": None,
+                                    "pending_paths": [os.path.join("Docs", "doc0.md"), q]}
+        repo.update(harness.source_id, "dave", {"remote_files": manifest})
+        harness.loader.files["id1"]["path"] = q
+        harness.loader.download_failures["id0"] = "transient"
+        harness.sync()
+        harness.loader.download_failures.clear()
+        harness.sync()
+        texts = [harness.store.chunks[c]["text"] for c in harness.store.by_source()[q]]
+        assert texts and all("body 1" in t for t in texts)
+
     def test_deletes_go_to_the_store_in_one_call(self, harness):
         harness.sync()
         for fid in ("id0", "id1", "id2"):
@@ -660,10 +681,11 @@ class TestCodeRabbitFixes:
     def test_a_file_added_by_a_sync_that_died_is_removed_once_gone(self, harness):
         harness.sync()
         harness.loader.files["tmp"] = {"path": "Docs/tmp.md", "version": "v1", "text": "# Tmp\n\ntemporary " * 20}
-        harness.store.fail_adds = True
+        harness.store.fail_adds = "after_write"
         with pytest.raises(RuntimeError):
             harness.sync()
         harness.store.fail_adds = False
+        assert "Docs/tmp.md" in harness.store.by_source()
         del harness.loader.files["tmp"]
 
         harness.sync()
@@ -940,10 +962,11 @@ class TestRemoteIncrementalSync:
     def test_a_page_added_by_a_sync_that_died_is_removed_once_gone(self, remote):
         remote.sync()
         remote.loader.pages["guide/tmp.md"] = "temporary page " * 30
-        remote.store.fail_adds = True
+        remote.store.fail_adds = "after_write"
         with pytest.raises(RuntimeError):
             remote.sync()
         remote.store.fail_adds = False
+        assert "guide/tmp.md" in remote.store.by_source()
         del remote.loader.pages["guide/tmp.md"]
 
         remote.sync()

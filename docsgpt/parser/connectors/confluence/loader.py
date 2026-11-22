@@ -67,10 +67,17 @@ def _retry_on_auth_failure(func):
                     new_token_info = self._refresh_rejected_token(self.access_token)
                     self.access_token = new_token_info["access_token"]
                 except Exception as refresh_err:
-                    raise ValueError(
+                    raise ConnectorAuthError(
                         f"Authentication failed and could not be refreshed: {refresh_err}"
                     ) from e
-                return func(self, *args, **kwargs)
+                try:
+                    return func(self, *args, **kwargs)
+                except requests.exceptions.HTTPError as retry_err:
+                    status = retry_err.response.status_code if retry_err.response is not None else None
+                    if status in (401, 403):
+                        # Still refused with a fresh token: the sign-in itself.
+                        raise ConnectorAuthError(f"Confluence rejected the refreshed access token ({status})") from retry_err
+                    raise
             raise
 
     return wrapper

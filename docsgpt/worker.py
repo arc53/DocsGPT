@@ -6533,7 +6533,7 @@ def _ingest_connector(
             # parser added since, makes it a full sync).
             remote_data = {"provider": source_type, **api_source_config}
             sync_fingerprint = _connector_sync_fingerprint(download_info.get("sync_fingerprint"), config)
-            if listing is None and (partial or unparsed):
+            if listing is None and (partial or unparsed or partly):
                 # A loader that can't list names no failed file by id, so none
                 # could be retried alone: the next sync downloads everything.
                 sync_fingerprint = None

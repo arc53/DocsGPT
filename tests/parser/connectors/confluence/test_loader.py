@@ -1136,3 +1136,26 @@ class TestForbiddenListing:
             listing = loader.list_selection({"folder_ids": ["S"]})
         assert not listing.complete and listing.unread == 1
         assert "page:1" in listing.by_id()
+
+
+class TestListingAuth:
+    @pytest.mark.unit
+    def test_a_token_still_refused_after_the_refresh_is_an_auth_error(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new"})
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"file_ids": ["1"]})
+        loader._refresh_rejected_token.assert_called_once()
+
+    @pytest.mark.unit
+    def test_a_refresh_that_fails_is_an_auth_error(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        loader._refresh_rejected_token = MagicMock(side_effect=RuntimeError("revoked"))
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"file_ids": ["1"]})
