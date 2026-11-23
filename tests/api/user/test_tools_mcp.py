@@ -826,7 +826,7 @@ class TestMCPServerSave:
             "docsgpt.api.user.tools.mcp.user_tools_collection",
             mock_collection,
         ), patch(
-            "docsgpt.api.user.tools.mcp.decrypt_tool_credentials",
+            "docsgpt.api.user.tools.mcp.load_tool_credentials",
             return_value={"api_key": "old-key"},
         ), patch(
             "docsgpt.api.user.tools.mcp.encrypt_tool_credentials",

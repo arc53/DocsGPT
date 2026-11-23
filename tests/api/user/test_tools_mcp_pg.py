@@ -513,6 +513,48 @@ class TestMCPServerSave:
         team = repo.get_any(str(existing["id"]), user)["actions"][0]["parameters"]["properties"]["team"]
         assert team["filled_by_llm"] is False and team["value"] == "ENG"
 
+    def test_a_save_that_cannot_read_stored_secrets_keeps_them(self, app, pg_conn):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.security.encryption import encrypt_tool_credentials
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        user = "u-mcp-unreadable"
+        repo = UserToolsRepository(pg_conn)
+        blob = encrypt_tool_credentials({"username": "u", "password": "p"}, "someone-else")
+        existing = repo.create(
+            user, "mcp_tool",
+            config={
+                "server_url": "https://example.com/mcp",
+                "auth_type": "basic",
+                "encrypted_credentials": blob,
+            },
+            display_name="My MCP",
+        )
+        fake_tool = MagicMock()
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/save", method="POST",
+            json={
+                "id": str(existing["id"]),
+                "displayName": "My MCP",
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://example.com/mcp",
+                    "auth_type": "basic",
+                    "username": "u",
+                },
+            },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+
+        assert response.status_code == 400
+        fake_tool.discover_tools.assert_not_called()
+        stored = repo.get_any(str(existing["id"]), user)["config"]
+        assert stored["encrypted_credentials"] == blob
+
     @pytest.mark.fresh_db
     def test_failed_tool_save_does_not_reconnect_no_auth_connection(self, app, pg_engine):
         from docsgpt.api.user.tools.mcp import MCPServerSave
