@@ -274,14 +274,18 @@ class TestSimpleDirectoryReaderLoadData:
         # The skip is recorded, not silent.
         assert [Path(p).name for p, _ in reader.failed_files] == ["data.json"]
 
-    def test_load_data_reads_json_with_utf8_bom(self, tmp_path):
+    @pytest.mark.parametrize("include_notes", [False, True], ids=["json-only", "mixed-files"])
+    def test_load_data_reads_json_with_utf8_bom(self, tmp_path, include_notes):
         from docsgpt.parser.file.bulk import SimpleDirectoryReader
 
         (tmp_path / "inventory.json").write_text('{"product": "Café"}', encoding="utf-8-sig")
-        (tmp_path / "notes.txt").write_text("Inventory notes", encoding="utf-8")
+        expected = {"{'product': 'Café'}"}
+        if include_notes:
+            (tmp_path / "notes.txt").write_text("Inventory notes", encoding="utf-8")
+            expected.add("Inventory notes")
 
         reader = SimpleDirectoryReader(input_dir=str(tmp_path))
-        assert {doc.text for doc in reader.load_data()} == {"Inventory notes", "{'product': 'Café'}"}
+        assert {doc.text for doc in reader.load_data()} == expected
         assert not reader.failed_files
 
     def test_single_malformed_json_still_raises_document_parse_error(self, tmp_path):
