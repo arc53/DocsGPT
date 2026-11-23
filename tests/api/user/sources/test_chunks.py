@@ -101,6 +101,380 @@ class TestChunkMatchesPath:
         assert not _chunk_matches_path(metadata, path)
 
 
+def test_parent_text_is_cleared_from_siblings_after_chunk_change_or_delete():
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    parent = "parent with public SECRET-4242 and sibling"
+    chunks = [
+        {"doc_id": "changed", "text": "public", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent, "x": 1}},
+        {"doc_id": "other", "text": "other", "metadata": {"parent_text": "other parent"}},
+    ]
+    store = MagicMock()
+
+    _drop_sibling_parent_text(store, chunks, chunks[0], {"id": "source"}, exclude_id="changed")
+
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+
+
+def test_parent_invalidation_remaps_fallback_store_chunk_ids():
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    parent = "parent containing sibling"
+    chunks = [
+        {"doc_id": "changed", "text": "changed", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+    ]
+    store = MagicMock()
+    store.clear_parent_text.return_value = [("sibling", "sibling-new-id")]
+    doc = {"id": "source", "config": {"retriever": "graphrag"}}
+
+    with patch("docsgpt.api.user.sources.chunks._remap_graph_chunk") as remap:
+        _drop_sibling_parent_text(store, chunks, chunks[0], doc, exclude_id="changed")
+
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+    remap.assert_called_once_with(doc, "sibling", "sibling-new-id")
+
+
+def test_parent_invalidation_applies_partial_remaps_before_reraising():
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+    from docsgpt.vectorstore.base import ParentClearError
+
+    parent = "shared parent"
+    chunks = [
+        {"doc_id": "changed", "text": "changed", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "child", "metadata": {"parent_text": parent}},
+    ]
+    store = MagicMock()
+    store.clear_parent_text.side_effect = ParentClearError(
+        [("sibling", "sibling-new")], RuntimeError("later sibling failed")
+    )
+    doc = {"id": "source", "config": {"retriever": "graphrag"}}
+
+    with patch("docsgpt.api.user.sources.chunks._remap_graph_chunk") as remap:
+        with pytest.raises(ParentClearError):
+            _drop_sibling_parent_text(store, chunks, chunks[0], doc, exclude_id="changed")
+
+    remap.assert_called_once_with(doc, "sibling", "sibling-new")
+
+
+class _PartialParentClearStore:
+    """Live-list store that re-ids one clear, then fails once and can be retried."""
+
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.clear_calls = 0
+
+    def get_chunks(self):
+        return self.chunks
+
+    def clear_parent_text(self, chunk_ids):
+        from docsgpt.vectorstore.base import ParentClearError
+
+        self.clear_calls += 1
+        ids = list(chunk_ids)
+        if self.clear_calls == 1:
+            old_id = ids[0]
+            chunk = next(chunk for chunk in self.chunks if chunk["doc_id"] == old_id)
+            updated = {**chunk, "doc_id": f"{old_id}-new", "metadata": dict(chunk["metadata"])}
+            updated["metadata"].pop("parent_text", None)
+            self.chunks.remove(chunk)
+            self.chunks.append(updated)
+            raise ParentClearError([(old_id, updated["doc_id"])], RuntimeError("second sibling failed"))
+        remaps = []
+        for chunk_id in ids:
+            chunk = next(chunk for chunk in self.chunks if chunk["doc_id"] == chunk_id)
+            chunk["metadata"].pop("parent_text", None)
+            remaps.append((chunk_id, chunk_id))
+        return remaps
+
+    def update_chunk(self, chunk_id, text, metadata):
+        chunk = next(chunk for chunk in self.chunks if chunk["doc_id"] == chunk_id)
+        chunk.update(text=text, metadata=metadata)
+        return chunk_id
+
+    def delete_chunk(self, chunk_id):
+        before = len(self.chunks)
+        self.chunks[:] = [chunk for chunk in self.chunks if chunk["doc_id"] != chunk_id]
+        return len(self.chunks) < before
+
+
+def _graph_source(pg_conn, user):
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+    from docsgpt.storage.db.source_config import SourceConfig
+
+    return SourcesRepository(pg_conn).create(
+        "g", user_id=user, config=SourceConfig.parse({}).graph_enabled()
+    )
+
+
+def _parent_group():
+    parent = "public SECRET-4242 with sibling text"
+    return [
+        {"doc_id": "target", "text": "public SECRET-4242", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling-1", "text": "sibling one", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling-2", "text": "sibling two", "metadata": {"parent_text": parent}},
+    ]
+
+
+def test_edit_partial_clear_remaps_before_error_and_same_request_retries(app, pg_conn):
+    from docsgpt.api.user.sources.chunks import UpdateChunk
+
+    user = "u-parent-clear-retry-edit"
+    src = _graph_source(pg_conn, user)
+    store = _PartialParentClearStore(_parent_group())
+    graph = MagicMock()
+    payload = {"id": str(src["id"]), "chunk_id": "target", "text": "public"}
+
+    def put():
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+            "/api/update_chunk", method="PUT", json=payload
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return UpdateChunk().put()
+
+    first = put()
+    assert first.status_code == 500
+    graph.record_pending_chunk_remaps.assert_called_once_with(
+        str(src["id"]), {"sibling-1": "sibling-1-new"}
+    )
+    assert next(c for c in store.chunks if c["doc_id"] == "target")["text"] == "public SECRET-4242"
+
+    second = put()
+    assert second.status_code == 200
+    assert next(c for c in store.chunks if c["doc_id"] == "target")["text"] == "public"
+    assert all("parent_text" not in c["metadata"] for c in store.chunks)
+    assert "SECRET-4242" not in repr(store.chunks)
+
+
+def test_delete_partial_clear_remaps_before_error_and_same_request_retries(app, pg_conn):
+    from docsgpt.api.user.sources.chunks import DeleteChunk
+
+    user = "u-parent-clear-retry-delete"
+    src = _graph_source(pg_conn, user)
+    store = _PartialParentClearStore(_parent_group())
+    graph = MagicMock()
+
+    def delete():
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+            f"/api/delete_chunk?id={src['id']}&chunk_id=target", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return DeleteChunk().delete()
+
+    first = delete()
+    assert first.status_code == 500
+    graph.record_pending_chunk_remaps.assert_called_once_with(
+        str(src["id"]), {"sibling-1": "sibling-1-new"}
+    )
+    assert any(c["doc_id"] == "target" for c in store.chunks)
+
+    second = delete()
+    assert second.status_code == 200
+    assert not any(c["doc_id"] == "target" for c in store.chunks)
+    assert all("parent_text" not in c["metadata"] for c in store.chunks)
+    graph.delete_chunks.assert_called_once_with(str(src["id"]), ["target"])
+
+
+def test_edit_failure_at_final_save_keeps_retry_anchor(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    class FailsFirstSave(_PartialParentClearStore):
+        def __init__(self, chunks):
+            super().__init__(chunks)
+            self.clear_calls = 1
+            self.fail_save = True
+
+        def update_chunk(self, chunk_id, text, metadata):
+            if self.fail_save:
+                self.fail_save = False
+                raise RuntimeError("final edit failed")
+            return super().update_chunk(chunk_id, text, metadata)
+
+        def clear_parent_text(self, chunk_ids):
+            self.clear_calls += 1
+            for chunk_id in chunk_ids:
+                chunk = next(c for c in self.chunks if c["doc_id"] == chunk_id)
+                chunk["metadata"].pop("parent_text", None)
+            return [(chunk_id, chunk_id) for chunk_id in chunk_ids]
+
+    store = FailsFirstSave(_parent_group())
+    with app.app_context(), patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=store):
+        failed = _update_chunk({"id": "source"}, "target", "public", None)
+        target = next(c for c in store.chunks if c["doc_id"] == "target")
+        assert failed.status_code == 500
+        assert target["text"] == "public SECRET-4242"
+        assert target["metadata"]["parent_text"] == "public SECRET-4242 with sibling text"
+
+        retried = _update_chunk({"id": "source"}, "target", "public", None)
+
+    assert retried.status_code == 200
+    assert next(c for c in store.chunks if c["doc_id"] == "target")["text"] == "public"
+    assert "SECRET-4242" not in repr(store.chunks)
+
+
+def test_delete_failure_at_final_remove_keeps_retry_anchor(app):
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    class FailsFirstDelete(_PartialParentClearStore):
+        def __init__(self, chunks):
+            super().__init__(chunks)
+            self.clear_calls = 1
+            self.fail_delete = True
+
+        def clear_parent_text(self, chunk_ids):
+            self.clear_calls += 1
+            for chunk_id in chunk_ids:
+                chunk = next(c for c in self.chunks if c["doc_id"] == chunk_id)
+                chunk["metadata"].pop("parent_text", None)
+            return [(chunk_id, chunk_id) for chunk_id in chunk_ids]
+
+        def delete_chunk(self, chunk_id):
+            if self.fail_delete:
+                self.fail_delete = False
+                raise RuntimeError("final delete failed")
+            return super().delete_chunk(chunk_id)
+
+    store = FailsFirstDelete(_parent_group())
+    target = next(c for c in store.chunks if c["doc_id"] == "target")
+    # Exercise the same clear-first/delete-last sequence used by the route.
+    with pytest.raises(RuntimeError, match="final delete failed"):
+        _drop_sibling_parent_text(store, store.get_chunks(), target, {"id": "source"})
+        store.delete_chunk("target")
+
+    assert target["metadata"]["parent_text"] == "public SECRET-4242 with sibling text"
+    assert store.delete_chunk("target")
+    assert not any("SECRET-4242" in c["text"] for c in store.chunks)
+
+
+def test_text_edit_drops_parent_text_from_edited_chunk_and_siblings(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    parent = "public SECRET-4242 and sibling text"
+    chunks = [
+        {"doc_id": "edited", "text": "public SECRET-4242", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling text", "metadata": {"parent_text": parent}},
+    ]
+    store = MagicMock()
+    store.get_chunks.return_value = chunks
+    store.update_chunk.return_value = "edited"
+    store.clear_parent_text.return_value = []
+    with app.app_context(), patch(
+        "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+    ):
+        response = _update_chunk(
+            {"id": "source"}, "edited", "public", {"parent_text": "replacement metadata"}
+        )
+
+    assert response.status_code == 200
+    edited_metadata = store.update_chunk.call_args.args[2]
+    assert "parent_text" not in edited_metadata
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+
+
+@pytest.mark.parametrize("parent", ["", None, 42])
+def test_non_expandable_parent_values_do_not_clear_siblings(parent):
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    chunks = [
+        {"doc_id": "changed", "text": "child", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {}},
+    ]
+    store = MagicMock()
+
+    _drop_sibling_parent_text(store, chunks, chunks[0], {"id": "source"})
+
+    store.clear_parent_text.assert_not_called()
+
+
+def test_metadata_only_and_unchanged_text_edits_preserve_parent_text(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    parent = "unicode parent 🧭 with child"
+    original = {"doc_id": "chunk", "text": "child", "metadata": {"parent_text": parent}}
+    store = MagicMock()
+    store.get_chunks.return_value = [original]
+    store.update_chunk.return_value = "chunk"
+    with app.app_context(), patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=store):
+        metadata_response = _update_chunk({"id": "source"}, "chunk", None, {"injection": {"decision": "safe"}})
+        unchanged_response = _update_chunk({"id": "source"}, "chunk", "child", None)
+
+    assert metadata_response.status_code == unchanged_response.status_code == 200
+    assert store.clear_parent_text.call_count == 0
+    assert all(call.args[2]["parent_text"] == parent for call in store.update_chunk.call_args_list)
+
+
+def test_second_text_edit_does_not_clear_the_invalidated_parent_again(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    parent = "old parent with first and second text"
+    chunks = [
+        {"doc_id": "target", "text": "first", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+    ]
+    store = MagicMock()
+    store.get_chunks.side_effect = lambda: chunks
+
+    def clear_parent_text(ids):
+        for chunk in chunks:
+            if chunk["doc_id"] in ids:
+                chunk["metadata"].pop("parent_text", None)
+        return []
+
+    def update_chunk(chunk_id, text, metadata):
+        chunk = next(chunk for chunk in chunks if chunk["doc_id"] == chunk_id)
+        chunk.update(text=text, metadata=metadata)
+        return chunk_id
+
+    store.clear_parent_text.side_effect = clear_parent_text
+    store.update_chunk.side_effect = update_chunk
+    with app.app_context(), patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=store):
+        first = _update_chunk({"id": "source"}, "target", "second", None)
+        second = _update_chunk({"id": "source"}, "target", "third", None)
+
+    assert first.status_code == second.status_code == 200
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+    assert "parent_text" not in chunks[0]["metadata"]
+    assert "parent_text" not in chunks[1]["metadata"]
+
+
+def test_deleting_last_parent_child_has_no_siblings_to_clear():
+    from docsgpt.api.user.sources.chunks import _drop_sibling_parent_text
+
+    target = {"doc_id": "last", "text": "child", "metadata": {"parent_text": "parent child"}}
+    store = MagicMock()
+
+    _drop_sibling_parent_text(store, [target], target, {"id": "source"})
+
+    store.clear_parent_text.assert_called_once_with([])
+
+
+def test_text_edit_is_not_applied_when_sibling_invalidation_fails(app):
+    from docsgpt.api.user.sources.chunks import _update_chunk
+
+    parent = "original parent"
+    store = MagicMock()
+    store.get_chunks.return_value = [
+        {"doc_id": "edited", "text": "old child", "metadata": {"parent_text": parent}},
+        {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+    ]
+    store.clear_parent_text.side_effect = RuntimeError("metadata invalidation failed")
+    with app.app_context(), patch(
+        "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+    ):
+        response = _update_chunk({"id": "source"}, "edited", "new child", None)
+
+    assert response.status_code == 500
+    store.clear_parent_text.assert_called_once_with(["sibling"])
+    store.update_chunk.assert_not_called()
+
+
 class TestGetChunks:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.sources.chunks import GetChunks
@@ -473,6 +847,141 @@ class TestDeleteChunk:
             response = DeleteChunk().delete()
         assert response.status_code == 401
 
+    def test_deleting_parent_child_chunk_clears_sibling_parent_text(self, app):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        @contextmanager
+        def unlocked(_source_id):
+            yield
+
+        parent = "parent contains deleted child and sibling"
+        store = MagicMock()
+        store.get_chunks.return_value = [
+            {"doc_id": "deleted", "text": "deleted child", "metadata": {"parent_text": parent}},
+            {"doc_id": "sibling", "text": "sibling", "metadata": {"parent_text": parent}},
+        ]
+        store.clear_parent_text.return_value = []
+        store.delete_chunk.return_value = True
+        with patch("docsgpt.api.user.sources.chunks._resolve_source", return_value={"id": "source"}), patch(
+            "docsgpt.api.user.sources.chunks.edit_lock", side_effect=unlocked
+        ), patch("docsgpt.api.user.sources.chunks.get_vector_store", return_value=store), app.test_request_context(
+            "/api/delete_chunk?id=source&chunk_id=deleted", method="DELETE"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": "owner"}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == 200
+        store.delete_chunk.assert_called_once_with("deleted")
+        store.clear_parent_text.assert_called_once_with(["sibling"])
+        assert [name for name, *_ in store.method_calls] == [
+            "get_chunks", "clear_parent_text", "delete_chunk"
+        ]
+
+    @pytest.mark.parametrize("failure", ["false", "raises"])
+    def test_vector_delete_failure_preserves_graph_links_and_tombstone(
+        self, app, pg_conn, failure
+    ):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        user = f"u-graph-delete-{failure}"
+        src = _graph_source(pg_conn, user)
+        chunk = {"doc_id": "chunk-1", "text": "still present", "metadata": {}}
+        store = MagicMock()
+        store.get_chunks.return_value = [chunk]
+        store._scan_chunks.return_value = [chunk]
+        if failure == "false":
+            store.delete_chunk.return_value = False
+        else:
+            store.delete_chunk.side_effect = RuntimeError("vector delete failed")
+        graph = MagicMock()
+        graph.apply_pending_chunk_remaps.return_value = {}
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+            f"/api/delete_chunk?id={src['id']}&chunk_id=chunk-1", method="DELETE"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == (404 if failure == "false" else 500)
+        assert chunk["text"] == "still present"
+        graph.delete_chunks.assert_not_called()
+
+    def test_graph_delete_failure_is_retried_after_vector_delete_commits(self, app, pg_conn):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        user = "u-graph-delete-retry"
+        src = _graph_source(pg_conn, user)
+        remaining = [{"doc_id": "chunk-1", "text": "text", "metadata": {}}]
+        store = MagicMock()
+        store.get_chunks.side_effect = lambda: list(remaining)
+        store._scan_chunks.side_effect = lambda: list(remaining)
+
+        def delete_chunk(chunk_id):
+            remaining[:] = [c for c in remaining if c["doc_id"] != chunk_id]
+            return True
+
+        store.delete_chunk.side_effect = delete_chunk
+        graph = MagicMock()
+        graph.apply_pending_chunk_remaps.return_value = {}
+        graph.delete_chunks.side_effect = [RuntimeError("graph cleanup failed"), None]
+
+        def delete():
+            with _patch_db(pg_conn), patch(
+                "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+            ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+                f"/api/delete_chunk?id={src['id']}&chunk_id=chunk-1", method="DELETE"
+            ):
+                from flask import request
+
+                request.decoded_token = {"sub": user}
+                return DeleteChunk().delete()
+
+        first = delete()
+        assert first.status_code == 500
+        assert remaining == []
+        assert graph.delete_chunks.call_count == 1
+
+        retry = delete()
+        assert retry.status_code == 404
+        assert graph.delete_chunks.call_count == 2
+        assert graph.delete_chunks.call_args_list == [
+            ((str(src["id"]), ["chunk-1"]),),
+            ((str(src["id"]), ["chunk-1"]),),
+        ]
+
+    def test_graph_listing_failure_does_not_delete_chunk_or_graph_links(self, app, pg_conn):
+        from docsgpt.api.user.sources.chunks import DeleteChunk
+
+        user = "u-graph-delete-listing-failure"
+        src = _graph_source(pg_conn, user)
+        store = MagicMock()
+        # The public listing hides backend errors as an empty list; the strict
+        # scan must raise before an empty result is treated as a missing chunk.
+        store.get_chunks.return_value = []
+        store._scan_chunks.side_effect = RuntimeError("vector listing failed")
+        graph = MagicMock()
+        graph.apply_pending_chunk_remaps.return_value = {}
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.chunks.get_vector_store", return_value=store
+        ), patch("docsgpt.graphrag.store.GraphStore", return_value=graph), app.test_request_context(
+            f"/api/delete_chunk?id={src['id']}&chunk_id=chunk-1", method="DELETE"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = DeleteChunk().delete()
+
+        assert response.status_code == 500
+        store._scan_chunks.assert_called_once_with()
+        store.delete_chunk.assert_not_called()
+        graph.delete_chunks.assert_not_called()
+
     def test_returns_404_inaccessible_source(self, app, pg_conn):
         # No ownership and no team grant: the source isn't visible → 404
         # (403 is reserved for a visible source the role can't change).
@@ -762,9 +1271,10 @@ class TestUpdateChunkGraphLinks:
             fake_store = MagicMock()
             # The base fallback: the edit comes back under a new id.
             fake_store.update_chunk.return_value = "chunk-new"
-        fake_store.get_chunks.return_value = [
-            {"doc_id": "chunk-old", "text": "old", "metadata": {}}
-        ]
+        if hasattr(fake_store.get_chunks, "return_value"):
+            fake_store.get_chunks.return_value = [
+                {"doc_id": "chunk-old", "text": "old", "metadata": {}}
+            ]
         with _patch_db(pg_conn), patch(
             "docsgpt.api.user.sources.chunks.get_vector_store",
             return_value=fake_store,
@@ -794,9 +1304,10 @@ class TestUpdateChunkGraphLinks:
         response = self._put(app, pg_conn, src, user, graph_store)
 
         assert response.status_code == 200
-        graph_store.remap_chunk.assert_called_once_with(
-            str(src["id"]), "chunk-old", "chunk-new"
+        graph_store.record_pending_chunk_remaps.assert_called_once_with(
+            str(src["id"]), {"chunk-old": "chunk-new"}
         )
+        assert graph_store.apply_pending_chunk_remaps.call_count == 2
 
     def test_classic_source_skips_the_graph(self, app, pg_conn):
         user = "u-upd-classic"
@@ -806,18 +1317,50 @@ class TestUpdateChunkGraphLinks:
         response = self._put(app, pg_conn, src, user, graph_store)
 
         assert response.status_code == 200
-        graph_store.remap_chunk.assert_not_called()
+        graph_store.record_pending_chunk_remaps.assert_not_called()
 
-    def test_remap_failure_keeps_the_saved_edit(self, app, pg_conn):
+    def test_remap_failure_reports_after_the_vector_edit_was_saved(self, app, pg_conn):
         user = "u-upd-graph-fail"
         src = self._graph_source(pg_conn, user)
         graph_store = MagicMock()
-        graph_store.remap_chunk.side_effect = RuntimeError("boom")
+        graph_store.apply_pending_chunk_remaps.side_effect = [{}, RuntimeError("boom")]
 
         response = self._put(app, pg_conn, src, user, graph_store)
 
-        assert response.status_code == 200
-        assert response.json["chunk_id"] == "chunk-new"
+        assert response.status_code == 500
+        graph_store.record_pending_chunk_remaps.assert_called_once_with(
+            str(src["id"]), {"chunk-old": "chunk-new"}
+        )
+
+    def test_failed_graph_remap_is_durable_and_same_edit_retries(self, app, pg_conn):
+        user = "u-upd-graph-retry"
+        src = self._graph_source(pg_conn, user)
+        graph_store = MagicMock()
+        graph_store.apply_pending_chunk_remaps.side_effect = [
+            {}, RuntimeError("transient graph failure"), {"chunk-old": "chunk-new"}
+        ]
+
+        class Store:
+            def __init__(self):
+                self.chunk = {"doc_id": "chunk-old", "text": "old", "metadata": {}}
+
+            def get_chunks(self):
+                return [self.chunk.copy()]
+
+            def update_chunk(self, chunk_id, text, metadata):
+                self.chunk = {"doc_id": "chunk-new", "text": text, "metadata": metadata}
+                return "chunk-new"
+
+        store = Store()
+        failed = self._put(app, pg_conn, src, user, graph_store, store)
+        retried = self._put(app, pg_conn, src, user, graph_store, store)
+
+        assert failed.status_code == 500
+        assert retried.status_code == 200
+        assert retried.json["chunk_id"] == "chunk-new"
+        assert retried.json["original_chunk_id"] == "chunk-old"
+        assert store.chunk["text"] == "new"
+        assert graph_store.record_pending_chunk_remaps.call_count == 1
 
     def test_in_place_update_skips_the_graph_remap(self, app, pg_conn):
         user = "u-upd-graph-inplace"
@@ -831,7 +1374,7 @@ class TestUpdateChunkGraphLinks:
         assert response.status_code == 200
         assert response.json["chunk_id"] == "chunk-old"
         assert response.json["original_chunk_id"] == "chunk-old"
-        graph_store.remap_chunk.assert_not_called()
+        graph_store.record_pending_chunk_remaps.assert_not_called()
 
     def test_default_fallback_store_remaps_to_the_new_id(self, app, pg_conn):
         """A store without its own update (e.g. Milvus) re-adds and re-ids."""
@@ -869,8 +1412,8 @@ class TestUpdateChunkGraphLinks:
         assert response.status_code == 200
         assert response.json["chunk_id"] == "chunk-new"
         assert store.deleted == ["chunk-old"]
-        graph_store.remap_chunk.assert_called_once_with(
-            str(src["id"]), "chunk-old", "chunk-new"
+        graph_store.record_pending_chunk_remaps.assert_called_once_with(
+            str(src["id"]), {"chunk-old": "chunk-new"}
         )
 
     def test_default_fallback_failed_delete_returns_500_without_duplicate(self, app, pg_conn):
@@ -908,7 +1451,7 @@ class TestUpdateChunkGraphLinks:
 
         assert response.status_code == 500
         assert store.deleted == ["chunk-old", "chunk-new"]
-        graph_store.remap_chunk.assert_not_called()
+        graph_store.record_pending_chunk_remaps.assert_not_called()
 
 
 KEY = "0123456789abcdef" * 2
