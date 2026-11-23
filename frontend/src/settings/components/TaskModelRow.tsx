@@ -37,16 +37,16 @@ type TaskModelRowProps = {
   id: string;
   label: string;
   description: string;
-  /** A model id, `defaultValue`, or `TASK_MODEL_UNAVAILABLE`. */
+  /** A model id, `TASK_MODEL_UNAVAILABLE`, or `''` while no model is picked. */
   value: string;
-  onChange: (value: string) => void;
-  /** The value of the first option, no model of the caller's own. */
-  defaultValue: string;
-  /** That option's label, naming the model that runs then when there is one. */
-  defaultLabel: string;
-  /** The label without the model's name: a phone's trigger shows it when the two differ. */
-  defaultShortLabel: string;
-  /** The model options; a group with a label is listed under it, and only when it has models. */
+  /** Called with the picked model's id. */
+  onChange: (modelId: string) => void;
+  /** The value shown while no model is picked. */
+  placeholder: string;
+  /**
+   * The model options, group by group. Each group with models is listed under
+   * its label once two of them have models; alone, it needs no heading.
+   */
   groups: { label?: string; models: TaskModelOption[] }[];
   /** The model that runs now. */
   runningModelId: string | null;
@@ -64,11 +64,13 @@ type TaskModelRowProps = {
 
 /**
  * The task model row of Settings › General and Admin › Defaults: a pill
- * Select whose first option is the default, then the models, a model
- * whose provider refused its key marked in the list. A stored model that
- * can't run shows no option and a warning; else, while the refused model
- * is the one that runs, a warning names it. The trigger grows with its
- * value up to 384px, then ends in "…" with the whole name as its title.
+ * Select of the models alone, as in the chat's picker, a model whose
+ * provider refused its key marked in the list. The page decides which model
+ * shows as picked while none is stored (the one that runs then). The list
+ * sizes to its options and stops at a long list's height. A stored model
+ * that can't run shows no option and a warning; else, while the refused
+ * model is the one that runs, a warning names it. The trigger grows with
+ * its value up to 384px, then ends in "…" with the whole name as its title.
  * The page passes its own strings.
  */
 export default function TaskModelRow({
@@ -77,9 +79,7 @@ export default function TaskModelRow({
   description,
   value,
   onChange,
-  defaultValue,
-  defaultLabel,
-  defaultShortLabel,
+  placeholder,
   groups,
   runningModelId,
   refusedModelId,
@@ -89,6 +89,8 @@ export default function TaskModelRow({
   refusedNote,
 }: TaskModelRowProps) {
   const models = groups.flatMap((group) => group.models);
+  // Headings only once there are groups to tell apart, as in the chat's picker.
+  const headed = groups.filter((group) => group.models.length > 0).length > 1;
   const nameOf = (modelId: string) =>
     models.find((m) => m.id === modelId)?.display_name ?? modelId;
   const refused =
@@ -101,10 +103,7 @@ export default function TaskModelRow({
       : refused
         ? refusedNote(refused)
         : null;
-  const pickedLabel =
-    value === defaultValue
-      ? defaultLabel
-      : models.find((m) => m.id === value)?.display_name;
+  const pickedLabel = models.find((m) => m.id === value)?.display_name;
   const renderItem = (model: TaskModelOption) => (
     <SelectItem
       key={model.id}
@@ -135,31 +134,22 @@ export default function TaskModelRow({
       >
         <SelectTrigger
           id={id}
-          // Grows to its value, up to 384px (room for the default's label
-          // with its model), then ends in "…" (the whole name as its title).
+          // Grows to its value, up to 384px, then ends in "…" (the whole
+          // name as its title).
           className="w-full sm:w-auto sm:max-w-96 sm:min-w-56"
           size="field"
           shape="pill"
           title={pickedLabel}
         >
-          <SelectValue placeholder={unavailableValue}>
-            {value === defaultValue && defaultLabel !== defaultShortLabel ? (
-              // A phone's full-width trigger (16px text) can't fit the
-              // model's name as well: it shows the choice, and the list and
-              // the title name the model.
-              <>
-                <span className="truncate sm:hidden">{defaultShortLabel}</span>
-                <span className="hidden truncate sm:block">{defaultLabel}</span>
-              </>
-            ) : undefined}
-          </SelectValue>
+          <SelectValue
+            placeholder={
+              value === TASK_MODEL_UNAVAILABLE ? unavailableValue : placeholder
+            }
+          />
         </SelectTrigger>
-        <SelectContent fit>
-          <SelectItem value={defaultValue}>
-            <span className="truncate">{defaultLabel}</span>
-          </SelectItem>
+        <SelectContent fit capped>
           {groups.map((group, index) =>
-            group.label === undefined ? (
+            !headed || group.label === undefined ? (
               <Fragment key={index}>{group.models.map(renderItem)}</Fragment>
             ) : group.models.length > 0 ? (
               <SelectGroup key={index}>

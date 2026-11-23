@@ -8,7 +8,9 @@ runs and kept for the rest of it: the rows the overview leaves out
 (``list_workspace``, which also searches them), and the detail of the one row
 a tool is asked about: a prompt's text (``get_prompt``), a tool's actions
 (``get_tool``), a source's file tree (``get_source``). Built-in prompts and
-tools answer from memory. The Insights
+tools answer from memory, and so do the agent recipe's knowledge folders
+(``list_workspace`` kind ``folders``, ``get_folder``), whose tree is read
+with the overview. The Insights
 reads (``get_gap_examples``, ``get_conversations``) go through the workspace's
 ``insights_reader``, built for the one agent the caller may edit, and return a
 few capped rows of its conversations.
@@ -23,8 +25,11 @@ from typing import Any, Callable, Optional
 
 from docsgpt.drafter.catalog import (
     find_rows,
+    folder_detail,
+    FOLDER_KIND,
     is_template,
     KINDS,
+    kinds,
     prompt_text,
     row_of,
     source_files,
@@ -50,15 +55,16 @@ def _id_arg(args: dict, key: str) -> str:
 
 
 def list_workspace(ws: Workspace, args: dict) -> dict:
-    """A page of the caller's sources, tools or prompts: all of them, or the ones a query matches.
+    """A page of the caller's sources, tools, prompts or (agent recipe) knowledge folders: all of them, or the
+    ones a query matches.
 
     The rows are the overview's (names and a line of meta), those it leaves out included, so the model finds
     what a large workspace holds without it all sitting in the prompt. ``next_offset`` is where the next page
     starts, when there is one.
     """
     kind = _id_arg(args, "kind")
-    if kind not in KINDS:
-        return {"error": f"kind is one of: {', '.join(KINDS)}."}
+    if kind not in kinds(ws):
+        return {"error": f"kind is one of: {', '.join(kinds(ws))}."}
     query, offset = args.get("query"), args.get("offset")
     query = clean_text(query, _QUERY_CHARS) if isinstance(query, str) else ""
     offset = offset if isinstance(offset, int) and not isinstance(offset, bool) and offset > 0 else 0
@@ -107,6 +113,21 @@ def get_source(ws: Workspace, args: dict) -> dict:
     if files is None:
         return {"error": "This source's files could not be read right now. Go by its name."}
     return {**row, **files}
+
+
+def get_folder(ws: Workspace, args: dict) -> dict:
+    """A knowledge folder's sources and direct subfolders: one the caller may attach here, or one the server kept
+    on the agent form (``knowledge_folders``, read as the agent reads it). Any other id answers as unknown."""
+    folder_id = _id_arg(args, "folder_id").lower()
+    try:
+        detail = folder_detail(ws, folder_id)
+    except Exception:
+        logger.warning("drafter: could not read a folder's sources", exc_info=True)
+        return {"error": "This folder's sources could not be read right now. Go by its name."}
+    if detail is not None:
+        return detail
+    kept = next((f for f in getattr(ws, "knowledge_folders", ()) if f["id"] == folder_id), None)
+    return dict(kept) if kept else {"error": "No folder with that id in the workspace."}
 
 
 def get_tool(ws: Workspace, args: dict) -> dict:
@@ -206,16 +227,17 @@ _LIST_WORKSPACE = {
     "function": {
         "name": "list_workspace",
         "description": (
-            "List the user's sources, tools or prompts, including the ones the workspace leaves out (not_shown "
-            "counts them). Call it before deciding that nothing fits, and when the user names something that "
-            "isn't listed. With a query it returns the rows whose name or description holds one of its words, "
-            f"best match first; without one, all of them, newest first, {PAGE_ROWS} a page. A row it returns "
-            "can be attached and read like a listed one."
+            "List the user's sources, tools, prompts or knowledge folders, including the ones the workspace "
+            "leaves out (not_shown counts them). Call it before deciding that nothing fits, and when the user "
+            "names something that isn't listed. With a query it returns the rows whose name, description or path "
+            "holds one of its words, best match first; without one, all of them, newest first (folders largest "
+            f"first), {PAGE_ROWS} a page. A row it returns can be read like a listed one, and a source, tool or "
+            "prompt attached like one."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "kind": {"type": "string", "enum": list(KINDS), "description": "What to list."},
+                "kind": {"type": "string", "enum": list(KINDS) + [FOLDER_KIND], "description": "What to list."},
                 "query": {"type": "string",
                           "description": "Optional: a few words to look for, such as a product or a topic."},
                 "offset": {"type": "integer",
@@ -239,6 +261,12 @@ READ_TOOLS: dict[str, tuple[dict, ReadTool]] = {
         _schema("get_source", "List a knowledge source's files, to judge what it covers.",
                 "source_id", "The source's id from the workspace."),
         get_source,
+    ),
+    "get_folder": (
+        _schema("get_folder", "List the sources a knowledge folder holds, its own and its subfolders', and its "
+                "direct subfolders, to judge what it covers.",
+                "folder_id", "The folder's id from the workspace or the form data."),
+        get_folder,
     ),
     "get_tool": (
         _schema("get_tool", "Read a tool's actions and what each one does.",

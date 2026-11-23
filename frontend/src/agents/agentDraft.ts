@@ -65,6 +65,7 @@ export type AgentBuildStep = (typeof AGENT_BUILD_STEPS)[number];
 /** The agent fields the drafter may fill, in the order a draft applies them. */
 export const AGENT_DRAFT_FIELDS = [
   'sources',
+  'folders',
   'tools',
   'agent_type',
   'name',
@@ -83,10 +84,26 @@ export const AGENT_STEP_FIELDS: Record<
   readonly AgentDraftField[]
 > = {
   basics: ['name', 'description'],
-  knowledge: ['sources', 'tools', 'agent_type'],
+  knowledge: ['sources', 'folders', 'tools', 'agent_type'],
   prompt: ['prompt', 'starters'],
   safety: ['limits', 'guardrails', 'analytics'],
 };
+
+/**
+ * Drafted fields one control shows and the server works out together: the
+ * knowledge picker holds sources and folders, and a proposal's sources
+ * leave out what its folders feed. They apply, are kept, are marked and
+ * are undone as one.
+ */
+export const AGENT_LINKED_FIELDS: readonly (readonly AgentDraftField[])[] = [
+  ['sources', 'folders'],
+];
+
+/** The field and the fields linked with it (AGENT_LINKED_FIELDS). */
+export const linkedFields = (
+  field: AgentDraftField,
+): readonly AgentDraftField[] =>
+  AGENT_LINKED_FIELDS.find((group) => group.includes(field)) ?? [field];
 
 const AGENT_TYPES = ['classic', 'research'];
 
@@ -103,6 +120,8 @@ export type AgentProposalFields = {
   description?: string;
   agent_type?: string;
   sources?: string[];
+  /** Knowledge folders, the whole list; the agent reads them live. */
+  folders?: string[];
   tools?: string[];
   prompt?:
     | { kind: 'existing'; id: string }
@@ -162,6 +181,8 @@ export type AgentDraftForm = {
   description: string;
   agent_type: string;
   sources: string[];
+  /** The knowledge folders the agent reads live, by id. */
+  folders: string[];
   tools: ToolSummary[];
   starters: string[];
   /** The picked prompt's id. */
@@ -317,6 +338,8 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
     fields.agent_type = rawFields.agent_type;
   const sources = stringList(rawFields.sources);
   if (sources) fields.sources = sources;
+  const folders = stringList(rawFields.folders);
+  if (folders) fields.folders = folders;
   const tools = stringList(rawFields.tools);
   if (tools) fields.tools = tools;
   const starters = stringList(rawFields.starters);
@@ -374,15 +397,17 @@ export function parseAgentProposal(raw: unknown): AgentProposal | null {
 }
 
 /**
- * A field's value in a comparable shape: tools by id in order, sources by id
- * in any order, starters as a save cleans them, limits with every key set.
+ * A field's value in a comparable shape: tools by id in order, sources and
+ * folders by id in any order, starters as a save cleans them, limits with
+ * every key set.
  */
 export function draftValueOf<K extends AgentDraftField>(
   field: K,
   value: AgentDraftForm[K],
 ): unknown {
   if (field === 'tools') return (value as ToolSummary[]).map((tool) => tool.id);
-  if (field === 'sources') return [...(value as string[])].sort();
+  if (field === 'sources' || field === 'folders')
+    return [...(value as string[])].sort();
   if (field === 'starters') return cleanStarters(value as string[]);
   if (field === 'limits') {
     const limits = value as AgentLimitsValue;
@@ -503,11 +528,12 @@ function analyticsWith(
 
 /**
  * Work out what a proposal changes on the form, field by field in the order
- * they apply (sources, tools, type, name, description, starters, prompt,
- * limits, guardrails, Insights). Fields the proposal leaves out, or sets to
- * what the form already holds, are not changes. A tool id the caller has no
- * row for is left out. A new prompt is no change either: the host opens it
- * in the prompt view, and the form's prompt changes once it is saved there.
+ * they apply (sources, folders, tools, type, name, description, starters,
+ * prompt, limits, guardrails, Insights). Fields the proposal leaves out, or
+ * sets to what the form already holds, are not changes. A tool id the caller
+ * has no row for is left out. A new prompt is no change either: the host
+ * opens it in the prompt view, and the form's prompt changes once it is saved
+ * there.
  *
  * Args:
  *   fields: The proposal's fields.
@@ -524,6 +550,7 @@ export function planAgentPatch(
 ): AgentDraftChange[] {
   const next: Partial<AgentDraftForm> = {};
   if (fields.sources) next.sources = [...new Set(fields.sources)];
+  if (fields.folders) next.folders = [...new Set(fields.folders)];
   if (fields.tools) {
     const byId = new Map<string, ToolSummary>();
     [...toolOptions, ...form.tools].forEach((tool) => byId.set(tool.id, tool));
@@ -555,6 +582,28 @@ export function planAgentPatch(
 }
 
 /**
+ * The proposal's fields the form may take: drafted knowledge folders are
+ * left out while its picker offers none (an agent of another workspace
+ * than the one open), and with them the sources worked out beside them.
+ *
+ * Args:
+ *   fields: The proposal's fields.
+ *   foldersOffered: Whether the form's knowledge picker offers folders.
+ *
+ * Returns:
+ *   The fields to plan from; `fields` itself when nothing is left out.
+ */
+export function fieldsToApply(
+  fields: AgentProposalFields,
+  foldersOffered: boolean,
+): AgentProposalFields {
+  if (foldersOffered || !fields.folders) return fields;
+  const rest = { ...fields };
+  linkedFields('folders').forEach((field) => delete rest[field]);
+  return rest;
+}
+
+/**
  * A field a proposal changed, in its comparable shape (draftValueOf): what
  * it held before and what the draft set.
  */
@@ -582,7 +631,8 @@ export type AgentProposalPlan = {
 /**
  * Work out how a proposal fills the form: its changes (planAgentPatch),
  * less any field the user changed while the turn ran, which keeps their
- * value.
+ * value. Linked fields go together: sources and folders both keep the
+ * user's values when either moved.
  *
  * Args:
  *   fields: The proposal's fields.
@@ -608,9 +658,12 @@ export function planAgentProposal(
 ): AgentProposalPlan {
   const planned = planAgentPatch(fields, form, toolOptions);
   const movedSinceSent = (field: AgentDraftField) =>
-    !isEqual(
-      draftValueOf(field, form[field] as never),
-      draftValueOf(field, sent[field] as never),
+    linkedFields(field).some(
+      (each) =>
+        !isEqual(
+          draftValueOf(each, form[each] as never),
+          draftValueOf(each, sent[each] as never),
+        ),
     );
   const changes = planned.filter((change) => !movedSinceSent(change.field));
   return {
@@ -700,6 +753,7 @@ export function isAgentFormEmpty(form: AgentDraftForm): boolean {
     !form.name.trim() &&
     !form.description.trim() &&
     form.sources.length === 0 &&
+    form.folders.length === 0 &&
     form.tools.length === 0 &&
     cleanStarters(form.starters).length === 0 &&
     (!form.prompt || form.prompt === 'default')
@@ -751,7 +805,10 @@ export function improveSuggestions(
     promptDraft || (!!form.prompt && !PRESET_PROMPT_IDS.includes(form.prompt));
   const rows: (ImproveSuggestion | false)[] = [
     safety && 'safety',
-    form.sources.length === 0 && form.tools.length === 0 && 'knowledge',
+    form.sources.length === 0 &&
+      form.folders.length === 0 &&
+      form.tools.length === 0 &&
+      'knowledge',
     !ownPrompt && 'writePrompt',
     form.starters.length === 0 && 'starters',
     form.description.trim().length > SHORTEN_FROM && 'shorter',
@@ -803,6 +860,8 @@ export type AgentImproveFocus = {
  *   promptDraft: The prompt view's unsaved name and text, or null.
  *   focus: The gap or conversation an improve started from; only a saved
  *     agent outside a step sends it.
+ *   foldersOffered: Whether the form's knowledge picker offers folders;
+ *     false for an agent of another workspace than the one open.
  *
  * Returns:
  *   `{ agent_id, step, earlier, starter, form }` as the drafter contract
@@ -818,6 +877,7 @@ export function agentDraftContext(
   },
   promptDraft: PromptDraft | null,
   focus: AgentImproveFocus = {},
+  foldersOffered = true,
 ) {
   const guardrails = form.guardrails ?? DEFAULT_GUARDRAILS;
   const improving = !!agentId && build.step === null;
@@ -838,6 +898,8 @@ export function agentDraftContext(
       description: form.description,
       agent_type: form.agent_type,
       sources: form.sources,
+      folders: form.folders,
+      folders_offered: foldersOffered,
       tools: form.tools.map((tool) => tool.id),
       prompt_id: form.prompt || null,
       prompt_draft: promptDraft,
@@ -870,6 +932,7 @@ export const AGENT_FIELD_LABEL_KEYS: Record<AgentDraftField, string> = {
   description: 'agents.form.labels.description',
   agent_type: 'agents.form.sections.agentType',
   sources: 'agents.form.labels.sources',
+  folders: 'drafter.agent.fields.folders',
   tools: 'agents.form.sections.tools',
   prompt: 'agents.form.sections.prompt',
   starters: 'agents.form.sections.starters',
@@ -995,6 +1058,8 @@ export function agentStepResult(
     case 'knowledge': {
       if (form.sources.length > 0)
         parts.push(t('drafter.counts.sources', { count: form.sources.length }));
+      if (form.folders.length > 0)
+        parts.push(t('drafter.counts.folders', { count: form.folders.length }));
       if (form.tools.length > 2)
         parts.push(t('drafter.counts.tools', { count: form.tools.length }));
       else form.tools.forEach((tool) => parts.push(getToolDisplayName(tool)));

@@ -526,11 +526,36 @@ def folder_details(
     Returns:
         list[dict]: One entry per id.
     """
+    return folder_details_and_sources(conn, folder_ids, viewer, holder_type, holder)[0]
+
+
+def folder_details_and_sources(
+    conn: Connection,
+    folder_ids: Optional[Iterable[Any]],
+    viewer: Optional[str],
+    holder_type: Optional[str] = None,
+    holder: Optional[dict] = None,
+) -> tuple[list[dict], dict[str, list[str]]]:
+    """:func:`folder_details` and :func:`expand_folders` of the same folders, from one read of them.
+
+    Args:
+        conn: Open connection.
+        folder_ids: The folder ids.
+        viewer: Who reads them.
+        holder_type: ``agent`` or ``workflow`` when the folders sit on a holder.
+        holder: The holder row.
+
+    Returns:
+        tuple: ``(details, folder_id -> [source_id])``, each as those two functions return it.
+    """
     ids = _ids(folder_ids)
     if not ids:
-        return []
+        return [], {}
     rows = {r[0].lower(): (r[1], r[2]) for r in conn.execute(text(_FOLDERS_SQL), {"ids": ids}).fetchall()}
-    expanded, stopped = _expand(conn, ids, holder_type, holder)
+    # The folders' owners and filings, read once for both answers (what :func:`_load_folders` reads).
+    owners = {fid: owner for fid, (_name, owner) in rows.items()}
+    filings = [tuple(row) for row in conn.execute(text(_EXPAND_SQL), {"ids": ids})]
+    expanded, stopped = _judge(conn, ids, owners, filings, holder_type, holder)
     # A team holder's own folder is the team's tree, not someone else's: it names no owner.
     team_owner = (holder or {}).get("user_id") if is_principal_id((holder or {}).get("user_id")) else None
     labels = person_labels(
@@ -548,7 +573,7 @@ def folder_details(
             entry["stopped"] = True
             entry["reason"] = reason
         out.append(entry)
-    return out
+    return out, expanded
 
 
 def resolve_folder_details(
