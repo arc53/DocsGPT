@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import yaml
@@ -695,19 +695,6 @@ def tool_connector_keys() -> set[str]:
     }
 
 
-def iter_by_category(definitions: Iterable[ConnectorDefinition]) -> dict[str, list[ConnectorDefinition]]:
-    """Group definitions by category, keeping :data:`CATEGORIES` order."""
-    grouped: dict[str, list[ConnectorDefinition]] = {c: [] for c in CATEGORIES}
-    for definition in definitions:
-        grouped.setdefault(definition.category, []).append(definition)
-    return grouped
-
-
 def reset_registry_for_tests() -> None:
     """Drop the cached registry so a test can load a different presets file."""
     _REGISTRY.clear()
-
-
-def to_public(definition: ConnectorDefinition, **extra: Any) -> dict:
-    """Definition dict plus request-specific fields (availability, counts)."""
-    return {**definition.to_dict(), **extra}

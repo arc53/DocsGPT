@@ -192,11 +192,6 @@ class BaseConnectorLoader(ABC):
         """
         pass
 
-    @classmethod
-    def from_connection(cls, connection_id: str) -> "BaseConnectorLoader":
-        """Build a loader that reads its tokens from ``connection_id``."""
-        return cls(connection_id=connection_id)
-
     def _load_token_info(
         self, session_token: Optional[str], connection_id: Optional[str],
     ) -> Tuple[str, Dict[str, Any]]:

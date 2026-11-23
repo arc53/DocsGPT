@@ -677,10 +677,6 @@ class GraphRAGRetriever(BaseRetriever):
             self._classic.base_chunks = original_base
             self._classic.candidate_k, self._classic.candidate_tokens = original_pool
 
-    def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
-        """Retrieve one source through the batched classic path."""
-        return self._classic_for_sources([source_id])
-
     def _retrieve_with_store(self, store, sources) -> List[Dict[str, Any]]:
         """Split ``sources`` by graph presence, then batch each half.
 

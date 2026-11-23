@@ -304,8 +304,3 @@ def add_graph_search_tool(tools_dict: Dict, retriever_config: Dict) -> None:
     entry["id"] = GRAPH_TOOL_ID
     entry["config"] = {"source": source}
     tools_dict[GRAPH_TOOL_ID] = entry
-
-
-def build_graph_tool_config(source: Dict, **_ignored: Any) -> Dict:
-    """Config for :class:`GraphSearchTool` — it only needs the source ids."""
-    return {"source": source}
