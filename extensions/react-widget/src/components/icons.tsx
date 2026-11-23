@@ -202,10 +202,6 @@ export const Search = makeIcon(
   ],
   'Search',
 );
-export const Square = makeIcon(
-  [['rect', { width: '18', height: '18', x: '3', y: '3', rx: '2' }]],
-  'Square',
-);
 export const SquarePen = makeIcon(
   [
     [

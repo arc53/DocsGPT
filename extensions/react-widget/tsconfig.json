@@ -28,6 +28,6 @@
          "typeRoots": ["./dist/index.d.ts", "node_modules/@types"]
         },
         /* include /index.ts*/
-        "include": ["src/index.ts","custom.d.ts"],
+        "include": ["src/index.ts"],
         "exclude": ["node_modules"],
   }
