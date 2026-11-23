@@ -55,11 +55,6 @@ from docsgpt.streaming.async_redis import get_async_redis_instance
 logger = logging.getLogger(__name__)
 
 
-# Kept for backwards compatibility with callers/tests importing the
-# sentinel; the Redis path signals end-of-output with a ``control`` chunk.
-INVOCATION_DONE = object()
-
-
 def _cmd_key(device_id: str) -> str:
     return f"dev:cmd:{device_id}"
 

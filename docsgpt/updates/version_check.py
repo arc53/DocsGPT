@@ -50,7 +50,6 @@ CACHE_TTL_SECONDS = 6 * 3600  # 6h default; shortened by response `next_check_af
 LOCK_TTL_SECONDS = 60
 
 NOTICE_KEY = "version_check_notice_shown"
-INSTANCE_ID_KEY = "instance_id"
 
 _HIGH_SEVERITIES = {"high", "critical"}
 

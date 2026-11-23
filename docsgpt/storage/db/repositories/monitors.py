@@ -35,9 +35,6 @@ _SELECT = """
     FROM monitors m JOIN schedules s ON s.id = m.schedule_id
 """
 
-#: Schedule statuses a monitor counts against the per-user cap in.
-LIVE_STATUSES = ("active", "paused")
-
 
 def _dump(value: Any) -> Optional[str]:
     """Serialize ``value`` for a jsonb CAST, stripping NULs Postgres rejects."""
