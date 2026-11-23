@@ -17,8 +17,15 @@ _SCALAR_COLUMNS = {
     "name", "type", "retriever", "sync_frequency", "tokens", "file_path",
     "language", "model", "date",
 }
-_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "sync_manifest", "config"}
+_JSONB_COLUMNS = {
+    "metadata", "remote_data", "remote_files", "directory_structure", "file_name_map", "sync_manifest", "config",
+}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
+# Every column a listing returns: all but the sync manifest (``remote_files``).
+_LISTED_COLUMNS = tuple(column for column in sources_table.c if column.name != "remote_files")
+# What a row read returns: every column but ``remote_files``, which runs to
+# megabytes for a large selection and only a sync reads (``get_remote_files``).
+_ROW_SELECT = "SELECT " + ", ".join(column.name for column in _LISTED_COLUMNS) + " FROM sources"
 
 # Whitelist for sort columns exposed via ``list_for_user``. Anything not in
 # this set falls back to ``date`` so user-supplied sort params can't be
@@ -230,7 +237,7 @@ class SourcesRepository:
 
     def get(self, source_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            text(_ROW_SELECT + " WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": source_id, "user_id": user_id},
         )
         row = result.fetchone()
@@ -254,7 +261,7 @@ class SourcesRepository:
         """
         if not looks_like_uuid(str(source_id)):
             return None
-        sql = "SELECT * FROM sources WHERE id = CAST(:id AS uuid)"
+        sql = _ROW_SELECT + " WHERE id = CAST(:id AS uuid)"
         params = {"id": str(source_id)}
         if user_id is not None:
             sql += " AND user_id = :user_id"
@@ -284,7 +291,7 @@ class SourcesRepository:
         if not looks_like_uuid(source_id):
             return None
         result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid)"),
+            text(_ROW_SELECT + " WHERE id = CAST(:id AS uuid)"),
             {"id": source_id},
         )
         row = result.fetchone()
@@ -296,7 +303,7 @@ class SourcesRepository:
         if not ids:
             return []
         result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
+            text(_ROW_SELECT + " WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
             {"ids": ids},
         )
         return [row_to_dict(r) for r in result.fetchall()]
@@ -389,7 +396,7 @@ class SourcesRepository:
             return None
         result = self._conn.execute(
             text(
-                "SELECT * FROM sources "
+                _ROW_SELECT + " "
                 "WHERE user_id = :user_id AND lower(name) = lower(:name) "
                 "ORDER BY created_at LIMIT 1"
             ),
@@ -448,7 +455,9 @@ class SourcesRepository:
         ascending = sort_order.lower() == "asc"
 
         stmt = (
-            select(sources_table, _ingest_status_case())
+            # Not ``remote_files``: a large selection's manifest runs to
+            # megabytes, and no listing reads it.
+            select(*_LISTED_COLUMNS, _ingest_status_case())
             .select_from(
                 sources_table.outerjoin(
                     ingest_chunk_progress_table,
@@ -531,6 +540,21 @@ class SourcesRepository:
              "tokens": row.tokens, "ingest_status": row.ingest_status}
             for row in self._conn.execute(stmt)
         ]
+
+    def get_remote_files(self, source_id: str) -> Any:
+        """A source's sync manifest (``remote_files``), which the other reads leave out.
+
+        Args:
+            source_id: The source's uuid.
+
+        Returns:
+            The manifest as stored, or ``None`` (no manifest, or no such source).
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT remote_files FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)},
+        ).scalar()
 
     def get_directory_structure(self, source_id: str) -> Optional[dict]:
         """One source's ``directory_structure``, with no access check: the caller has already made one.
@@ -753,7 +777,7 @@ class SourcesRepository:
         self, legacy_mongo_id: str, user_id: Optional[str] = None,
     ) -> Optional[dict]:
         legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
-        sql = "SELECT * FROM sources WHERE legacy_mongo_id = :legacy_id"
+        sql = _ROW_SELECT + " WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
             sql += " AND user_id = :user_id"

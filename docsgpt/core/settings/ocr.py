@@ -124,6 +124,38 @@ class OCRSettings(SettingsGroup):
             "prompts add bounding boxes, which the output cleanup removes."
         ),
     )
+    OCR_MAX_IN_FLIGHT: int = Field(
+        default=8,
+        ge=1,
+        le=256,
+        description=(
+            "Most OCR page requests in flight to one OCR endpoint at once, across every worker process that "
+            "shares the Redis at CACHE_REDIS_URL (per process without Redis). A rate limit (429) halves the "
+            "allowed count and a run of clean responses raises it by one again, never above this cap. Size it "
+            "from the deployment's quota: requests per minute x average seconds per page request / 60. "
+            "OCR_DEEPSEEK_CONCURRENCY still caps the requests of one file beneath it."
+        ),
+    )
+    OCR_RATE_LIMIT_MAX_WAIT: float = Field(
+        default=300.0,
+        ge=0,
+        description=(
+            "Seconds one OCR page request keeps retrying rate limits (429) before its file is deferred. Each wait "
+            "honours Retry-After (seconds or an HTTP date) and retry-after-ms, with exponential backoff and "
+            "jitter when the server sends neither, capped at 60 s per wait. 5xx responses and refused "
+            "connections are retried OCR_DEEPSEEK_MAX_RETRIES times instead."
+        ),
+    )
+    OCR_RATE_LIMIT_COOLDOWN: float = Field(
+        default=60.0,
+        ge=0,
+        description=(
+            "Seconds an ingest waits after reading every other file before it parses again, one at a time, the "
+            "files whose OCR ran out of OCR_RATE_LIMIT_MAX_WAIT. Pages already recognised are kept, so only the "
+            "missing ones are sent again. A file still rate limited then is listed as failed for now, and a "
+            "connector sync tries it again later."
+        ),
+    )
     OCR_RENDER_DPI: int = Field(
         default=200,
         description=(
@@ -142,6 +174,21 @@ class OCRSettings(SettingsGroup):
             "converter; both backends then fail loudly instead of indexing an empty document. 0 disables the "
             "guard."
         ),
+    )
+
+    PARSE_CACHE_ENABLED: bool = Field(
+        default=True,
+        description=(
+            "Keep the text parsed (and OCR'd) from each source file, keyed by the file's SHA-256 and the parser "
+            "settings, and reuse it when the same user ingests the same bytes again: the same file in another "
+            "source, a retried or fully re-run sync, a moved file, or a chunking change. Only complete parses are "
+            "kept, and never across users. Cheap text formats (Markdown, JSON, CSV, HTML...) are not cached."
+        ),
+    )
+    PARSE_CACHE_TTL_DAYS: int = Field(
+        default=90,
+        ge=1,
+        description="Days a cached parse is kept after it was last used; a daily beat task deletes older ones.",
     )
 
     @field_validator("OCR_BACKEND", "OCR_ENGINE", "OCR_DEEPSEEK_PROVIDER", mode="before")

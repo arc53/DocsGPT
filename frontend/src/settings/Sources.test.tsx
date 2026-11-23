@@ -1123,6 +1123,41 @@ describe('Sources access', () => {
     ]);
   });
 
+  it('an opened source says how many files its last sync could not read, and retries them', async () => {
+    service.syncConnector.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+    await openView(
+      doc({
+        type: 'connector:file',
+        syncFrequency: 'weekly',
+        filesFailed: 3,
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    const note = Array.from(container.querySelectorAll('[role="note"]')).find(
+      (el) => el.textContent?.includes('settings.sources.filesFailed'),
+    );
+    expect(note).toBeTruthy();
+    const retry = Array.from(note!.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.retryFailedFiles',
+    )!;
+    await act(async () => {
+      retry.click();
+    });
+    expect(service.syncConnector).toHaveBeenCalledWith('src-1', null);
+  });
+
+  it('a source whose files were all read shows no such note', async () => {
+    await openView(
+      doc({ type: 'connector:file', syncFrequency: 'weekly', filesFailed: 0 }),
+    );
+    expect(container.textContent).not.toContain('settings.sources.filesFailed');
+  });
+
   it('Delete from the opened source returns to the list', async () => {
     const handleDeleteDocument = vi.fn(async () => undefined);
     const listed = doc({

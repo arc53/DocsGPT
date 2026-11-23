@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 import requests
 
-from docsgpt.parser.connectors.base import BaseConnectorLoader, ConnectorAuthError
+from docsgpt.parser.connectors.base import BaseConnectorLoader, ConnectorAuthError, FileEntry, SelectionListing
 from docsgpt.parser.connectors.share_point.auth import SharePointAuth
 from docsgpt.parser.schema.base import Document
 
@@ -83,6 +83,8 @@ class SharePointLoader(BaseConnectorLoader):
         self.next_page_token = None
         # Downloaded file's local path → its SharePoint link, for ``download_to_directory``.
         self._file_urls: Dict[str, str] = {}
+        # The last listed selection's files by id, for ``download_files``.
+        self._listed: Dict[str, FileEntry] = {}
 
     def _apply_token_info(self, token_info: Dict[str, Any]) -> None:
         self.access_token = token_info.get('access_token')
@@ -588,6 +590,7 @@ class SharePointLoader(BaseConnectorLoader):
                     item_name = item.get('name', 'unknown')
                     item_id = item.get('id')
 
+                    item_id = self._child_ref(folder_id, item)
                     if 'folder' in item:
                         if recursive:
                             subfolder_path = os.path.join(local_dir, item_name)
@@ -623,6 +626,158 @@ class SharePointLoader(BaseConnectorLoader):
         except Exception as e:
             logging.error(f"Error downloading file {file_id}: {e}", exc_info=True)
             return 'failed'
+
+    @staticmethod
+    def _child_ref(folder_ref: str, item: Dict[str, Any]) -> str:
+        """A folder child's id as ``_get_item_url`` needs it: drive-qualified when its folder was."""
+        item_id = item.get('id')
+        if ':' in str(folder_ref) and item_id and ':' not in str(item_id):
+            drive_id = (item.get('parentReference') or {}).get('driveId') or str(folder_ref).split(':', 1)[0]
+            return f"{drive_id}:{item_id}"
+        return item_id
+
+    @staticmethod
+    def _version_of(item: Dict[str, Any]) -> Optional[str]:
+        """The marker that changes with a file's content: its ``cTag``, else ``eTag``, else modified time."""
+        return item.get('cTag') or item.get('eTag') or item.get('lastModifiedDateTime')
+
+    def _listed_file(self, item_ref: str, item: Dict[str, Any], rel_dir: str) -> Optional[FileEntry]:
+        """A listing entry for a file item, or ``None`` for a type the download skips."""
+        mime_type = (item.get('file') or {}).get('mimeType', 'application/octet-stream')
+        if mime_type not in self.SUPPORTED_MIME_TYPES:
+            return None
+        name = item.get('name', 'unknown')
+        return FileEntry(
+            id=str(item_ref),
+            path=os.path.join(rel_dir, name) if rel_dir else name,
+            version=self._version_of(item),
+            url=item.get('webUrl'),
+        )
+
+    def _list_folder(self, folder_ref: str, rel_dir: str, recursive: bool, listing: SelectionListing) -> None:
+        """Add a folder's files to ``listing`` under ``rel_dir``, as ``_download_folder_recursive`` lays them out."""
+        url = f"{self._get_item_url(folder_ref)}/children"
+        params: Optional[Dict[str, Any]] = {'$top': 1000}
+        while url:
+            response = self._graph_request('GET', url, params=params)
+            response.raise_for_status()
+            results = response.json()
+            for item in results.get('value', []):
+                item_ref = self._child_ref(folder_ref, item)
+                name = item.get('name', 'unknown')
+                if 'folder' in item:
+                    if recursive:
+                        try:
+                            self._list_folder(item_ref, os.path.join(rel_dir, name), recursive, listing)
+                        except ConnectorAuthError:
+                            raise
+                        except Exception as e:
+                            logging.warning(f"Could not list SharePoint folder {name!r}: {e}")
+                            listing.complete = False
+                            listing.unread += 1
+                    continue
+                entry = self._listed_file(item_ref, item, rel_dir)
+                if entry is not None:
+                    listing.entries.append(entry)
+            url = results.get('@odata.nextLink')
+            params = None
+
+    def list_selection(self, source_config: Dict[str, Any]) -> SelectionListing:
+        """List the selection from item metadata alone; each file's version is its ``cTag`` (else ``eTag``).
+
+        Paths match :meth:`download_to_directory`: a picked file at the top,
+        a picked folder as a top-level directory. Two files that would land on
+        one path keep the later one, as the download overwrites the earlier.
+
+        Raises:
+            ConnectorAuthError: Graph rejects the access token even after a refresh.
+        """
+        config = source_config or {}
+        listing = SelectionListing()
+        file_ids = config.get('file_ids') or []
+        folder_ids = config.get('folder_ids') or []
+        if isinstance(file_ids, str):
+            file_ids = [file_ids]
+        if isinstance(folder_ids, str):
+            folder_ids = [folder_ids]
+        for file_id in file_ids:
+            try:
+                response = self._graph_request('GET', self._get_item_url(file_id))
+                if response.status_code == 404:
+                    continue
+                response.raise_for_status()
+                entry = self._listed_file(file_id, response.json(), '')
+                if entry is not None:
+                    listing.entries.append(entry)
+            except ConnectorAuthError:
+                raise
+            except Exception as e:
+                logging.warning(f"Could not read SharePoint file {file_id}: {e}")
+                listing.complete = False
+                listing.unread += 1
+        for folder_id in folder_ids:
+            try:
+                response = self._graph_request('GET', self._get_item_url(folder_id), params={'$select': 'id,name'})
+                response.raise_for_status()
+                folder_name = response.json().get('name', '')
+                self._list_folder(folder_id, folder_name, config.get('recursive', True), listing)
+            except ConnectorAuthError:
+                raise
+            except Exception as e:
+                logging.warning(f"Could not list SharePoint folder {folder_id}: {e}")
+                listing.complete = False
+                listing.unread += 1
+        listing = listing.deduplicated()
+        self._listed = listing.by_id()
+        return listing
+
+    def download_files(self, local_dir: str, file_ids) -> Dict[str, Any]:
+        """Download the given files of the last listed selection, each to its listed path.
+
+        Raises:
+            ConnectorAuthError: Graph rejects the access token even after a refresh.
+        """
+        downloaded = 0
+        paths: Dict[str, str] = {}
+        file_urls: Dict[str, str] = {}
+        failures: Dict[str, Dict[str, str]] = {}
+        root = os.path.realpath(local_dir)
+        for file_id in dict.fromkeys(str(i) for i in file_ids):
+            entry = self._listed.get(file_id)
+            if entry is None:
+                failures[file_id] = {"kind": "transient", "error": "not in the listed selection"}
+                continue
+            target = os.path.realpath(os.path.join(root, entry.path))
+            if os.path.commonpath([root, target]) != root or target == root:
+                failures[file_id] = {"kind": "permanent", "error": "path outside the download directory"}
+                continue
+            try:
+                response = self._graph_request('GET', f"{self._get_item_url(file_id)}/content")
+                response.raise_for_status()
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, 'wb') as f:
+                    f.write(response.content)
+            except ConnectorAuthError:
+                raise
+            except Exception as e:
+                status = getattr(getattr(e, 'response', None), 'status_code', None)
+                logging.warning(f"Could not download SharePoint file {entry.path!r}: {e}")
+                failures[file_id] = {
+                    "kind": "permanent" if status in (413, 415, 422) else "transient",
+                    "error": str(e)[:300],
+                }
+                continue
+            downloaded += 1
+            paths[entry.path] = file_id
+            if entry.url:
+                file_urls[entry.path] = entry.url
+        return {
+            "files_downloaded": downloaded,
+            "files_failed": len(failures),
+            "file_ids": paths,
+            "file_urls": file_urls,
+            "failures": failures,
+        }
 
     def download_to_directory(self, local_dir: str, source_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """Download the selected files and folders into ``local_dir``.
