@@ -1,11 +1,10 @@
 ---
 title: Connectors
+sidebarTitle: 🔌 Connectors Overview
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
 lastUpdated: 2026-11-03
 ---
 
-import { Callout } from 'nextra/components'
-import { Steps } from 'nextra/components'
 import Image from 'next/image'
 import { McpPresetTable } from '../../../components/McpPresets'
 
@@ -124,7 +123,7 @@ A connector that still needs server settings starts turned off and is hidden fro
 
 Credentials are encrypted with a key derived from `ENCRYPTION_SECRET_KEY` and bound to the connection's owner. **Set your own value before anyone connects a service.**
 
-```env
+```dotenv
 ENCRYPTION_SECRET_KEY=a-long-random-value
 ```
 
@@ -165,7 +164,7 @@ In the [Google Cloud Console](https://console.cloud.google.com/), enable the **G
 
 ### Set the server settings
 
-```env
+```dotenv
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
@@ -176,7 +175,7 @@ To offer Google's own file picker, also build the frontend with `VITE_GOOGLE_CLI
 
 Publish the OAuth consent screen, or make it an **Internal** Workspace app. DocsGPT requests the restricted `drive.readonly` scope, so a published **External** app needs Google's verification before accounts outside your organization can use it freely.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Apps left in **Testing** get refresh tokens that expire after seven days, which stops background sync.
 </Callout>
 
@@ -186,7 +185,7 @@ Apps left in **Testing** get refresh tokens that expire after seven days, which 
 
 Register an app in [Microsoft Entra ID](https://entra.microsoft.com/) with a **Web** redirect URI from Admin > Connectors, create a client secret, and grant the delegated Microsoft Graph permissions `Files.Read`, `Sites.Read.All` and `User.Read`.
 
-```env
+```dotenv
 MICROSOFT_CLIENT_ID=your-application-id
 MICROSOFT_CLIENT_SECRET=your-client-secret
 MICROSOFT_TENANT_ID=common   # or your tenant id for a single-tenant app
@@ -198,7 +197,7 @@ See [SharePoint / OneDrive](/Sources/Connectors/sharepoint) for tenant options.
 
 Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), add the redirect URI from Admin > Connectors as its callback URL, and add the scopes `read:page:confluence`, `read:space:confluence`, `read:attachment:confluence` and `read:me`. See [Confluence](/Sources/Connectors/confluence) for details.
 
-```env
+```dotenv
 CONFLUENCE_CLIENT_ID=your-client-id
 CONFLUENCE_CLIENT_SECRET=your-client-secret
 ```
@@ -257,7 +256,7 @@ On the app's page, generate a client secret. You do not need a private key: Docs
 
 ### Set the server settings
 
-```env
+```dotenv
 GITHUB_CLIENT_ID=Iv23li...        # the app's Client ID
 GITHUB_CLIENT_SECRET=your-client-secret
 GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
@@ -287,7 +286,7 @@ Leave **Contents** read-only unless agents should edit files. Without a permissi
 
 The **GitHub** tile under **Upload & web** in **Add knowledge** still ingests a public repository from its URL, without an account. `GITHUB_ACCESS_TOKEN`, if set, is used only there and only for public repositories, to raise GitHub's rate limit: DocsGPT checks that the repository is public first, because that token belongs to the server and not to the member asking. For a private repository, the form links to the member's GitHub connection.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Earlier versions read any repository `GITHUB_ACCESS_TOKEN` could see, private ones included. Sources made that way from private repositories stop syncing; recreate them from a GitHub connection.
 </Callout>
 

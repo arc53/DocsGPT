@@ -18,11 +18,15 @@ const iconMap = {
     'Todo List': '/toolIcons/tool_todo_list.svg'
 };
 
+// Single-colour icons are drawn in the text colour, as the app's ToolIcon draws
+// them, so they read in light and dark; brand icons keep their own colours.
+const monochrome = new Set(['Read Webpage (browser)', 'Remote Device', 'MCP Tool', 'Memory', 'Notepad', 'Todo List']);
+
 
 export function ToolCards({ items }) {
     return (
         <>
-            <div className="tool-cards">
+            <div className="tool-cards not-prose">
                 {items.map(({ title, link, description }) => {
                     const isExternal = link.startsWith('https://');
                     const iconSrc = iconMap[title]; // No icon rendered when the tool has none
@@ -34,7 +38,17 @@ export function ToolCards({ items }) {
                         >
                             <a href={link} target={isExternal ? '_blank' : undefined} rel="noopener noreferrer" className="card-link-wrapper">
                                 <div className="card-icon-container">
-                                    {iconSrc && <div className="card-icon"><Image src={iconSrc} alt={title} width={32} height={32} /></div>} {/* Reduced icon size */}
+                                    {iconSrc && monochrome.has(title) && (
+                                        <div className="card-icon">
+                                            <span
+                                                role="img"
+                                                aria-label={title}
+                                                className="card-icon-mono"
+                                                style={{ maskImage: `url(${iconSrc})`, WebkitMaskImage: `url(${iconSrc})` }}
+                                            />
+                                        </div>
+                                    )}
+                                    {iconSrc && !monochrome.has(title) && <div className="card-icon"><Image src={iconSrc} alt={title} width={32} height={32} /></div>} {/* Reduced icon size */}
                                 </div>
                                 <h3 className="card-title">{title}</h3>
                                 {description && <p className="card-description">{description}</p>}
@@ -46,6 +60,18 @@ export function ToolCards({ items }) {
             </div>
 
             <style jsx>{`
+                .card-icon-mono {
+                    display: block;
+                    width: 32px;
+                    height: 32px;
+                    background-color: currentColor;
+                    mask-size: contain;
+                    mask-repeat: no-repeat;
+                    mask-position: center;
+                    -webkit-mask-size: contain;
+                    -webkit-mask-repeat: no-repeat;
+                    -webkit-mask-position: center;
+                }
                .tool-cards {
                     margin-top: 24px;
                     display: grid;
@@ -58,12 +84,13 @@ export function ToolCards({ items }) {
                     }
                 }
                 .card {
-                    background-color: #222222;
+                    background-color: var(--color-fd-card);
+                    border: 1px solid var(--color-fd-border);
                     border-radius: 8px;
                     padding: 16px; /* Existing padding */
                     transition: background-color 0.3s;
                     position: relative;
-                    color: #ffffff;
+                    color: var(--color-fd-foreground);
                     display: flex; /* Using flex to help with alignment */
                     flex-direction: column;
                     /* align-items: center; // Alignment for items inside card-link-wrapper is better */
@@ -71,14 +98,14 @@ export function ToolCards({ items }) {
                     height: 100%; /* Fill the height of the grid cell, ensures cards in a row are same height */
                 }
                 .card:hover {
-                    background-color: #333333;
+                    background-color: var(--color-fd-accent);
                 }
                 .card.external::after {
                     content: "↗";
                     position: absolute;
                     top: 12px;
                     right: 12px;
-                    color: #ffffff;
+                    color: var(--color-fd-foreground);
                     font-size: 0.7em;
                     opacity: 0.8;
                 }
@@ -108,12 +135,12 @@ export function ToolCards({ items }) {
                     font-weight: 600;
                     margin-bottom: 8px; /* Increased space below title */
                     font-size: 16px; /* Consider increasing slightly if descriptions are longer e.g. 17px or 18px */
-                    color: #f0f0f0;
+                    color: var(--color-fd-foreground);
                 }
                 .card-description {
                     /* margin-bottom: 0; // Original value */
                     font-size: 14px; /* Slightly increased font size for better readability */
-                    color: #aaaaaa;
+                    color: var(--color-fd-muted-foreground);
                     line-height: 1.5; /* Slightly increased line height */
                     flex-grow: 1; /* Allows description to take available space */
                     overflow-y: auto; /* Adds scroll if description is too long, though ideally content fits */

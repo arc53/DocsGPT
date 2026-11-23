@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+@import 'fumadocs-openapi/css/preset.css';
+@import './theme.css';
+
+/* Tailwind scans these for class names; content/ pages may use utilities too. */
+@source '../content';
+@source '../components';
+@source '../lib';
+
+html {
+  scrollbar-gutter: stable;
+}
+
+@theme {
+  /* The app's typeface (frontend/src/index.css), loaded by next/font in app/layout.jsx. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}

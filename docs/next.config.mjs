@@ -1,8 +1,6 @@
-const nextra = require('nextra').default;
+import { createMDX } from 'fumadocs-mdx/next';
 
-const withNextra = nextra({
-  defaultShowCopyCode: true,
-});
+const withMDX = createMDX();
 
 // Old URL -> current URL for every page that moved or was retired. Each
 // target is a live page, so no redirect points at another redirect.
@@ -42,8 +40,14 @@ const movedPages = [
   ['/Extensions/Chrome-extension', '/Extensions/community'],
 ];
 
-module.exports = withNextra({
+/** @type {import('next').NextConfig} */
+const config = {
   reactStrictMode: true,
+  poweredByHeader: false,
+  // The search index and the OpenAPI document are data for the site's own pages, not pages.
+  async headers() {
+    return [{ source: '/api/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] }];
+  },
   async redirects() {
     return movedPages.map(([source, destination]) => ({
       source,
@@ -51,4 +55,6 @@ module.exports = withNextra({
       permanent: true,
     }));
   },
-});
+};
+
+export default withMDX(config);

@@ -24,7 +24,7 @@ from typing import Any, Literal, Optional, Union
 from pydantic import AliasChoices
 from pydantic.fields import FieldInfo
 
-from docsgpt.core.docs_pages import read_last_updated, today
+from docsgpt.core.docs_pages import read_last_updated, reader_text, today
 from docsgpt.core.paths import home_dir
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings
 
@@ -35,6 +35,7 @@ HOME_PLACEHOLDER = "<DOCSGPT_HOME>"
 _HEADER = """\
 ---
 title: Settings Reference
+sidebarTitle: 📖 Settings Reference
 description: Every DocsGPT setting, grouped by domain, with its type, default and purpose.
 lastUpdated: {last_updated}
 ---
@@ -149,8 +150,10 @@ def render_reference(last_updated: str) -> str:
 def updated_reference(current: str) -> str:
     """The page to check in, given the one checked in now.
 
-    The current ``lastUpdated`` date is kept while the rendered content is
-    unchanged; any change to the content (or a missing date) dates the page today.
+    The current ``lastUpdated`` date is kept while the rendered body is
+    unchanged, even when the frontmatter or the body's whitespace changes; any
+    other change to the body (or a missing date) dates the page today. That is the rule the docs site's own
+    ``sync-dates`` script follows for hand-written pages.
 
     Args:
         current: The checked-in page source, or "" when there is none.
@@ -159,8 +162,10 @@ def updated_reference(current: str) -> str:
         The page source ``--write`` writes.
     """
     previous = read_last_updated(current)
-    if previous and render_reference(previous) == current:
-        return current
+    if previous:
+        kept = render_reference(previous)
+        if reader_text(kept) == reader_text(current):
+            return kept
     return render_reference(today())
 
 

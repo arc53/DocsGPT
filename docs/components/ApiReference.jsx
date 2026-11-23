@@ -2,30 +2,19 @@
 // The snapshot is generated from the backend (python -m docsgpt.api.reference --write);
 // this is a server component, so the JSON never reaches the browser bundle.
 import spec from '../data/swagger.json';
+import { groupTitle, sentence } from '../lib/api-groups';
 import { useMDXComponents } from '../mdx-components';
 
 const METHOD_ORDER = ['get', 'post', 'put', 'patch', 'delete'];
 
+// The app's status tokens (app/theme.css), so the methods follow the light and dark themes.
 const METHOD_COLORS = {
-  get: '#2563eb',
-  post: '#16a34a',
-  put: '#d97706',
-  patch: '#9333ea',
-  delete: '#dc2626',
+  get: 'var(--color-fd-info)',
+  post: 'var(--color-fd-success)',
+  put: 'var(--color-fd-warning)',
+  patch: 'var(--color-fd-primary)',
+  delete: 'var(--color-fd-error)',
 };
-
-const GROUP_TITLES = {
-  admin: 'Admin',
-  agents_folders: 'Agent folders',
-  me: 'Current user',
-  tokens: 'Personal access tokens',
-};
-
-function groupTitle(name) {
-  if (GROUP_TITLES[name]) return GROUP_TITLES[name];
-  const words = name.replace(/_/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 function slug(text) {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -40,12 +29,6 @@ function typeLabel(schema) {
   if (schema.$ref) return refName(schema.$ref);
   if (schema.type === 'array') return `array of ${typeLabel(schema.items) || 'any'}`;
   return schema.type || 'any';
-}
-
-// Descriptions in the code rarely end in a full stop; add one so the notes read as sentences.
-function sentence(text) {
-  const trimmed = text.trim();
-  return /[.!?)]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
 function fieldNotes(schema) {

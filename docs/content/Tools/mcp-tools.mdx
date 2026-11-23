@@ -1,11 +1,9 @@
 ---
 title: MCP Tool Integration
+sidebarTitle: 🔗 MCP Tools
 description: Connect any MCP (Model Context Protocol) server to DocsGPT agents as a tool, with bearer, API key, basic or OAuth sign-in, a worked example and troubleshooting.
 lastUpdated: 2026-11-03
 ---
-
-import { Callout } from 'nextra/components'
-import { Steps } from 'nextra/components'
 
 # MCP Tool Integration
 
@@ -19,7 +17,7 @@ The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) integration
 
 Only needed if your MCP servers use OAuth authentication:
 
-```env
+```dotenv
 MCP_OAUTH_REDIRECT_URI=https://yourdomain.com/api/mcp_server/callback
 ```
 

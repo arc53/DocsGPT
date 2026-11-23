@@ -1,11 +1,10 @@
 ---
 title: Add Knowledge
+sidebarTitle: 📥 Add Knowledge
 description: Add files, web pages, whole websites, GitHub repositories and synced services to DocsGPT Knowledge, keep them up to date, organize them in folders, and use them or whole folders in chats and agents.
 lastUpdated: 2026-10-31
 ---
 
-import { Callout } from 'nextra/components'
-import { Steps } from 'nextra/components'
 import Image from 'next/image'
 
 # Add Knowledge
@@ -70,7 +69,7 @@ The upload dialog accepts these types:
 - **Audio:** `.wav`, `.mp3`, `.m4a`, `.ogg`, `.webm`. Audio is transcribed with speech-to-text, and the transcript is indexed.
 - **Archives:** `.zip`
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 The upload dialog takes files **up to 25 MB each**. It lists larger files, and files of other types, as not added. Uploads through the API are capped by the server instead: `UPLOAD_MAX_FILE_BYTES` (100 MB per file by default), `UPLOAD_MAX_REQUEST_BYTES` (256 MB per request) and, for audio, `STT_MAX_FILE_SIZE_MB` (50 MB).
 </Callout>
 
@@ -141,7 +140,7 @@ On the Elasticsearch vector store, a page's chunks can't be changed on their own
 
 Through the API, these actions are the `/api/website` routes in the [API reference](/API/reference). `POST /api/website` keeps the stored skipped addresses and link setting when `skip` or `keep_links` is left out. A refused request carries a `code`, such as `page_limit`, `site_limit`, `skip_limit`, `invalid_address` (an address that isn't a web address, has a user name and password in it, or is more than 64 folders deep), `invalid_config` (a path or skipped address with a control character in it) or `already_listed`, and a chunk change on a busy source answers `409` with `source_busy`. A change that was saved but couldn't be queued answers `500` with `queue_failed`; the next sync applies it.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 A sync replaces a website source's chunks. On a source that is kept up to date, chunks you add or edit by hand are replaced at the next sync.
 </Callout>
 
