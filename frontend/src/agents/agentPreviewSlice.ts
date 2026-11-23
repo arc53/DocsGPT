@@ -85,7 +85,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           state.preference.selectedDocs,
           null, // No conversation ID for previews
           state.preference.prompt.id,
-          state.preference.chunks,
           previewEventHandler(
             dispatch,
             indx ?? state.agentPreview.queries.length - 1,
@@ -104,7 +103,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           state.preference.selectedDocs,
           null,
           state.preference.prompt.id,
-          state.preference.chunks,
           state.preference.selectedAgent?.id,
           attachmentIds,
           false,

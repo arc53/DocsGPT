@@ -59,9 +59,8 @@ services:
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
-      # Host data stays under application/ (the old package directory) for this
-      # release so an upgraded checkout keeps its indexes; it moves with the
-      # packaging work, together with an upgrade note.
+      # Host data stays under application/ (the old package directory) so an
+      # upgraded checkout keeps its indexes, inputs and vectors where they are.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
@@ -87,9 +86,8 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
-      # Host data stays under application/ (the old package directory) for this
-      # release so an upgraded checkout keeps its indexes; it moves with the
-      # packaging work, together with an upgrade note.
+      # Host data stays under application/ (the old package directory) so an
+      # upgraded checkout keeps its indexes, inputs and vectors where they are.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors

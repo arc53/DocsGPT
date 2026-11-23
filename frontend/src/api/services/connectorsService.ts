@@ -249,14 +249,6 @@ const connectorsService = {
     json(await apiClient.get(endpoints.USER.ADMIN_CONNECTORS, token)),
   updateAdmin: async (body: Record<string, unknown>, token: string | null) =>
     json(await apiClient.put(endpoints.USER.ADMIN_CONNECTORS, body, token)),
-  claim: async (provider: string, sessionToken: string, token: string | null) =>
-    json(
-      await apiClient.post(
-        endpoints.USER.CONNECTIONS_CLAIM,
-        { provider, session_token: sessionToken },
-        token,
-      ),
-    ),
 };
 
 export default connectorsService;

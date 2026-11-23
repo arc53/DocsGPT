@@ -2600,7 +2600,6 @@
         "partialDownload_one": "有 {{count}} 個項目無法讀取，已略過。請同步此來源以重試。",
         "partialDownload_other": "有 {{count}} 個項目無法讀取，已略過。請同步此來源以重試。",
         "preparing": "準備上傳",
-        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
         "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
         "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。",
         "training": "正在上傳",

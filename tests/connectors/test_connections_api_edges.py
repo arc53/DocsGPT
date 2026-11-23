@@ -25,21 +25,20 @@ def _resources():
         (c.ConnectionSetup, "post", (_CID,)),
         (c.ConnectionReconnect, "post", (_CID,)),
         (c.ConnectionPickerToken, "post", (_CID,)),
-        (c.ConnectionClaim, "post", ()),
         (c.ConnectionToolPermissions, "put", (_CID, "t1")),
         (c.ConnectionRefreshTools, "post", (_CID,)),
         (c.ToolCredentialMode, "put", ("t1",)),
     ]
 
 
-@pytest.mark.parametrize("index", range(13))
+@pytest.mark.parametrize("index", range(12))
 def test_every_endpoint_needs_a_signed_in_user(app, index):  # noqa: F811
     resource, method, args = _resources()[index]
     resp = _call(app, resource, method, "/api/connections", user=None, body={}, args=args)
     assert resp.status_code == 401
 
 
-@pytest.mark.parametrize("index", [3, 4, 5, 6, 7, 8, 11])
+@pytest.mark.parametrize("index", [3, 4, 5, 6, 7, 8, 10])
 def test_someone_elses_connection_is_not_found(app, pg_conn, index):  # noqa: F811
     resource, method, _ = _resources()[index]
     cid = _connection(pg_conn, user="victim", secrets={"credentials": {"token": "t"}})
@@ -200,19 +199,3 @@ class TestPickerToken:
             resp = _call(app, ConnectionPickerToken, "post", "/p", args=(cid,))
         assert resp.status_code == 404
 
-
-class TestClaim:
-    def test_needs_provider_and_token(self, app, pg_conn):  # noqa: F811
-        from docsgpt.api.connector.connections import ConnectionClaim
-
-        with _db(pg_conn):
-            resp = _call(app, ConnectionClaim, "post", "/c", body={"provider": "google_drive"})
-        assert resp.status_code == 400
-
-    def test_unknown_token_is_not_found(self, app, pg_conn):  # noqa: F811
-        from docsgpt.api.connector.connections import ConnectionClaim
-
-        with _db(pg_conn):
-            resp = _call(app, ConnectionClaim, "post", "/c",
-                         body={"provider": "google_drive", "session_token": "nope"})
-        assert resp.status_code == 404

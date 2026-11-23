@@ -1,7 +1,7 @@
 import logging
 import math
 import re
-from typing import Iterable, List, Optional, Any, Dict
+from typing import Iterable, List, Optional, Any, Dict, Tuple
 
 from psycopg.types.json import Jsonb
 
@@ -838,6 +838,19 @@ class PGVectorStore(BaseVectorStore):
             raise
         finally:
             cursor.close()
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Clear parent metadata for this source's chunk IDs in one SQL update."""
+        ids = list(dict.fromkeys(int(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        self._run_statement(
+            f"UPDATE {self._table_name} "
+            f"SET {self._metadata_column} = {self._metadata_column} - 'parent_text' "
+            f"WHERE id = ANY(%s) AND source_id = %s;",
+            (ids, self._source_id),
+        )
+        return [(str(chunk_id), str(chunk_id)) for chunk_id in ids]
 
     def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
         """Replace several chunks' metadata in one transaction, without embedding their text again.

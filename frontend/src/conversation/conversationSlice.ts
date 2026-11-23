@@ -615,7 +615,6 @@ async function answerQuestion(
         state.preference.selectedDocs || [],
         currentConversationId,
         state.preference.prompt.id,
-        state.preference.chunks,
         (event) => {
           const data = JSON.parse(event.data);
           const targetIndex = indx ?? state.conversation.queries.length - 1;
@@ -814,7 +813,6 @@ async function answerQuestion(
         state.preference.selectedDocs || [],
         state.conversation.conversationId,
         state.preference.prompt.id,
-        state.preference.chunks,
         state.preference.selectedAgent?.id,
         attachmentIds,
         true,

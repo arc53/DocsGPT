@@ -78,7 +78,6 @@ const makeStore = (
     apiKey: '',
     prompt: { name: 'default', id: 'default', type: 'public' },
     prompts: [],
-    chunks: '2',
     selectedDocs: [],
     selectedFolders: [],
     sourceDocs: null,

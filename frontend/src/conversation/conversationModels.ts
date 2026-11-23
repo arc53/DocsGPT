@@ -158,7 +158,6 @@ export interface RetrievalPayload {
   retriever?: string;
   conversation_id: string | null;
   prompt_id?: string | null;
-  chunks: string;
   isNoneDoc: boolean;
   index?: number;
   agent_id?: string;

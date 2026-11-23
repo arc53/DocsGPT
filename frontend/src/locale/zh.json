@@ -2599,7 +2599,6 @@
         "partialDownload_one": "有 {{count}} 个项目未能读取，已被跳过。请同步此来源以重试。",
         "partialDownload_other": "有 {{count}} 个项目未能读取，已被跳过。请同步此来源以重试。",
         "preparing": "准备上传",
-        "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
         "tooManyFiles": "此来源的文件数超过上限 {{limit}} 个。请选择更小的文件夹、路径或选择范围。",
         "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。",
         "training": "正在上传",
