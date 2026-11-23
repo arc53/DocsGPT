@@ -45,7 +45,7 @@ def claim_for_turn(conversation_id: Optional[str], user_id: Optional[str]) -> Li
             wakes_repo = ConversationWakesRepository(conn)
             for job in jobs:
                 wakes_repo.supersede_for_ref("job", str(job["id"]))
-                event = job_event(job)
+                event = job_event(job, files_on_reply=False)
                 events.append(
                     {"source": "lost" if job.get("status") == "lost" else "job", "ref_id": str(job["id"]), **event}
                 )

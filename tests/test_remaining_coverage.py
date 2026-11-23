@@ -580,15 +580,17 @@ class TestReadWebpageErrors:
             "docsgpt.agents.tools.read_webpage.pinned_fetch_bytes"
         ) as mock_fetch:
             mock_response = MagicMock()
+            mock_response.status_code = 200
             mock_response.raise_for_status.return_value = None
             mock_response.headers = {"Content-Type": "text/html"}
             mock_fetch.return_value = (b"<html><body>test</body></html>", mock_response)
             with patch(
-                "docsgpt.agents.tools.read_webpage.markdownify",
+                "docsgpt.agents.tools.read_webpage.html_to_markdown_text",
                 side_effect=Exception("parse error"),
-            ):
-                result = tool.execute_action("read", url="https://example.com")
-                assert "Error" in str(result)
+            ) as mock_convert:
+                result = tool.execute_action("read_webpage", url="https://example.com")
+            mock_convert.assert_called_once()
+            assert result == "Error fetching URL https://example.com: parse error"
 
 
 # ---------------------------------------------------------------------------

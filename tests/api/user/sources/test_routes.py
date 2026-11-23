@@ -1316,6 +1316,29 @@ class TestReingestARemoteSource:
         assert kwargs["doc_id"] == str(src["id"]) and kwargs["user"] == user and kwargs["loader"] == type_
         assert kwargs["source_data"]
 
+    def test_a_rebuild_keeps_an_unfinished_checkpoint_to_resume(self, app, pg_conn):
+        """The rebuild resumes a stalled embed when its content chunks the same way."""
+        from sqlalchemy import text
+
+        user = "u-reingest-resume"
+        src = _seed_source(pg_conn, user, name="Docs", type="crawler", remote_data={"urls": ["https://docs.x.io/"]})
+        pg_conn.execute(
+            text(
+                "INSERT INTO ingest_chunk_progress (source_id, total_chunks, embedded_chunks, last_index, status) "
+                "VALUES (CAST(:sid AS uuid), 100, 9, 8, 'stalled')"
+            ),
+            {"sid": str(src["id"])},
+        )
+
+        response, _ = _reingest(app, pg_conn, user, str(src["id"]))
+
+        assert response.status_code == 200
+        row = pg_conn.execute(
+            text("SELECT status, embedded_chunks FROM ingest_chunk_progress WHERE source_id = CAST(:sid AS uuid)"),
+            {"sid": str(src["id"])},
+        ).fetchone()
+        assert (row.status, row.embedded_chunks) == ("active", 9)
+
     def test_a_connector_source_queues_a_connector_sync(self, app, pg_conn):
         user = "u-reingest-drive"
         src = _seed_source(

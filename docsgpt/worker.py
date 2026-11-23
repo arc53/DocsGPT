@@ -1,3 +1,4 @@
+import copy
 import datetime
 import hashlib
 import io
@@ -29,6 +30,8 @@ from docsgpt.decisions.features import INJECTION_ATTACHMENT_PARSE
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.guardrails import injection_scoring
 from docsgpt.parser.chunking_creator import ChunkerCreator
+from docsgpt.parser import incremental
+from docsgpt.parser.connectors.base import BaseConnectorLoader, ConnectorAuthError, FileEntry, SelectionListing
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.parser.embedding_pipeline import (
     assert_index_complete,
@@ -38,6 +41,7 @@ from docsgpt.parser.embedding_pipeline import (
 from docsgpt.parser.file.base_parser import DocumentParseError, NoTextLayerError
 from docsgpt.parser.file.bulk import SimpleDirectoryReader, get_default_file_extractor
 from docsgpt.parser.file.constants import SUPPORTED_SOURCE_EXTENSIONS, is_attachment_archive
+from docsgpt.parser.ingest_limits import check_file_count, check_token_count, failure_fields
 from docsgpt.parser.file.image_parser import (
     VISION_CONVERTIBLE_MIME_TYPES,
     convert_image_to_png,
@@ -79,6 +83,8 @@ from docsgpt.storage.db.repositories.wiki_pages import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.storage.storage_creator import StorageCreator
+from docsgpt.workspaces.principal import is_principal_id, team_of_principal
+from docsgpt.workspaces.roles import role_at_least, team_role_for
 from docsgpt.upload_limits import (
     enforce_parseable_attachment,
     UnsupportedUploadTypeError,
@@ -236,29 +242,34 @@ def _reset_graph_for_source(source_id) -> None:
     GraphStore().delete_by_source(str(source_id))
 
 
-def _publish_graph_event(user, source_id, event_type, payload) -> None:
-    """Publish a graph-extraction SSE event, scoped to the source. Never raises."""
+def _publish_graph_event(user, source_id, event_type, payload, actor_id=None) -> None:
+    """Publish a graph-extraction SSE event, scoped to the source. Never raises.
+
+    It reaches the source's owner and whoever started the build; for a team's
+    source, that person only (``_source_event_recipients``).
+    """
     if not user:
         return
     try:
-        publish_user_event(
-            user,
-            event_type,
-            payload,
-            scope={"kind": "source", "id": str(source_id)},
-        )
+        _publish_source_event(user, actor_id, event_type, payload, scope={"kind": "source", "id": str(source_id)})
     except Exception as e:
         logging.debug(f"Failed to publish graph event {event_type}: {e}")
 
 
-def _maybe_enqueue_graph_extraction(cfg, source_id, user):
+def _actor_kwargs(actor_id: Optional[str]) -> Dict[str, str]:
+    """``{"actor_id": id}`` for a task queued on someone's behalf, else ``{}`` (the call shape stays as it was)."""
+    return {"actor_id": str(actor_id)} if actor_id else {}
+
+
+def _maybe_enqueue_graph_extraction(cfg, source_id, user, actor_id=None):
     """Reset and re-enqueue graph extraction after embed for a graphrag source.
 
     The graph lights up asynchronously once chunks are embedded, so ClassicRAG
     works immediately. A no-op for non-graphrag sources or when GraphRAG is
     unavailable. The prior graph is cleared first so a re-ingest rebuilds rather
     than accumulating stale nodes. The work is isolated so a broker hiccup can
-    never fail an otherwise-successful ingest.
+    never fail an otherwise-successful ingest. ``actor_id`` (who added the
+    knowledge) pays for the extraction and hears its events.
     """
     if cfg.kind != "graphrag":
         return
@@ -275,7 +286,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
             source = SourcesRepository(conn).get_any(source_id, user)
         _reset_graph_for_source(source_id)
         key = graph_extraction_key(source_id, _source_updated_at(source))
-        extract_graph.delay(source_id, user, idempotency_key=key)
+        extract_graph.delay(source_id, user, idempotency_key=key, **_actor_kwargs(actor_id))
     except Exception as e:
         logging.warning(
             f"Failed to enqueue graph extraction for {source_id}: {e}",
@@ -283,7 +294,7 @@ def _maybe_enqueue_graph_extraction(cfg, source_id, user):
         )
 
 
-def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
+def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None, actor_id=None):
     """Queue the graph's catch-up after a sync re-embedded a graphrag source.
 
     A sync stores every chunk again under a new id. Rather than reset and
@@ -304,7 +315,7 @@ def _maybe_enqueue_graph_sync(cfg, source_id, user, task_id=None):
         from docsgpt.api.user.tasks import extract_graph
 
         key = f"extract-graph:{source_id}:sync:{task_id or uuid.uuid4().hex}"
-        extract_graph.delay(source_id, user, idempotency_key=key, sync=True)
+        extract_graph.delay(source_id, user, idempotency_key=key, sync=True, **_actor_kwargs(actor_id))
     except Exception as e:
         logging.warning(f"Failed to enqueue the graph sync for {source_id}: {e}", exc_info=True)
 
@@ -411,10 +422,11 @@ def _stop_ingest_heartbeat(thread, stop_event):
         thread.join(timeout=5)
 
 
-def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
+def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct, actor_id=None):
     """Build a ``load_data`` callback mapping parse progress to
     ``[start_pct, end_pct]`` via ``update_state`` + a throttled
-    ``stage='parsing'`` SSE event.
+    ``stage='parsing'`` SSE event (to the owner, or for a team's source to
+    the person who started the ingest).
     """
     span = end_pct - start_pct
     source_id_str = str(source_id)
@@ -429,8 +441,9 @@ def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
             meta={"current": pct, "status": "Parsing files"},
         )
         if user and pct > state["last_pct"]:
-            publish_user_event(
+            _publish_source_event(
                 user,
+                actor_id,
                 "source.ingest.progress",
                 {
                     "current": pct,
@@ -443,6 +456,27 @@ def _make_parse_progress_callback(task, user, source_id, start_pct, end_pct):
             state["last_pct"] = pct
 
     return _callback
+
+
+# How many skipped files an ingest result names; the count covers them all.
+_UNPARSED_FILES_LISTED = 20
+
+
+def _unparsed_files_report(reader: Any, base_dir: str) -> Dict[str, Any]:
+    """The files ``reader.load_data`` skipped as unparseable, for an ingest's result and completed event.
+
+    Args:
+        reader: The ``SimpleDirectoryReader`` that read the source.
+        base_dir: Directory the reported paths are made relative to.
+
+    Returns:
+        ``{"files_unparsed": n, "unparsed_files": [relative paths]}``, or ``{}`` when nothing was skipped.
+    """
+    failed = getattr(reader, "failed_files", None)
+    if not isinstance(failed, list) or not failed:
+        return {}
+    paths = [os.path.relpath(str(path), start=base_dir) for path, _ in failed]
+    return {"files_unparsed": len(paths), "unparsed_files": paths[:_UNPARSED_FILES_LISTED]}
 
 
 # Define a function to extract metadata from a given filename.
@@ -487,6 +521,65 @@ def _apply_display_names_to_structure(structure, file_name_map, prefix=""):
     return structure
 
 
+def _sync_generation(source: dict) -> Optional[str]:
+    """The ``sync_manifest`` generation of a source row; ``None`` when no sync has run on it."""
+    manifest = source.get("sync_manifest")
+    if isinstance(manifest, str):
+        try:
+            manifest = json.loads(manifest)
+        except ValueError:
+            return None
+    if not isinstance(manifest, dict) or manifest.get("writing"):
+        # A request is changing the files right now (or died doing so): what
+        # this run reads may be part of the change, and must not be vouched for.
+        return None
+    generation = manifest.get("generation")
+    return generation if isinstance(generation, str) and generation else None
+
+
+def _record_sync_manifest(source_id: str, user: str, sync_manifest: Any) -> None:
+    """Store the record of the files a new source was ingested from.
+
+    Written once the index holds those files, so the record's "index is
+    current" is true. A failure only costs the source's first sync an upload
+    of every file. A source that already has a record keeps it: an ingest
+    that runs again (a redelivered task) after a sync changed the files must
+    not bring back the hashes of the files it was first given.
+
+    Args:
+        source_id: The source's id.
+        user: The source's owner.
+        sync_manifest: The record the upload built, or ``None``.
+    """
+    if not isinstance(sync_manifest, dict) or not looks_like_uuid(str(source_id)):
+        return
+    try:
+        with db_session() as conn:
+            repo = SourcesRepository(conn)
+            row = repo.get_for_update(str(source_id), user)
+            if row is None or row.get("sync_manifest"):
+                return
+            repo.update(str(source_id), user, {"sync_manifest": sync_manifest})
+    except Exception as e:
+        logging.error(f"Error recording the uploaded files of source {source_id}: {e}", exc_info=True)
+
+
+def _mark_sync_indexed(source_id: str, generation: Optional[str]) -> bool:
+    """Mark the index current for ``generation``; a failure only costs the next sync a reingest.
+
+    Returns:
+        bool: Whether the mark was set: the index reflects the stored files as a sync left them.
+    """
+    if not generation:
+        return False
+    try:
+        with db_session() as conn:
+            return SourcesRepository(conn).mark_sync_indexed(source_id, generation)
+    except Exception as e:
+        logging.error(f"Error marking the index current for source {source_id}: {e}", exc_info=True)
+        return False
+
+
 def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
     """Every file entry of a ``directory_structure``, keyed by its path relative to the source.
 
@@ -509,6 +602,64 @@ def _structure_files(structure: Any, prefix: str = "") -> Dict[str, dict]:
     return files
 
 
+#: ``sources.metadata`` key: the files a reingest is changing the chunks of,
+#: from before the first chunk change until a clean finish.
+_REINGEST_PENDING = "reingest_pending"
+
+
+def _is_file_entry(node: Any) -> bool:
+    """Whether a ``directory_structure`` node is a file's entry rather than a folder."""
+    return isinstance(node, dict) and "type" in node and "size_bytes" in node
+
+
+def _structure_with_pending(old: Any, new: Any, added: List[str], changed: List[str]) -> dict:
+    """A ``directory_structure`` that says which files a reingest is about to re-chunk.
+
+    The files a run adds are listed (as the new structure has them), and the
+    ones it edits or removes stay listed, all without a ``sha256``. A file
+    stored without a hash counts as edited, so if the run dies between
+    changing the chunks and saving the final structure, the next run deletes
+    whatever chunks those files have and, where the file is (still, or
+    again) stored, embeds it again.
+
+    An added file is left out when a file or folder ``old`` lists is in its
+    way (``guide`` was a file and is a folder now): the old entries are the
+    only note of chunks still to remove, and the next run deletes an added
+    file's chunks before it embeds them anyway.
+
+    Args:
+        old: The source's saved ``directory_structure``.
+        new: The structure of the files as they are now.
+        added: Paths in ``new`` only.
+        changed: Paths in ``old`` whose chunks are about to be deleted:
+            edited files and removed ones.
+
+    Returns:
+        A copy of ``old`` with those entries pending; ``old`` and ``new`` are not changed.
+    """
+    pending = copy.deepcopy(old) if isinstance(old, dict) else {}
+    new_files = _structure_files(new)
+    for rel_path in [*changed, *added]:
+        parts = rel_path.split(os.sep)
+        node = pending
+        for part in parts[:-1]:
+            child = node.get(part)
+            if child is None:
+                child = node[part] = {}
+            if not isinstance(child, dict) or _is_file_entry(child):
+                node = None
+                break
+            node = child
+        if node is None:
+            continue
+        entry = node.get(parts[-1])
+        if entry is None:
+            entry = new_files.get(rel_path)
+        if _is_file_entry(entry):
+            node[parts[-1]] = {key: value for key, value in entry.items() if key != "sha256"}
+    return pending
+
+
 def _file_content_changed(old: dict, new: dict) -> bool:
     """Whether a file kept at the same path has new content, by its ``sha256``.
 
@@ -519,10 +670,17 @@ def _file_content_changed(old: dict, new: dict) -> bool:
     return bool(new_hash) and old.get("sha256") != new_hash
 
 
-def _download_source_files_to_dir(storage, source_file_path, temp_dir):
-    """Mirror a source's stored files into ``temp_dir``, preserving structure."""
+def _download_source_files_to_dir(storage, source_file_path, temp_dir) -> bool:
+    """Mirror a source's stored files into ``temp_dir``, preserving structure.
+
+    Returns:
+        bool: Whether every stored file was copied. A file that could not be
+        read is logged and left out, so what the caller then scans is not the
+        whole source.
+    """
+    complete = True
     if not storage.is_directory(source_file_path):
-        return
+        return complete
     for storage_file_path in storage.list_files(source_file_path):
         if storage.is_directory(storage_file_path):
             continue
@@ -535,7 +693,9 @@ def _download_source_files_to_dir(storage, source_file_path, temp_dir):
                 f.write(file_data.read())
         except Exception as e:
             logging.error(f"Error downloading file {storage_file_path}: {e}")
+            complete = False
             continue
+    return complete
 
 
 # Define a function to generate a random string of a given length.
@@ -811,6 +971,9 @@ def ingest_worker(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
+    actor_id=None,
+    sync_manifest=None,
 ):
     """
     Ingest and process documents.
@@ -839,6 +1002,10 @@ def ingest_worker(
             first, ``{"from": storage path, "to": storage path}`` each (a
             Knowledge source made from chat attachments). The copy runs here
             rather than in the request; a retry copies again, harmlessly.
+        folder_id (str|None): One of the uploader's source folders to file
+            the new source in; the API files it in the write that stores it.
+        actor_id (str|None): The uploader, when ``user`` is a team's principal:
+            the new source names them as its creator, and its events reach them.
 
     Returns:
         dict: Information about the completed ingestion task, including input parameters and a "limited" flag.
@@ -875,15 +1042,17 @@ def ingest_worker(
         "operation": "upload",
     }
     if self.request.retries == 0:
-        publish_user_event(
+        _publish_source_event(
             user,
+            actor_id,
             "source.ingest.queued",
             queued,
             scope={"kind": "source", "id": source_id_for_events},
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
+    progress_user, progress_actor = _progress_recipients(user, actor_id)
 
     # Wrap the entire body in try/except so a failure between the
     # ``queued`` publish above and the inner work (e.g. tempdir
@@ -898,6 +1067,8 @@ def ingest_worker(
             finally:
                 original.close()
 
+        # Whether every uploaded file reached the reader; see ``_record_sync_manifest``.
+        read_all = True
         with tempfile.TemporaryDirectory() as temp_dir:
             os.makedirs(temp_dir, exist_ok=True)
 
@@ -925,6 +1096,7 @@ def ingest_worker(
                         logging.error(
                             f"Error downloading file {storage_file_path}: {e}"
                         )
+                        read_all = False
                         continue
             else:
                 # Handle single file case
@@ -955,15 +1127,23 @@ def ingest_worker(
                 required_exts=formats,
                 exclude_hidden=exclude,
                 file_metadata=metadata_from_filename,
+                parse_cache_user=user,
             )
+            check_file_count(len(getattr(reader, "input_files", None) or []))
             # Parsing/OCR owns 1-50% of the bar; embedding takes 50-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
-                    self, user, source_uuid, start_pct=1, end_pct=50,
+                    self, user, source_uuid, start_pct=1, end_pct=50, actor_id=actor_id,
                 )
             )
 
             directory_structure = getattr(reader, "directory_structure", {})
+            # A file that failed to parse is stored without its hash, so a
+            # reingest counts it as edited and tries it again; the others it
+            # leaves unparsed.
+            stored_entries = _structure_files(directory_structure)
+            for rel_path in {**_reader_failures(reader, temp_dir), **_incomplete_files(raw_docs, temp_dir)}:
+                stored_entries.get(rel_path, {}).pop("sha256", None)
             logging.info(f"Directory structure from reader: {directory_structure}")
             file_name_map = _normalize_file_name_map(file_name_map)
             if file_name_map:
@@ -994,6 +1174,8 @@ def ingest_worker(
             raw_docs = chunker.chunk(documents=raw_docs)
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
+            tokens = count_tokens_docs(docs)
+            check_token_count(tokens)
 
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
@@ -1003,7 +1185,8 @@ def ingest_worker(
                 embed_and_store_documents(
                     docs, vector_store_path, source_uuid, self,
                     attempt_id=getattr(self.request, "id", None),
-                    user_id=user,
+                    user_id=progress_user,
+                    **_actor_kwargs(progress_actor),
                     progress_start=50, progress_end=100,
                 )
             finally:
@@ -1012,8 +1195,6 @@ def ingest_worker(
             # record of how many chunks landed; mismatch raises so the
             # task fails loud rather than caching a partial index.
             assert_index_complete(source_uuid)
-
-            tokens = count_tokens_docs(docs)
 
             self.update_state(state="PROGRESS", meta={"current": 100})
 
@@ -1030,15 +1211,25 @@ def ingest_worker(
                 "type": "local",
                 "file_path": file_path,
                 "directory_structure": json.dumps(directory_structure),
+                **_creator_field(user, actor_id),
             }
             if file_name_map:
                 file_data["file_name_map"] = json.dumps(file_name_map)
             if config:
                 file_data["config"] = json.dumps(config)
 
+            if folder_id:
+                file_data["folder_id"] = folder_id
             upload_index(vector_store_path, file_data)
-            publish_user_event(
+            # A file that could not be read or parsed was not indexed: without
+            # a record the source's first sync uploads the files and indexes
+            # them all.
+            if getattr(reader, "failed_files", None):
+                read_all = False
+            _record_sync_manifest(source_id_for_events, user, sync_manifest if read_all else None)
+            _publish_source_event(
                 user,
+                actor_id,
                 "source.ingest.completed",
                 {
                     "source_id": source_id_for_events,
@@ -1053,18 +1244,20 @@ def ingest_worker(
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
     except Exception as e:
         logging.error(f"Error in ingest_worker: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
-        publish_user_event(
+        _publish_source_event(
             user,
+            actor_id,
             "source.ingest.failed",
             {
                 "source_id": source_id_for_events,
                 "filename": filename,
                 "operation": "upload",
                 "error": str(e)[:1024],
+                **failure_fields(e),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
@@ -1127,6 +1320,9 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
     # Tracks inner-block failures so a ``completed`` event reflects
     # partial-success accurately rather than masking it.
     inner_warnings: list[str] = []
+    # Files a reingest could not read: reported with its warnings, but they
+    # don't hold back its clean finish (they are retried by hash anyway).
+    read_notes: list[str] = []
     # Holds the source's index lock once taken; released on every way out.
     held = ExitStack()
 
@@ -1191,7 +1387,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             )
         else:
             # The failed attempt before cleared the Activity marker.
-            mark_ingest_running(user, queued)
+            _mark_ingest_running(user, actor_id, queued)
 
         try:
             held.enter_context(source_index_lock(source_id))
@@ -1214,13 +1410,21 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
         storage = StorageCreator.get_storage()
         source_file_path = source.get("file_path", "")
         file_name_map = _normalize_file_name_map(source.get("file_name_map"))
+        # The generation of the stored files as a sync last left them, read
+        # before the files are: a clean run marks the index current for it,
+        # and a change made meanwhile (a new generation) keeps it stale.
+        files_generation = _sync_generation(source)
 
         self.update_state(
             state="PROGRESS", meta={"current": 20, "status": "Scanning current files"}
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            _download_source_files_to_dir(storage, source_file_path, temp_dir)
+            # A stored file that could not be read would look removed in the
+            # scan below, and its chunks would be deleted: stop before the
+            # index changes, and let a later run try again.
+            if not _download_source_files_to_dir(storage, source_file_path, temp_dir):
+                raise RuntimeError("Could not read every stored file of the source; the index was left as it was")
 
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
@@ -1229,13 +1433,20 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
             )
-            reader.load_data()
+            # Hash the stored files without parsing them: only the added and
+            # edited ones are parsed (below), and an unchanged file keeps the
+            # token count it was indexed with.
+            reader.scan_directory()
             directory_structure = reader.directory_structure
-            logging.info(
-                f"Directory structure built with token counts: {directory_structure}"
-            )
+            # A file that failed to parse is not in the index: the run goes
+            # on, but must not mark the index current.
+            scanned_all = True
 
             rechunk = False
+            index_current = False
+            # Whether the stored files were compared with the indexed ones;
+            # when that failed, "no changes" says nothing about the index.
+            compared = False
             try:
                 old_directory_structure = source.get("directory_structure") or {}
                 if isinstance(old_directory_structure, str):
@@ -1246,6 +1457,12 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
 
                 old_files = _structure_files(old_directory_structure)
                 new_files = _structure_files(directory_structure)
+                for path, entry in new_files.items():
+                    old_entry = old_files.get(path)
+                    if old_entry is not None and not _file_content_changed(old_entry, entry) and (
+                        "token_count" in old_entry
+                    ):
+                        entry["token_count"] = old_entry["token_count"]
 
                 added_files = sorted(new_files.keys() - old_files.keys())
                 removed_files = sorted(old_files.keys() - new_files.keys())
@@ -1255,6 +1472,14 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     path for path in new_files.keys() & old_files.keys()
                     if rechunk or _file_content_changed(old_files[path], new_files[path])
                 )
+                # Files a run that never finished was changing the chunks of
+                # (``_REINGEST_PENDING``): whatever the structure says of them
+                # now, their chunks are deleted, and rebuilt where the file is
+                # stored.
+                unfinished = metadata.get(_REINGEST_PENDING) if isinstance(metadata, dict) else None
+                unfinished = {p for p in unfinished if isinstance(p, str)} if isinstance(unfinished, list) else set()
+                modified_files = sorted(set(modified_files) | ((unfinished & new_files.keys()) - set(added_files)))
+                removed_files = sorted(set(removed_files) | (unfinished - new_files.keys()))
 
                 if added_files:
                     logging.info(f"Files added since last ingest: {added_files}")
@@ -1268,6 +1493,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
 
                 if modified_files:
                     logging.info(f"Files edited since last ingest: {modified_files}")
+                compared = True
 
             except Exception as e:
                 logging.error(
@@ -1279,6 +1505,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
             try:
                 if not added_files and not removed_files and not modified_files:
                     logging.info("No changes detected.")
+                    index_current = compared and scanned_all and _mark_sync_indexed(source_id, files_generation)
                     _publish_source_event(
                         user, actor_id,
                         "source.ingest.completed",
@@ -1300,6 +1527,10 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         "added_files": [],
                         "removed_files": [],
                         "modified_files": [],
+                        # Whether the index is known to hold the files as a
+                        # sync left them; a client keeps no "up to date"
+                        # record of its own otherwise.
+                        "index_current": index_current,
                     }
 
                 vector_store = VectorCreator.create_vectorstore(
@@ -1313,38 +1544,48 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     meta={"current": 40, "status": "Processing file changes"},
                 )
 
-                # 1) Delete chunks of removed files, and of edited files
-                # before their new content is embedded
+                # Before any chunk changes, record which files are about to:
+                # if this run dies part way, the next one rebuilds their
+                # chunks instead of trusting hashes the index no longer matches.
+                with db_session() as conn:
+                    repo = SourcesRepository(conn)
+                    repo.update(
+                        source_id, user,
+                        {
+                            "directory_structure": _structure_with_pending(
+                                old_directory_structure, directory_structure,
+                                added_files, [*modified_files, *removed_files],
+                            )
+                        },
+                    )
+                    # The same files by path alone, for the ones the structure
+                    # cannot list (a file where a folder was, or the reverse).
+                    repo.set_metadata_key(
+                        source_id, user, _REINGEST_PENDING,
+                        sorted({*added_files, *modified_files, *removed_files}),
+                    )
+                    # From here until a clean finish the index is not what
+                    # any sync left: a rechunk, too, starts from a current one.
+                    repo.clear_sync_indexed(source_id)
+
+                # 1) Delete chunks of removed files, of edited files before
+                # their new content is embedded, and any an earlier run that
+                # died left for the files being added
                 deleted = 0
                 # Files whose chunks may not match their content after this run.
                 # They are stored without a hash, so the next reingest counts
                 # them as edited and rebuilds their chunks.
                 unsynced: set = set()
-                stale_files = set(removed_files) | set(modified_files)
+                # Files with a chunk that could not be deleted.
+                undeleted: set = set()
+                stale_files = set(removed_files) | set(modified_files) | set(added_files)
                 if stale_files:
                     try:
-                        for ch in vector_store.get_chunks() or []:
-                            metadata = (
-                                ch.get("metadata", {})
-                                if isinstance(ch, dict)
-                                else getattr(ch, "metadata", {})
-                            )
-                            raw_source = metadata.get("source")
-
-                            source_file = str(raw_source) if raw_source else ""
-
-                            if source_file in stale_files:
-                                cid = ch.get("doc_id")
-                                if cid:
-                                    try:
-                                        vector_store.delete_chunk(cid)
-                                        deleted += 1
-                                    except Exception as de:
-                                        logging.error(
-                                            f"Failed deleting chunk {cid}: {de}"
-                                        )
+                        deleted, undeleted = incremental.delete_chunk_ids(
+                            vector_store, incremental.chunk_ids_by_path(vector_store, stale_files),
+                        )
                         logging.info(
-                            f"Deleted {deleted} chunks from {len(stale_files)} removed or edited files"
+                            f"Deleted {deleted} chunks of {len(stale_files)} removed, edited or added files"
                         )
                     except Exception as e:
                         logging.error(
@@ -1375,14 +1616,28 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                 exclude_hidden=True,
                                 errors="ignore",
                                 file_metadata=metadata_from_filename,
+                                parse_cache_user=user,
                             )
-                            raw_docs_new = reader_new.load_data()
+                            try:
+                                raw_docs_new = reader_new.load_data()
+                            except DocumentParseError:
+                                # None of them could be parsed; each is listed below.
+                                raw_docs_new = []
                             # Skipped as unreadable: an edited file's old
                             # chunks are already gone and it adds none.
-                            unsynced.update(
+                            unread = {
                                 os.path.relpath(str(failed_path), start=temp_dir)
                                 for failed_path, _ in reader_new.failed_files
-                            )
+                            }
+                            # Read without every page (OCR left some out): indexed, and read again next time.
+                            unread |= set(_incomplete_files(raw_docs_new, temp_dir))
+                            unsynced.update(unread)
+                            scanned_all = scanned_all and not unread
+                            if unread:
+                                # Their old chunks are gone: the completed event says so.
+                                # Reported only: they are stored without a hash, so
+                                # the next reingest tries them again anyway.
+                                read_notes.append(f"{len(unread)} edited file(s) could not be read and were left out")
                             chunker_new = ChunkerCreator.create_chunker(
                                 cfg.chunking.strategy,
                                 chunking_strategy=cfg.chunking.strategy,
@@ -1427,6 +1682,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                         f"Could not update token count for {file_path}: {e}"
                                     )
 
+                            new_chunks = []
                             for d in chunked_new:
                                 meta = dict(d.extra_info or {})
                                 try:
@@ -1448,8 +1704,8 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                                     meta["file_name"] = display_name
                                     meta["title"] = display_name
 
-                                vector_store.add_chunk(d.text, metadata=meta)
-                                added += 1
+                                new_chunks.append((d.text, meta))
+                            added = incremental.add_chunks(vector_store, new_chunks, source_id=source_id)
                             logging.info(
                                 f"Added {added} chunks from {len(files_to_embed)} new or edited files"
                             )
@@ -1462,13 +1718,26 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         )
                         unsynced.update(files_to_embed)
 
+                if undeleted:
+                    inner_warnings.append(f"chunks of {len(undeleted)} files could not be deleted")
+                    unsynced.update(undeleted)
+                    # A removed file is no longer in the structure; keep it
+                    # listed, without a hash, so the next run finds it removed
+                    # again and deletes the chunks that are left.
+                    directory_structure = _structure_with_pending(
+                        directory_structure, old_directory_structure,
+                        sorted(undeleted & set(removed_files)), [],
+                    )
                 new_entries = _structure_files(directory_structure)
                 for rel_path in unsynced:
                     new_entries.get(rel_path, {}).pop("sha256", None)
 
                 # 3) Update source directory structure timestamp
                 try:
-                    total_tokens = sum(reader.file_token_counts.values())
+                    total_tokens = sum(
+                        int(entry.get("token_count") or 0)
+                        for entry in _structure_files(directory_structure).values()
+                    )
                     directory_structure = _apply_display_names_to_structure(
                         directory_structure, file_name_map
                     )
@@ -1486,6 +1755,10 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                         )
                         if rechunk and not inner_warnings:
                             repo.remove_metadata_key(source_id, user, "rechunk_pending")
+                        if not inner_warnings:
+                            repo.remove_metadata_key(source_id, user, _REINGEST_PENDING)
+                        if not inner_warnings and scanned_all:
+                            index_current = repo.mark_sync_indexed(source_id, files_generation)
                 except Exception as e:
                     logging.error(
                         f"Error updating directory_structure in DB: {e}", exc_info=True
@@ -1505,17 +1778,17 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     "chunks_deleted": deleted,
                     "tokens": int(total_tokens) if "total_tokens" in locals() else 0,
                 }
-                if inner_warnings:
+                if inner_warnings or read_notes:
                     # Surface the per-block failures so the toast can warn
                     # rather than claim a clean success.
-                    completed_payload["warnings"] = inner_warnings
+                    completed_payload["warnings"] = [*inner_warnings, *read_notes]
                 _publish_source_event(
                     user, actor_id,
                     "source.ingest.completed",
                     completed_payload,
                     scope={"kind": "source", "id": source_id},
                 )
-                _maybe_enqueue_graph_extraction(cfg, source_id, user)
+                _maybe_enqueue_graph_extraction(cfg, source_id, user, actor_id)
 
                 return {
                     "source_id": source_id,
@@ -1526,6 +1799,7 @@ def reingest_source_worker(self, source_id, user, actor_id=None):
                     "modified_files": modified_files,
                     "chunks_added": added,
                     "chunks_deleted": deleted,
+                    "index_current": index_current,
                 }
             except Exception as e:
                 logging.error(
@@ -1566,6 +1840,190 @@ def _task_id_field(task: Any) -> Dict[str, str]:
     return {"task_id": task_id} if isinstance(task_id, str) and task_id else {}
 
 
+def _person(user_id: Optional[str]) -> Optional[str]:
+    """``user_id`` as a string when it names a person, ``None`` for nobody or a team's principal."""
+    return str(user_id) if user_id and not is_principal_id(user_id) else None
+
+
+def _source_event_recipients(user: str, actor_id: Optional[str]) -> List[str]:
+    """Who hears an event about a person's source.
+
+    The owner, and whoever asked for the change when that is someone else (a
+    team editor of a shared source). A team's source is not handled here: its
+    events go through the publisher's routing (``_publish_source_event``).
+
+    Args:
+        user: The source's owner, a person.
+        actor_id: The person who asked for the change, if any.
+
+    Returns:
+        The person ids to publish to, owner first.
+    """
+    actor = _person(actor_id)
+    return ([user] if user else []) + ([actor] if actor and actor != str(user) else [])
+
+
+def _progress_recipients(user: str, actor_id: Optional[str]) -> Tuple[Optional[str], Optional[str]]:
+    """``(user_id, actor_id)`` for the embedding pipeline's progress events.
+
+    The pipeline sends to its ``user_id`` and to a different ``actor_id``. A
+    team's source with someone who started the ingest is published once to its
+    principal, naming them: the publisher sends it on to them only while they
+    are still in the team. With nobody, progress goes nowhere.
+    """
+    if not is_principal_id(user):
+        return user, actor_id
+    actor = _person(actor_id)
+    return (user, actor) if actor else (None, None)
+
+
+def _mark_ingest_running(user: str, actor_id: Optional[str], queued: Dict[str, Any]) -> None:
+    """Mark a retried ingest running in Activity: for the owner, or for a team's source, the person who started it."""
+    queued = _with_workspace(user, queued)
+    for recipient in (_person(actor_id),) if is_principal_id(user) else (user,):
+        if recipient:
+            mark_ingest_running(recipient, queued)
+
+
+def _with_workspace(user: str, queued: Dict[str, Any]) -> Dict[str, Any]:
+    """A ``source.ingest.queued`` payload with the workspace the ingest runs in.
+
+    A new upload has no source row until it ends, so Activity › Now places its
+    marker by this field: ``team_id`` is the team whose principal owns the
+    source, None for a person's own.
+
+    Args:
+        user: The source's owner.
+        queued: The payload.
+
+    Returns:
+        A copy of ``queued`` with ``team_id``.
+    """
+    return {**queued, "team_id": team_of_principal(user)}
+
+
+def _creator_field(user: str, actor_id: Optional[str]) -> Dict[str, str]:
+    """``{"created_by": person}`` for a team's new source (``fill_created_by`` names nobody for a principal).
+
+    A person's source is left to the trigger, which names its owner.
+    """
+    actor = _person(actor_id)
+    return {"created_by": actor} if is_principal_id(user) and actor else {}
+
+
+def _team_payer(conn: Any, owner: str, created_by: Optional[str], checks: Optional[Any] = None) -> Optional[str]:
+    """The person who added a team's source, while they may still add knowledge there (Editor or above).
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner (a team's principal).
+        created_by: ``sources.created_by``.
+        checks: A sync pass's ``PayerChecks``, so each person's role is read once per pass.
+
+    Returns:
+        Their id, or ``None`` when they are gone, demoted to Viewer, or unknown.
+    """
+    team_id = team_of_principal(owner)
+    person = _person(created_by)
+    if team_id is None or person is None:
+        return None
+    role = checks.team_role(conn, person, team_id) if checks is not None else team_role_for(conn, person, team_id)
+    return person if role_at_least(role, "editor") else None
+
+
+def _team_connection(
+    conn: Any, owner: str, connection_id: Optional[str], rows: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """The team connection a team's source reads through, or None when it reads through none.
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner.
+        connection_id: ``sources.connection_id``.
+        rows: A sync pass's connection rows by id (missing ones read and kept), so
+            sources that share a connection read it once per pass.
+
+    Returns:
+        The ``connector_sessions`` row when ``owner`` is a team's principal and the
+        connection is that team's own; else None (no connection, a personal one, or
+        another owner's, which the source's own rule then refuses).
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    if not connection_id or not is_principal_id(owner):
+        return None
+    key = str(connection_id)
+    if rows is not None and key in rows:
+        row = rows[key]
+    else:
+        row = ConnectorSessionsRepository(conn).get(key)
+        if rows is not None:
+            rows[key] = row
+    if row is None or str(row.get("user_id")) != str(owner):
+        return None
+    return row
+
+
+def _scheduled_connection_payer(
+    conn: Any, connection: Dict[str, Any], *, checks: Optional[Any] = None,
+) -> Optional[str]:
+    """Who a scheduled sync through a team's connection bills: the person who connected it, read now.
+
+    Nobody while its account is paused or that person is out of allowance
+    (``connection_pause(..., allowance=True)``): the sync waits for the next
+    schedule. Nothing is written either way; the pause is derived on every read.
+
+    Args:
+        conn: Open connection.
+        connection: The team's ``connector_sessions`` row.
+        checks: The tick's ``PayerChecks``, so each person is looked up once.
+
+    Returns:
+        The payer, or None to skip the sync.
+    """
+    from docsgpt.quotas.pause import PayerChecks, connection_pause
+    from docsgpt.quotas.payer import connection_payer
+
+    checks = checks or PayerChecks()
+    if connection_pause(conn, connection, checks=checks, allowance=True) is not None:
+        return None
+    return connection_payer(conn, connection, checks=checks)
+
+
+def _knowledge_payer(
+    conn: Any, owner: str, actor_id: Optional[str], created_by: Optional[str], connection_id: Optional[str] = None,
+) -> Optional[str]:
+    """Who pays for model use a source's knowledge needs (graph extraction): a person, never a team.
+
+    The person who started it; with nobody (a scheduled sync, a task queued
+    before ``actor_id`` existed), a person's source bills its owner. A team's
+    source that reads through the team's connection bills the person who
+    connected it, while its account isn't paused; any other team source bills
+    the person who added it, while still an Editor there.
+
+    Args:
+        conn: Open connection.
+        owner: The source's owner.
+        actor_id: The person who started the work, if any.
+        created_by: ``sources.created_by``.
+        connection_id: ``sources.connection_id``.
+
+    Returns:
+        The payer, or ``None`` for a team's source nobody can pay for (never the principal).
+    """
+    from docsgpt.quotas.payer import connection_payer
+
+    actor = _person(actor_id)
+    if actor:
+        return actor
+    if not is_principal_id(owner):
+        return owner
+    connection = _team_connection(conn, owner, connection_id)
+    if connection is not None:
+        return connection_payer(conn, connection)
+    return _team_payer(conn, owner, created_by)
+
+
 def _publish_source_event(
     user: str, actor_id: Optional[str], event_type: str, payload: Dict[str, Any], **kwargs: Any,
 ) -> None:
@@ -1573,6 +2031,11 @@ def _publish_source_event(
 
     A team editor changes a source they don't own: the job runs as the owner,
     and without a copy of its events the editor's view would never see it end.
+    A team's source is published once to its principal, naming the person who
+    asked: the publisher sends it to them while they are still in the team
+    (someone removed mid-ingest hears nothing more; a failure then reaches the
+    team's admins), and wakes the ingest monitors once under the principal.
+    They match a team's source by its owner, and a person's copy wakes none.
 
     Args:
         user: The source's owner.
@@ -1581,9 +2044,36 @@ def _publish_source_event(
         payload: Its payload.
         **kwargs: Passed to ``publish_user_event`` (``scope``).
     """
-    publish_user_event(user, event_type, payload, **kwargs)
-    if actor_id and str(actor_id) != str(user):
-        publish_user_event(str(actor_id), event_type, payload, **kwargs)
+    if event_type == "source.ingest.queued":
+        payload = _with_workspace(user, payload)
+    if is_principal_id(user):
+        # The publisher wakes the monitors once under the principal (even when nobody is told, as for a
+        # scheduled sync's success) and checks, event by event, that whoever started the work is still in the team.
+        publish_user_event(user, event_type, payload, actor_id=_person(actor_id), **kwargs)
+        return
+    for recipient in _source_event_recipients(user, actor_id):
+        publish_user_event(recipient, event_type, payload, **kwargs)
+
+
+def _loaded_file_count(docs: Iterable[Any]) -> int:
+    """How many files a remote loader returned, keyed as the source's file tree keys them.
+
+    Args:
+        docs: The loader's documents.
+
+    Returns:
+        The number of distinct file paths (a document without one counts once).
+    """
+    paths = set()
+    unnamed = 0
+    for doc in docs:
+        info = getattr(doc, "extra_info", None) or {}
+        path = info.get("file_path") or info.get("key") or info.get("title") or getattr(doc, "doc_id", None)
+        if path:
+            paths.add(path)
+        else:
+            unnamed += 1
+    return len(paths) + unnamed
 
 
 def remote_worker(
@@ -1602,6 +2092,7 @@ def remote_worker(
     source_id=None,
     connection_id=None,
     actor_id=None,
+    folder_id=None,
 ):
     safe_user = safe_filename(user)
     full_path = os.path.join(directory, safe_user, uuid.uuid4().hex)
@@ -1644,7 +2135,8 @@ def remote_worker(
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
+    progress_user, progress_actor = _progress_recipients(user, actor_id)
 
     # Wrap ``update_state`` plus the entire body so any pre-loader
     # failure (Celery backend down, OS resource issue) still emits a
@@ -1655,7 +2147,7 @@ def remote_worker(
         remote_loader = RemoteCreator.create_loader(loader)
         loader_input = source_data
         if connection_id:
-            loader_input = _with_connection_credentials(source_data, connection_id)
+            loader_input = _with_connection_credentials(source_data, connection_id, owner=user)
             if loader_input is None:
                 from docsgpt.connectors.service import ConnectionUnavailable
 
@@ -1667,7 +2159,7 @@ def remote_worker(
                 with connection_fetch_lock(str(connection_id)):
                     # Read the credentials again: the connection may have been
                     # removed or its token replaced while this waited.
-                    loader_input = _with_connection_credentials(source_data, connection_id)
+                    loader_input = _with_connection_credentials(source_data, connection_id, owner=user)
                     if loader_input is None:
                         from docsgpt.connectors.service import ConnectionUnavailable
 
@@ -1686,6 +2178,7 @@ def remote_worker(
             raise connection_service.ConnectionUnavailable(
                 str(exc), connection_id=str(connection_id),
             ) from exc
+        check_file_count(_loaded_file_count(raw_docs))
 
         cfg = SourceConfig.parse(config)
         chunker = ChunkerCreator.create_chunker(
@@ -1700,6 +2193,7 @@ def remote_worker(
         docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
         tokens = count_tokens_docs(docs)
         logging.info("Total tokens calculated: %d", tokens)
+        check_token_count(tokens)
 
         # Build directory structure from loaded documents
         # Format matches local file uploads: nested structure with type, size_bytes, token_count
@@ -1781,23 +2275,39 @@ def remote_worker(
             f"{list(directory_structure.keys())}"
         )
 
+        content_key = incremental.settings_key(config, _REMOTE_INGEST_VERSION, settings.EMBEDDINGS_NAME)
+        content_files = _content_files(docs)
+        if operation_mode == "sync" and doc_id and content_files is not None:
+            outcome = _sync_remote_changes(
+                self,
+                user=user, actor_id=actor_id, name_job=name_job, loader=loader, source_id=source_id_for_events,
+                docs=docs, content_files=content_files, key=content_key, cfg=cfg, tokens=tokens,
+                directory_structure=directory_structure, connection_id=connection_id,
+                remote_loader=remote_loader, fetched_at=fetched_at,
+            )
+            if outcome is not None:
+                return outcome
+
         if operation_mode == "upload":
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
-                user_id=user,
-                actor_id=actor_id,
+                user_id=progress_user,
+                actor_id=progress_actor,
             )
             assert_index_complete(source_uuid)
         elif operation_mode == "sync":
             if not doc_id:
                 logging.error("Invalid doc_id provided for sync operation: %s", doc_id)
                 raise ValueError("doc_id must be provided for sync operation.")
+            # The index is rebuilt now: until it is stored again no manifest
+            # vouches for it, so a sync that dies here leaves the next one full.
+            _save_source_sync_state(source_id_for_events, remote_files=None)
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
-                user_id=user,
-                actor_id=actor_id,
+                user_id=progress_user,
+                actor_id=progress_actor,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -1816,6 +2326,7 @@ def remote_worker(
             "remote_data": remote_data_serialized,
             "sync_frequency": sync_frequency,
             "directory_structure": json.dumps(directory_structure),
+            **_creator_field(user, actor_id),
         }
         if operation_mode == "sync":
             # The API keeps the row's own name, type, remote_data, schedule
@@ -1839,12 +2350,22 @@ def remote_worker(
                 logging.warning(
                     f"Failed to update last_sync for source {source_id_for_events}: {upd_err}"
                 )
+        if folder_id and operation_mode != "sync":
+            file_data["folder_id"] = folder_id
         refused = _upload_refusal(upload_index(full_path, file_data))
         if refused:
             # No website report either: nothing was stored.
             return _skip_refused_sync(self, user, source_id_for_events, name_job, loader, refused, actor_id)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
+        if content_files is not None:
+            try:
+                _save_source_sync_state(
+                    source_id_for_events,
+                    remote_files=incremental.build_manifest("content", content_key, _content_manifest(content_files)),
+                )
+            except Exception as err:  # noqa: BLE001 - the index is stored; the next sync is only a full one
+                logging.warning(f"Could not record what source {source_id_for_events} indexed: {err}")
         website_fields = {}
         if loader == "website":
             website_fields = _record_website_report(
@@ -1867,9 +2388,9 @@ def remote_worker(
             scope={"kind": "source", "id": source_id_for_events},
         )
         if operation_mode == "sync":
-            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+            _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None), actor_id)
         else:
-            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+            _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
     except Exception as e:
         logging.error("Error in remote_worker task: %s", str(e), exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
@@ -1882,6 +2403,7 @@ def remote_worker(
                 "loader": loader,
                 "operation": operation_mode,
                 "error": str(e)[:1024],
+                **failure_fields(e),
                 **_task_id_field(self),
             },
             scope={"kind": "source", "id": source_id_for_events},
@@ -1898,6 +2420,188 @@ def remote_worker(
         "user": user,
         "limited": False,
     }
+
+
+# Raised when a remote ingest starts storing something new per chunk, so
+# remote sources rebuild their index once on their next sync.
+_REMOTE_INGEST_VERSION = 1
+
+
+def _content_files(docs: List[Any]) -> Optional[Dict[str, Dict[str, Any]]]:
+    """A remote ingest's chunks grouped by the file they came from, with a hash of each file's chunks.
+
+    A chunk's file is its ``file_path``, else its ``key``, else its ``title``
+    (``legacy_path_key``), as the source's file tree names it.
+
+    Args:
+        docs: The chunks, in vector-store form (``page_content``, ``metadata``).
+
+    Returns:
+        ``{path: {"docs": [...], "sha256": ..., "tokens": ...}}``, or ``None``
+        when a chunk names no file, so the sync can't tell its file apart.
+    """
+    from docsgpt.vectorstore.base import legacy_path_key
+
+    files: Dict[str, Dict[str, Any]] = {}
+    for doc in docs:
+        metadata = getattr(doc, "metadata", None)
+        path = legacy_path_key(metadata) if isinstance(metadata, dict) else None
+        if not path:
+            return None
+        files.setdefault(path, {"docs": []})["docs"].append(doc)
+    for group in files.values():
+        texts = [str(getattr(doc, "page_content", "") or "") for doc in group["docs"]]
+        group["sha256"] = incremental.content_hash(texts, [dict(doc.metadata) for doc in group["docs"]])
+        group["tokens"] = sum(count_tokens_windowed(text) for text in texts)
+    return files
+
+
+def _content_manifest(files: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """A content manifest's files: each path's hash and token count."""
+    return {path: {"sha256": group["sha256"], "tokens": group["tokens"]} for path, group in files.items()}
+
+
+def _discard_orphan_index(source_id: str) -> None:
+    """Remove the index a sync wrote for a source deleted while it ran.
+
+    The delete cleared the source's vectors before this sync added its own;
+    a store other than FAISS is cleared by ``_skip_refused_sync``, while a
+    FAISS index the sync saved again to storage is removed here. Best effort.
+    """
+    if settings.VECTOR_STORE != "faiss":
+        return
+    try:
+        from docsgpt.vectorstore.faiss import delete_stored_index
+
+        delete_stored_index(StorageCreator.get_storage(), f"indexes/{source_id}")
+    except Exception as err:  # noqa: BLE001 - the sync's outcome is already decided
+        logging.warning(f"Could not remove the index of deleted source {source_id}: {err}")
+
+
+def _sync_remote_changes(
+    task: Any,
+    *,
+    user: str,
+    actor_id: Optional[str],
+    name_job: str,
+    loader: str,
+    source_id: str,
+    docs: List[Any],
+    content_files: Dict[str, Dict[str, Any]],
+    key: str,
+    cfg: Any,
+    tokens: int,
+    directory_structure: Dict[str, Any],
+    connection_id: Optional[str],
+    remote_loader: Any,
+    fetched_at: str,
+) -> Optional[Dict[str, Any]]:
+    """Sync a remote source by re-embedding only the files whose content changed.
+
+    The loader has already read every file (a remote loader has no cheaper
+    listing); this compares each file's chunks with the hash the manifest
+    (``sources.remote_files``) recorded when they were indexed. Files that
+    changed or were added get their chunks replaced, removed files lose
+    theirs, and the rest are left alone, so a sync of a large repository or
+    site where a few pages changed embeds only those. The source's file
+    tree is written from this read either way.
+
+    Returns:
+        The sync's result, or ``None`` when there is no usable manifest (a
+        first sync after this change, or new chunking settings) and the
+        index must be rebuilt.
+    """
+    from docsgpt.vectorstore.base import legacy_path_key
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    with db_readonly() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_any(source_id, user)
+        stored_manifest = repo.get_remote_files(source_id) if row is not None else None
+    if row is None or not _can_edit_index_in_place(row):
+        return None
+    manifest = incremental.load_manifest(stored_manifest, "content", key)
+    if manifest is None:
+        return None
+    plan = incremental.plan_content_sync(manifest, {path: group["sha256"] for path, group in content_files.items()})
+    now = datetime.datetime.now(datetime.timezone.utc)
+    new_manifest = incremental.build_manifest("content", key, _content_manifest(content_files))
+    fields = {"directory_structure": directory_structure, "tokens": tokens, "date": now}
+    deleted = added = 0
+    if not plan.empty:
+        # Before the index changes: the files about to change lose their
+        # hash, so a sync that dies part way redoes them.
+        pending = {path: dict(record) for path, record in manifest.items()}
+        # Added paths too: if this sync dies after writing their chunks and the
+        # file is gone by the next one, that one still finds and removes them.
+        for path in [*plan.changed, *plan.removed, *plan.added]:
+            pending[path] = {**pending.get(path, {}), "sha256": None}
+        if not _save_source_sync_state(source_id, remote_files=incremental.build_manifest("content", key, pending)):
+            return _skip_refused_sync(task, user, source_id, name_job, loader, "gone", actor_id)
+        task.update_state(state="PROGRESS", meta={"current": 60, "status": "Storing changed documents"})
+        store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+        touched = {*plan.added, *plan.changed, *plan.removed}
+        ids = incremental.chunk_ids_by_path(store, touched, key=lambda metadata: legacy_path_key(metadata) or "")
+        deleted, undeleted = incremental.delete_chunk_ids(
+            store, ids, key=lambda metadata: legacy_path_key(metadata) or "",
+        )
+        if undeleted:
+            raise RuntimeError(f"Could not delete the old chunks of {len(undeleted)} file(s); the sync will redo them")
+        added = incremental.add_chunks(
+            store,
+            source_id=source_id,
+            key=lambda metadata: legacy_path_key(metadata) or "",
+            chunks=[
+                (doc.page_content, dict(doc.metadata))
+                for path in [*plan.added, *plan.changed]
+                for doc in content_files[path]["docs"]
+                if str(doc.page_content or "").strip()
+            ],
+        )
+    if not _save_source_sync_state(source_id, remote_files=new_manifest, fields=fields):
+        if not plan.empty:
+            _discard_orphan_index(source_id)
+        return _skip_refused_sync(task, user, source_id, name_job, loader, "gone", actor_id)
+    if connection_id:
+        _link_source_to_connection(source_id, str(connection_id))
+    website_fields = {}
+    if loader == "website":
+        website_fields = _record_website_report(
+            source_id, user, getattr(remote_loader, "report", None) or {}, fetched_at,
+        )
+    counts = {
+        "files_added": len(plan.added),
+        "files_changed": len(plan.changed),
+        "files_removed": len(plan.removed),
+        "chunks_added": added,
+        "chunks_deleted": deleted,
+    }
+    logging.info(
+        f"Synced {loader} source {source_id} incrementally: "
+        + " ".join(f"{k}={v}" for k, v in counts.items()) + f" unchanged={plan.unchanged}"
+    )
+    task.update_state(state="PROGRESS", meta={"current": 100})
+    _publish_source_event(
+        user, actor_id,
+        "source.ingest.completed",
+        {
+            "source_id": source_id,
+            "job_name": name_job,
+            "loader": loader,
+            "operation": "sync",
+            "tokens": tokens,
+            "limited": False,
+            "incremental": True,
+            **({"no_changes": True} if plan.empty else {}),
+            **counts,
+            **website_fields,
+            **_task_id_field(task),
+        },
+        scope={"kind": "source", "id": source_id},
+    )
+    if not plan.empty:
+        _maybe_enqueue_graph_sync(cfg, source_id, user, getattr(task.request, "id", None), actor_id)
+    return {"id": source_id, "name_job": name_job, "user": user, "limited": False, "incremental": True, **counts}
 
 
 def _record_website_report(source_id: str, user: str, report: dict, fetched_at: str) -> dict:
@@ -2147,20 +2851,156 @@ def sync(
 _CONNECTION_ONLY_LOADERS = frozenset({"linear"})
 
 
+def _scheduled_sync_key(task: Any, doc_id: str) -> str:
+    """The idempotency key of one source's sync in this beat tick.
+
+    A redelivered ``schedule_syncs`` keeps its task id, so it maps each source
+    to the key it was already queued under.
+    """
+    request = getattr(task, "request", None)
+    tick = getattr(request, "id", None) if request is not None else None
+    if not isinstance(tick, str) or not tick:
+        tick = str(uuid.uuid4())
+    return f"scheduled-sync:{tick}:{doc_id}"
+
+
+def _dispatch_scheduled_sync(key: str, **sync_kwargs: Any) -> str:
+    """Queue one scheduled ``sync_source`` on the ingest queue, once per ``key``.
+
+    A source busy with another change is skipped without a notice
+    (``lock_wait_seconds=0``) and left to the next schedule.
+
+    Returns:
+        ``"dispatched"``; ``"already_queued"`` when ``key`` was already
+        claimed; or ``"failed"`` when the task could not be queued, whose
+        claim is then dropped so the same tick can queue it again.
+    """
+    from docsgpt.api.user.tasks import sync_source
+    from docsgpt.storage.db.repositories.idempotency import IdempotencyRepository
+
+    task_id = str(uuid.uuid4())
+    try:
+        with db_session() as conn:
+            claimed = IdempotencyRepository(conn).claim_task(key=key, task_name="sync_source", task_id=task_id)
+        if claimed is None:
+            logging.info("Scheduled sync %s is already queued; not queuing it again", key)
+            return "already_queued"
+    except Exception:  # noqa: BLE001 - the task's own lease still keeps one run per key
+        logging.exception("Could not claim scheduled sync %s; queuing it anyway", key)
+    try:
+        sync_source.apply_async(
+            kwargs={**sync_kwargs, "idempotency_key": key, "lock_wait_seconds": 0, "notify_skip": False},
+            task_id=task_id,
+        )
+    except Exception:  # noqa: BLE001 - one source the broker refused must not stop the rest
+        logging.exception("Could not queue scheduled sync %s", key)
+        _release_scheduled_sync_claim(key, task_id)
+        return "failed"
+    return "dispatched"
+
+
+def _release_scheduled_sync_claim(key: str, task_id: str) -> None:
+    """Best-effort delete of a scheduled sync's pending claim that never got queued."""
+    from sqlalchemy import text as sql_text
+
+    try:
+        with db_session() as conn:
+            conn.execute(
+                sql_text(
+                    "DELETE FROM task_dedup WHERE idempotency_key = :key "
+                    "AND task_id = :task_id AND status = 'pending'"
+                ),
+                {"key": key, "task_id": task_id},
+            )
+    except Exception:  # noqa: BLE001 - the row expires with the TTL
+        logging.exception("Could not release the claim of scheduled sync %s", key)
+
+
+#: ``sources.metadata`` key of a team source's scheduled sync paused for want of a payer (step 3 shows it).
+SYNC_PAUSED_KEY = "sync_paused"
+SYNC_NO_PAYER = "sync_no_payer"
+
+
+def _scheduled_sync_payer(doc: Dict[str, Any], metadata: Any, checks: Optional[Any] = None) -> Optional[str]:
+    """Who a team source's scheduled sync bills, flagging the source when nobody can.
+
+    The person who added the source pays while they are still an Editor or
+    above in the team. Otherwise the sync is skipped and the source carries
+    ``metadata.sync_paused = {"reason": "sync_no_payer", "since"}``, written
+    once and cleared when someone can pay again.
+
+    Args:
+        doc: The source row (``id``, ``user_id``, ``created_by``).
+        metadata: Its parsed ``metadata``.
+        checks: The pass's ``PayerChecks``, so each person's role is read once.
+
+    Returns:
+        The payer, or ``None`` to skip the sync.
+    """
+    owner = doc.get("user_id")
+    source_id = str(doc.get("id"))
+    flagged = isinstance(metadata, dict) and SYNC_PAUSED_KEY in metadata
+    with db_session() as conn:
+        payer = _team_payer(conn, owner, doc.get("created_by"), checks=checks)
+        repo = SourcesRepository(conn)
+        if payer is None and not flagged:
+            repo.set_metadata_key(
+                source_id, owner, SYNC_PAUSED_KEY,
+                {"reason": SYNC_NO_PAYER, "since": datetime.datetime.now(datetime.timezone.utc).isoformat()},
+            )
+        elif payer is not None and flagged:
+            repo.remove_metadata_key(source_id, owner, SYNC_PAUSED_KEY)
+    return payer
+
+
+def _connection_sync_actor(
+    doc: Dict[str, Any], checks: Any, connections: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, Optional[str]]:
+    """Whether a team's source syncs through the team's connection, and who its scheduled sync bills.
+
+    Never raises: a failed lookup reads as nobody to bill, so the source waits
+    for the next schedule instead of stopping the tick.
+
+    Args:
+        doc: The source row (``id``, ``user_id``, ``connection_id``).
+        checks: The tick's ``PayerChecks``.
+        connections: The tick's connection rows by id (``_team_connection``).
+
+    Returns:
+        ``(False, None)`` when it reads through no connection of its team (the
+        source's own payer rule applies); ``(True, person)`` when the person who
+        connected the account pays; ``(True, None)`` while nobody can.
+    """
+    try:
+        with db_readonly() as conn:
+            connection = _team_connection(conn, doc.get("user_id"), doc.get("connection_id"), rows=connections)
+            if connection is None:
+                return False, None
+            return True, _scheduled_connection_payer(conn, connection, checks=checks)
+    except Exception:  # noqa: BLE001 - one source must not stop the tick
+        logging.exception("Could not find who pays for the sync of source %s", doc.get("id"))
+        return True, None
+
+
 def sync_worker(self, frequency):
     from sqlalchemy import text as sql_text
+
+    from docsgpt.quotas.pause import PayerChecks
 
     sync_counts = Counter()
     with db_readonly() as conn:
         result = conn.execute(
             sql_text(
-                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config "
-                "FROM sources WHERE sync_frequency = :freq"
+                "SELECT id, name, user_id, type, remote_data, retriever, connection_id, metadata, config, "
+                "created_by FROM sources WHERE sync_frequency = :freq"
             ),
             {"freq": frequency},
         )
         rows = result.fetchall()
 
+    # One tick asks about each person (role, account, allowance) and reads each team connection once.
+    checks = PayerChecks()
+    connections: Dict[str, Any] = {}
     for row in rows:
         doc = dict(row._mapping)
         name = doc.get("name")
@@ -2178,15 +3018,21 @@ def sync_worker(self, frequency):
 
         # Connector sources sync from their connection, whose token the
         # worker can refresh. Legacy ones with no connection still need the
-        # browser, so they are skipped as before.
+        # browser, so they are skipped as before. A team's source waits while
+        # the person who connected the team's account can't pay for it.
         if source_type and source_type.startswith("connector"):
-            if doc.get("connection_id"):
+            through_connection, payer = (
+                _connection_sync_actor(doc, checks, connections) if is_principal_id(user) else (False, user)
+            )
+            if not doc.get("connection_id") or payer is None:
+                sync_counts["sync_skipped"] += 1
+                if through_connection:
+                    sync_counts[SYNC_NO_PAYER] += 1
+            else:
                 from docsgpt.api.user.tasks import sync_connector_source as sync_task
 
                 sync_task.delay(doc_id)
                 sync_counts["sync_dispatched"] += 1
-            else:
-                sync_counts["sync_skipped"] += 1
             continue
 
         metadata = doc.get("metadata")
@@ -2218,20 +3064,42 @@ def sync_worker(self, frequency):
             sync_counts["sync_skipped"] += 1
             continue
 
-        # A source busy with another change is left to the next schedule
-        # rather than holding up every sync after it.
-        resp = sync(
-            self, source_data, name, user, source_type, frequency, retriever, doc_id,
+        # A team's source runs as its principal, which never pays: the sync bills
+        # (and tells) the person who connected the team's account it reads
+        # through, else the person who added it, or doesn't run.
+        actor = None
+        if is_principal_id(user):
+            try:
+                through_connection, actor = _connection_sync_actor(doc, checks, connections)
+                if not through_connection:
+                    actor = _scheduled_sync_payer(doc, metadata, checks)
+            except Exception:  # noqa: BLE001 - one source must not stop the tick
+                actor = None
+                logging.exception("Could not find who pays for the sync of source %s", doc_id)
+            if actor is None:
+                sync_counts["sync_skipped"] += 1
+                sync_counts[SYNC_NO_PAYER] += 1
+                continue
+
+        outcome = _dispatch_scheduled_sync(
+            _scheduled_sync_key(self, doc_id),
+            source_data=source_data,
+            job_name=name,
+            user=user,
+            loader=source_type,
+            sync_frequency=frequency,
+            retriever=retriever,
+            doc_id=doc_id,
             connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
-            lock_wait_seconds=0,
-            notify_skip=False,
+            **_actor_kwargs(actor),
         )
-        outcome = {"success": "sync_success", "skipped": "sync_skipped"}.get(resp["status"], "sync_failure")
-        sync_counts[outcome] += 1
+        sync_counts[
+            {"dispatched": "sync_dispatched", "already_queued": "sync_skipped"}.get(outcome, "sync_failure")
+        ] += 1
     return {
         key: sync_counts[key]
         for key in [
-            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched",
+            "total_sync_count", "sync_success", "sync_failure", "sync_skipped", "sync_dispatched", SYNC_NO_PAYER,
         ]
     }
 
@@ -4008,6 +4876,17 @@ def run_parse_document(artifact_id, parent, user_id, options):
         logging.error("run_parse_document: failed to read input artifact bytes", exc_info=True)
         return {"status": "error", "error": f"failed to read input artifact {artifact_id}."}
 
+    if options.get("output") == "lines":
+        # A workflow's numbered document text (file_passing: lines). Returned
+        # whole: the caller fails the node rather than cut it, and it is
+        # bounded by the parse byte cap. Never persisted as an artifact.
+        from docsgpt.parser import document_lines
+
+        lines = document_lines.extract_document_lines(data, display_name, mime_type=version.get("mime_type"))
+        if lines.get("error"):
+            return {"status": "error", "error": lines["error"]}
+        return {"status": "ok", "lines": lines["lines"], "tables": lines["tables"]}
+
     # Parse returns the FULL content (no max_chars/window here) so the persisted artifact is the
     # complete parse; all view-bounding is applied by ``bound_parse_payload`` below.
     result = parse_document_bytes(
@@ -4071,7 +4950,10 @@ def agent_webhook_worker(self, agent_id, payload):
 
     Raises on failure so the task ends ``FAILURE``: Celery treats a
     returned dict as success. A quota refusal and a run past
-    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``.
+    ``WEBHOOK_RUN_TIMEOUT`` are returned, with their own ``status``; a run a
+    limit stopped mid-way returns the same status, with what it did. The
+    payer's allowance is ``agent_paused`` with only the paused message (the
+    caller reads it by task id), the agent's own limit ``quota_exceeded``.
     """
     self.update_state(state="PROGRESS", meta={"current": 1})
     try:
@@ -4082,18 +4964,24 @@ def agent_webhook_worker(self, agent_id, payload):
                 # Access without user scoping — webhooks authenticate via
                 # the incoming token, not a user context.
                 from sqlalchemy import text as sql_text
-                from docsgpt.storage.db.base_repository import row_to_dict
+                from docsgpt.storage.db.repositories.agents import agent_row_to_dict
                 result = conn.execute(
                     sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"),
                     {"id": str(agent_id)},
                 )
-                row = result.fetchone()
-                if row is not None:
-                    agent_config = row_to_dict(row)
+                agent_config = agent_row_to_dict(result.fetchone())
             if agent_config is None:
                 agent_config = repo.get_by_legacy_id(str(agent_id))
+            from docsgpt.api.owner_pause import outside_access_refusal
+
+            # Queued before the owner or payer was deactivated (or before a
+            # team agent lost its payer): it is refused like key traffic.
+            refusal = outside_access_refusal(conn, agent_config) if agent_config else None
         if not agent_config:
             raise ValueError(f"Agent with ID {agent_id} not found.")
+        if refusal is not None:
+            logging.info("Webhook skipped for agent %s: %s", agent_id, refusal.code)
+            return {"status": refusal.code, "error": refusal.message}
         # Unescaped, so the model (and a prompt-injection check) reads non-ASCII text as written.
         input_data = json.dumps(payload, ensure_ascii=False)
     except Exception as e:
@@ -4114,7 +5002,11 @@ def agent_webhook_worker(self, agent_id, payload):
     try:
         # Shared headless path with the scheduler; approval-gated tools auto-deny.
         from docsgpt.agents.headless_runner import run_agent_headless
-        from docsgpt.quotas.service import QuotaExceededError
+        from docsgpt.api.owner_pause import PAUSED_CODE, PAUSED_MESSAGE
+        from docsgpt.quotas.pause import PAYER_OUT_OF_ALLOWANCE
+        from docsgpt.quotas.payer import published_access_payer
+        from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
+        from docsgpt.quotas.service import QuotaExceeded, QuotaExceededError
 
         outcome = run_agent_headless(
             agent_config,
@@ -4123,6 +5015,8 @@ def agent_webhook_worker(self, agent_id, payload):
             tool_allowlist=_webhook_tool_allowlist(agent_config),
             endpoint="webhook",
             request_id=run_id,
+            payer=published_access_payer(agent_config),
+            run_kind="published",
         )
         result = {
             "answer": outcome.get("answer", ""),
@@ -4130,11 +5024,24 @@ def agent_webhook_worker(self, agent_id, payload):
             "tool_calls": outcome.get("tool_calls", []),
             "thought": outcome.get("thought", ""),
         }
+        if outcome.get("error_type") in RUN_LIMIT_ERROR_TYPES:
+            # Stopped mid-run by the payer's allowance or the agent's limit: what it did is kept.
+            logging.warning(
+                f"Webhook run for agent {agent_id} stopped by a limit", extra={"agent_id": agent_id}
+            )
+            # The payer's allowance reads as a pause, as before the run.
+            status = PAUSED_CODE if outcome.get("error_type") == PAYER_OUT_OF_ALLOWANCE else "quota_exceeded"
+            return {"status": status, "error": outcome.get("error"), "result": result}
     except QuotaExceededError as e:
         # Returned, not raised: retrying cannot succeed before the quota resets.
         logging.warning(
             f"Webhook skipped for agent {agent_id}: {e}", extra={"agent_id": agent_id}
         )
+        if isinstance(getattr(e, "exceeded", None), QuotaExceeded):
+            # The payer's allowance: the caller reads this by task id, so it
+            # learns only that the agent is paused, never whose numbers.
+            return {"status": PAUSED_CODE, "error": PAUSED_MESSAGE}
+        # The agent's own limit, whose message is about the agent.
         return {"status": "quota_exceeded", "error": str(e)}
     except SoftTimeLimitExceeded:
         logging.warning(
@@ -4260,7 +5167,7 @@ def _webhook_tool_allowlist(agent_config):
     return []
 
 
-def _with_connection_credentials(source_data, connection_id: str):
+def _with_connection_credentials(source_data, connection_id: str, owner: Optional[str] = None):
     """Loader input with the connection's stored keys merged in, or None.
 
     S3, Reddit and GitHub sources made from a connection keep their keys on
@@ -4269,7 +5176,13 @@ def _with_connection_credentials(source_data, connection_id: str):
     repository URL) becomes ``{"url": ...}`` next to the keys. An MCP
     sign-in (Linear) gets its ``connection_id`` instead: its tokens stay
     with the MCP client, which renews them. Returns None when the
-    connection is gone, needs reconnecting, or its connector is turned off.
+    connection is gone, needs reconnecting, its connector is turned off, or
+    it belongs to someone other than ``owner`` (a source only ever reads
+    through its own owner's connection).
+
+    Raises:
+        ConnectionUnavailable: ``status="paused"`` for a team's account the
+            person who connected it can't use now.
     """
     from docsgpt.connectors import service
     from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
@@ -4279,14 +5192,19 @@ def _with_connection_credentials(source_data, connection_id: str):
         enabled = row is not None and service.connector_enabled(conn, row)
     if row is None or not enabled:
         return None
+    if owner is not None and str(row.get("user_id")) != str(owner):
+        return None
     if (row.get("auth_kind") or "") == "mcp_oauth":
         if service.normalize_status(row) != service.STATUS_CONNECTED:
             return None
+        service.ensure_account_usable(None, row)
         credentials = {"connection_id": str(row["id"])}
     else:
         try:
             credentials = service.access_credentials(row)
-        except service.ConnectionUnavailable:
+        except service.ConnectionUnavailable as err:
+            if err.status == service.STATUS_PAUSED:
+                raise
             return None
     if isinstance(source_data, str):
         try:
@@ -4297,6 +5215,28 @@ def _with_connection_credentials(source_data, connection_id: str):
             return json.dumps({**parsed, **credentials})
         return {"url": source_data, **credentials}
     return {**dict(source_data or {}), **credentials}
+
+
+def _require_own_connection(connection_id: Any, owner: str) -> None:
+    """Refuse to read a source's files through a connection its owner doesn't own.
+
+    A team's source reads only through the team's own connection and a
+    person's only through their own; a task queued with any other (a personal
+    connection for a team's source, say) stops before the account is touched.
+
+    Args:
+        connection_id: The connection the ingest was asked to read through.
+        owner: The source's owner.
+
+    Raises:
+        ValueError: The connection is gone or belongs to someone else.
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).get(str(connection_id)) if connection_id else None
+    if row is None or str(row.get("user_id")) != str(owner):
+        raise ValueError("This source can't read through that connection")
 
 
 def _link_source_to_connection(source_id: str, connection_id: str) -> None:
@@ -4319,6 +5259,22 @@ def _link_source_to_connection(source_id: str, connection_id: str) -> None:
 # Raised when a connector ingest starts storing something new per file, so
 # sources ingested before it re-ingest once. 2: each file's web link.
 _CONNECTOR_INGEST_VERSION = 2
+
+#: The ``reason`` on ``source.ingest.failed`` when the provider rejected the connection's sign-in.
+CONNECTOR_RECONNECT_REASON = "reconnect"
+_CONNECTOR_RECONNECT_MESSAGE = (
+    "The connected account's sign-in was rejected, so its files could not be downloaded. "
+    "Reconnect the account, then try again."
+)
+
+
+class ConnectorDownloadError(RuntimeError):
+    """A connector download got no files because they failed, not because there was nothing to download."""
+
+
+def _connector_download_losses(download_info: Dict[str, Any]) -> Tuple[int, int]:
+    """The ``(files_failed, folders_failed)`` a connector's download summary reports."""
+    return int(download_info.get("files_failed") or 0), int(download_info.get("folders_failed") or 0)
 
 
 def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
@@ -4398,6 +5354,737 @@ def _mark_source_synced(source_id: str, user: str) -> None:
         logging.warning("Failed to update last_sync for source %s", source_id, exc_info=True)
 
 
+_UNSET: Any = object()
+
+
+def _json_object(value: Any) -> Dict[str, Any]:
+    """A JSONB column (or its legacy JSON text) as a dict; anything else as ``{}``."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _save_source_sync_state(
+    source_id: str,
+    *,
+    remote_files: Any = _UNSET,
+    failed_files: Any = _UNSET,
+    fingerprint: Any = _UNSET,
+    fields: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Write what a sync left on a source row: its manifest, failed files, fingerprint and other fields.
+
+    The row is locked while it is read and written, and keeps its own owner.
+    Arguments left out are left as they are.
+
+    Args:
+        source_id: The source.
+        remote_files: The manifest for ``sources.remote_files``; ``None`` clears it.
+        failed_files: ``{id: FailedFile}`` for ``remote_data.failed_files``; empty removes the key.
+        fingerprint: ``remote_data.sync_fingerprint``; ``None`` removes it.
+        fields: Other columns to write (``directory_structure``, ``tokens``, ``date``).
+
+    Returns:
+        Whether the row was there to write.
+    """
+    with db_session() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_for_update(str(source_id))
+        if row is None:
+            return False
+        updates: Dict[str, Any] = dict(fields or {})
+        remote = _json_object(row.get("remote_data"))
+        before = dict(remote)
+        if failed_files is not _UNSET:
+            if failed_files:
+                remote["failed_files"] = incremental.dump_failed_files(failed_files)
+                remote["files_failed"] = len(failed_files)
+            else:
+                remote.pop("failed_files", None)
+                remote.pop("files_failed", None)
+            # The full list, which decides retries, goes with the manifest.
+            manifest = remote_files if remote_files is not _UNSET else repo.get_remote_files(str(row["id"]))
+            if isinstance(manifest, dict):
+                manifest = {k: v for k, v in manifest.items() if k != "failed"}
+                if failed_files:
+                    manifest["failed"] = [
+                        f.to_dict() for f in sorted(failed_files.values(), key=lambda f: (f.path, f.id))
+                    ]
+                remote_files = manifest
+        if fingerprint is not _UNSET:
+            if fingerprint:
+                remote["sync_fingerprint"] = fingerprint
+            else:
+                remote.pop("sync_fingerprint", None)
+        if remote != before:
+            updates["remote_data"] = remote
+        if remote_files is not _UNSET:
+            updates["remote_files"] = remote_files
+        if updates:
+            repo.update(str(row["id"]), row.get("user_id"), updates)
+        return True
+
+
+def _can_edit_index_in_place(row: Dict[str, Any]) -> bool:
+    """Whether a sync may change a source's index file by file rather than rebuild it.
+
+    Not when the vector store can't list, add and delete single chunks
+    (``supports_chunk_edits``), and not when the index was embedded with
+    another model than the one configured now: new chunks would sit beside
+    vectors of another model.
+
+    Args:
+        row: The source's row.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    if not VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return False
+    model = row.get("model")
+    return not model or model == settings.EMBEDDINGS_NAME
+
+
+def _lists_selection(loader: Any) -> bool:
+    """Whether a connector loader can list its selection without downloading it."""
+    method = getattr(type(loader), "list_selection", None)
+    return method is not None and method is not BaseConnectorLoader.list_selection
+
+
+def _connector_unchanged(
+    task: Any, user: str, actor_id: Optional[str], source_id: str, job_name: str, source_type: str,
+    files_failed: int = 0,
+) -> Dict[str, Any]:
+    """Close a sync that found nothing to change: the source is marked synced, the index kept."""
+    logging.info(f"No changes in {source_type} source {source_id}; sync skipped")
+    _mark_source_synced(source_id, user)
+    _publish_source_event(
+        user, actor_id,
+        "source.ingest.completed",
+        {
+            "source_id": source_id,
+            "job_name": job_name,
+            "loader": source_type,
+            "operation": "sync",
+            **_task_id_field(task),
+            "tokens": 0,
+            "no_changes": True,
+            **({"files_failed": files_failed} if files_failed else {}),
+        },
+        scope={"kind": "source", "id": source_id},
+    )
+    return {"user": user, "name": job_name, "type": source_type, "id": source_id, "status": "unchanged"}
+
+
+def _listing_partial(listing: Optional[SelectionListing]) -> Dict[str, Any]:
+    """The completed event's ``partial`` fields for a listing that couldn't read everything; ``{}`` otherwise."""
+    if listing is None or listing.complete:
+        return {}
+    return {"partial": True, "folders_failed": max(1, int(listing.unread or 0))}
+
+
+def _connector_partial_listing(
+    task: Any, user: str, actor_id: Optional[str], source_id: str, job_name: str, source_type: str,
+    listing: SelectionListing, files_failed: int = 0,
+) -> Dict[str, Any]:
+    """Close a sync that found nothing to change in the part of the selection it could read."""
+    logging.warning(f"Part of {source_type} source {source_id} could not be listed; its index was kept")
+    _mark_source_synced(source_id, user)
+    partial = _listing_partial(listing)
+    _publish_source_event(
+        user, actor_id,
+        "source.ingest.completed",
+        {
+            "source_id": source_id,
+            "job_name": job_name,
+            "loader": source_type,
+            "operation": "sync",
+            **_task_id_field(task),
+            "tokens": 0,
+            **partial,
+            **({"files_failed": files_failed} if files_failed else {}),
+        },
+        scope={"kind": "source", "id": source_id},
+    )
+    return {"user": user, "name": job_name, "type": source_type, "id": source_id, "status": "partial", **partial}
+
+
+def _incomplete_files(docs: Iterable[Any], base_dir: Optional[str] = None) -> Dict[str, Tuple[str, str]]:
+    """``{path: (kind, error)}`` for files indexed without every page: OCR left some out (``ocr_pages_failed``).
+
+    They count as passing failures, so a later sync reads them again.
+    """
+    out: Dict[str, Tuple[str, str]] = {}
+    for doc in docs:
+        meta = getattr(doc, "extra_info", None) or {}
+        missing = meta.get("ocr_pages_failed")
+        source = meta.get("source")
+        if missing and source:
+            path = os.path.relpath(source, start=base_dir) if base_dir and os.path.isabs(source) else str(source)
+            out[path] = (incremental.TRANSIENT, f"{missing} page(s) could not be OCR'd")
+    return out
+
+
+def _prune_unlisted(base_dir: str, listing: Optional[SelectionListing]) -> None:
+    """Delete downloaded files the listing doesn't name (a second copy of a file picked twice).
+
+    What a full ingest indexes is then exactly the listing its manifest records.
+    """
+    if listing is None:
+        return
+    listed = {os.path.normpath(entry.path) for entry in listing.entries}
+    for root, _, names in os.walk(base_dir):
+        for name in names:
+            path = os.path.join(root, name)
+            if os.path.normpath(os.path.relpath(path, base_dir)) not in listed:
+                os.remove(path)
+
+
+def _reader_failures(reader: Any, base_dir: str) -> Dict[str, Tuple[str, str]]:
+    """``{relative path: (kind, error)}`` for the files a reader could not parse.
+
+    A failure the parser marked as passing (a rate limit, an outage) is
+    ``transient``; any other is ``permanent``: it only changes with the file.
+    """
+    transient = {
+        os.path.realpath(str(path)) for path in (getattr(reader, "transient_failures", None) or ())
+    }
+    failures: Dict[str, Tuple[str, str]] = {}
+    for failed_path, message in getattr(reader, "failed_files", None) or []:
+        kind = incremental.TRANSIENT if os.path.realpath(str(failed_path)) in transient else incremental.PERMANENT
+        failures[os.path.relpath(str(failed_path), start=base_dir)] = (kind, str(message))
+    return failures
+
+
+def _connector_chunks(raw_docs: List[Document], cfg: Any, base_dir: str, urls: Dict[str, str]) -> List[Document]:
+    """Chunk a connector's parsed files; each chunk's ``source`` is its file's path, and ``url`` its link."""
+    chunker = ChunkerCreator.create_chunker(
+        cfg.chunking.strategy,
+        chunking_strategy=cfg.chunking.strategy,
+        max_tokens=cfg.chunking.max_tokens,
+        min_tokens=cfg.chunking.min_tokens,
+        chunk_overlap=cfg.chunking.chunk_overlap,
+        duplicate_headers=cfg.chunking.duplicate_headers,
+    )
+    chunks = chunker.chunk(documents=raw_docs)
+    file_urls = {os.path.normpath(path): url for path, url in (urls or {}).items() if url}
+    for doc in chunks:
+        if hasattr(doc, "extra_info") and doc.extra_info:
+            source = doc.extra_info.get("source")
+            if source and os.path.isabs(source):
+                doc.extra_info["source"] = os.path.relpath(source, start=base_dir)
+            url = file_urls.get(os.path.normpath(doc.extra_info.get("source") or "."))
+            if url:
+                doc.extra_info["url"] = url
+    return chunks
+
+
+def _source_failed_files(source_id: str, user: str) -> Dict[str, "incremental.FailedFile"]:
+    """The failed files a source recorded, for their attempt counts; ``{}`` when it can't be read."""
+    try:
+        with db_readonly() as conn:
+            repo = SourcesRepository(conn)
+            row = repo.get_any(source_id, user)
+            manifest = repo.get_remote_files(source_id) if row else None
+    except Exception:  # noqa: BLE001 - only costs the failed files their attempt counts
+        logging.warning(f"Could not read source {source_id}", exc_info=True)
+        return {}
+    return incremental.stored_failed_files(_json_object((row or {}).get("remote_data")), manifest)
+
+
+def _connector_failed_files(
+    listing: Optional[SelectionListing],
+    download_info: Dict[str, Any],
+    parse_failures: Dict[str, Tuple[str, str]],
+    base_dir: str,
+    previous: Dict[str, "incremental.FailedFile"],
+) -> Dict[str, "incremental.FailedFile"]:
+    """The files a full connector ingest left out: not downloaded, or not parsed.
+
+    Each is found by its connector id: from the listing, else from the
+    download's ``file_ids``. A listed file that never reached the directory
+    without the download saying why counts as a passing failure.
+
+    Args:
+        listing: The selection as listed before the download, or ``None``.
+        download_info: The download summary (``failures``, ``file_ids``).
+        parse_failures: ``{path: (kind, error)}`` from the reader.
+        base_dir: The download directory.
+        previous: The failed files recorded before (a sync's), for attempt counts.
+
+    Returns:
+        ``{id: FailedFile}``.
+    """
+    if listing is not None:
+        entries = list(listing.entries)
+    else:
+        entries = [
+            FileEntry(id=str(file_id), path=str(path))
+            for path, file_id in (download_info.get("file_ids") or {}).items()
+            if file_id
+        ]
+    by_path = {entry.path: entry for entry in entries}
+    failures: Dict[str, Tuple[str, str]] = {}
+    for file_id, info in (download_info.get("failures") or {}).items():
+        info = info if isinstance(info, dict) else {}
+        kind = info.get("kind") if info.get("kind") in (incremental.TRANSIENT, incremental.PERMANENT) else (
+            incremental.TRANSIENT
+        )
+        failures[str(file_id)] = (kind, str(info.get("error") or "download failed"))
+    for entry in entries:
+        if entry.id not in failures and not os.path.isfile(os.path.join(base_dir, entry.path)):
+            failures[entry.id] = (incremental.TRANSIENT, "not downloaded")
+    for path, failure in parse_failures.items():
+        entry = by_path.get(path)
+        if entry is not None:
+            failures[entry.id] = failure
+    # A full ingest tried every listed file.
+    return incremental.record_failures(previous, entries, failures, listing, parse_key=_parse_settings_key())
+
+
+def _parse_settings_key() -> Optional[str]:
+    """The parse settings now (``parse_cache.settings_key``), recorded on failed files; ``None`` if unreadable."""
+    try:
+        from docsgpt.parser.parse_cache import settings_key
+
+        return settings_key()
+    except Exception:  # noqa: BLE001 - a failure then waits for its file to change, as before
+        logging.warning("Could not read the parse settings", exc_info=True)
+        return None
+
+
+def _chunk_tokens(docs_by_path: Dict[str, List[Any]]) -> Dict[str, int]:
+    """Tokens each file's chunks hold, counted as ``count_tokens_docs`` counts an index."""
+    return {
+        path: sum(count_tokens_windowed(str(getattr(doc, "text", "") or "")) for doc in docs)
+        for path, docs in docs_by_path.items()
+    }
+
+
+def _listing_of(loader: Any, selection: Dict[str, Any]) -> Optional[SelectionListing]:
+    """The connector's listing of a selection, or ``None`` when it can't list one."""
+    if not _lists_selection(loader):
+        return None
+    return loader.list_selection(selection)
+
+
+def _sync_connector_changes(
+    task: Any,
+    *,
+    user: str,
+    actor_id: Optional[str],
+    job_name: str,
+    source_type: str,
+    source_id: str,
+    loader: Any,
+    selection: Dict[str, Any],
+    listing: Optional[SelectionListing],
+    config: Any,
+    retry_failed: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """Sync a connector source by changing only what changed, when its record of the index allows.
+
+    Diffs the listed selection against the manifest of the files the index
+    holds (``sources.remote_files``) and applies the difference
+    (:func:`_apply_connector_plan`). With no usable manifest, a fingerprint
+    that matches the last ingest's proves the index holds this listing, so a
+    manifest is written from it instead of rebuilding. A loader that can't
+    list keeps the fingerprint check alone.
+
+    Args:
+        task: The bound Celery task.
+        user: The source's owner.
+        actor_id: Who asked for the sync, if not the owner.
+        job_name: The source's name.
+        source_type: The connector.
+        source_id: The source.
+        loader: The connector loader.
+        selection: The stored selection.
+        listing: ``loader.list_selection(selection)``, or ``None``.
+        config: The source's ``SourceConfig`` dict.
+        retry_failed: Try every failed file again, whatever its kind and
+            attempts (someone asked for this sync).
+
+    Returns:
+        The sync's result, or ``None`` when it must download the whole selection
+        (no usable manifest, another embedding model, or a vector store that
+        can't edit single chunks).
+    """
+    with db_readonly() as conn:
+        repo = SourcesRepository(conn)
+        row = repo.get_any(source_id, user)
+        stored_manifest = repo.get_remote_files(source_id) if row is not None else None
+    if row is None:
+        return None
+    if row.get("model") and row["model"] != settings.EMBEDDINGS_NAME:
+        # Built with another embedding model: rebuild it whole.
+        return None
+    remote_data = _json_object(row.get("remote_data"))
+    failed = incremental.stored_failed_files(remote_data, stored_manifest)
+    if listing is None:
+        if _connector_selection_unchanged(loader, selection, config, source_id, user):
+            return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(failed))
+        return None
+    key = incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME)
+    manifest = incremental.load_manifest(stored_manifest, "connector", key)
+    record_manifest = False
+    if manifest is None:
+        previous = remote_data.get("sync_fingerprint")
+        try:
+            current = _connector_sync_fingerprint(loader.sync_fingerprint(selection), config)
+        except ConnectorAuthError:
+            raise
+        except Exception:
+            logging.warning(f"Could not fingerprint source {source_id}; syncing it in full", exc_info=True)
+            current = None
+        if not previous or current != previous:
+            return None
+        # The index was built from exactly this listing, less the files that failed.
+        tokens = {
+            path: int(entry.get("token_count") or 0)
+            for path, entry in incremental.structure_files(_json_object(row.get("directory_structure"))).items()
+        }
+        manifest = incremental.manifest_from_listing(listing, tokens, left_out=failed)
+        record_manifest = True
+    parse_key = _parse_settings_key()
+    plan = incremental.plan_connector_sync(
+        manifest, listing, failed, parse_key=parse_key, retry_failed=retry_failed,
+    )
+    if not listing.complete and not listing.entries and manifest:
+        # Nothing could be read: an outage, not a selection emptied.
+        raise ConnectorDownloadError(
+            f"None of the selected files could be listed from {source_type}. Try again later."
+        )
+    if plan.empty:
+        remaining = incremental.record_failures(failed, [], {}, listing)
+        if record_manifest or remaining.keys() != failed.keys():
+            _save_source_sync_state(
+                source_id,
+                remote_files=incremental.build_manifest("connector", key, manifest) if record_manifest else _UNSET,
+                failed_files=remaining,
+            )
+        if not listing.complete:
+            # Part of the selection couldn't be read: the index is kept, but
+            # this sync can't say nothing changed.
+            return _connector_partial_listing(task, user, actor_id, source_id, job_name, source_type, listing,
+                                              len(remaining))
+        return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(remaining))
+    if not _can_edit_index_in_place(row):
+        # Something changed, and this index can't be edited file by file
+        # (see ``_can_edit_index_in_place``): rebuild it whole. An unchanged
+        # selection was kept above whatever the store.
+        return None
+    return _apply_connector_plan(
+        task, user=user, actor_id=actor_id, job_name=job_name, source_type=source_type, source_id=source_id,
+        loader=loader, selection=selection, row=row, listing=listing, manifest=manifest, failed=failed,
+        plan=plan, config=config, key=key, parse_key=parse_key,
+    )
+
+
+def _apply_connector_plan(
+    task: Any,
+    *,
+    user: str,
+    actor_id: Optional[str],
+    job_name: str,
+    source_type: str,
+    source_id: str,
+    loader: Any,
+    selection: Dict[str, Any],
+    row: Dict[str, Any],
+    listing: SelectionListing,
+    manifest: Dict[str, Dict[str, Any]],
+    failed: Dict[str, "incremental.FailedFile"],
+    plan: "incremental.ConnectorPlan",
+    config: Any,
+    key: str,
+    parse_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Bring a connector source's index to its listed selection by changing only the files that differ.
+
+    Downloads and parses the added, changed and retried files first, so a
+    failure there leaves the index as it was. Then, holding the source's
+    index lock as every sync does: the files about to change are marked
+    pending in the manifest (a sync that dies part way redoes them), the
+    chunks of removed files and of the old versions of changed ones are
+    deleted, moved files' chunks get their new path, and the new chunks are
+    added. A changed file whose new version could not be read keeps its old
+    chunks and is recorded in the failed files. Never downloads a file that
+    didn't change.
+
+    Returns:
+        The sync's result (``status: "complete"``, ``incremental: True``).
+
+    Raises:
+        Exception: A failure while changing the index; the manifest keeps the
+            touched files pending, so the next sync redoes them.
+    """
+    from docsgpt.vectorstore.vector_creator import VectorCreator
+
+    cfg = SourceConfig.parse(config)
+    check_file_count(len(listing.entries))
+    to_download = plan.to_download()
+    failures: Dict[str, Tuple[str, str]] = {}
+    docs_by_path: Dict[str, List[Document]] = {}
+    tokens_by_path: Dict[str, int] = {}
+    new_structure: Dict[str, dict] = {}
+    with tempfile.TemporaryDirectory() as temp_dir:
+        task.update_state(state="PROGRESS", meta={"current": 20, "status": "Downloading changed files"})
+        downloaded: Dict[str, Any] = {}
+        if to_download:
+            downloaded = loader.download_files(temp_dir, [entry.id for entry in to_download]) or {}
+        for file_id, info in (downloaded.get("failures") or {}).items():
+            info = info if isinstance(info, dict) else {}
+            kind = info.get("kind") if info.get("kind") in (incremental.TRANSIENT, incremental.PERMANENT) else (
+                incremental.TRANSIENT
+            )
+            failures[str(file_id)] = (kind, str(info.get("error") or "download failed"))
+        for entry in to_download:
+            if entry.id not in failures and not os.path.isfile(os.path.join(temp_dir, entry.path)):
+                failures[entry.id] = (incremental.TRANSIENT, "not downloaded")
+        by_path = {entry.path: entry for entry in to_download}
+        if any(entry.id not in failures for entry in to_download):
+            task.update_state(state="PROGRESS", meta={"current": 40, "status": "Processing files"})
+            reader = SimpleDirectoryReader(
+                input_dir=temp_dir,
+                recursive=True,
+                required_exts=list(SUPPORTED_SOURCE_EXTENSIONS),
+                exclude_hidden=True,
+                file_metadata=metadata_from_filename,
+                parse_cache_user=user,
+            )
+            try:
+                raw_docs = reader.load_data(
+                    progress_callback=_make_parse_progress_callback(
+                        task, user, source_id, start_pct=40, end_pct=60, actor_id=actor_id,
+                    )
+                )
+            except DocumentParseError:
+                # Every file failed to parse; each is recorded below.
+                raw_docs = []
+            for rel_path, failure in _reader_failures(reader, temp_dir).items():
+                entry = by_path.get(rel_path)
+                if entry is not None:
+                    failures[entry.id] = failure
+            new_structure = incremental.structure_files(getattr(reader, "directory_structure", None) or {})
+            urls = {entry.path: entry.url for entry in to_download if entry.url}
+            urls.update(downloaded.get("file_urls") or {})
+            for doc in _connector_chunks(raw_docs, cfg, temp_dir, urls):
+                docs_by_path.setdefault(str((doc.extra_info or {}).get("source") or ""), []).append(doc)
+            # What the index holds, counted as a full sync counts it: the chunks.
+            tokens_by_path = _chunk_tokens(docs_by_path)
+            # A downloaded file the reader passed over (a hidden name, a type no
+            # parser reads) is not indexed: it is recorded, not taken as read.
+            taken = {os.path.relpath(str(path), temp_dir) for path in getattr(reader, "input_files", None) or []}
+            for entry in to_download:
+                if entry.id not in failures and entry.path not in taken:
+                    failures[entry.id] = (incremental.PERMANENT, "not a file DocsGPT reads")
+    read = {entry.id for entry in to_download if entry.id not in failures}
+    # A file whose new path another file still holds, and that file was not
+    # read this time (its new version failed), waits: the holder keeps its
+    # chunks, and both are tried again by the next sync. Repeated, since a
+    # file that waits keeps holding its own old path.
+    removed_ids = {file_id for file_id, _ in plan.removed}
+    # Every record that may own each path: after a sync that died, a pending
+    # record and another file's record can both name one.
+    holders: Dict[str, set] = {}
+    for file_id, record in manifest.items():
+        if file_id not in removed_ids:
+            for path in incremental.record_paths(record):
+                holders.setdefault(path, set()).add(file_id)
+    # Only while the holder may still be read: a holder out of retries (or
+    # failed for good) gives its path up, as the plan's contested rule then
+    # clears its chunks, so nothing waits on it forever.
+    provisional = incremental.record_failures(failed, to_download, failures, listing, parse_key=parse_key)
+
+    def holds_on(file_id: str) -> bool:
+        if file_id in deferred:
+            return True
+        outcome = provisional.get(file_id)
+        return file_id not in read and outcome is not None and outcome.retryable(parse_key)
+
+    def clears(entry: FileEntry) -> set:
+        """Every path reading this file would clear: its destination and the paths its record names."""
+        record = manifest.get(entry.id)
+        return {entry.path} | (incremental.record_paths(record) if record else set())
+
+    deferred: set = set()
+    waiting = True
+    while waiting:
+        waiting = False
+        for entry in to_download:
+            if entry.id not in read or entry.id in deferred:
+                continue
+            others = {other for path in clears(entry) for other in holders.get(path, set())} - {entry.id}
+            if any(holds_on(other) for other in others):
+                deferred.add(entry.id)
+                waiting = True
+    read -= deferred
+    for entry in to_download:
+        if entry.id in deferred:
+            # Shown with the failed files; the next sync plans it again.
+            failures[entry.id] = (incremental.TRANSIENT, "waits for the file that held its path to be read")
+    # Indexed without every page (OCR left some out): kept, and tried again.
+    partly = {
+        by_path[path].id: failure
+        for path, failure in _incomplete_files(
+            [doc for docs in docs_by_path.values() for doc in docs]
+        ).items()
+        if path in by_path
+    }
+    changed_read = [(record, entry) for record, entry in plan.changed if entry.id in read]
+    replaced_ids = {entry.id for _, entry in changed_read}
+
+    total_tokens = sum(
+        int(record.get("tokens") or 0)
+        for file_id, record in manifest.items()
+        if file_id not in removed_ids and file_id not in replaced_ids
+    ) + sum(tokens_by_path.get(entry.path, 0) for entry in to_download if entry.id in read)
+    check_token_count(total_tokens)
+
+    # Before the index changes: the files about to change are recorded as
+    # pending (no version), so a sync that dies part way redoes them.
+    pending = dict(manifest)
+    for record, entry in [*plan.changed, *plan.moved]:
+        pending[entry.id] = incremental.pending_record(record, entry)
+    for file_id, record in plan.removed:
+        pending[file_id] = {**record, "version": None}
+    for entry in plan.added:
+        if entry.id in read:
+            # Its chunks are about to be written: recorded, so a sync that
+            # dies before the end still finds (and, if it is gone, removes) them.
+            pending[entry.id] = incremental.pending_record(None, entry)
+    if not _save_source_sync_state(
+        source_id, remote_files=incremental.build_manifest("connector", key, pending, failed),
+    ):
+        return _skip_refused_sync(task, user, source_id, job_name, source_type, "gone", actor_id)
+
+    task.update_state(state="PROGRESS", meta={"current": 60, "status": "Storing documents"})
+    store = VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id, settings.EMBEDDINGS_KEY)
+    moved_from = {record["path"]: entry for record, entry in plan.moved if record.get("path")}
+    stale: set = set()
+    for _, record in plan.removed:
+        stale |= incremental.record_paths(record)
+    for record, entry in changed_read:
+        stale |= incremental.record_paths(record) | {entry.path}
+    # An added file's path may hold chunks a sync that died left there.
+    stale.update(entry.path for entry in plan.added if entry.id in read)
+    # A moved file's chunks are at its old path, which an added file may now take.
+    stale = {path for path in stale if path and path not in moved_from}
+    ids = incremental.chunk_ids_by_path(store, stale | set(moved_from))
+    deleted, undeleted = incremental.delete_chunk_ids(store, {path: ids[path] for path in stale if path in ids})
+    # The plan never lets two files share a path, so the paths cleared here
+    # belonged only to the files being replaced, added or removed.
+    if undeleted:
+        raise RuntimeError(f"Could not delete the old chunks of {len(undeleted)} file(s); the sync will redo them")
+    moved_chunks = incremental.rewrite_chunk_paths(
+        store,
+        {
+            old_path: (ids[old_path], {"source": entry.path, "url": entry.url, "title": os.path.basename(entry.path)})
+            for old_path, entry in moved_from.items()
+            if old_path in ids
+        },
+    )
+    chunks = [
+        (doc.text, dict(doc.extra_info or {}))
+        for entry in to_download
+        if entry.id in read
+        for doc in docs_by_path.get(entry.path, [])
+        if str(doc.text or "").strip()
+    ]
+    added = incremental.add_chunks(store, chunks, source_id=source_id)
+
+    new_manifest = {file_id: record for file_id, record in manifest.items() if file_id not in removed_ids}
+    for record, entry in plan.changed:
+        if entry.id not in read and incremental.record_paths(record) & stale:
+            # Its old chunks went with a path another file took; it is
+            # recorded as failed, and the next sync adds it again.
+            new_manifest.pop(entry.id, None)
+    for record, entry in plan.moved:
+        new_manifest[entry.id] = {**record, "path": entry.path, "url": entry.url}
+    for entry in to_download:
+        if entry.id in read:
+            new_manifest[entry.id] = incremental.connector_record(entry, tokens_by_path.get(entry.path, 0))
+    new_failed = incremental.record_failures(
+        failed, to_download, {**failures, **partly}, listing, parse_key=parse_key,
+    )
+
+    files = incremental.structure_files(_json_object(row.get("directory_structure")))
+    for _, record in plan.removed:
+        files.pop(record.get("path"), None)
+    for record, _ in changed_read:
+        files.pop(record.get("path"), None)
+    relocated = {entry.path: files.pop(record.get("path")) for record, entry in plan.moved if record.get("path") in files}
+    files.update(relocated)
+    for entry in to_download:
+        if entry.id in read:
+            files.pop(entry.path, None)
+            if entry.path in new_structure:
+                files[entry.path] = new_structure[entry.path]
+    try:
+        fingerprint = _connector_sync_fingerprint(loader.sync_fingerprint(selection), config)
+    except ConnectorAuthError:
+        raise
+    except Exception:
+        fingerprint = None
+    tokens = sum(int(record.get("tokens") or 0) for record in new_manifest.values())
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if not _save_source_sync_state(
+        source_id,
+        remote_files=incremental.build_manifest("connector", key, new_manifest),
+        failed_files=new_failed,
+        fingerprint=fingerprint,
+        fields={"directory_structure": incremental.structure_from_files(files), "tokens": tokens, "date": now},
+    ):
+        _discard_orphan_index(source_id)
+        return _skip_refused_sync(task, user, source_id, job_name, source_type, "gone", actor_id)
+
+    counts = {
+        "files_added": sum(1 for entry in plan.added if entry.id in read),
+        "files_changed": len(changed_read),
+        "files_moved": len(plan.moved),
+        "files_removed": len(plan.removed),
+        "files_failed": len(new_failed),
+        "files_deferred": len(deferred) + plan.deferred,
+        "chunks_added": added,
+        "chunks_deleted": deleted,
+    }
+    logging.info(
+        f"Synced {source_type} source {source_id} incrementally: "
+        + " ".join(f"{k}={v}" for k, v in counts.items()) + f" chunks_moved={moved_chunks}"
+    )
+    task.update_state(state="PROGRESS", meta={"current": 100, "status": "Complete"})
+    _publish_source_event(
+        user, actor_id,
+        "source.ingest.completed",
+        {
+            "source_id": source_id,
+            "job_name": job_name,
+            "loader": source_type,
+            "operation": "sync",
+            **_task_id_field(task),
+            "tokens": tokens,
+            "incremental": True,
+            **counts,
+            **_listing_partial(listing),
+        },
+        scope={"kind": "source", "id": source_id},
+    )
+    _maybe_enqueue_graph_sync(cfg, source_id, user, getattr(task.request, "id", None), actor_id)
+    return {
+        "user": user,
+        "name": job_name,
+        "tokens": tokens,
+        "type": source_type,
+        "id": source_id,
+        "status": "complete",
+        "incremental": True,
+        **counts,
+    }
+
+
 def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
     """Re-download and re-index a connector source from its connection.
 
@@ -4435,7 +6122,17 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             if source and source.get("connection_id")
             else None
         )
+        if connection is not None and str(connection.get("user_id")) != str(source.get("user_id")):
+            # A source only ever reads through its own owner's connection.
+            connection = None
         enabled = connection is not None and connector_enabled(conn, connection)
+        # A team's source bills the person who connected the team's account,
+        # read now: a Reconnect by another Admin moves the bill to them.
+        payer = (
+            _scheduled_connection_payer(conn, connection)
+            if connection is not None and is_principal_id(source.get("user_id"))
+            else None
+        )
     if not source or not connection:
         return {"status": "skipped"}
     if _is_wiki_config(source.get("config")):
@@ -4444,6 +6141,9 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
     if not enabled:
         return {"status": "disabled"}
     if normalize_status(connection) != "connected":
+        return {"status": "paused"}
+    if is_principal_id(source.get("user_id")) and payer is None:
+        # Its account is paused, or whoever connected it is out of allowance.
         return {"status": "paused"}
     remote_data = source.get("remote_data") or {}
     if isinstance(remote_data, str):
@@ -4469,6 +6169,8 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             config=source.get("config") or None,
             # A scheduled run: nobody waits on it, so a skip goes unannounced.
             notify_skip=False,
+            # The payer of a team's sync hears its events and pays for its graph.
+            **_actor_kwargs(payer),
         )
     except ConnectionUnavailable:
         return {"status": "paused"}
@@ -4497,6 +6199,8 @@ def ingest_connector(
     connection_id=None,
     notify_skip: bool = True,
     actor_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
+    retry_failed: bool = False,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -4534,6 +6238,9 @@ def ingest_connector(
             ``reason``) when a sync is skipped. Off for scheduled syncs.
         actor_id: The user who asked for the ingest or sync (a team editor),
             who gets its ``source.ingest.*`` events too; ``None`` for the owner.
+        folder_id: One of the uploader's source folders to file a new source in.
+        retry_failed: For a sync someone asked for: try every file the last
+            sync could not read again, whatever its kind and attempts.
 
     Returns:
         The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
@@ -4548,7 +6255,7 @@ def ingest_connector(
         return _ingest_connector(
             self, job_name, user, source_type, session_token, file_ids, folder_ids, recursive, retriever,
             operation_mode, doc_id, sync_frequency, config, idempotency_key, source_id, connection_id,
-            actor_id=actor_id,
+            actor_id=actor_id, folder_id=folder_id,
         )
 
     def _run(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -4566,7 +6273,7 @@ def ingest_connector(
             selection.get("file_ids", file_ids), selection.get("folder_ids", folder_ids),
             selection.get("recursive", recursive), row.get("retriever") or retriever, operation_mode, doc_id,
             row.get("sync_frequency") or sync_frequency, row.get("config") or None, idempotency_key, source_id,
-            connection_id, actor_id=actor_id,
+            connection_id, actor_id=actor_id, retry_failed=retry_failed,
         )
 
     return _run_locked_sync(
@@ -4592,6 +6299,8 @@ def _ingest_connector(
     source_id: Optional[str],
     connection_id: Optional[str],
     actor_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
+    retry_failed: bool = False,
 ) -> Dict[str, Any]:
     """The body of ``ingest_connector`` (same arguments); a sync runs it holding the source's index lock."""
     # Source id resolution mirrors ``ingest_worker`` / ``remote_worker``:
@@ -4628,7 +6337,7 @@ def _ingest_connector(
         )
     else:
         # The failed attempt before cleared the Activity marker.
-        mark_ingest_running(user, queued)
+        _mark_ingest_running(user, actor_id, queued)
 
     self.update_state(state="PROGRESS", meta={"current": 1})
 
@@ -4642,6 +6351,8 @@ def _ingest_connector(
 
             if not session_token and not connection_id:
                 raise ValueError(f"{source_type} connector requires a connection")
+            if connection_id:
+                _require_own_connection(connection_id, user)
 
             if not ConnectorCreator.is_supported(source_type):
                 raise ValueError(
@@ -4651,6 +6362,9 @@ def _ingest_connector(
             remote_loader = ConnectorCreator.create_connector(
                 source_type, session_token, connection_id=connection_id
             )
+            if remote_loader.connection_id and str(remote_loader.connection_id) != str(connection_id or ""):
+                # Named by a legacy session token: checked once it is known.
+                _require_own_connection(remote_loader.connection_id, user)
             connection_id = remote_loader.connection_id
 
             # Create a clean config for storage
@@ -4660,35 +6374,21 @@ def _ingest_connector(
                 "recursive": recursive,
             }
 
-            # A sync whose selection has not changed since the last ingest
-            # (same files, same modified times, same settings) keeps the
-            # index it has instead of downloading and embedding it again.
-            if operation_mode == "sync" and doc_id and _connector_selection_unchanged(
-                remote_loader, api_source_config, config, source_id_for_events, user
-            ):
-                logging.info(f"No changes in {source_type} source {source_id_for_events}; sync skipped")
-                _mark_source_synced(source_id_for_events, user)
-                _publish_source_event(
-                    user, actor_id,
-                    "source.ingest.completed",
-                    {
-                        "source_id": source_id_for_events,
-                        "job_name": job_name,
-                        "loader": source_type,
-                        "operation": operation_mode,
-                        **_task_id_field(self),
-                        "tokens": 0,
-                        "no_changes": True,
-                    },
-                    scope={"kind": "source", "id": source_id_for_events},
+            # The selection as the provider lists it, before anything is
+            # downloaded: a sync diffs it against what the index holds, and
+            # an ingest records it so the next sync can.
+            listing = _listing_of(remote_loader, api_source_config)
+            if operation_mode == "sync" and doc_id:
+                outcome = _sync_connector_changes(
+                    self, user=user, actor_id=actor_id, job_name=job_name, source_type=source_type,
+                    source_id=source_id_for_events, loader=remote_loader, selection=api_source_config,
+                    listing=listing, config=config, retry_failed=retry_failed,
                 )
-                return {
-                    "user": user,
-                    "name": job_name,
-                    "type": source_type,
-                    "id": source_id_for_events,
-                    "status": "unchanged",
-                }
+                if outcome is not None:
+                    return outcome
+                previous_failed = _source_failed_files(source_id_for_events, user)
+            else:
+                previous_failed = {}
 
             # Step 2: Download files to temp directory
             self.update_state(
@@ -4697,10 +6397,32 @@ def _ingest_connector(
             download_info = remote_loader.download_to_directory(
                 temp_dir, api_source_config
             )
+            files_downloaded = int(download_info.get("files_downloaded") or 0)
+            files_failed, folders_failed = _connector_download_losses(download_info)
+            counts = (
+                f"downloaded={files_downloaded} failed={files_failed} folders_failed={folders_failed} "
+                f"skipped={int(download_info.get('files_skipped') or 0)}"
+            )
+            if download_info.get("error"):
+                raise ConnectorDownloadError(f"Could not download from {source_type}: {download_info['error']}")
+            if (files_failed or folders_failed) and not files_downloaded:
+                raise ConnectorDownloadError(
+                    f"None of the selected files could be downloaded from {source_type} "
+                    f"({files_failed} files and {folders_failed} folders failed). Try again later."
+                )
+            # What failed is left out of this index and recorded, and the next
+            # sync retries only those files.
+            partial = (
+                {"partial": True, "files_failed": files_failed, "folders_failed": folders_failed}
+                if files_failed or folders_failed
+                else {}
+            )
+            if partial:
+                logging.error(f"Partial download from {source_type} for source {source_id_for_events}: {counts}")
+            else:
+                logging.info(f"Downloaded from {source_type} for source {source_id_for_events}: {counts}")
 
-            if download_info.get("empty_result", False) or not download_info.get(
-                "files_downloaded", 0
-            ):
+            if download_info.get("empty_result", False) or not files_downloaded:
                 logging.warning(f"No files were downloaded from {source_type}")
                 # Connector returned no files — surface as a benign
                 # ``completed`` event with zero tokens so the toast
@@ -4733,52 +6455,65 @@ def _ingest_connector(
             self.update_state(
                 state="PROGRESS", meta={"current": 40, "status": "Processing files"}
             )
+            if listing is not None and listing.complete:
+                # Only a complete listing names every file: an incomplete one
+                # would have files that did download pruned unreported.
+                _prune_unlisted(temp_dir, listing)
+            listing_partial = _listing_partial(listing)
+            if listing_partial and not partial:
+                partial = listing_partial
             reader = SimpleDirectoryReader(
                 input_dir=temp_dir,
                 recursive=True,
                 required_exts=list(SUPPORTED_SOURCE_EXTENSIONS),
                 exclude_hidden=True,
                 file_metadata=metadata_from_filename,
+                parse_cache_user=user,
             )
+            check_file_count(len(getattr(reader, "input_files", None) or []))
             # Parsing/OCR fills 40-60% of the bar; embedding takes 60-100%.
             raw_docs = reader.load_data(
                 progress_callback=_make_parse_progress_callback(
                     self, user, source_uuid, start_pct=40, end_pct=60,
                 )
             )
+            # A file no parser could read is left out of the index (load_data
+            # logs each one); the ingest fails only when every file did.
+            unparsed = _unparsed_files_report(reader, temp_dir)
+            if unparsed:
+                logging.error(
+                    f"{unparsed['files_unparsed']} file(s) from {source_type} could not be parsed for source "
+                    f"{source_id_for_events}: {', '.join(unparsed['unparsed_files'])}"
+                )
             directory_structure = getattr(reader, "directory_structure", {})
-
-            # Step 4: Process documents (chunking, embedding, etc.)
-            cfg = SourceConfig.parse(config)
-            chunker = ChunkerCreator.create_chunker(
-                cfg.chunking.strategy,
-                chunking_strategy=cfg.chunking.strategy,
-                max_tokens=cfg.chunking.max_tokens,
-                min_tokens=cfg.chunking.min_tokens,
-                chunk_overlap=cfg.chunking.chunk_overlap,
-                duplicate_headers=cfg.chunking.duplicate_headers,
-            )
-            raw_docs = chunker.chunk(documents=raw_docs)
-
-            # Preserve source information in document metadata
-            file_urls = {
-                os.path.normpath(path): url
-                for path, url in (download_info.get("file_urls") or {}).items()
+            # A file indexed without every page counts as failed too, so a
+            # later sync reads it again; its chunks stay.
+            partly = _incomplete_files(raw_docs, temp_dir)
+            # A downloaded file the reader passed over (a hidden name, a type no
+            # parser reads) is not indexed: recorded, so the manifest doesn't claim it.
+            taken = {os.path.relpath(str(path), temp_dir) for path in getattr(reader, "input_files", None) or []}
+            passed_over = {
+                entry.path: (incremental.PERMANENT, "not a file DocsGPT reads")
+                for entry in (listing.entries if listing is not None else [])
+                if entry.path not in taken and os.path.isfile(os.path.join(temp_dir, entry.path))
             }
+            failed_files = _connector_failed_files(
+                listing, download_info, {**passed_over, **_reader_failures(reader, temp_dir), **partly}, temp_dir,
+                previous_failed,
+            )
+            indexed_anyway = {listing.by_path()[p].id for p in partly if p in listing.by_path()} if listing else set()
+
+            # Step 4: Process documents (chunking, embedding, etc.), each
+            # chunk keeping its file's path and its link in the service.
+            cfg = SourceConfig.parse(config)
+            raw_docs = _connector_chunks(raw_docs, cfg, temp_dir, download_info.get("file_urls") or {})
+            chunks_by_path: Dict[str, List[Any]] = {}
             for doc in raw_docs:
-                if hasattr(doc, "extra_info") and doc.extra_info:
-                    source = doc.extra_info.get("source")
-                    if source and os.path.isabs(source):
-                        # Convert absolute path to relative path
-                        doc.extra_info["source"] = os.path.relpath(
-                            source, start=temp_dir
-                        )
-                    # The file's link in the service it was synced from.
-                    url = file_urls.get(os.path.normpath(doc.extra_info.get("source") or "."))
-                    if url:
-                        doc.extra_info["url"] = url
+                chunks_by_path.setdefault(str((doc.extra_info or {}).get("source") or ""), []).append(doc)
 
             docs = [Document.to_vector_format(raw_doc) for raw_doc in raw_docs]
+            tokens = count_tokens_docs(docs)
+            check_token_count(tokens)
 
             # Validate operation_mode here too (the source_uuid path
             # at the top of the function only branches on the
@@ -4795,6 +6530,11 @@ def _ingest_connector(
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
 
+            if operation_mode == "sync":
+                # The index is rebuilt now: until it is stored again, neither a
+                # manifest nor a fingerprint vouches for it, so a sync that dies
+                # here leaves the next one a full sync.
+                _save_source_sync_state(source_id_for_events, remote_files=None, fingerprint=None)
             self.update_state(
                 state="PROGRESS", meta={"current": 60, "status": "Storing documents"}
             )
@@ -4807,16 +6547,41 @@ def _ingest_connector(
             )
             assert_index_complete(source_uuid)
 
-            tokens = count_tokens_docs(docs)
-
-            # The fingerprint lets the next sync skip an unchanged selection.
-            # It is left out when a file failed, so that sync tries again.
+            # The fingerprint lets the next sync skip an unchanged selection,
+            # and the manifest change only what changed. Both are kept when a
+            # file failed: the failed files are recorded beside them, and the
+            # next sync retries only those (a new ingest version, for a
+            # parser added since, makes it a full sync).
             remote_data = {"provider": source_type, **api_source_config}
-            sync_fingerprint = _connector_sync_fingerprint(
-                download_info.get("sync_fingerprint"), config
-            )
-            if sync_fingerprint:
-                remote_data["sync_fingerprint"] = sync_fingerprint
+            sync_fingerprint = _connector_sync_fingerprint(download_info.get("sync_fingerprint"), config)
+            if listing is None and (partial or unparsed or partly):
+                # A loader that can't list names no failed file by id, so none
+                # could be retried alone: the next sync downloads everything.
+                sync_fingerprint = None
+            # With a manifest, the fingerprint is stored with it and the failed
+            # files, in one write after the upload: a fingerprint stored without
+            # them would vouch for files the index lacks.
+            if listing is not None and not listing.complete:
+                # It would vouch for an index built from part of the selection.
+                sync_fingerprint = None
+            upload_fingerprint = sync_fingerprint if listing is None else None
+            if upload_fingerprint:
+                remote_data["sync_fingerprint"] = upload_fingerprint
+            if failed_files:
+                remote_data["failed_files"] = incremental.dump_failed_files(failed_files)
+            remote_files = None
+            # From a complete listing only: files an incomplete one missed are
+            # in the index too, and a manifest without them would never remove
+            # them; the next sync is then a full one again.
+            if listing is not None and listing.complete:
+                remote_files = incremental.build_manifest(
+                    "connector",
+                    incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME),
+                    incremental.manifest_from_listing(
+                        listing, _chunk_tokens(chunks_by_path),
+                        left_out=set(failed_files) - indexed_anyway,
+                    ),
+                )
 
             # Step 6: Upload index files
             file_data = {
@@ -4835,7 +6600,7 @@ def _ingest_connector(
                 # schedule change may have landed since the row was read) and
                 # stores only the fingerprint; an empty one clears it.
                 file_data["operation"] = "sync"
-                file_data["sync_fingerprint"] = sync_fingerprint or ""
+                file_data["sync_fingerprint"] = upload_fingerprint or ""
             elif config:
                 file_data["config"] = json.dumps(config)
 
@@ -4858,11 +6623,20 @@ def _ingest_connector(
                         upd_err,
                     )
 
+            if folder_id and operation_mode != "sync":
+                file_data["folder_id"] = folder_id
             refused = _upload_refusal(upload_index(vector_store_path, file_data))
             if refused:
                 return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
+            try:
+                _save_source_sync_state(
+                    source_id_for_events, remote_files=remote_files, failed_files=failed_files,
+                    **({"fingerprint": sync_fingerprint} if listing is not None else {}),
+                )
+            except Exception as err:  # noqa: BLE001 - the index is stored; the next sync is only a full one
+                logging.warning(f"Could not record what source {source_id_for_events} indexed: {err}")
 
             # Ensure we mark the task as complete
             self.update_state(
@@ -4881,13 +6655,18 @@ def _ingest_connector(
                     "operation": operation_mode,
                     **_task_id_field(self),
                     "tokens": tokens,
+                    **partial,
+                    **unparsed,
+                    **({"files_failed": len(failed_files)} if failed_files else {}),
                 },
                 scope={"kind": "source", "id": source_id_for_events},
             )
             if operation_mode == "sync":
-                _maybe_enqueue_graph_sync(cfg, source_id_for_events, user, getattr(self.request, "id", None))
+                _maybe_enqueue_graph_sync(
+                    cfg, source_id_for_events, user, getattr(self.request, "id", None), actor_id,
+                )
             else:
-                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user)
+                _maybe_enqueue_graph_extraction(cfg, source_id_for_events, user, actor_id)
 
             return {
                 "user": user,
@@ -4896,10 +6675,14 @@ def _ingest_connector(
                 "type": source_type,
                 "id": source_id_for_events,
                 "status": "complete",
+                **partial,
+                **unparsed,
+                **({"files_failed": len(failed_files)} if failed_files else {}),
             }
     except Exception as e:
         logging.error(f"Error during remote ingestion: {e}", exc_info=True)
         close_failed_ingest_progress(source_id_for_events, task=self, error=e)
+        auth_rejected = isinstance(e, ConnectorAuthError)
         _publish_source_event(
             user, actor_id,
             "source.ingest.failed",
@@ -4909,14 +6692,19 @@ def _ingest_connector(
                 "loader": source_type,
                 "operation": operation_mode,
                 **_task_id_field(self),
-                "error": str(e)[:1024],
+                "error": _CONNECTOR_RECONNECT_MESSAGE if auth_rejected else str(e)[:1024],
+                **({"reason": CONNECTOR_RECONNECT_REASON} if auth_rejected else failure_fields(e)),
             },
             scope={"kind": "source", "id": source_id_for_events},
         )
+        if auth_rejected:
+            raise ConnectorAuthError(_CONNECTOR_RECONNECT_MESSAGE) from e
         raise
 
 
-def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, Any]:
+def mcp_oauth(
+    self, config: Dict[str, Any], user_id: str = None, actor_id: Optional[str] = None,
+) -> Dict[str, Any]:
     """Worker to handle MCP OAuth flow asynchronously.
 
     Publishes SSE events at each phase boundary so the frontend can
@@ -4924,6 +6712,21 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     ``mcp.oauth.awaiting_redirect`` envelope carries the
     ``authorization_url`` once the upstream OAuth client surfaces it,
     eliminating the prior polling-only path for that URL.
+
+    A team's sign-in is owned by the team (``user_id`` is its principal)
+    and run for the Admin signing in (``actor_id``): its events go to that
+    Admin's stream only, its tokens are written naming them, and the
+    ``completed`` event names the team's connection the save picks up.
+    A team's sign-in without an Admin never runs.
+
+    Args:
+        self: The bound Celery task.
+        config: The MCP server config.
+        user_id: Who owns the sign-in: the person, or a team's principal.
+        actor_id: For a team's sign-in, the Admin signing in.
+
+    Returns:
+        ``{success, tools, tools_count}`` or ``{success: False, error}``.
     """
 
     # Bind ``task_id`` and the publish helpers OUTSIDE the outer try so
@@ -4931,16 +6734,23 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
     # early statement raises. Without this, ``publish_oauth`` would
     # UnboundLocalError on top of the original failure.
     task_id = self.request.id if getattr(self, "request", None) else None
+    team = is_principal_id(user_id)
+    actor_id = actor_id if team and actor_id and not is_principal_id(actor_id) else None
+    if team and actor_id is None:
+        logging.error("MCP OAuth for a team without the person signing in; not started")
+        return {"success": False, "error": "OAuth init failed: nobody is signing in for the team"}
+    # Events go to whoever is signing in, never to a team's own stream.
+    recipient = actor_id or user_id
 
     def publish_oauth(event_type: str, payload: Dict[str, Any]) -> None:
         # MCP OAuth can be invoked without a route-bound user_id by
         # legacy paths. Skip the SSE publish in that case \u2014 the caller
         # has no per-user channel to subscribe to, and the status is
         # surfaced via the task's return value.
-        if not user_id or task_id is None:
+        if not recipient or task_id is None:
             return
         publish_user_event(
-            user_id,
+            recipient,
             event_type,
             {"task_id": task_id, **payload},
             scope={"kind": "mcp_oauth", "id": task_id},
@@ -4976,6 +6786,11 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         # the publish fires synchronously from inside
         # ``redirect_handler`` \u2014 the only point where the URL is known.
         tool_config["oauth_redirect_publish"] = publish_awaiting_redirect
+        # Who connected a team's account comes from the route, never the client's config.
+        tool_config.pop("oauth_connected_by", None)
+        previous_connected_by = tool_config.pop("oauth_previous_connected_by", None)
+        if actor_id:
+            tool_config["oauth_connected_by"] = actor_id
         mcp_tool = MCPTool(tool_config, user_id)
 
         async def run_oauth_discovery():
@@ -4989,10 +6804,14 @@ def mcp_oauth(self, config: Dict[str, Any], user_id: str = None) -> Dict[str, An
         try:
             loop.run_until_complete(run_oauth_discovery())
             tools = mcp_tool.get_actions_metadata()
+            # A team's save finds the connection its sign-in wrote here.
+            written = {
+                "connection_id": mcp_tool.oauth_connection_id, "previous_connected_by": previous_connected_by,
+            } if actor_id else {}
 
             publish_oauth(
                 "mcp.oauth.completed",
-                {"tools": tools, "tools_count": len(tools)},
+                {"tools": tools, "tools_count": len(tools), **written},
             )
 
             return {"success": True, "tools": tools, "tools_count": len(tools)}
@@ -5330,7 +7149,7 @@ def _refresh_in_scope(config: Dict[str, Any], addresses: Iterable[Optional[str]]
 
 def _update_page_graph(
     cfg: SourceConfig, source_id: str, user: str, task_id: Optional[str], old_chunk_ids: List[str],
-    new_chunk_ids: Iterable[str] = (),
+    new_chunk_ids: Iterable[str] = (), actor_id: Optional[str] = None,
 ) -> None:
     """Bring a graphrag source's graph up to date after a page change, chunk by chunk.
 
@@ -5349,6 +7168,7 @@ def _update_page_graph(
         task_id: The page task's id, for the extraction's idempotency key.
         old_chunk_ids: Ids of the chunks the change deleted.
         new_chunk_ids: Ids of the chunks the change stored, to extract.
+        actor_id: Who asked for the change; the extraction bills them.
     """
     if cfg.kind != "graphrag":
         return
@@ -5366,7 +7186,7 @@ def _update_page_graph(
             from docsgpt.api.user.tasks import extract_graph
 
             key = f"extract-graph:{source_id}:pages:{task_id or uuid.uuid4().hex}"
-            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids)
+            extract_graph.delay(source_id, user, idempotency_key=key, chunk_ids=new_ids, **_actor_kwargs(actor_id))
     except Exception as e:  # noqa: BLE001 - the page change is done; the graph catches up at the next build
         logging.warning(f"Could not update the graph of {source_id} after a page change: {e}", exc_info=True)
 
@@ -5675,6 +7495,7 @@ def _not_listed_again(
 
 def _remove_web_pages(
     source: Dict[str, Any], user: str, task_id: Optional[str], pages: Optional[List[Dict[str, str]]],
+    actor_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Delete pages from a Website source: their chunks first, then their tree entries.
 
@@ -5744,9 +7565,9 @@ def _remove_web_pages(
         if still is not None:
             gone = [chunk_id for chunk_id in chunk_ids if str(chunk_id) not in still]
             if gone:
-                _update_page_graph(cfg, source_id, user, task_id, gone)
+                _update_page_graph(cfg, source_id, user, task_id, gone, actor_id=actor_id)
         raise
-    _update_page_graph(cfg, source_id, user, task_id, chunk_ids)
+    _update_page_graph(cfg, source_id, user, task_id, chunk_ids, actor_id=actor_id)
 
     removed_keys = {_web_page_key(url) for url in urls}
     with db_session() as conn:
@@ -5916,7 +7737,7 @@ def website_pages_worker(
         with source_index_lock(source_id):
             source = _website_to_change(source_id, user)
             if operation == "remove":
-                outcome = _remove_web_pages(source, user, task_id, pages)
+                outcome = _remove_web_pages(source, user, task_id, pages, actor_id)
             else:
                 outcome = _run_website_pages(source, user, operation, urls, file_path, task_id, url, actor_id)
     except Exception as e:
@@ -6070,7 +7891,9 @@ def _run_website_pages(
         ):
             # The next sync drops a crawled page that now leads out of scope,
             # so the refresh does too rather than store it.
-            _remove_web_pages(source, user, task_id, [{"path": target["path"], "url": target["old_url"]}])
+            _remove_web_pages(
+                source, user, task_id, [{"path": target["path"], "url": target["old_url"]}], actor_id,
+            )
             moved = f"{target['old_url']} now leads to {doc_url}, which is" if doc_url != target["old_url"] else (
                 f"{doc_url} is"
             )
@@ -6088,7 +7911,7 @@ def _run_website_pages(
         # Every replaced copy's chunks were deleted, kept or not; only kept pages add any.
         old_ids = [chunk_id for change in changes for chunk_id in change["old_ids"]]
         new_ids = [chunk_id for change in kept for chunk_id in change["new_ids"]]
-        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids)
+        _update_page_graph(cfg, source_id, user, task_id, old_ids, new_ids, actor_id=actor_id)
     if failure is not None:
         raise failure
     return {"pages": len(kept), "paths": paths, **({"failed_pages": failed_pages} if failed_pages else {})}
@@ -6187,7 +8010,7 @@ def _join_chunk_texts(texts: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-def convert_source_to_wiki_worker(self, source_id, user):
+def convert_source_to_wiki_worker(self, source_id, user, actor_id=None):
     """Convert an ingested source into a wiki by reassembling pages from chunks.
 
     Groups the source's existing vector-store chunks by their page path
@@ -6202,7 +8025,10 @@ def convert_source_to_wiki_worker(self, source_id, user):
     Args:
         self: Celery task instance.
         source_id: ID of the source to convert.
-        user: Owner identifier used to load the source row and author pages.
+        user: Owner identifier used to load the source row.
+        actor_id: The person who asked for the conversion. A team's source is
+            owned by the team's principal, which is never a person, so its
+            pages name this person (or, with none, whoever added the source).
 
     Returns:
         A summary dict ``{"status": "converted", "pages_created", "skipped"}``,
@@ -6212,10 +8038,12 @@ def convert_source_to_wiki_worker(self, source_id, user):
     # It reads every chunk and deletes them: a sync or a Website page change
     # on the source meanwhile would be lost or half-converted.
     with source_index_lock(str(source_id)):
-        return _convert_source_to_wiki(self, source_id, user)
+        return _convert_source_to_wiki(self, source_id, user, actor_id)
 
 
-def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, Any]:
+def _convert_source_to_wiki(
+    self: Any, source_id: str, user: str, actor_id: Optional[str] = None
+) -> Dict[str, Any]:
     """The body of ``convert_source_to_wiki_worker``, run holding the source's index lock."""
     from docsgpt.api.user.tasks import reembed_wiki_page
     from docsgpt.vectorstore.vector_creator import VectorCreator
@@ -6227,6 +8055,8 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+    # A page names a person: a team's principal never edits anything itself.
+    author = (_person(actor_id) or _person(source.get("created_by"))) if is_principal_id(user) else user
 
     cfg = SourceConfig.parse(source.get("config"))
     if cfg.kind == "wiki":
@@ -6286,7 +8116,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
                 page_path,
                 content,
                 title=title,
-                updated_by=user,
+                updated_by=author,
                 updated_via="agent",
             )
             created_pages.append((page_path, _content_hash(content)))
@@ -6336,7 +8166,7 @@ def _convert_source_to_wiki(self: Any, source_id: str, user: str) -> Dict[str, A
     }
 
 
-def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
+def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False, actor_id=None):
     """Build a graphrag source's knowledge graph from its embedded chunks.
 
     Loads the source, fetches its chunks from the vector store, and runs the
@@ -6361,10 +8191,15 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
         sync: After a sync re-embedded the source: the graph is carried over
             to the new chunk ids by content first (``sync_graph_to_chunks``)
             and only new text is extracted.
+        actor_id: Who added the knowledge; the extraction's model calls bill
+            them and its events reach them; a team never pays.
 
     Returns:
-        ``{"status": "unavailable"}`` when GraphRAG is off, otherwise the
-        extraction summary ``{nodes, edges, chunks_processed, ...}``.
+        ``{"status": "unavailable"}`` when GraphRAG is off;
+        ``{"status": "skipped", "reason": "sync_no_payer"}`` for a team's
+        source nobody can pay for (nobody asked, and whoever added it is no
+        longer an Editor there); otherwise the extraction summary
+        ``{nodes, edges, chunks_processed, ...}``.
 
     Raises:
         celery.exceptions.Retry: Another extraction held the source; this
@@ -6381,25 +8216,44 @@ def extract_graph_worker(self, source_id, user, chunk_ids=None, sync=False):
 
     with db_readonly() as conn:
         source = SourcesRepository(conn).get_any(source_id, user)
+        payer = (
+            _knowledge_payer(conn, user, actor_id, source.get("created_by"), source.get("connection_id"))
+            if source else None
+        )
     if not source:
         raise ValueError(f"Source {source_id} not found or access denied")
     source_id = str(source["id"])
+    if payer is None:
+        # Never the team's principal: nobody asked, and whoever added it can't add knowledge there now.
+        logging.info("Not extracting the graph of team source %s: nobody to bill", source_id)
+        _publish_graph_event(
+            user, source_id, "graph.extract.failed",
+            {"source_id": source_id, "error": "Nobody in the team can pay for this build", "reason": "sync_no_payer"},
+            actor_id=actor_id,
+        )
+        return {"status": "skipped", "reason": "sync_no_payer"}
 
     def _out_of_retries(error: SourceBusy) -> None:
         _publish_graph_event(
             user, source_id, "graph.extract.failed", {"source_id": source_id, "error": str(error)[:1024]},
+            actor_id=actor_id,
         )
 
     return _locked_or_retry(
-        self, graph_extract_lock, source_id, lambda: _extract_graph(self, source, user, chunk_ids, sync),
+        self, graph_extract_lock, source_id,
+        lambda: _extract_graph(self, source, user, chunk_ids, sync, actor_id=actor_id, payer=payer),
         _out_of_retries,
     )
 
 
 def _extract_graph(
-    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False
+    self: Any, source: Dict[str, Any], user: str, chunk_ids: Optional[List[str]], sync: bool = False,
+    actor_id: Optional[str] = None, payer: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock."""
+    """The body of ``extract_graph_worker``, run holding the source's graph extraction lock.
+
+    ``payer`` is billed for every model call (``extract_graph_for_source``); ``actor_id`` hears the events.
+    """
     from docsgpt.graphrag.extraction import extract_graph_for_source, sync_graph_to_chunks
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
@@ -6438,6 +8292,7 @@ def _extract_graph(
                 "nodes": int(info.get("nodes", 0)),
                 "edges": int(info.get("edges", 0)),
             },
+            actor_id=actor_id,
         )
 
     _publish_graph_event(
@@ -6451,6 +8306,7 @@ def _extract_graph(
             "nodes": 0,
             "edges": 0,
         },
+        actor_id=actor_id,
     )
 
     trace = tracing.start_trace(
@@ -6473,6 +8329,7 @@ def _extract_graph(
                 request_id=getattr(self.request, "id", None),
                 progress_cb=_progress,
                 chunk_ids=chunk_ids,
+                payer=payer,
             )
             if isinstance(summary, dict):
                 span.set(
@@ -6489,6 +8346,7 @@ def _extract_graph(
             source_id,
             "graph.extract.failed",
             {"source_id": source_id, "error": str(e)[:1024]},
+            actor_id=actor_id,
         )
         raise
 
@@ -6498,5 +8356,6 @@ def _extract_graph(
         source_id,
         "graph.extract.completed",
         {"source_id": source_id, **summary},
+        actor_id=actor_id,
     )
     return summary

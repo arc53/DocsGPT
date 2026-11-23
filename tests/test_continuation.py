@@ -5,6 +5,7 @@ signaling, BaseAgent.gen_continuation, and request validation.
 """
 
 import uuid
+from contextlib import nullcontext
 from unittest.mock import Mock, MagicMock
 
 import pytest
@@ -840,7 +841,7 @@ class TestValidateRequest:
 class TestResumeMarkResuming:
     """Resumed runs atomically claim state instead of deleting it eagerly."""
 
-    def test_resume_claims_state_once_and_does_not_delete(self, monkeypatch):
+    def test_resume_claims_state_once_and_does_not_delete(self, monkeypatch, pg_conn):
         """``resume_from_tool_actions`` consumes one atomic claim."""
         from docsgpt.api.answer.services import (
             continuation_service as cont_mod,
@@ -848,6 +849,9 @@ class TestResumeMarkResuming:
         from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {
@@ -910,7 +914,7 @@ class TestResumeMarkResuming:
         cont_service.delete_state.assert_not_called()
 
     def test_resume_extracts_reserved_message_id_from_agent_config(
-        self, monkeypatch
+        self, monkeypatch, pg_conn
     ):
         """The WAL placeholder id stashed in ``agent_config`` at pause time
         must be hoisted onto the processor so the resumed ``complete_stream``
@@ -921,6 +925,9 @@ class TestResumeMarkResuming:
         from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         reserved_id = "22222222-2222-2222-2222-222222222222"
 
@@ -977,6 +984,43 @@ class TestResumeMarkResuming:
         )
 
         assert sp.reserved_message_id == reserved_id
+
+    def test_resume_carries_the_text_written_before_the_pause(self, monkeypatch, pg_conn):
+        """The paused turn's text, reasoning and their order reach the resumed ``complete_stream``."""
+        from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
+        from docsgpt.llm import llm_creator as llm_creator_mod
+        from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
+
+        prior_turn = {"response": "A few details first.", "thought": "",
+                      "segments": [{"kind": "text", "length": 20}]}
+        cont_service = MagicMock()
+        cont_service.claim_state.return_value = {
+            "messages": [], "pending_tool_calls": [], "tools_dict": {}, "tool_schemas": [],
+            "agent_config": {"model_id": "m1", "llm_name": "openai", "api_key": "k", "agent_type": "ClassicAgent",
+                             "prompt": "", "prior_turn": prior_turn},
+            "client_tools": None,
+        }
+        monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
+        monkeypatch.setattr(llm_creator_mod.LLMCreator, "create_llm", lambda *a, **kw: MagicMock())
+        monkeypatch.setattr(handler_mod.LLMHandlerCreator, "create_handler", lambda *a, **kw: MagicMock())
+        from docsgpt.agents import agent_creator as ac_mod
+        from docsgpt.agents import tool_executor as te_mod
+
+        monkeypatch.setattr(te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None))
+        monkeypatch.setattr(ac_mod.AgentCreator, "create_agent", lambda *a, **kw: MagicMock())
+
+        sp = sp_mod.StreamProcessor.__new__(sp_mod.StreamProcessor)
+        sp.data = {}
+        sp.decoded_token = {"sub": "alice"}
+        sp.initial_user_id = "alice"
+        sp.conversation_id = "00000000-0000-0000-0000-000000000001"
+        sp.agent_config = {}
+        sp.resume_from_tool_actions(tool_actions=[], conversation_id="00000000-0000-0000-0000-000000000001")
+        assert sp.prior_turn == prior_turn
 
     def test_resume_resolves_owner_from_api_key_when_no_jwt(self, monkeypatch):
         """api_key-authenticated resumes (no JWT) must resolve the agent owner
@@ -1070,6 +1114,7 @@ class TestContinuationServiceMarkResuming:
     """``ContinuationService.mark_resuming`` is the thin wrapper used by
     the resume path; it should flip the repository row in place."""
 
+    @pytest.mark.fresh_db
     def test_mark_resuming_flips_pending_row(self, pg_engine, monkeypatch):
         from contextlib import contextmanager
 

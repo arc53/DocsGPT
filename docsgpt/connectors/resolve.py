@@ -17,6 +17,7 @@ from typing import Optional
 from docsgpt.connectors import catalog, service
 from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
 from docsgpt.storage.db.session import db_readonly
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,10 @@ MODE_MEMBER = "member"
 CONNECTION_NEEDS_RECONNECT = "connection_needs_reconnect"
 CONNECTION_REMOVED = "connection_removed"
 CONNECTOR_DISABLED = "connector_disabled"
+# A team's connection the person who connected it can't use right now (left,
+# demoted, deactivated): nobody uses the account until they are back or
+# another Admin reconnects it.
+CONNECTION_PAUSED = "connection_paused"
 
 # Tool config key ``remove_connection`` sets when it keeps a connection's
 # tools: the connector key, or True when the connection had none, so they can
@@ -70,6 +75,8 @@ class ResolvedConnection:
         enabled: Whether the connector is switched on (an admin can turn it off).
         mode: Whose account the resource runs with, after any mode an admin
             forces: :data:`MODE_OWNER` or :data:`MODE_MEMBER`.
+        paused_for: For a team's connection that is paused, why (as
+            ``Pause.payload()``); None otherwise.
     """
 
     row: Optional[dict]
@@ -80,6 +87,7 @@ class ResolvedConnection:
     writes_allowed: bool = True
     enabled: bool = True
     mode: str = MODE_OWNER
+    paused_for: Optional[dict] = None
 
     @property
     def connection_id(self) -> Optional[str]:
@@ -104,7 +112,10 @@ def resolve_connection(
 
     ``owner`` mode uses ``resource.connection_id``. ``member`` mode uses the
     invoker's own connection to the same service (and, for MCP, the same
-    server), falling back to the owner's when the invoker is the owner.
+    server), falling back to the owner's when the invoker is the owner. A
+    member-mode tool without a connection of its own (a team's) names its
+    service instead, and resolves the same way. A team's principal never
+    gets an account in member mode: such a tool runs only on a person's own.
 
     Args:
         resource: A ``user_tools`` or ``sources`` row.
@@ -117,7 +128,7 @@ def resolve_connection(
         None when the resource has no connection at all; otherwise the
         resolution, possibly with ``available=False``.
     """
-    if not resource.get("connection_id"):
+    if not resource.get("connection_id") and not is_connectionless_member(resource):
         return None
     if conn is None:
         with db_readonly() as own_conn:
@@ -145,12 +156,75 @@ def effective_credential_mode(resource: dict, policies: dict, connector_key: Opt
     return MODE_MEMBER if resource.get("credential_mode") == MODE_MEMBER else MODE_OWNER
 
 
+def is_connectionless_member(resource: dict) -> bool:
+    """Whether ``resource`` is a member-mode tool with no connection of its own.
+
+    A team's member-mode tool runs on each person's own account, so it names
+    no connection; its service is ``connector_key`` (or, for one stored before
+    that was recorded, what its name and server say).
+
+    Args:
+        resource: A ``user_tools`` or ``sources`` row.
+
+    Returns:
+        True for a member-mode row without ``connection_id``.
+    """
+    return resource.get("credential_mode") == MODE_MEMBER and not resource.get("connection_id")
+
+
+def service_key_for(resource: dict) -> Optional[str]:
+    """The catalog key of the service a connection-less member-mode tool signs in to.
+
+    Its recorded ``connector_key``, else the built-in connector that provides
+    its template, else for an MCP tool the preset its server matches or a
+    custom server.
+
+    Args:
+        resource: A ``user_tools`` row.
+
+    Returns:
+        The key, or None when nothing names one.
+    """
+    if resource.get("connector_key"):
+        return resource["connector_key"]
+    definition = catalog.definition_for_tool(resource.get("name") or "")
+    if definition is not None:
+        return definition.key
+    if resource.get("name") == "mcp_tool":
+        preset = catalog.preset_for_url((resource.get("config") or {}).get("server_url"))
+        return preset.key if preset else "custom_mcp"
+    return None
+
+
+def mcp_server_of(row: dict) -> str:
+    """The MCP server (``scheme://host``) a connection's secret may go to, or ``""``.
+
+    A custom server's own URL (legacy rows name it in ``provider``), else the
+    connector's own MCP server (GitHub's token only ever goes to GitHub's).
+
+    Args:
+        row: A ``connector_sessions`` row.
+    """
+    stored_for = catalog.base_url(row.get("server_url"))
+    provider = str(row.get("provider") or "")
+    if not stored_for and provider.startswith("mcp:"):
+        stored_for = catalog.base_url(provider[len("mcp:"):])
+    if not stored_for:
+        definition = catalog.get_definition(catalog.connector_key_for_row(row))
+        stored_for = (definition.mcp_base_url if definition else "") or ""
+    return stored_for
+
+
 def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Optional[dict]) -> ResolvedConnection:
     connection_id = resource.get("connection_id")
     owner = resource.get("user_id")
     repo = ConnectorSessionsRepository(conn)
-    owned = repo.get(str(connection_id))
-    owned_key = catalog.connector_key_for_row(owned) if owned else None
+    owned = repo.get(str(connection_id)) if connection_id else None
+    if owned is not None:
+        owned_key = catalog.connector_key_for_row(owned)
+    else:
+        # A connection-less member tool names its service; a removed connection names none.
+        owned_key = None if connection_id else service_key_for(resource)
     if policies is None:
         policies = service.load_policies(conn)
     mode = effective_credential_mode(resource, policies, owned_key)
@@ -161,12 +235,28 @@ def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Opt
         )
         owned = None
     row = owned
-    if mode == MODE_MEMBER and invoker_user_id and invoker_user_id != owner:
+    if mode == MODE_MEMBER and is_principal_id(invoker_user_id):
+        # Each person's own account, never a team's: a team running the tool
+        # itself has none.
+        row = None
+    elif mode == MODE_MEMBER and not connection_id:
+        row = _member_connection_for_service(repo, resource, owned_key, invoker_user_id)
+    elif mode == MODE_MEMBER and invoker_user_id and invoker_user_id != owner:
         row = _member_connection(repo, owned, invoker_user_id)
-    key = catalog.connector_key_for_row(row or owned or {})
-    enabled = service.connector_is_enabled(policies, key)
+    # The row the policy is judged on, so a connection still stored as a
+    # custom MCP server keeps that switch even once a preset claims its
+    # origin (see ``service.connector_is_enabled_for_row``).
+    governing = row or owned
+    if governing is not None:
+        key = catalog.connector_key_for_row(governing)
+        enabled = service.connector_is_enabled_for_row(policies, governing)
+    else:
+        key = owned_key
+        enabled = service.connector_is_enabled(policies, key) if key else True
+    pause = _team_pause(conn, row)
     available = (
         row is not None
+        and pause is None
         and service.normalize_status(row) == service.STATUS_CONNECTED
         and enabled
     )
@@ -179,7 +269,36 @@ def _resolve(conn, resource: dict, invoker_user_id: Optional[str], policies: Opt
         writes_allowed=_writes_allowed(policies, key),
         enabled=enabled,
         mode=mode,
+        paused_for=pause.payload() if pause is not None else None,
     )
+
+
+def own_connection(conn, user_id: Optional[str], resource: dict) -> Optional[dict]:
+    """``user_id``'s own connected account for the service a member-mode tool names, or None.
+
+    The account a run of ``resource`` by ``user_id`` would use; also what a
+    new member-mode tool reads its MCP actions with. Never a team's account.
+
+    Args:
+        conn: Open connection.
+        user_id: The person.
+        resource: A ``user_tools`` row, or the ``name``/``config``/``connector_key`` of one about to be made.
+
+    Returns:
+        The ``connector_sessions`` row, or None.
+    """
+    return _member_connection_for_service(
+        ConnectorSessionsRepository(conn), resource, service_key_for(resource), user_id,
+    )
+
+
+def _team_pause(conn, row: Optional[dict]):
+    """The account pause of a team's connection, or None (always None for a personal one)."""
+    if row is None or not is_principal_id(row.get("user_id")):
+        return None
+    from docsgpt.quotas.pause import connection_pause
+
+    return connection_pause(conn, row)
 
 
 def connection_stop_reason(tool: dict, resolved: Optional[ResolvedConnection]) -> Optional[str]:
@@ -200,8 +319,10 @@ def connection_stop_reason(tool: dict, resolved: Optional[ResolvedConnection]) -
         tool kept (``remove_connection`` notes it on the tool) with no
         credentials of its own, or points at
         one it may not use; :data:`CONNECTOR_DISABLED` when an admin turned
-        the service off; :data:`CONNECTION_NEEDS_RECONNECT` when the account
-        must sign in again; else None.
+        the service off; :data:`CONNECTION_PAUSED` when it is a team's
+        account the person who connected it can't use now;
+        :data:`CONNECTION_NEEDS_RECONNECT` when the account must sign in
+        again; else None.
     """
     if resolved is None:
         # Only a tool that had a connection lost it: a tool that never had
@@ -216,6 +337,8 @@ def connection_stop_reason(tool: dict, resolved: Optional[ResolvedConnection]) -
         return None
     if resolved.row is None:
         return CONNECTION_REMOVED
+    if resolved.paused_for is not None:
+        return CONNECTION_PAUSED
     if not resolved.available:
         return CONNECTION_NEEDS_RECONNECT
     return None
@@ -238,12 +361,49 @@ def _member_connection(repo: ConnectorSessionsRepository, owned: Optional[dict],
     """
     if owned is None:
         return None
-    candidates = [
+    return _most_recent([
         row for row in repo.list_for_user(invoker)
         if row.get("provider") == owned.get("provider")
         and (row.get("server_url") or "") == (owned.get("server_url") or "")
         and service.normalize_status(row) == service.STATUS_CONNECTED
-    ]
+    ])
+
+
+def _member_connection_for_service(
+    repo: ConnectorSessionsRepository, resource: dict, key: Optional[str], invoker: Optional[str],
+) -> Optional[dict]:
+    """The invoker's own connection to the service a connection-less member-mode tool names.
+
+    Only the invoker's own rows are looked at, never the tool owner's: for a
+    team's tool the owner is the team, whose accounts are not the member's.
+    An MCP tool takes a row whose secret may go to the tool's own server;
+    any other tool a row of its service. Ties go as in :func:`_member_connection`.
+    """
+    if not invoker or is_principal_id(invoker):
+        return None
+    if resource.get("name") == "mcp_tool":
+        server = catalog.base_url((resource.get("config") or {}).get("server_url"))
+        if not server:
+            return None
+
+        def matches(row: dict) -> bool:
+            return mcp_server_of(row) == server
+    else:
+        if not key:
+            return None
+
+        def matches(row: dict) -> bool:
+            return catalog.connector_key_for_row(row) == key
+    return _most_recent([
+        row for row in repo.list_for_user(invoker)
+        if not is_principal_id(row.get("user_id"))
+        and matches(row)
+        and service.normalize_status(row) == service.STATUS_CONNECTED
+    ])
+
+
+def _most_recent(candidates: list) -> Optional[dict]:
+    """The candidate most recently used or connected, whichever is later (see :func:`_member_connection`)."""
     if not candidates:
         return None
 

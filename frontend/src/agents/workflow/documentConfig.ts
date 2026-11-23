@@ -4,7 +4,7 @@ import type { WorkflowVariable } from './components/PromptTextArea';
 export const ALL_INPUT_DOCUMENTS_TOKEN = '*';
 
 /** How an agent node receives selected documents. */
-export type FilePassing = 'auto' | 'native' | 'extract';
+export type FilePassing = 'auto' | 'native' | 'extract' | 'lines';
 
 export const DEFAULT_FILE_PASSING: FilePassing = 'auto';
 
@@ -12,6 +12,7 @@ export const FILE_PASSING_OPTIONS: { value: FilePassing; label: string }[] = [
   { value: 'auto', label: 'Auto' },
   { value: 'native', label: 'Native' },
   { value: 'extract', label: 'Extract' },
+  { value: 'lines', label: 'Numbered lines' },
 ];
 
 /** Three-way Documents selector position derived from input_documents. */
@@ -19,8 +20,8 @@ export type DocumentsMode = 'all' | 'none' | 'choose';
 
 /** Normalize an unknown file_passing value to a supported option. */
 export function normalizeFilePassing(value: unknown): FilePassing {
-  return value === 'native' || value === 'extract' || value === 'auto'
-    ? value
+  return FILE_PASSING_OPTIONS.some((option) => option.value === value)
+    ? (value as FilePassing)
     : DEFAULT_FILE_PASSING;
 }
 

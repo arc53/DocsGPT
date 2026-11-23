@@ -1157,6 +1157,51 @@ class TestApiKeyPrincipal:
         assert ok.status_code == 200
         assert ok.content == b"BYTES"
 
+    def test_api_key_stops_while_the_owner_is_deactivated(self, _patch_db, flask_app, monkeypatch):
+        # Outside access pauses with its owner: the key's downloads, reads and list pause with it.
+        from docsgpt.api.user.artifacts.routes import GetArtifact, ListArtifacts
+        from docsgpt.storage.db.repositories.users import UsersRepository
+
+        agent = _make_agent(_patch_db)
+        conv = _make_agent_conversation(_patch_db, agent["id"])
+        art = _make_artifact(
+            _patch_db, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        query = {"api_key": "secret-key", "conversation_id": str(conv["id"])}
+        assert _download(art["id"], token=None, query=query).status_code == 200
+
+        UsersRepository(_patch_db).upsert(OWNER)
+        _patch_db.execute(text("UPDATE users SET active = false WHERE user_id = :u"), {"u": OWNER})
+
+        assert _download(art["id"], token=None, query=query).status_code in (401, 403)
+        assert _call(flask_app, GetArtifact, art["id"], token=None, query=query).status_code in (401, 403)
+        assert _call(flask_app, ListArtifacts, token=None, query=query).status_code in (401, 403)
+
+    def test_api_key_stops_while_the_agents_team_is_locked(self, _patch_db, monkeypatch):
+        from tests.workspaces.move_support import team
+
+        team_id, principal = team(_patch_db)
+        agent = AgentsRepository(_patch_db).create(
+            principal, "team-widget", "active", key="team-key", access_payer_id="alice", created_by="alice",
+        )
+        conv = _make_agent_conversation(_patch_db, agent["id"], user_id=principal)
+        art = _make_artifact(
+            _patch_db, user_id=principal, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/team/artifacts/x/v1/f.bin",
+        )
+        _wire_api_key(monkeypatch, _patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+        query = {"api_key": "team-key", "conversation_id": str(conv["id"])}
+        assert _download(art["id"], token=None, query=query).status_code == 200
+
+        _patch_db.execute(
+            text("UPDATE teams SET outside_policy = 'locked' WHERE id = CAST(:t AS uuid)"), {"t": team_id}
+        )
+        assert _download(art["id"], token=None, query=query).status_code in (401, 403)
+
     def test_api_key_download_outside_agent_scope_denied(self, _patch_db, monkeypatch):
         _make_agent(_patch_db)
         other_conv = _make_conversation(_patch_db, user_id=OWNER)  # no agent_id
@@ -1497,3 +1542,50 @@ class TestBearerAgentKeyThroughTheApp:
         with patch("docsgpt.app.handle_auth", return_value=invalid_jwt):
             resp = client.get("/api/get_agents", headers=_bearer())
         assert resp.status_code == 401
+
+
+def _pat(scopes, resource_filter=None, sub=OWNER):
+    return {
+        "sub": sub,
+        "auth_method": "pat",
+        "pat_id": "t1",
+        "scopes": list(scopes),
+        "resource_filter": resource_filter or {},
+    }
+
+
+@pytest.mark.unit
+class TestPersonalAccessTokenDownload:
+    def _artifact(self, conn):
+        conv = _make_conversation(conn)
+        return _make_artifact(
+            conn, conversation_id=str(conv["id"]),
+            filename="f.bin", storage_path="inputs/owner/artifacts/x/v1/f.bin",
+        )
+
+    def test_a_token_with_artifacts_read_downloads_its_owners_artifact(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"]))
+
+        assert resp.status_code == 200
+        assert resp.content == b"BYTES"
+
+    def test_a_token_without_the_scope_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["runs:read"]))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "insufficient_scope"
+
+    def test_a_restricted_token_is_refused(self, _patch_db, monkeypatch):
+        art = self._artifact(_patch_db)
+        _use_storage(monkeypatch, _FakeStorage(b"BYTES"))
+
+        resp = _download(art["id"], token=_pat(["artifacts:read"], {"agents": [str(uuid.uuid4())]}))
+
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "resource_not_allowed"

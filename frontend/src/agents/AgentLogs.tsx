@@ -87,6 +87,7 @@ export default function AgentLogs() {
             />
             <Logs
               agentId={agentId}
+              agent={agent}
               analytics={
                 agent
                   ? {

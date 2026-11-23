@@ -75,6 +75,16 @@ class TestPrepareToolCallsForLogging:
             assert prepared[0]["result"] == "short text"
             assert prepared[0]["tool_name"] == "search"
 
+    def test_never_logs_an_mcp_app_views_result(self, mock_mongo_db, flask_app):
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            ui = {"resource_uri": "ui://app/view.html", "tool_id": "t1", "result": {"structuredContent": {"k": 1}}}
+            tool_calls = [{"tool_name": "mcp_tool", "ui": ui}]
+            prepared = BaseAnswerResource()._prepare_tool_calls_for_logging(tool_calls)
+            assert prepared[0]["ui"] == {"resource_uri": "ui://app/view.html", "tool_id": "t1"}
+            assert "result" in tool_calls[0]["ui"]
+
 
 @pytest.mark.unit
 class TestCompleteStreamToolCalls:
@@ -395,22 +405,21 @@ class TestCheckUsageStringBooleans:
     pass
 
 @pytest.mark.unit
-class TestCompleteStreamCompressionMetadata:
-    """Cover lines 307-319 (compression metadata persistence in complete_stream)."""
-
-    def test_compression_metadata_persisted(self, mock_mongo_db, flask_app):
+class TestCompleteStreamCompression:
+    def test_a_new_chat_hands_its_conversation_to_the_agent_and_stores_no_point(
+        self, mock_mongo_db, flask_app
+    ):
         from docsgpt.api.answer.routes.base import BaseAnswerResource
 
         with flask_app.app_context():
             resource = BaseAnswerResource()
             mock_agent = MagicMock()
-            mock_agent.gen.return_value = iter(
-                [
-                    {"answer": "compressed answer"},
-                ]
-            )
-            mock_agent.compression_metadata = {"ratio": 2.5}
-            mock_agent.compression_saved = False
+            mock_agent.gen.return_value = iter([{"answer": "compressed answer"}])
+            # A new chat: the agent has no conversation until the reservation.
+            mock_agent.conversation_id = None
+            # Left by an in-memory compression: indexed against a synthetic
+            # conversation, so the route must not store it.
+            mock_agent.compression_metadata = {"query_index": 0}
             mock_agent.tool_calls = []
 
             resource.conversation_service = MagicMock()
@@ -433,51 +442,10 @@ class TestCompleteStreamCompressionMetadata:
                 )
             )
 
-            # Verify compression metadata was persisted
-            resource.conversation_service.update_compression_metadata.assert_called_once_with(
-                "conv123", {"ratio": 2.5}
-            )
-            resource.conversation_service.append_compression_message.assert_called_once()
-            assert mock_agent.compression_saved is True
-            end_chunks = [s for s in stream if '"type": "end"' in s]
-            assert len(end_chunks) == 1
-
-    def test_compression_metadata_error_handled(self, mock_mongo_db, flask_app):
-        """Cover lines 318-322: compression metadata persistence error."""
-        from docsgpt.api.answer.routes.base import BaseAnswerResource
-
-        with flask_app.app_context():
-            resource = BaseAnswerResource()
-            mock_agent = MagicMock()
-            mock_agent.gen.return_value = iter([{"answer": "answer"}])
-            mock_agent.compression_metadata = {"ratio": 2.5}
-            mock_agent.compression_saved = False
-            mock_agent.tool_calls = []
-
-            resource.conversation_service = MagicMock()
-            resource.conversation_service.save_conversation.return_value = "conv123"
-            resource.conversation_service.save_user_question.return_value = {
-                "conversation_id": "conv123",
-                "message_id": "msg123",
-                "request_id": "req123",
-            }
-            resource.conversation_service.update_compression_metadata.side_effect = (
-                Exception("db error")
-            )
-
-            stream = list(
-                resource.complete_stream(
-                    question="Q",
-                    agent=mock_agent,
-                    conversation_id=None,
-                    user_api_key=None,
-                    decoded_token={"sub": "u"},
-                    should_persist=True,
-                    model_id="gpt-4",
-                )
-            )
-
-            # Stream should still complete despite compression error
+            # A compression during the turn can load the conversation it is in.
+            assert mock_agent.conversation_id == "conv123"
+            assert not resource.conversation_service.update_compression_metadata.called
+            assert not resource.conversation_service.append_compression_message.called
             end_chunks = [s for s in stream if '"type": "end"' in s]
             assert len(end_chunks) == 1
 
@@ -1756,6 +1724,158 @@ class TestToolCallsAcrossApprovalRounds:
         ]
         # The reference stays as the model wrote it; nothing resolved it on the way.
         assert stored[1]["arguments"]["command"] == "echo {{link_secret:ABCDEF}}"
+
+    def test_a_pause_saves_the_text_and_reasoning_written_before_it(self, pg_conn, flask_app, mock_llm_creator):
+        """A resumed turn shows what it wrote before the pause after a reload, not only what came after."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        mock_llm_creator.gen.return_value = "Questions"
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter(
+                [
+                    {"thought": "Need the dates."},
+                    {"answer": "A few details first."},
+                    {"type": "tool_call", "data": {"call_id": "q1", "status": "awaiting_answer"}},
+                    {"type": "tool_calls_pending", "data": {"pending_tool_calls": [{"call_id": "q1"}]}},
+                ]
+            )
+            agent._pending_continuation = {"messages": [], "tools_dict": {}, "pending_tool_calls": [{"call_id": "q1"}]}
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            with _patch_db_session(pg_conn), patch(
+                "docsgpt.api.answer.services.continuation_service.ContinuationService.save_state",
+            ) as save_state:
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=None,
+                        user_api_key=None,
+                        decoded_token={"sub": "u-prior"},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": "11111111-1111-1111-1111-111111111111",
+                            "prior_turn": {"response": "Earlier.", "thought": "",
+                                           "segments": [{"kind": "text", "length": 8}]},
+                        },
+                    )
+                )
+        prior = save_state.call_args.kwargs["agent_config"]["prior_turn"]
+        assert prior["response"] == "Earlier.A few details first."
+        assert prior["thought"] == "Need the dates."
+        assert prior["segments"] == [
+            {"kind": "text", "length": 8}, {"kind": "thought", "length": 15},
+            {"kind": "text", "length": 20}, {"kind": "tool", "call_id": "q1"},
+        ]
+
+    def test_the_resumed_turn_keeps_the_text_written_before_the_pause(self, pg_conn, flask_app):
+        import uuid as _uuid
+
+        from sqlalchemy import text as sql_text
+
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        user_id = "u-prior2"
+        conv_id = _uuid.uuid4()
+        message_id = _uuid.uuid4()
+        pg_conn.execute(sql_text("INSERT INTO users (user_id) VALUES (:u)"), {"u": user_id})
+        pg_conn.execute(
+            sql_text("INSERT INTO conversations (id, user_id, name) VALUES (:id, :u, 'c')"),
+            {"id": conv_id, "u": user_id},
+        )
+        pg_conn.execute(
+            sql_text(
+                "INSERT INTO conversation_messages (id, conversation_id, user_id, position, prompt, status) "
+                "VALUES (:id, :c, :u, 0, 'q', 'streaming')"
+            ),
+            {"id": message_id, "c": conv_id, "u": user_id},
+        )
+        prior_turn = {
+            "response": "A few details first.",
+            "thought": "Need the dates.",
+            "segments": [{"kind": "thought", "length": 15}, {"kind": "text", "length": 20},
+                         {"kind": "tool", "call_id": "q1"}],
+        }
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter([
+                {"type": "tool_call", "data": {"call_id": "q1", "status": "completed"}},
+                {"answer": "Here is the plan."},
+                {"tool_calls": [{"call_id": "q1", "action_name": "ask_user", "status": "completed"}]},
+            ])
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            with _patch_db_session(pg_conn):
+                list(
+                    resource.complete_stream(
+                        question="",
+                        agent=agent,
+                        conversation_id=str(conv_id),
+                        user_api_key=None,
+                        decoded_token={"sub": user_id},
+                        should_persist=True,
+                        model_id="gpt-4",
+                        _continuation={
+                            "messages": [],
+                            "tools_dict": {},
+                            "pending_tool_calls": [],
+                            "tool_actions": [],
+                            "reserved_message_id": str(message_id),
+                            "request_id": "req-prior",
+                            "prior_tool_calls": [{"call_id": "q1", "action_name": "ask_user",
+                                                  "status": "awaiting_answer"}],
+                            "prior_turn": prior_turn,
+                        },
+                    )
+                )
+        row = pg_conn.execute(
+            sql_text("SELECT response, thought, message_metadata FROM conversation_messages WHERE id = :id"),
+            {"id": message_id},
+        ).one()
+        assert row.response == "A few details first.\n\nHere is the plan."
+        assert row.thought == "Need the dates."
+        assert row.message_metadata["segments"] == prior_turn["segments"] + [{"kind": "text", "length": 19}]
+
+    def test_a_resume_with_no_row_to_finalize_does_not_repeat_the_earlier_text(self, flask_app):
+        """The /v1 stateless round finalized the paused row already; its resume appends a new answer."""
+        from docsgpt.api.answer.routes.base import BaseAnswerResource
+
+        with flask_app.app_context():
+            resource = BaseAnswerResource()
+            agent = MagicMock()
+            agent.gen_continuation.return_value = iter([{"answer": "After."}])
+            agent.tool_calls = []
+            agent.compression_metadata = None
+            agent.compression_saved = False
+            agent.tool_executor = None
+            frames = list(
+                resource.complete_stream(
+                    question="",
+                    agent=agent,
+                    conversation_id=None,
+                    user_api_key=None,
+                    decoded_token={"sub": "u-prior3"},
+                    should_persist=False,
+                    model_id="gpt-4",
+                    _continuation={
+                        "messages": [], "tools_dict": {}, "pending_tool_calls": [], "tool_actions": [],
+                        "prior_turn": {"response": "Before.", "thought": "", "segments": []},
+                    },
+                )
+            )
+        answers = [json.loads(f[len("data: "):]) for f in frames if f.startswith("data: ")]
+        assert [a["answer"] for a in answers if a.get("type") == "answer"] == ["After."]
 
     def test_a_finished_resume_drops_only_its_own_pause(self, pg_conn, flask_app):
         """A later turn may have paused while this one resumed: its pause must survive."""

@@ -228,6 +228,50 @@ class TestListForUser:
         assert len(ids) == 6
 
 
+class TestBriefListing:
+    def test_ids_cover_own_and_extra_rows_newest_first_without_blobs(self, pg_conn):
+        repo = _repo(pg_conn)
+        own = [repo.create(f"s{i}", user_id="u", directory_structure={"a.md": {}}) for i in range(2)]
+        shared = repo.create("theirs", user_id="other")
+        repo.create("hidden", user_id="other")
+        rows = repo.list_ids_for_user("u", extra_ids=[str(shared["id"]), "not-a-uuid"])
+        assert {r["id"] for r in rows} == {str(own[0]["id"]), str(own[1]["id"]), str(shared["id"])}
+        assert all(set(r) == {"id", "user_id"} for r in rows)
+        assert rows == repo.list_ids_for_user("u", extra_ids=[str(shared["id"])])
+        listed = [r["id"] for r in repo.list_for_user("u", extra_ids=[str(shared["id"])])]
+        assert [r["id"] for r in rows] == listed
+
+    def test_brief_rows_carry_scalars_and_ingest_status_in_listing_order(self, pg_conn):
+        from sqlalchemy import text
+
+        repo = _repo(pg_conn)
+        done = repo.create("done", user_id="u", type="local", tokens="1200", directory_structure={"a.md": {}})
+        busy = repo.create("busy", user_id="u", type="url")
+        pg_conn.execute(
+            text(
+                "INSERT INTO ingest_chunk_progress (source_id, total_chunks, embedded_chunks, last_index) "
+                "VALUES (CAST(:sid AS uuid), 10, 2, 1)"
+            ),
+            {"sid": str(busy["id"])},
+        )
+        rows = repo.list_brief([str(done["id"]), str(busy["id"]), "nope"])
+        assert [r["id"] for r in rows] == [r["id"] for r in repo.list_for_user("u")]
+        by_id = {r["id"]: r for r in rows}
+        assert set(by_id[str(done["id"])]) == {"id", "user_id", "name", "type", "tokens", "ingest_status"}
+        assert by_id[str(done["id"])]["ingest_status"] is None and by_id[str(done["id"])]["tokens"] == "1200"
+        assert by_id[str(busy["id"])] == {"id": str(busy["id"]), "user_id": "u", "name": "busy", "type": "url",
+                                          "tokens": None, "ingest_status": "processing"}
+        assert repo.list_brief([]) == []
+
+    def test_directory_structure_of_one_source(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("s", user_id="u", directory_structure={"a.md": {"token_count": 1}})
+        bare = repo.create("bare", user_id="u")
+        assert repo.get_directory_structure(str(src["id"])) == {"a.md": {"token_count": 1}}
+        assert repo.get_directory_structure(str(bare["id"])) is None
+        assert repo.get_directory_structure("not-a-uuid") is None
+
+
 class TestCountForUser:
     def test_returns_zero_for_no_rows(self, pg_conn):
         repo = _repo(pg_conn)
@@ -248,6 +292,52 @@ class TestCountForUser:
         listed = repo.list_for_user("u", search_term="alpha")
         count = repo.count_for_user("u", search_term="alpha")
         assert count == len(listed) == 2
+
+
+class TestMarkSyncIndexed:
+    def _source(self, pg_conn, generation="g1"):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+        repo.update(str(src["id"]), "u", {"sync_manifest": {
+            "version": 1, "generation": generation, "indexed_generation": None,
+            "files": {"a.md": {"path": "a.md", "sha256": "0" * 64}},
+        }})
+        return repo, str(src["id"])
+
+    def test_sets_the_indexed_generation_and_keeps_the_rest(self, pg_conn):
+        repo, sid = self._source(pg_conn)
+
+        assert repo.mark_sync_indexed(sid, "g1") is True
+
+        manifest = repo.get(sid, "u")["sync_manifest"]
+        assert manifest["indexed_generation"] == "g1"
+        assert manifest["files"] == {"a.md": {"path": "a.md", "sha256": "0" * 64}}
+
+    def test_another_generation_is_left_alone(self, pg_conn):
+        repo, sid = self._source(pg_conn, generation="g2")
+
+        assert repo.mark_sync_indexed(sid, "g1") is False
+        assert repo.get(sid, "u")["sync_manifest"]["indexed_generation"] is None
+
+    def test_a_record_being_written_is_left_alone(self, pg_conn):
+        repo, sid = self._source(pg_conn)
+        manifest = repo.get(sid, "u")["sync_manifest"]
+        repo.update(sid, "u", {"sync_manifest": {**manifest, "writing": True}})
+
+        assert repo.mark_sync_indexed(sid, "g1") is False
+        assert repo.get(sid, "u")["sync_manifest"]["indexed_generation"] is None
+
+        repo.update(sid, "u", {"sync_manifest": {**manifest, "writing": False}})
+        assert repo.mark_sync_indexed(sid, "g1") is True
+
+    def test_no_manifest_or_generation_does_nothing(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+
+        assert repo.mark_sync_indexed(str(src["id"]), "g1") is False
+        assert repo.mark_sync_indexed(str(src["id"]), None) is False
+        assert repo.mark_sync_indexed("not-a-uuid", "g1") is False
+        assert repo.get(str(src["id"]), "u")["sync_manifest"] is None
 
 
 class TestUpdate:
@@ -385,3 +475,28 @@ class TestGetForUpdate:
 
     def test_a_non_uuid_is_none(self, pg_conn):
         assert _repo(pg_conn).get_for_update("not-a-uuid", "u") is None
+
+
+class TestClearSyncIndexed:
+    def test_forgets_the_indexed_generation_and_keeps_the_rest(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+        sid = str(src["id"])
+        repo.update(sid, "u", {"sync_manifest": {
+            "version": 1, "generation": "g1", "indexed_generation": "g1", "files": {"a.md": {"path": "a.md"}},
+        }})
+
+        repo.clear_sync_indexed(sid)
+
+        manifest = repo.get(sid, "u")["sync_manifest"]
+        assert manifest["indexed_generation"] is None
+        assert manifest["generation"] == "g1" and manifest["files"] == {"a.md": {"path": "a.md"}}
+
+    def test_a_source_without_a_manifest_is_left_alone(self, pg_conn):
+        repo = _repo(pg_conn)
+        src = repo.create("docs", user_id="u")
+
+        repo.clear_sync_indexed(str(src["id"]))
+        repo.clear_sync_indexed("not-a-uuid")
+
+        assert repo.get(str(src["id"]), "u")["sync_manifest"] is None

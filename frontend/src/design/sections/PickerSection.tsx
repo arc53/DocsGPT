@@ -117,7 +117,7 @@ export default function PickerSection() {
       </Example>
       <Example
         title="Combobox"
-        code='<Combobox options | groups value onValueChange placeholder searchPlaceholder emptyText shape="pill"?> · hint = muted trailing value · inside a FormField it takes the field id and error · modal by default · server search: shouldFilter={false} search onSearchChange · row actions: renderItem'
+        code='<Combobox options | groups value onValueChange placeholder searchPlaceholder emptyText shape="pill"?> · hint = muted trailing value · inside a FormField it takes the field id and error · modal by default · server search: shouldFilter={false} search onSearchChange · footer={({ close }) => <PickerFooter />}'
       >
         <div className="grid items-start gap-6 md:grid-cols-2">
           <div className="flex flex-col gap-2">

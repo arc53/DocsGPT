@@ -8,16 +8,22 @@ from sqlalchemy import text as sql_text
 
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
+from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.answer.services.conversation_service import (
     TERMINATED_RESPONSE_PLACEHOLDER,
 )
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.attachments import AttachmentsRepository
-from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+from docsgpt.storage.db.repositories.conversations import (
+    ConversationsRepository,
+    conversation_workspace,
+    team_visible_sql,
+)
 from docsgpt.storage.db.repositories.message_events import MessageEventsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.workspaces.context import WorkspaceError, current_workspace
 
 conversations_ns = Namespace(
     "conversations", description="Conversation management operations", path="/api"
@@ -63,7 +69,10 @@ class DeleteConversation(Resource):
 @conversations_ns.route("/delete_all_conversations")
 class DeleteAllConversations(Resource):
     @api.doc(
-        description="Deletes all conversations for a specific user",
+        description=(
+            "Deletes all of the caller's conversations in the current workspace (the workspace header; "
+            "Personal without it). A team's needs current membership (404 otherwise)."
+        ),
     )
     def get(self):
         decoded_token = request.decoded_token
@@ -72,7 +81,11 @@ class DeleteAllConversations(Resource):
         user_id = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                deleted = ConversationsRepository(conn).delete_all_for_user(user_id)
+                try:
+                    workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
+                deleted = ConversationsRepository(conn).delete_all_for_user(user_id, workspace.team_id)
                 # Nothing deleted is not an event; the endpoint is idempotent
                 # and a row here would render as a destructive action.
                 if deleted:
@@ -81,6 +94,7 @@ class DeleteAllConversations(Resource):
                         "conversation.deleted_all",
                         actor=user_id,
                         deleted=deleted,
+                        team_id=workspace.team_id,
                     )
         except Exception as err:
             current_app.logger.error(
@@ -136,11 +150,13 @@ def _parse_cursor_date(raw: str | None) -> datetime.datetime | None:
 class GetConversations(Resource):
     @api.doc(
         description=(
-            "Retrieve the user's sidebar conversations (visibility = listed), "
+            "Retrieve the user's sidebar conversations (visibility = listed) in the "
+            "workspace the X-DocsGPT-Workspace header names (Personal without it), "
             "newest first, ordered by ``date`` DESC then ``id`` DESC. Each item "
-            "carries ``date`` (ISO-8601). To page older conversations, pass the "
-            "last item's ``date`` and ``id`` as ``before`` and ``before_id``. "
-            "Invalid params are ignored."
+            "carries ``date`` (ISO-8601) and ``workspace`` ({kind, team_id}). To page "
+            "older conversations, pass the last item's ``date`` and ``id`` as "
+            "``before`` and ``before_id``. Invalid params are ignored. A team the "
+            "caller is not in answers 404 workspace_not_found."
         ),
         params={
             "limit": "Maximum number of results (default 30, clamped to 1-100)",
@@ -160,8 +176,12 @@ class GetConversations(Resource):
             before, before_id = None, None
         try:
             with db_readonly() as conn:
+                try:
+                    workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
                 conversations = ConversationsRepository(conn).list_for_user(
-                    user_id, limit=limit, before=before, before_id=before_id
+                    user_id, limit=limit, before=before, before_id=before_id, team_id=workspace.team_id
                 )
             list_conversations = [
                 {
@@ -178,6 +198,7 @@ class GetConversations(Resource):
                     # A message landed the user has not seen (cleared by
                     # POST /api/conversations/<id>/read).
                     "unread": conversation.get("unread_at") is not None,
+                    "workspace": conversation_workspace(conversation),
                 }
                 for conversation in conversations
             ]
@@ -212,7 +233,7 @@ class SearchConversations(Resource):
         description=(
             "Search the authenticated user's conversations by name or "
             "message content (case-insensitive substring match). Mirrors "
-            "the visibility filter and response shape of /get_conversations, "
+            "the visibility and workspace filter and response shape of /get_conversations, "
             "and additionally returns ``match_field`` (``name``, ``prompt`` "
             "or ``response``) and ``match_snippet`` (a short excerpt of the "
             "matched text centered on the query) for each result."
@@ -239,8 +260,12 @@ class SearchConversations(Resource):
         user_id = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
+                try:
+                    workspace = current_workspace(conn)
+                except WorkspaceError as err:
+                    return err.response()
                 conversations = ConversationsRepository(conn).search_for_user(
-                    user_id, query, limit=limit
+                    user_id, query, limit=limit, team_id=workspace.team_id
                 )
             list_conversations = [
                 {
@@ -257,6 +282,7 @@ class SearchConversations(Resource):
                     "match_snippet": self._build_match_snippet(
                         conversation.get("match_text") or "", query
                     ),
+                    "workspace": conversation_workspace(conversation),
                 }
                 for conversation in conversations
             ]
@@ -321,6 +347,11 @@ class GetSingleConversation(Resource):
                     }
                     if metadata:
                         query["metadata"] = metadata
+                    # A summary row an earlier version stored: the client hides
+                    # it but keeps its slot, as edits and feedback address
+                    # messages by position.
+                    if is_compression_summary_row(msg):
+                        query["compression_summary"] = True
                     # Feedback on conversation_messages is a JSONB blob with
                     # shape {"text": <str>, "timestamp": <iso>}. The legacy
                     # frontend consumed a flat scalar feedback string, so
@@ -369,6 +400,8 @@ class GetSingleConversation(Resource):
             ),
             "is_shared_usage": conversation.get("is_shared_usage", False),
             "shared_token": conversation.get("shared_token", None),
+            # The chat's own workspace; a link to it switches the app there.
+            "workspace": conversation_workspace(conversation),
         }
         if conversation.get("passthrough"):
             # The latest turn's request values (an API or widget end user's id).
@@ -517,13 +550,15 @@ class GetMessageTail(Resource):
         user_id = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                # Owner-or-shared, matching ``ConversationsRepository.get``.
+                # Owner-or-shared and still in the chat's team, matching
+                # ``ConversationsRepository.get``.
                 row = conn.execute(
                     sql_text(
                         "SELECT m.* FROM conversation_messages m "
                         "JOIN conversations c ON c.id = m.conversation_id "
                         "WHERE m.id = CAST(:mid AS uuid) "
-                        "AND (c.user_id = :uid OR :uid = ANY(c.shared_with))"
+                        "AND (c.user_id = :uid OR :uid = ANY(c.shared_with)) "
+                        f"AND {team_visible_sql('c', 'uid')}"
                     ),
                     {"mid": message_id, "uid": user_id},
                 ).fetchone()

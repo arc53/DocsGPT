@@ -295,12 +295,44 @@ use one for documents that must stay on your infrastructure, or in an
 </Callout>
 
 Hosted presets keep four page requests in flight per file
-(`OCR_DEEPSEEK_CONCURRENCY`, 1-32). Rate limits (429), 5xx responses and
-refused connections are retried up to `OCR_DEEPSEEK_MAX_RETRIES` times (default
-3) with exponential backoff that honours `Retry-After`; a read timeout is not
-retried. A rejected key (401/403) or an unknown model (404) fails the file
-with the setting to fix. A hosted preset with no key leaves text-layer
-documents parsing normally and fails only the files that need OCR.
+(`OCR_DEEPSEEK_CONCURRENCY`, 1-32). Responses 408, 409, 425, 500, 502, 503 and
+504, and refused connections, are retried up to `OCR_DEEPSEEK_MAX_RETRIES` times
+(default 3) with exponential backoff; other statuses, such as 501, and a read
+timeout are not retried. A rejected key (401/403) or an unknown
+model (404) fails the file with the setting to fix. A hosted preset with no
+key leaves text-layer documents parsing normally and fails only the files that
+need OCR.
+
+### Rate limits
+
+A provider's quota covers the whole deployment, while every file sends its own
+pages, so several ingests at once would each spend the per-file concurrency
+against one quota. Every page request therefore also takes a slot from a limit
+shared by all worker processes through Redis (`CACHE_REDIS_URL`), one limit per
+endpoint URL:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `OCR_MAX_IN_FLIGHT` | 8 | Most page requests in flight to one endpoint across every worker. A 429 halves the allowed count; ten clean responses in a row raise it by one, never above this cap. Without Redis the limit applies within each worker process. |
+| `OCR_RATE_LIMIT_MAX_WAIT` | 300 | Seconds one page request keeps retrying 429s. |
+| `OCR_RATE_LIMIT_COOLDOWN` | 60 | Seconds an ingest waits, after reading its other files, before it parses the rate-limited ones again. |
+
+Size `OCR_MAX_IN_FLIGHT` from your own quota rather than a provider's
+published numbers, which vary by account and model: requests in flight ≈
+requests per minute × average seconds per page request ÷ 60. A quota of 120
+requests per minute at about 4 s a page allows 8 in flight; at 10 s a page, 20.
+`OCR_DEEPSEEK_CONCURRENCY` still caps one file beneath it.
+
+Each 429 waits for the longest of what the server asked for (`retry-after-ms`,
+which Azure sends, or `Retry-After` in seconds or as an HTTP date) and an
+exponential backoff with jitter, at most 60 s a wait. DeepInfra and Novita do
+not document a `Retry-After` on their 429s, so expect the backoff there. When
+a page is still rate limited after `OCR_RATE_LIMIT_MAX_WAIT` (or the next wait
+would end past it), its file is set aside: the other files are read, and after
+`OCR_RATE_LIMIT_COOLDOWN` the file is parsed again. For a PDF, the pages already
+recognised are kept (they were billed) and only the missing pages are sent; a
+multi-frame TIFF sends all its frames again. A file still rate limited then is
+reported as not read for now, and a connector sync tries it again later.
 
 ### What it costs
 
@@ -313,8 +345,11 @@ document metadata (and on chat attachments):
 | `ocr_prompt_tokens` | Prompt tokens the endpoint reported (the page image is most of them, ~950 per page with DeepSeek-OCR). |
 | `ocr_completion_tokens` | Completion tokens: the recognised text. |
 
-The worker also logs a line per file, e.g. `OCR usage for scan.pdf
-(deepseek): 3 request(s), 2853 prompt token(s), 110 completion token(s)`.
+The worker also logs a line per parse attempt, e.g. `OCR of scan.pdf (deepseek): 4
+request(s), 1 rate limited (429), 2.0s waited, 3 page(s) billed, 2853 prompt
+token(s), 110 completion token(s)`; each retry is logged only at debug level. A
+file parsed again after the cool-down logs a second line that counts only that
+attempt, so add the two for the file's cost.
 These counts are not charged to user quotas.
 
 ### Checking the endpoint

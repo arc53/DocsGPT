@@ -299,3 +299,79 @@ def test_the_caller_can_ask_for_the_default_na_list(tmp_path):
 
     assert text.splitlines()[1] == "A1, "
 
+
+def test_pandas_csv_header_period_counts_rows_not_index_labels(tmp_path):
+    """``index_col`` makes the iterrows label a data value, not a row number."""
+    path = tmp_path / "people.csv"
+    path.write_text("id,name\n10,Ann\n11,Bob\n12,Cid\n13,Dan\n", encoding="utf-8")
+
+    text = PandasCSVParser(pandas_config={"index_col": 0}, header_period=2).parse_file(path)
+
+    assert text == "HEADERS: name\nAnn\nBob\nHEADERS: name\nCid\nDan"
+
+
+def test_pandas_csv_string_index_does_not_break_header_period(tmp_path):
+    """A text index used to raise TypeError before the first row was written."""
+    path = tmp_path / "users.csv"
+    path.write_text("user_id,name\nu1,Ann\nu2,Bob\n", encoding="utf-8")
+
+    text = PandasCSVParser(pandas_config={"index_col": 0}, header_period=1).parse_file(path)
+
+    assert text == "Ann\nHEADERS: name\nBob"
+
+
+def test_the_default_header_period_repeats_on_a_string_index(tmp_path):
+    """The default period (20) is the branch a text index used to break.
+
+    ``header_period=1`` never evaluates ``position % header_period``, so the
+    string-index case has to run past the default period to reach the
+    comparison that raised ``TypeError`` on the label. The header must repeat
+    every 20 *rows*, whatever the labels say.
+    """
+    rows = "\n".join(f"u{n:02d},Person {n}" for n in range(1, 23))
+    path = tmp_path / "roster.csv"
+    path.write_text(f"user_id,name\n{rows}\n", encoding="utf-8")
+
+    text = PandasCSVParser(pandas_config={"index_col": 0}).parse_file(path)
+
+    lines = text.splitlines()
+    assert lines[0] == "HEADERS: name"
+    assert lines[1:21] == [f"Person {n}" for n in range(1, 21)]
+    # Row position 20 is the 21st row: the repeat lands before it, once.
+    assert lines[21] == "HEADERS: name"
+    assert lines[22:] == ["Person 21", "Person 22"]
+
+
+def test_excel_header_period_counts_rows_not_index_labels():
+    """Same for the Excel parser: index labels that are not row numbers."""
+    parser = ExcelParser(header_period=1)
+    mock_df = MagicMock()
+    mock_df.columns.tolist.return_value = ["a", "b"]
+    mock_df.iterrows.return_value = [
+        ("u1", MagicMock(tolist=lambda: ["x", "y"])),
+        ("u2", MagicMock(tolist=lambda: ["m", "n"])),
+    ]
+    mock_df.__len__.return_value = 2
+
+    with patch("pandas.read_excel", return_value=mock_df):
+        result = parser.parse_file(Path("f.xlsx"))
+
+    assert result == "x, y\nHEADERS: a, b\nm, n"
+
+
+def test_excel_header_period_repeats_on_labels_that_are_not_row_numbers():
+    """The Excel repeat has to count rows too once the period is past 1."""
+    parser = ExcelParser(header_period=2)
+    mock_df = MagicMock()
+    mock_df.columns.tolist.return_value = ["a", "b"]
+    mock_df.iterrows.return_value = [
+        ("u1", MagicMock(tolist=lambda: ["x", "y"])),
+        ("u2", MagicMock(tolist=lambda: ["m", "n"])),
+        ("u3", MagicMock(tolist=lambda: ["p", "q"])),
+    ]
+    mock_df.__len__.return_value = 3
+
+    with patch("pandas.read_excel", return_value=mock_df):
+        result = parser.parse_file(Path("f.xlsx"))
+
+    assert result == "HEADERS: a, b\nx, y\nm, n\nHEADERS: a, b\np, q"

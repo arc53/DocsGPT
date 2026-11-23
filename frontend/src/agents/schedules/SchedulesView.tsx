@@ -26,6 +26,7 @@ import {
 import AgentPageToolbar, { LastUsedMeta } from '../components/AgentPageToolbar';
 import SectionShell from '../../navigation/SectionShell';
 import { ACTIVITY_SCHEDULES_PATH } from '../../activity/paths';
+import { isPausedFor } from '../../payer/types';
 import type {
   Schedule,
   ScheduleCreatePayload,
@@ -36,6 +37,7 @@ import RunDetailDrawer from './RunDetailDrawer';
 import ScheduleFormModal from './ScheduleFormModal';
 import ScheduleRow from './ScheduleRow';
 import useScheduleAgentContext from './useScheduleAgentContext';
+import useScheduleTakeOver from './useScheduleTakeOver';
 import {
   createSchedule,
   deleteSchedule,
@@ -77,6 +79,7 @@ export default function SchedulesView() {
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
   );
+  const takeOver = useScheduleTakeOver();
   const loadError = useSelector((state: RootState) =>
     selectSchedulesLoadError(state, agentId ?? ''),
   );
@@ -168,10 +171,18 @@ export default function SchedulesView() {
     // A refused save rejects to the modal, which keeps it open and shows why.
   };
 
-  const activeCount = schedules.filter((s) => s.status === 'active').length;
-  const pausedCount = schedules.filter((s) => s.status === 'paused').length;
-  const nextRunAt = schedules
-    .filter((s) => s.status === 'active' && s.next_run_at)
+  // A schedule paused for its payer reads Paused on its row: its runs are
+  // skipped, so it neither counts as active nor gives the next run.
+  const running = schedules.filter(
+    (s) => s.status === 'active' && !isPausedFor(s.paused_for),
+  );
+  const activeCount = running.length;
+  const pausedCount = schedules.filter(
+    (s) =>
+      s.status === 'paused' || (s.status === 'active' && !running.includes(s)),
+  ).length;
+  const nextRunAt = running
+    .filter((s) => s.next_run_at)
     .map((s) => s.next_run_at as string)
     .sort()[0];
   // A next run in the past means the scheduler hasn't picked it up yet.
@@ -239,6 +250,7 @@ export default function SchedulesView() {
               }
               onDelete={requestDelete}
               onSelectRun={(run) => setActiveRun(run)}
+              {...takeOver.rowProps}
             />
           </li>
         ))}
@@ -345,6 +357,7 @@ export default function SchedulesView() {
                 </TabsContent>
               </Tabs>
             )}
+            {takeOver.takeOverModal}
             <RunDetailDrawer
               run={activeRun}
               onClose={() => setActiveRun(null)}

@@ -590,7 +590,10 @@ class TestGetTools:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCreateTool:
-    pass
+    @pytest.fixture(autouse=True)
+    def _workspace_db(self, monkeypatch, pg_conn):
+        """The route reads the workspace and the folder the tool lands in: a throwaway database."""
+        monkeypatch.setattr("docsgpt.api.user.tools.routes.db_readonly", lambda: nullcontext(pg_conn))
 
     def _make_tool_instance(self):
         tool_instance = Mock()

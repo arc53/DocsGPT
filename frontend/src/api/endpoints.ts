@@ -3,6 +3,7 @@ const endpoints = {
     CONFIG: '/api/config',
     ME: '/api/user/me',
     QUOTA: '/api/user/quota',
+    PREFERENCES: '/api/user/preferences',
     NEW_TOKEN: '/api/generate_token',
     OIDC_LOGIN: '/api/auth/oidc/login',
     OIDC_TOKEN: '/api/auth/oidc/token',
@@ -43,8 +44,6 @@ const endpoints = {
     SHARED_AGENTS: '/api/shared_agents',
     SHARE_AGENT: `/api/share_agent`,
     REMOVE_SHARED_AGENT: (id: string) => `/api/remove_shared_agent?id=${id}`,
-    TEMPLATE_AGENTS: '/api/template_agents',
-    ADOPT_AGENT: (id: string) => `/api/adopt_agent?id=${id}`,
     AGENT_WEBHOOK: (id: string) => `/api/agent_webhook?id=${id}`,
     REGENERATE_AGENT_KEY: (id: string) => `/api/regenerate_agent_key/${id}`,
     EXPORT_AGENT: (id: string) => `/api/export_agent?id=${id}`,
@@ -57,10 +56,35 @@ const endpoints = {
       `/api/teams/${id}/members/${encodeURIComponent(memberId)}`,
     TEAM_GRANTS: (id: string) => `/api/teams/${id}/grants`,
     TEAM_TRANSFER_OWNER: (id: string) => `/api/teams/${id}/transfer_owner`,
+    // Admins and the Owner while not locked, then the Owner only; closed to access tokens.
+    TEAM_OUTSIDE_POLICY: (id: string) =>
+      `/api/teams/${encodeURIComponent(id)}/outside_policy`,
+    // Every member: the team's shares with other teams and its published agents.
+    TEAM_OUTSIDE: (id: string) =>
+      `/api/teams/${encodeURIComponent(id)}/outside`,
+    // Owner and Admins of the team only; closed to access tokens.
+    TEAM_USAGE: (id: string, period: 'current' | 'previous' = 'current') =>
+      `/api/teams/${encodeURIComponent(id)}/usage?period=${period}`,
+    // 404 while TEAM_CHAT_EXPORT_ENABLED is off.
+    TEAM_CHATS_EXPORT: (id: string) =>
+      `/api/teams/${encodeURIComponent(id)}/chats/export`,
+    AGENT_OUTSIDE_ACCESS_TAKE_OVER: (agentId: string) =>
+      `/api/agents/${encodeURIComponent(agentId)}/outside_access/take_over`,
+    WORKSPACES: '/api/workspaces',
+    WORKSPACE_MOVE_PLAN: '/api/workspace_moves/plan',
+    WORKSPACE_MOVES: '/api/workspace_moves',
     RESOURCE_SHARES: (resourceType: string, resourceId: string) =>
       `/api/resource_shares?resource_type=${resourceType}&resource_id=${resourceId}`,
     RESOURCE_SETTINGS: '/api/resource_settings',
     ALL_TEAMS: '/api/admin/teams',
+    // The drafter's routes (session-only on the server; access tokens get 403).
+    DRAFTER_CONFIG: '/api/drafter/config',
+    DRAFTER_STREAM: '/api/drafter/stream',
+    DRAFTER_TURN_CANCEL: (turnId: string) =>
+      `/api/drafter/turns/${encodeURIComponent(turnId)}/cancel`,
+    DRAFTER_AGENT_GAPS: (agentId: string) =>
+      `/api/drafter/agent_gaps?agent_id=${encodeURIComponent(agentId)}`,
+    CHECK_PROMPT: '/api/check_prompt',
     PROMPTS: '/api/get_prompts',
     CREATE_PROMPT: '/api/create_prompt',
     DELETE_PROMPT: '/api/delete_prompt',
@@ -93,6 +117,8 @@ const endpoints = {
     SOURCE_CONFIG: (id: string) => `/api/sources/${id}/config`,
     SOURCE_SEARCH: (id: string) => `/api/sources/${id}/search`,
     SOURCE_DEFAULTS: '/api/sources/defaults',
+    SOURCE_WORKSPACE: (id: string) =>
+      `/api/sources/${encodeURIComponent(id)}/workspace`,
     SOURCE_CHUNK: (id: string, chunkKey: string, excerpt?: string) => {
       const params = new URLSearchParams({ chunk_key: chunkKey });
       if (excerpt) params.set('excerpt', excerpt);
@@ -126,25 +152,34 @@ const endpoints = {
     GET_AVAILABLE_TOOLS: '/api/available_tools',
     GET_USER_TOOLS: '/api/get_tools',
     CREATE_TOOL: '/api/create_tool',
+    /** A team tool that runs on each person's own account (Editors). */
+    CREATE_MEMBER_TOOL: '/api/tools/member',
     UPDATE_TOOL_STATUS: '/api/update_tool_status',
     UPDATE_TOOL: '/api/update_tool',
     DELETE_TOOL: '/api/delete_tool',
     PARSE_SPEC: '/api/parse_spec',
     SYNC_CONNECTOR: '/api/connectors/sync',
+    // `owner=team` signs an account in for the team the workspace header
+    // names (Admins); without it the account is the caller's own.
     CONNECTOR_AUTH: (
       provider: string,
       connectionId?: string,
       install?: boolean,
+      owner?: 'personal' | 'team',
     ) =>
       `/api/connectors/auth?provider=${encodeURIComponent(provider)}${
         connectionId ? `&connection_id=${encodeURIComponent(connectionId)}` : ''
-      }${install ? '&install=1' : ''}`,
+      }${install ? '&install=1' : ''}${owner === 'team' ? '&owner=team' : ''}`,
     CONNECTOR_AUTH_COMPLETE: '/api/connectors/auth/complete',
     CONNECTOR_FILES: '/api/connectors/files',
     CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
     CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
     CONNECTORS_CATALOG: '/api/connectors/catalog',
+    /** The catalog's states for the header's team's connections. */
+    CONNECTORS_CATALOG_TEAM: '/api/connectors/catalog?owner=team',
     CONNECTIONS: '/api/connections',
+    /** The header's team's connections (any member). */
+    CONNECTIONS_TEAM: '/api/connections?owner=team',
     CONNECTION: (id: string) => `/api/connections/${encodeURIComponent(id)}`,
     CONNECTION_DISCONNECT: (id: string) =>
       `/api/connections/${encodeURIComponent(id)}/disconnect`,
@@ -202,9 +237,12 @@ const endpoints = {
     MCP_SAVE_SERVER: '/api/mcp_server/save',
     MCP_OAUTH_CANCEL: '/api/mcp_server/oauth_cancel',
     MCP_AUTH_STATUS: '/api/mcp_server/auth_status',
-    AGENT_FOLDERS: '/api/agents/folders/',
-    AGENT_FOLDER: (id: string) => `/api/agents/folders/${id}`,
-    MOVE_AGENT_TO_FOLDER: '/api/agents/folders/move_agent',
+    // The workspace's one tree; `type` narrows the counts to one kind.
+    FOLDERS: (type?: 'agent' | 'source' | 'tool' | 'prompt') =>
+      type ? `/api/folders?type=${encodeURIComponent(type)}` : '/api/folders',
+    FOLDERS_CREATE: '/api/folders',
+    FOLDER: (id: string) => `/api/folders/${encodeURIComponent(id)}`,
+    FOLDER_ITEMS: '/api/folders/items',
     GET_ARTIFACT: (artifactId: string) => `/api/artifact/${artifactId}`,
     GET_DOCUMENT_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}`,
@@ -224,10 +262,20 @@ const endpoints = {
     RESTORE_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}/restore`,
     WORKFLOWS: '/api/workflows',
+    WORKFLOW_RUN_STEP: (workflowRunId: string, stepIndex: number) =>
+      `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
     CUSTOM_MODELS: '/api/user/models',
+    /** The header's team's custom models (any member). */
+    CUSTOM_MODELS_TEAM: '/api/user/models?owner=team',
     CUSTOM_MODEL: (id: string) => `/api/user/models/${id}`,
+    /** Copies the caller's own model into a team (body `team_id`; its Admins). */
+    CUSTOM_MODEL_COPY: (id: string) =>
+      `/api/user/models/${encodeURIComponent(id)}/copy`,
     CUSTOM_MODEL_TEST: (id: string) => `/api/user/models/${id}/test`,
+    /** The owner's agents and workflows that name a model (for a delete confirm). */
+    CUSTOM_MODEL_USAGE: (id: string) =>
+      `/api/user/models/${encodeURIComponent(id)}/usage`,
     CUSTOM_MODEL_TEST_PAYLOAD: '/api/user/models/test',
     ACTIVITY_NOW: '/api/activity/now',
     ACTIVITY_HISTORY: (params: string) => `/api/activity/history?${params}`,
@@ -241,6 +289,8 @@ const endpoints = {
       `/api/agents/${agentId}/schedules/stats?days=${days ?? 30}`,
     SCHEDULE: (id: string) => `/api/schedules/${id}`,
     SCHEDULE_RUN_NOW: (id: string) => `/api/schedules/${id}/run`,
+    SCHEDULE_TAKE_OVER: (id: string) =>
+      `/api/schedules/${encodeURIComponent(id)}/take_over`,
     SCHEDULE_RUNS: (id: string, limit?: number, offset?: number) =>
       `/api/schedules/${id}/runs?limit=${limit ?? 50}&offset=${offset ?? 0}`,
     SCHEDULE_RUN: (id: string, runId: string) =>
@@ -297,6 +347,7 @@ const endpoints = {
       `/api/admin/quotas/users/${encodeURIComponent(id)}`,
     SOURCE_DEFAULTS: '/api/admin/defaults/sources',
     AGENT_DEFAULTS: '/api/admin/defaults/agents',
+    MODEL_DEFAULTS: '/api/admin/defaults/models',
     GUARDRAILS: '/api/admin/guardrails',
   },
   CONVERSATION: {

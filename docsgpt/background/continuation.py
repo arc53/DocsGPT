@@ -2,8 +2,8 @@
 
 Body of the ``continue_conversation`` Celery task. It reuses the scheduled
 one-time run's machinery: ``run_agent_headless`` with the conversation's agent
-(or an agentless chat config) and model, the owner's quota and per-call token
-billing, approval-gated tools denied (headless, no allowlist), and an
+(or an agentless chat config) and model, billed to the person whose chat it is
+(their allowance, per-call token rows), approval-gated tools denied (headless, no allowlist), and an
 appended assistant message.
 
 Rules, in order:
@@ -43,12 +43,15 @@ from docsgpt.background.events import publish_conversation_continued
 from docsgpt.background.live_turn import LiveTurn
 from docsgpt.core.settings import settings
 from docsgpt.guardrails.config import context_window_limit_of
+from docsgpt.quotas.payer import published_access_payer
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.repositories.agents import agent_row_to_dict
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository, MessageUpdateOutcome
 from docsgpt.storage.db.repositories.tool_call_attempts import ToolCallAttemptsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +206,7 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
         row = conn.execute(
             text("SELECT * FROM agents WHERE id = CAST(:id AS uuid)"), {"id": str(agent_id)}
         ).fetchone()
-        return row_to_dict(row) if row is not None else None
+        return agent_row_to_dict(row)
     return {
         "id": None,
         "user_id": conversation["user_id"],
@@ -216,6 +219,47 @@ def _agent_config(conn: Connection, conversation: Dict[str, Any], model_id: Opti
         "source_id": None,
         "default_model_id": model_id or "",
     }
+
+
+def continuation_payer(conversation: Dict[str, Any], agent_config: Dict[str, Any]) -> Optional[str]:
+    """Who a continuation turn bills: the payer of the chat it carries on.
+
+    A person's conversation bills that person (a teammate chatting with a
+    shared or team agent pays for its continuations). A conversation owned by
+    a team principal is one that the agent's key, widget or ``/v1`` traffic
+    left, so it bills whoever pays for that published access.
+
+    Args:
+        conversation: The conversation row (``user_id``).
+        agent_config: The agent the turn runs (``user_id``, ``access_payer_id``).
+
+    Returns:
+        A person's id, or None when nobody pays (the run is then refused).
+    """
+    owner = str(conversation["user_id"])
+    if not is_principal_id(owner):
+        return owner
+    return published_access_payer(agent_config)
+
+
+def continuation_run_kind(conversation: Dict[str, Any]) -> str:
+    """What a continuation turn is, as its usage rows record it: the kind of the chat it carries on.
+
+    A conversation that a team agent's key, widget or ``/v1`` traffic left
+    (owned by the team's principal) is outside traffic on a published agent.
+    Any other is a person's in-app chat, the only kind that resumes: a
+    teammate's or grantee's chat is saved as shared usage too, but they pay
+    for it as their own chat.
+
+    Args:
+        conversation: The conversation row (``user_id``).
+
+    Returns:
+        ``published`` or ``chat``.
+    """
+    if is_principal_id(conversation.get("user_id")):
+        return "published"
+    return "chat"
 
 
 def _history(
@@ -359,7 +403,7 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
     except Exception as exc:
         from docsgpt.core.run_budget import is_budget_exhausted
 
-        if is_budget_exhausted(exc):
+        if is_budget_exhausted(exc) and not getattr(exc, "stops_run", False):
             outcome = live.partial_outcome() if live is not None else {}
             outcome.update({"error_type": "TimeLimit", "error": "Stopped: time limit."})
         else:
@@ -377,7 +421,11 @@ def _answer(conversation: Dict[str, Any], messages: List[Dict[str, Any]], wakes:
 
     answer = (outcome.get("answer") or "").strip()
     stopped = bool(outcome.get("stopped")) or (live is not None and live.stopped())
-    if not stopped and outcome.get("error_type") not in (None, "TimeLimit") and not answer:
+    from docsgpt.quotas.run_limits import RUN_LIMIT_ERROR_TYPES
+
+    # A stop by a limit fails like a refusal before the run: its results wait for the next turn.
+    limit_stop = outcome.get("error_type") in RUN_LIMIT_ERROR_TYPES
+    if not stopped and outcome.get("error_type") not in (None, "TimeLimit") and (not answer or limit_stop):
         if live is not None:
             live.discard()
         _settle(wakes, "failed", job_state="pending", error=str(outcome.get("error") or "")[:500])
@@ -535,6 +583,10 @@ def _run_turn(
             conversation_id=str(conversation["id"]),
             request_id=str(uuid.uuid4()),
             trace_user_id=user_id,
+            # It carries on the chat's run, so the chat's payer pays, though it runs as the agent's owner.
+            payer=continuation_payer(conversation, agent_config),
+            run_kind=continuation_run_kind(conversation),
+            team_id=str(conversation["team_id"]) if conversation.get("team_id") else None,
             message_id=message_id,
             background=background,
             on_event=live.event if live is not None else None,
@@ -627,7 +679,27 @@ def _wake_metadata(wakes: List[Dict[str, Any]]) -> Dict[str, Any]:
     metadata: Dict[str, Any] = {"wake": entries[0], "continuation": True}
     if len(entries) > 1:
         metadata["wakes"] = entries
+    files = _job_artifacts(wakes, jobs_by_id)
+    if files:
+        metadata["job_artifacts"] = files
     return metadata
+
+
+def _job_artifacts(wakes: List[Dict[str, Any]], jobs_by_id: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The files the batch's finished jobs wrote, once each, so the reply shows them under it.
+
+    Metadata, not a tool-call entry: the chat renders it, and it is never replayed to the model.
+    """
+    files: List[Dict[str, Any]] = []
+    seen = set()
+    for event in wakes:
+        if not is_final_job_event(event):
+            continue
+        for entry in wake.job_files(jobs_by_id.get(str(event["ref_id"])) or {}):
+            if entry["id"] not in seen:
+                seen.add(entry["id"])
+                files.append(entry)
+    return files
 
 
 #: Keys of a turn's agent metadata a continuation message keeps (as a chat turn stores them).

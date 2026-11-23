@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
 import userService from '../api/services/userService';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Avatar } from '../components/ui/avatar';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
@@ -52,12 +52,18 @@ import { ACCOUNT_NAME_MAX } from './accounts';
 import { CapabilityBadges } from './ConnectorCard';
 import ConnectorIcon from './ConnectorIcon';
 import ConnectorSetupNotice from './ConnectorSetupNotice';
+import { readerIdFromToken } from '../utils/personLabel';
+import {
+  roleAtLeast,
+  selectWorkspaceRoleOrNull,
+} from '../workspace/workspaceSlice';
 import {
   connectionNeedsSignIn,
-  loadConnectors,
+  reloadConnectors,
   selectConnections,
   selectConnectorsFailed,
   selectConnectorsLoaded,
+  selectCurrentTeamConnectors,
   selectStartedSyncs,
   type StartedSync,
   syncForgotten,
@@ -70,6 +76,12 @@ import {
 } from './i18n';
 import { requestSync, syncRefusal } from './syncRefusal';
 import {
+  connectedByText,
+  connectionCan,
+  connectionPauseText,
+  isConnectionPaused,
+} from './teamConnections';
+import {
   isStillIndexing,
   partitionStartedSyncs,
   STARTED_SYNC_GIVE_UP_MS,
@@ -78,6 +90,7 @@ import {
 import ToolPermissions from './ToolPermissions';
 import type {
   Capability,
+  ConnectionAction,
   ConnectionDetail,
   ConnectionSource,
   ConnectionTool,
@@ -92,6 +105,8 @@ const STATUS_VARIANT: Record<
 > = {
   connected: 'success',
   reconnect_needed: 'warning',
+  // A team's account nobody can use until an Admin reconnects it.
+  paused: 'warning',
   disconnected: 'neutral',
   error: 'warning',
   pending: 'neutral',
@@ -493,6 +508,21 @@ function shownAccount(
   );
 }
 
+/**
+ * Whose accounts the drawer shows. In a team: the reader's id and the
+ * team's name (for "Connected by you" and a pause's reason), and what the
+ * reader may do with each account, as the server said.
+ */
+type TeamView = {
+  me?: string;
+  teamName?: string;
+  language?: string;
+  can: (detail: ConnectionDetail, action: ConnectionAction) => boolean;
+};
+
+/** The reader's own accounts: everything is theirs to do. */
+const PERSONAL_VIEW: TeamView = { can: () => true };
+
 type AccountHandlers = {
   onReconnect: (detail: ConnectionDetail) => void;
   onDisconnect: (detail: ConnectionDetail) => void;
@@ -509,6 +539,8 @@ type AccountHandlers = {
   onAddTools: (detail: ConnectionDetail) => Promise<string | null>;
   /** Lets its tool make changes or only read (GitHub's). */
   onSwitchWrites: (detail: ConnectionDetail, allow: boolean) => Promise<void>;
+  /** Opens a synced source in Knowledge. */
+  onOpenSource: (source: ConnectionSource) => void;
 };
 
 const NO_EVENTS: SSEEvent[] = [];
@@ -533,6 +565,7 @@ function listedSourceIds(details: ConnectionDetail[]): Set<string> {
  */
 function AccountRow({
   detail,
+  view,
   selectable,
   selected,
   onSelect,
@@ -542,6 +575,7 @@ function AccountRow({
   onRename,
 }: {
   detail: ConnectionDetail;
+  view: TeamView;
   selectable: boolean;
   selected: boolean;
   onSelect: () => void;
@@ -551,7 +585,11 @@ function AccountRow({
 >) {
   const { t } = useTranslation();
   const broken = connectionNeedsSignIn(detail);
+  // Reconnect, rename, disconnect and remove are the account's managers'
+  // (a team's Admins); anyone else only reads the row.
+  const canManage = view.can(detail, 'manage');
   const title = accountLine(t, detail);
+  const connectedBy = connectedByText(t, detail, view.me);
   const menu: MenuOption[] = [
     {
       icon: Pencil,
@@ -597,16 +635,17 @@ function AccountRow({
         )
       }
       description={
-        detail.account_name ? (
-          accountIdentity(t, detail)
-        ) : !broken && detail.last_error ? (
+        [detail.account_name ? accountIdentity(t, detail) : '', connectedBy]
+          .filter(Boolean)
+          .join(' · ') ||
+        (!broken && detail.last_error ? (
           <span title={detail.last_error}>{detail.last_error}</span>
-        ) : undefined
+        ) : undefined)
       }
       trailing={
         <div className="relative z-10 flex shrink-0 items-center gap-2">
           <StatusBadge detail={detail} />
-          {!broken && detail.status !== 'connected' && (
+          {canManage && !broken && detail.status !== 'connected' && (
             <Button
               type="button"
               size="sm"
@@ -618,10 +657,12 @@ function AccountRow({
               {t('settings.connectors.status.reconnect')}
             </Button>
           )}
-          <ActionMenu
-            triggerLabel={t('settings.connectors.detail.accountMenu')}
-            options={menu}
-          />
+          {canManage && (
+            <ActionMenu
+              triggerLabel={t('settings.connectors.detail.accountMenu')}
+              options={menu}
+            />
+          )}
         </div>
       }
     >
@@ -638,6 +679,7 @@ function AccountRow({
 function AccountContent({
   connector,
   detail,
+  view,
   indexing,
   failedFirst,
   onSyncMore,
@@ -646,9 +688,11 @@ function AccountContent({
   onSyncNow,
   onAddTools,
   onSwitchWrites,
+  onOpenSource: openSource,
 }: {
   connector: ConnectorDefinition;
   detail: ConnectionDetail;
+  view: TeamView;
   /** This account's syncs that are still on their first ingest. */
   indexing: StartedSync[];
   /** This account's syncs whose first ingest failed, until dismissed. */
@@ -659,24 +703,34 @@ function AccountContent({
 >) {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  const navigate = useNavigate();
   const [refreshing, setRefreshing] = useState(false);
   // Sources whose Sync now the server hasn't answered yet: one start each.
   const [syncingIds, setSyncingIds] = useState<string[]>([]);
   const [addingTools, setAddingTools] = useState(false);
   const [addToolsError, setAddToolsError] = useState<string | null>(null);
+  // On a team's account: Admins manage it, Editors sync its sources, and
+  // only whoever connected it browses it to choose what to sync.
+  const canManage = view.can(detail, 'manage');
+  const canSyncNow = view.can(detail, 'sync');
+  const canPick = view.can(detail, 'pick');
   const canAddTools =
+    canManage &&
     recreatesTools(connector) &&
     detail.tools.length === 0 &&
     detail.status === 'connected';
   const canSync = connector.setup.sync !== 'off' && !!connector.sync_ingestor;
   const connected = detail.status === 'connected';
+  // An Admin who didn't connect it learns who can choose what it syncs.
+  const pickerOwner =
+    canManage && !canPick && connected && detail.connected_by
+      ? t('settings.connectors.team.pickerOwnerOnly', {
+          name: detail.connected_by.label || detail.connected_by.user_id,
+          interpolation: { escapeValue: false },
+        })
+      : '';
   const hasSources =
     detail.sources.length + indexing.length + failedFirst.length > 0;
   const isMcp = detail.tools.some((tool) => tool.name === 'mcp_tool');
-
-  const openSource = (source: ConnectionSource) =>
-    navigate(knowledgeLink({ sourceId: source.id }));
 
   const syncNow = async (source: ConnectionSource) => {
     if (syncingIds.includes(source.id)) return;
@@ -695,7 +749,8 @@ function AccountContent({
    * list.
    */
   const sourceOptions = (source: ConnectionSource): MenuOption[] => [
-    ...(connected &&
+    ...(canSyncNow &&
+    connected &&
     source.sync_state !== 'paused_reconnect' &&
     source.kind !== 'wiki'
       ? [
@@ -715,6 +770,7 @@ function AccountContent({
   ];
   // Hidden once an admin forbids changes; its tool then only reads anyway.
   const canSwitchWrites =
+    canManage &&
     !!connector.writes_allowed &&
     detail.writes !== null &&
     detail.writes !== undefined;
@@ -727,8 +783,9 @@ function AccountContent({
             as="h4"
             size="xs"
             title={t('settings.connectors.detail.sources')}
+            description={pickerOwner || undefined}
             actions={
-              connected && hasSources ? (
+              canPick && connected && hasSources ? (
                 <Button
                   type="button"
                   variant="link"
@@ -752,7 +809,7 @@ function AccountContent({
                 interpolation: { escapeValue: false },
               })}
               action={
-                connected ? (
+                canPick && connected ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -930,7 +987,7 @@ function AccountContent({
             title={t('settings.connectors.detail.tools')}
             description={t('settings.connectors.detail.toolsHint')}
             actions={
-              isMcp && detail.status === 'connected' ? (
+              canManage && isMcp && detail.status === 'connected' ? (
                 <Button
                   type="button"
                   variant="link"
@@ -954,11 +1011,18 @@ function AccountContent({
                 as="h5"
                 size="xs"
                 title={toolTitle(tool, detail)}
-                actions={<ToolSwitch tool={tool} onToggle={onToggleTool} />}
+                actions={
+                  canManage ? (
+                    <ToolSwitch tool={tool} onToggle={onToggleTool} />
+                  ) : undefined
+                }
               />
+              {/* Read-only for anyone who can't manage it; the drawer says
+                  why at its top. */}
               <ToolPermissions
                 connectionId={detail.id}
                 tool={tool}
+                readOnly={!canManage}
                 groupHeadingAs="h6"
                 variant="subtle"
               >
@@ -989,12 +1053,17 @@ function ServiceSection({
   picked,
   onPick,
   onConnect,
+  canConnect,
+  view,
   indexing,
   failedFirst,
   ...handlers
 }: {
   service: ConnectorDefinition;
   heading: string;
+  /** False for a team's members other than Admins: no connect buttons. */
+  canConnect: boolean;
+  view: TeamView;
   /** Syncs still on their first ingest, any account's. */
   indexing: StartedSync[];
   /** Syncs whose first ingest failed, any account's. */
@@ -1010,6 +1079,8 @@ function ServiceSection({
   const problem = useProblem();
   const shown = shownAccount(accounts, picked);
   const selectable = accounts.length > 1;
+  // In a team, every connect here is for the team, and says so.
+  const forTeam = view !== PERSONAL_VIEW;
 
   return (
     <section className="flex flex-col gap-6">
@@ -1020,7 +1091,7 @@ function ServiceSection({
             size="xs"
             title={heading}
             actions={
-              service.available && accounts.length > 0 ? (
+              canConnect && service.available && accounts.length > 0 ? (
                 <Button
                   type="button"
                   variant="link"
@@ -1029,7 +1100,9 @@ function ServiceSection({
                   onClick={onConnect}
                 >
                   <Plus />
-                  {t('settings.connectors.detail.connectAnother')}
+                  {forTeam
+                    ? t('settings.connectors.team.connectForTeam')
+                    : t('settings.connectors.detail.connectAnother')}
                 </Button>
               ) : undefined
             }
@@ -1047,9 +1120,11 @@ function ServiceSection({
               illustration="none"
               title={t('settings.connectors.detail.noAccounts')}
               action={
-                service.available ? (
+                canConnect && service.available ? (
                   <Button type="button" shape="pill" onClick={onConnect}>
-                    {t('settings.connectors.status.connect')}
+                    {forTeam
+                      ? t('settings.connectors.team.connectForTeam')
+                      : t('settings.connectors.status.connect')}
                   </Button>
                 ) : undefined
               }
@@ -1062,6 +1137,7 @@ function ServiceSection({
                 <AccountRow
                   key={account.id}
                   detail={account}
+                  view={view}
                   selectable={selectable}
                   selected={account.id === shown?.id}
                   onSelect={() => onPick(account.id)}
@@ -1076,24 +1152,40 @@ function ServiceSection({
         )}
         {/* An expired or failing sign-in gets its own box under the list,
             with room to say what happened at any width. */}
+        {/* A team's paused account: why, and what can be done about it. */}
+        {shown && isConnectionPaused(shown) && (
+          <Alert variant="warning">
+            <AlertDescription>
+              <p>
+                {connectionPauseText(t, shown, view)}{' '}
+                {view.can(shown, 'manage') ? (
+                  <>
+                    {t('settings.connectors.team.pausedHintAdmin')}{' '}
+                    <AlertAction onClick={() => handlers.onReconnect(shown)}>
+                      {t('settings.connectors.status.reconnect')}
+                    </AlertAction>
+                  </>
+                ) : (
+                  t('settings.connectors.team.pausedHintMember')
+                )}
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
         {shown && connectionNeedsSignIn(shown) && (
           <Alert variant="warning">
-            {/* The provider's own message stays on hover, for debugging. */}
+            {/* The provider's own message stays on hover, for debugging.
+                Reconnect fixes it: a link at the end of the text. */}
             <AlertDescription title={shown.last_error ?? undefined}>
-              {problem(shown)}
+              <p>
+                {problem(shown)}{' '}
+                {view.can(shown, 'manage') && (
+                  <AlertAction onClick={() => handlers.onReconnect(shown)}>
+                    {t('settings.connectors.status.reconnect')}
+                  </AlertAction>
+                )}
+              </p>
             </AlertDescription>
-            <div className="mt-2">
-              <Button
-                type="button"
-                size="sm"
-                shape="pill"
-                variant="outline"
-                onClick={() => handlers.onReconnect(shown)}
-              >
-                <RefreshCw />
-                {t('settings.connectors.status.reconnect')}
-              </Button>
-            </div>
           </Alert>
         )}
       </div>
@@ -1102,6 +1194,7 @@ function ServiceSection({
           key={shown.id}
           connector={service}
           detail={shown}
+          view={view}
           indexing={indexing.filter((sync) => sync.connectionId === shown.id)}
           failedFirst={failedFirst.filter(
             (sync) => sync.connectionId === shown.id,
@@ -1112,6 +1205,7 @@ function ServiceSection({
           onSyncNow={handlers.onSyncNow}
           onAddTools={handlers.onAddTools}
           onSwitchWrites={handlers.onSwitchWrites}
+          onOpenSource={handlers.onOpenSource}
         />
       )}
     </section>
@@ -1127,24 +1221,67 @@ function ServiceSection({
 export default function ConnectionDrawer({
   connector,
   parts = [],
+  owner,
   initialConnectionId,
   onClose,
   onConnect,
+  onNavigate,
+  onToolsCreated,
 }: {
   connector: ConnectorDefinition | null;
   /** The same service offered another way, shown here (Jira & Confluence). */
   parts?: ConnectorDefinition[];
+  /** `team`: the current team's accounts; the reader's own otherwise. */
+  owner?: 'team';
   /** The account to show first, e.g. the one behind the tool it opened from. */
   initialConnectionId?: string;
   onClose: () => void;
   onConnect: (connector: ConnectorDefinition, options?: LaunchOptions) => void;
+  /**
+   * Leaves for a page (a source in Knowledge); an opener with unsaved work
+   * asks first. The router's navigate otherwise.
+   */
+  onNavigate?: (to: string) => void;
+  /** The tools an account's Add tools created, for an opener that puts them on. */
+  onToolsCreated?: (toolIds: string[]) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const routerNavigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
-  const connections = useSelector(selectConnections);
-  const listLoaded = useSelector(selectConnectorsLoaded);
-  const listFailed = useSelector(selectConnectorsFailed);
+  const team = owner === 'team';
+  const teamEntry = useSelector(selectCurrentTeamConnectors);
+  const teamName = useSelector(
+    (state: {
+      workspace?: {
+        current: string;
+        workspaces?: { id: string; name?: string | null }[];
+      };
+    }) =>
+      state.workspace?.workspaces?.find(
+        (row) => row.id === state.workspace?.current,
+      )?.name ?? undefined,
+  );
+  const ownConnections = useSelector(selectConnections);
+  const ownLoaded = useSelector(selectConnectorsLoaded);
+  const ownFailed = useSelector(selectConnectorsFailed);
+  const connections = team ? (teamEntry?.connections ?? []) : ownConnections;
+  const listLoaded = team ? !!teamEntry?.loaded : ownLoaded;
+  const listFailed = team ? !!teamEntry?.failed : ownFailed;
+  // A team's account the server sent without its access fields allows
+  // nothing: `owner` is filled in so the check fails closed.
+  const view: TeamView = team
+    ? {
+        me: readerIdFromToken(token),
+        teamName,
+        language: i18n?.language,
+        can: (detail, action) =>
+          connectionCan({ ...detail, owner: detail.owner ?? 'team' }, action),
+      }
+    : PERSONAL_VIEW;
+  // Connecting for the team and managing its accounts is an Admin's.
+  const role = useSelector(selectWorkspaceRoleOrNull);
+  const canConnect = !team || roleAtLeast(role, 'admin');
   // The details belong to the connector they were loaded for, so opening
   // another one never shows the last one's accounts (or none) meanwhile.
   // `reload` is the `reloadKey` the read started under.
@@ -1206,7 +1343,7 @@ export default function ConnectionDrawer({
   }, [connector, listLoaded, accountIds, token, reloadKey]);
 
   const refresh = useCallback(() => {
-    dispatch(loadConnectors({ token }));
+    dispatch(reloadConnectors({ token }));
     setReloadKey((key) => key + 1);
   }, [dispatch, token]);
 
@@ -1370,7 +1507,14 @@ export default function ConnectionDrawer({
       .catch(() => null);
     // Reloaded either way: a rejected sign-in flags the account to reconnect.
     refresh();
-    if (data?.success) return null;
+    if (data?.success) {
+      onToolsCreated?.(
+        ((data.tools ?? []) as { id?: string }[])
+          .map((tool) => tool.id)
+          .filter((id): id is string => typeof id === 'string'),
+      );
+      return null;
+    }
     return data?.code === 'tools_unavailable'
       ? t('settings.connectors.detail.toolsUnavailable', {
           name: serviceName(detail),
@@ -1450,6 +1594,8 @@ export default function ConnectionDrawer({
     onSyncNow: syncNow,
     onAddTools: addTools,
     onSwitchWrites: switchWrites,
+    onOpenSource: (source) =>
+      (onNavigate ?? routerNavigate)(knowledgeLink({ sourceId: source.id })),
   };
 
   const sections = [connector, ...parts]
@@ -1482,6 +1628,8 @@ export default function ConnectionDrawer({
         picked={pickedIn(service.key, accounts)}
         onPick={(id) => setPicked((state) => ({ ...state, [service.key]: id }))}
         onConnect={() => onConnect(service)}
+        canConnect={canConnect}
+        view={view}
         indexing={indexing}
         failedFirst={failedFirst}
         {...handlers}
@@ -1515,6 +1663,15 @@ export default function ConnectionDrawer({
 
           {connector.needs_setup && (
             <ConnectorSetupNotice connector={connector} />
+          )}
+
+          {/* Why a team member sees no way to change anything here. */}
+          {!canConnect && (
+            <Alert variant="info" role="note">
+              <AlertDescription>
+                {t('settings.connectors.team.adminOnly')}
+              </AlertDescription>
+            </Alert>
           )}
 
           {failed ? (

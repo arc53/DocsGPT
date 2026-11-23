@@ -12,7 +12,7 @@ import {
 
 describe('agentsFilterPath / filterFromPath', () => {
   it('round-trips every filter', () => {
-    for (const filter of ['all', 'template', 'user', 'team', 'shared'] as const)
+    for (const filter of ['all', 'user', 'team', 'shared'] as const)
       expect(filterFromPath(agentsFilterPath(filter))).toBe(filter);
   });
 

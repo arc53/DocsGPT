@@ -11,6 +11,7 @@ import {
   getSectionItems,
   getVisibleGroups,
   SETTINGS_SECTION,
+  teamNavItem,
 } from './sections';
 
 describe('getSectionForPath', () => {
@@ -57,6 +58,19 @@ describe('getActiveItem', () => {
     expect(
       getActiveItem(SETTINGS_SECTION, '/settings/access-tokens')?.key,
     ).toBe('accessTokens');
+  });
+
+  it('lists Prompts in Workspace between Tools and Custom Models', () => {
+    const workspace = SETTINGS_SECTION.groups.find(
+      (group) => group.key === 'workspace',
+    )!;
+    const keys = workspace.items.map((item) => item.key);
+    expect(
+      keys.slice(keys.indexOf('tools'), keys.indexOf('tools') + 3),
+    ).toEqual(['tools', 'prompts', 'customModels']);
+    expect(getActiveItem(SETTINGS_SECTION, '/settings/prompts')?.key).toBe(
+      'prompts',
+    );
   });
 
   it('keeps the parent item active inside a detail route', () => {
@@ -133,6 +147,47 @@ describe('AGENTS_SECTION', () => {
       getActiveItem(AGENTS_SECTION, '/agents/manage/discovered')?.key,
     ).toBe('shared');
   });
+
+  it('lists Shared with you where the Team filter was', () => {
+    const items = getSectionItems(AGENTS_SECTION);
+    expect(items.map((i) => i.key)).toEqual([
+      'all',
+      'user',
+      'teamShared',
+      'sharedWithYou',
+      'shared',
+    ]);
+    const shared = items.find((i) => i.key === 'sharedWithYou')!;
+    expect(shared.path).toBe('/agents/manage/shared-with-you');
+    expect(shared.labelKey).toBe('workspace.page.sharedWithYou');
+    // The old Team address reads as Shared with you in Personal.
+    expect(getActiveItem(AGENTS_SECTION, '/agents/manage/team')?.key).toBe(
+      'sharedWithYou',
+    );
+  });
+
+  it('hides Shared with you and Discovered in a team', () => {
+    const keys = (inTeam: boolean) =>
+      getVisibleGroups(AGENTS_SECTION, { inTeam }).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+    expect(keys(false)).toContain('sharedWithYou');
+    expect(keys(false)).toContain('shared');
+    expect(keys(true)).toEqual(['all', 'user', 'teamShared']);
+  });
+
+  it('shows Shared with this team only in a team', () => {
+    const keys = (inTeam: boolean) =>
+      getVisibleGroups(AGENTS_SECTION, { inTeam }).flatMap((g) =>
+        g.items.map((i) => i.key),
+      );
+    expect(keys(false)).not.toContain('teamShared');
+    const item = getSectionItems(AGENTS_SECTION).find(
+      (i) => i.key === 'teamShared',
+    )!;
+    expect(item.path).toBe('/agents/manage/shared-with-team');
+    expect(item.labelKey).toBe('workspace.page.sharedFromTeams.title');
+  });
 });
 
 describe('buildAgentSection', () => {
@@ -185,8 +240,9 @@ describe('buildAgentSection', () => {
     );
   });
 
-  // The classic edit path still renders a workflow (an old link, a fallback
-  // when the agent isn't loaded): Overview stays the active tab there.
+  // A workflow on the classic edit path (an old link, a fallback built
+  // before its type was known) waits there for its editor: Overview stays
+  // the active tab meanwhile.
   it('keeps overview active on a workflow agent’s classic edit path', () => {
     const section = buildAgentSection('a1', 'Flow', false, {
       access: 'owner',
@@ -201,7 +257,7 @@ describe('buildAgentSection', () => {
 });
 
 describe('buildAgentSection tabs for a draft', () => {
-  it('shows only Overview until the agent is published', () => {
+  it('shows Overview and Logs until the agent is published', () => {
     const items = getSectionItems(
       buildAgentSection('a1', 'Bot', false, {
         access: 'owner',
@@ -209,7 +265,7 @@ describe('buildAgentSection tabs for a draft', () => {
         allowed_actions: ['view', 'view_logs', 'manage_schedules'],
       }),
     ).map((item) => item.key);
-    expect(items).toEqual(['overview']);
+    expect(items).toEqual(['overview', 'logs']);
   });
 });
 
@@ -357,5 +413,22 @@ describe('depthOf', () => {
 
   it('keeps a chat with an agent at the chat level', () => {
     expect(depthOf(getSectionForPath('/agents/a1/c/c1'))).toBe(0);
+  });
+});
+
+describe('teamNavItem', () => {
+  it('has no Team entry in Personal', () => {
+    expect(teamNavItem('personal')).toBeNull();
+  });
+
+  it("links a team workspace to that team's page", () => {
+    const item = teamNavItem('t1');
+    expect(item?.path).toBe('/teams/t1');
+    expect(item?.labelKey).toBe('workspace.team.navEntry');
+    // The team page is in Settings, under Teams.
+    expect(getSectionForPath('/teams/t1/settings')?.key).toBe('settings');
+    expect(getActiveItem(SETTINGS_SECTION, '/teams/t1/members')?.key).toBe(
+      'teams',
+    );
   });
 });

@@ -26,6 +26,7 @@ import {
   normalizeExtensions,
   useAttachments,
 } from '../hooks/useAttachments';
+import { useAgentStarters } from '../hooks/useAgentStarters';
 import { useBackDismiss } from '../hooks/useBackDismiss';
 import { useClientLayoutEffect } from '../hooks/useClientLayoutEffect';
 import { useDictation } from '../hooks/useDictation';
@@ -696,6 +697,9 @@ const Conversation = styled.div<{ $hidden?: boolean }>`
   padding: 16px;
   text-align: left;
   overflow-y: auto;
+  /* Tables and code scroll in their own frames; nothing else may scroll the
+     conversation sideways. */
+  overflow-x: hidden;
   /* Scrolling past either end doesn't carry on into the host page. */
   overscroll-behavior: contain;
   display: ${(props) => (props.$hidden ? 'none' : 'flex')};
@@ -855,6 +859,12 @@ const Markdown = styled.div`
     box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
+  /* The conversation clips sideways, so an image never runs wider than it. */
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
   h1,
   h2,
   h3,
@@ -980,9 +990,10 @@ const Markdown = styled.div`
     box-shadow: 0 0 0 3px ${(props) => props.theme.ringSoft};
   }
 
-  /* The app's Tooltip: foreground box, background text, 12px. */
+  /* The app's Tooltip: foreground box, background text, 12px. Generated only
+     while shown: laid out at rest (even transparent), a pill near the end of a
+     line pushed it past the conversation's edge and scrolled it sideways. */
   .dgpt-cite::after {
-    content: attr(aria-label);
     position: absolute;
     bottom: calc(100% + 8px);
     left: 50%;
@@ -1001,10 +1012,27 @@ const Markdown = styled.div`
     z-index: 3;
   }
 
+  /* Set by alignCiteTooltip when centring would cross the answer's edge. */
+  .dgpt-cite[data-tip-align='end']::after {
+    left: auto;
+    right: 0;
+    transform: none;
+  }
+
+  .dgpt-cite[data-tip-align='start']::after {
+    left: 0;
+    transform: none;
+  }
+
   .dgpt-cite:hover::after,
   .dgpt-cite:focus-visible::after {
+    content: attr(aria-label);
     opacity: 1;
     transition-delay: 0.4s;
+
+    @starting-style {
+      opacity: 0;
+    }
   }
 
   /* CodeFrame */
@@ -1709,6 +1737,24 @@ const SourceText = styled.span`
 `;
 
 /**
+ * Keeps a citation's tooltip inside the answer: centred on its pill unless
+ * that crosses an edge, then lined up with the pill's near side. Runs as the
+ * tooltip shows (hover or keyboard focus), when its width can be read.
+ */
+const alignCiteTooltip = (event: React.SyntheticEvent<HTMLDivElement>) => {
+  const cite = (event.target as HTMLElement).closest<HTMLElement>('.dgpt-cite');
+  if (!cite) return;
+  const width = parseFloat(getComputedStyle(cite, '::after').width);
+  if (!width) return;
+  const pill = cite.getBoundingClientRect();
+  const bounds = event.currentTarget.getBoundingClientRect();
+  const centre = pill.left + pill.width / 2;
+  if (centre + width / 2 > bounds.right) cite.dataset.tipAlign = 'end';
+  else if (centre - width / 2 < bounds.left) cite.dataset.tipAlign = 'start';
+  else delete cite.dataset.tipAlign;
+};
+
+/**
  * One answer's markdown, rendered and sanitised only when its text or source
  * count changes: a streamed token re-renders the live answer, not the whole
  * conversation.
@@ -1753,6 +1799,8 @@ const AnswerMarkdown = React.memo(function AnswerMarkdown({
     <>
       <Markdown
         onClick={(event) => onAnswerClick(turn, event)}
+        onMouseOver={alignCiteTooltip}
+        onFocus={alignCiteTooltip}
         dangerouslySetInnerHTML={{ __html: html }}
       />
       {html.includes('<a ') && (
@@ -2479,7 +2527,9 @@ export const WidgetCore = ({
     setIsPinnedToLatest(distanceFromBottom(el) < STICK_THRESHOLD_PX);
   };
 
-  React.useEffect(() => {
+  // Before paint: after paint, a large chunk shows for a frame with the
+  // status line pushed below the fold.
+  useClientLayoutEffect(() => {
     const el = conversationRef.current;
     if (!el || !isPinnedToLatest) return;
     // Easing per token never catches up, so jump while streaming.
@@ -2939,12 +2989,23 @@ export const WidgetCore = ({
     await appendQuery(prompt, { source: 'composer' });
   };
 
+  // Fetched once the hero is first on screen, so a page load that never opens
+  // the chat, or opens it on a restored conversation, sends no request.
+  // `mounted` lands a render after the open, with the restored turns in place.
+  const [heroSeen, setHeroSeen] = React.useState(false);
+  if (!heroSeen && isOpen && mounted && queries.length === 0) setHeroSeen(true);
+  // The site's own questions win, `[]` included; without them, the agent's.
+  const agentStarters = useAgentStarters(
+    apiKey,
+    apiHost,
+    heroSeen && suggestedQuestions === undefined,
+  );
   const heroQuestions = React.useMemo(
     () =>
-      (suggestedQuestions ?? [])
+      (suggestedQuestions ?? agentStarters)
         .map((question) => question.trim())
         .filter(Boolean),
-    [suggestedQuestions],
+    [suggestedQuestions, agentStarters],
   );
   // The composer's send gate, minus the typed-text check.
   const questionBlockedReason =

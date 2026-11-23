@@ -6,6 +6,7 @@ import {
   Clock,
   FileUp,
   Globe,
+  MessageCircleQuestion,
   MessageSquare,
   Plug,
   Radar,
@@ -70,6 +71,7 @@ import {
 import type {
   ApprovalItem,
   PausedScheduleItem,
+  QuestionItem,
   RunningItem,
   RunningKind,
   ScheduleUpNext,
@@ -499,6 +501,34 @@ export default function Now() {
     />
   );
 
+  // A chat paused on the assistant's questions: answered in the chat.
+  const questionRow = (item: QuestionItem) => (
+    <ListRow
+      key={item.id}
+      leading={<KindIcon icon={MessageCircleQuestion} tone="warning" />}
+      title={t('activity.now.waitingForAnswer')}
+      description={meta(
+        item.title,
+        item.agent_name,
+        item.expires_at &&
+          t('activity.now.expires', {
+            ...NO_ESCAPE,
+            time: formatRelative(item.expires_at, { future: true }),
+          }),
+      )}
+      trailing={
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant="warning" className="hidden sm:inline-flex">
+            {t('activity.now.question')}
+          </Badge>
+          {outlineButton(t('activity.now.answer'), () =>
+            navigate(`/c/${item.conversation_id}`),
+          )}
+        </div>
+      }
+    />
+  );
+
   const pausedRow = (item: PausedScheduleItem) => (
     <ListRow
       key={item.id}
@@ -739,7 +769,9 @@ export default function Now() {
                 {snapshot.needs_you.map((item) =>
                   item.kind === 'approval'
                     ? approvalRow(item)
-                    : pausedRow(item),
+                    : item.kind === 'question'
+                      ? questionRow(item)
+                      : pausedRow(item),
                 )}
                 {reconnects.map((connection) => (
                   <ListRow

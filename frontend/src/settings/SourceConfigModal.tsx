@@ -22,8 +22,13 @@ import {
   websiteRefusal,
   websiteRefusalForCode,
 } from '../upload/website';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
 import { can } from '../utils/accessUtils';
 import { canSyncSource } from './sourceKinds';
+import { useCanChangeSyncSchedule } from './sourceSyncPause';
 import WebsiteSettingsFields, {
   ScheduleRow,
   useWebsiteSettings,
@@ -109,6 +114,8 @@ export default function SourceConfigModal({
     document?.id ?? '',
     open && section === 'website',
   );
+  // A team account's source: Editors sync it, only Admins set how often.
+  const canChangeSchedule = useCanChangeSyncSchedule(document);
   const savedSchedule = (document?.syncFrequency || 'never') as SyncFrequency;
   const [schedule, setSchedule] = useState<SyncFrequency>(savedSchedule);
 
@@ -188,12 +195,15 @@ export default function SourceConfigModal({
       );
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        // A wiki or an unknown schedule is worded; anything else is generic.
+        // A wiki, an unknown schedule or a team account's refusal is
+        // worded; anything else is generic.
         setError(
-          response.status === 403
-            ? t('settings.sources.configModal.errors.forbidden')
-            : (websiteRefusalForCode(t, data) ??
-                t('settings.sources.errors.syncFrequency')),
+          websiteRefusalForCode(t, data) ??
+            (connectionErrorCode(data)
+              ? connectionErrorMessage(t, data)
+              : response.status === 403
+                ? t('settings.sources.configModal.errors.forbidden')
+                : t('settings.sources.errors.syncFrequency')),
         );
         return null;
       }
@@ -373,7 +383,7 @@ export default function SourceConfigModal({
                 syncedAt={document?.date}
               />
             )}
-            {section === 'schedule' && (
+            {section === 'schedule' && canChangeSchedule && (
               <SettingRows>
                 <ScheduleRow
                   value={schedule}

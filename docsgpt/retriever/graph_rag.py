@@ -29,7 +29,7 @@ import networkx as nx
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.graphrag.store import GraphStore
-from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
@@ -235,6 +235,9 @@ class GraphRAGRetriever(BaseRetriever):
         self.doc_token_limit = doc_token_limit
         self.vectorstores = self._classic.vectorstores
         self.per_source_retrieval = {}
+        # Sources whose classic search failed during the current ``_get_data``.
+        # A graph failure is not one: the source is searched classically next.
+        self._failed_sources: List[str] = []
 
     @property
     def search_query(self) -> str:
@@ -599,12 +602,13 @@ class GraphRAGRetriever(BaseRetriever):
             if not in_selection and not in_pool:
                 break
             labels = labels_from_metadata(metadata, text, source_id)
-            doc_tokens = num_tokens_from_string(f"{labels['filename']}\n{text}")
+            attribution = self._connector_labels.for_source(source_id, metadata)
+            doc_tokens = num_tokens_from_string(budget_text(labels["filename"], text, attribution.get("source_name")))
             in_selection = in_selection and cumulative_tokens + doc_tokens < token_budget
             in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
             if not in_selection and not in_pool:
                 break
-            doc = {"text": text, **labels, **self._connector_labels.for_source(source_id, metadata)}
+            doc = {"text": text, **labels, **attribution}
             if pooled:
                 doc["_base"] = in_selection
                 pool_tokens += doc_tokens
@@ -641,7 +645,11 @@ class GraphRAGRetriever(BaseRetriever):
             self._classic.base_chunks = self.base_chunks
             self._classic.candidate_k = self.candidate_k
             self._classic.candidate_tokens = self.candidate_tokens
-            return self._classic._get_data()
+            self._classic.last_outcome = None
+            docs = self._classic._get_data()
+            if self._classic.last_outcome is not None:
+                self._failed_sources.extend(self._classic.last_outcome.failed)
+            return docs
         finally:
             self._classic.vectorstores = original
             self._classic.per_source_retrieval = original_overrides
@@ -700,6 +708,8 @@ class GraphRAGRetriever(BaseRetriever):
                 )
                 fallback, graphed = list(graphed), []
 
+        # Every graph source's labels in one lookup, not one per source.
+        self._connector_labels.prefetch(graphed)
         for source_id in graphed:
             try:
                 docs = self._graph_docs_for_source(store, source_id, query_embedding)
@@ -745,9 +755,14 @@ class GraphRAGRetriever(BaseRetriever):
 
     def _get_data(self) -> List[Dict[str, Any]]:
         sources = [source_id for source_id in self.vectorstores if source_id]
-        if not sources:
-            return []
+        self._failed_sources = []
+        self.last_outcome = None
+        docs = self._search_sources(sources) if sources else []
+        self.last_outcome = SearchOutcome.of(sources, self._failed_sources)
+        return docs
 
+    def _search_sources(self, sources: List[str]) -> List[Dict[str, Any]]:
+        """Search ``sources``: by graph where the store is up, classically otherwise."""
         store = None
         if graphrag_available():
             try:

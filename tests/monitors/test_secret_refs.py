@@ -11,9 +11,13 @@ import pytest
 from sqlalchemy import text
 
 from docsgpt.agents.tool_executor import ToolExecutor
+from docsgpt.connectors.resolve import ResolvedConnection
 from docsgpt.core.settings import settings
 from docsgpt.llm.handlers.base import ToolCall
 from docsgpt.monitors import secret_refs, service, triggers
+
+
+pytestmark = pytest.mark.fresh_db
 
 GITHUB_TOOL_ID = "00000000-0000-0000-0000-0000000061f7"
 
@@ -367,7 +371,7 @@ class TestEndToEnd:
         executor = _executor(conversation_id, github, monkeypatch)
         tools = _tools()
         tools["t1"]["connection_id"] = "conn-1"
-        executor._connections[GITHUB_TOOL_ID] = SimpleNamespace(
+        executor._connections[GITHUB_TOOL_ID] = ResolvedConnection(
             available=True, writes_allowed=True, delegated=False, connector_key="github",
             connector_name="GitHub", row={"user_id": "u1"},
         )

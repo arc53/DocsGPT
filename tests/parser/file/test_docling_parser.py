@@ -1153,8 +1153,11 @@ class TestApplyInferenceSettings:
             events.append("options")
             return real_options(*args, **kwargs)
 
-        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
+        # Patching DocumentConverter first imports docling.document_converter,
+        # which binds PdfPipelineOptions at import; doing it after the swap
+        # leaves the tracker there for every later test in the worker.
         monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
 
         DoclingParser(ocr_enabled=False)._create_converter()
 
@@ -1568,6 +1571,9 @@ class TestForceFullPageOCRWiring:
 
     def _pipeline_options(self, monkeypatch, **kwargs):
         import docling.datamodel.pipeline_options as dpo
+        # Load the converter before the class is swapped: a first import after the
+        # swap binds the tracking function, and docling's isinstance check raises.
+        import docling.document_converter  # noqa: F401
 
         from docsgpt.parser.file.docling_parser import DoclingParser
 
@@ -1579,8 +1585,11 @@ class TestForceFullPageOCRWiring:
             built.append(options)
             return options
 
-        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
+        # Patching DocumentConverter first imports docling.document_converter,
+        # which binds PdfPipelineOptions at import; doing it after the swap
+        # leaves the tracker there for every later test in the worker.
         monkeypatch.setattr("docling.document_converter.DocumentConverter", MagicMock())
+        monkeypatch.setattr(dpo, "PdfPipelineOptions", _tracking_options)
         DoclingParser(**kwargs)._create_converter()
         return built[0]
 

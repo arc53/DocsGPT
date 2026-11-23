@@ -6,12 +6,14 @@ from tqdm import tqdm
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
 from docsgpt.parser.file.base_parser import DocumentParseError
+from docsgpt.parser.ingest_resume import chunk_fingerprint, dispatch_of
 from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
 from docsgpt.storage.db.session import db_session
 from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore.vector_creator import VectorCreator
+from docsgpt.workspaces.principal import is_principal_id
 
 
 class EmbeddingPipelineError(Exception):
@@ -130,17 +132,22 @@ def add_text_to_store_with_retry(store: Any, doc: Any, source_id: str) -> None:
 
 
 def _init_progress_and_resume_index(
-    source_id: str, total_chunks: int, attempt_id: Optional[str],
+    source_id: str,
+    total_chunks: int,
+    attempt_id: Optional[str],
+    *,
+    fingerprint: Optional[str] = None,
+    dispatch: Optional[dict] = None,
 ) -> int:
     """Upsert the progress row and return the next chunk index to embed.
 
-    The repository's upsert preserves ``last_index`` only when the
-    incoming ``attempt_id`` matches the stored one (a Celery autoretry
-    of the same task). On a fresh attempt — including any caller that
-    doesn't pass an ``attempt_id``, e.g. legacy code or tests — the
-    row's checkpoint is reset so the loop starts from chunk 0. This
-    is what prevents a completed checkpoint from any prior run
-    silently no-op'ing the next sync/reingest.
+    The repository keeps ``last_index`` for the same work: the same
+    ``attempt_id`` (a Celery autoretry of the task), or — when a
+    ``fingerprint`` is given — the same chunk set left unfinished by an
+    earlier task, such as one a restart killed. Anything else resets the
+    checkpoint so the loop starts from chunk 0; this is what keeps a
+    completed checkpoint from silently no-op'ing the next sync/reingest.
+    See ``IngestChunkProgressRepository.init_progress``.
 
     Best-effort: a DB outage falls back to ``0`` (fresh run from
     chunk 0). The embed loop's own re-raise still ensures partial
@@ -150,6 +157,7 @@ def _init_progress_and_resume_index(
         with db_session() as conn:
             progress = IngestChunkProgressRepository(conn).init_progress(
                 source_id, total_chunks, attempt_id,
+                fingerprint=fingerprint, dispatch=dispatch,
             )
     except Exception as e:
         logging.warning(
@@ -257,12 +265,14 @@ def embed_and_store_documents(
 ) -> None:
     """Embeds documents and stores them in a vector store.
 
-    Resumable across Celery autoretries of the *same* task: when
-    ``attempt_id`` matches the stored checkpoint's ``attempt_id``,
-    the loop resumes from ``last_index + 1``. A different
-    ``attempt_id`` (a fresh sync / reingest invocation) resets the
-    checkpoint so the index is rebuilt from chunk 0 — this is what
-    keeps a completed checkpoint from poisoning the next sync.
+    Resumable from ``last_index + 1`` across Celery autoretries of the
+    same task, and across tasks that bring the same chunk set to an
+    unfinished checkpoint (the reconciler's resume of an ingest a restart
+    killed). Any other run (a fresh sync / reingest, changed content)
+    resets the checkpoint so the index is rebuilt from chunk 0 — this is
+    what keeps a completed checkpoint from poisoning the next sync. A
+    resumable task (see ``ingest_resume.RESUMABLE_INGEST_TASKS``) also
+    stores its arguments on the row until the embed finishes.
 
     Args:
         docs: List of documents to be embedded and stored.
@@ -277,7 +287,9 @@ def embed_and_store_documents(
             ``None`` is the safe default — workers without a user
             context (e.g. background syncs) skip the publish.
         actor_id: The team editor who asked for the job, also sent the
-            progress events when it isn't ``user_id``.
+            progress events when it isn't ``user_id``. When ``user_id`` is a
+            team's principal, the publisher sends them to this person while
+            they are still in the team, and to nobody else.
         progress_start: Percent the reported progress maps to at chunk 0.
             Lets a caller reserve the lower band for an earlier stage
             (e.g. parsing). Defaults to ``0`` (embed owns the whole bar).
@@ -315,11 +327,16 @@ def embed_and_store_documents(
         )
 
     total_docs = len(docs)
-    # Atomic upsert that preserves checkpoint state on attempt-id match
-    # (autoretry of same task) and resets it on mismatch (fresh sync /
-    # reingest). Returns the new resume index — 0 means "start fresh".
+    # Atomic upsert that preserves the checkpoint for the same work (an
+    # autoretry of this task, or a new task over the same chunk set after a
+    # restart killed the last one) and resets it otherwise (fresh sync /
+    # reingest, changed content). Returns the resume index — 0 means "start
+    # fresh". FAISS keeps a partial index only in the dead task's temp dir,
+    # so a new task can never continue one: it gets no fingerprint.
     resume_index = _init_progress_and_resume_index(
         source_id, total_docs, attempt_id,
+        fingerprint=None if settings.VECTOR_STORE == "faiss" else chunk_fingerprint(docs),
+        dispatch=dispatch_of(task_status, source_id),
     )
     is_resume = resume_index > 0
 
@@ -383,7 +400,12 @@ def embed_and_store_documents(
     failed_idx: int | None = None
     last_published_pct = -1
     source_id_str = str(source_id)
-    recipients = [user_id] + ([str(actor_id)] if actor_id and str(actor_id) != str(user_id) else [])
+    if is_principal_id(user_id):
+        # A team's source: one event to its principal, which the publisher sends on to whoever started the
+        # ingest only while they are still in the team.
+        recipients = [user_id]
+    else:
+        recipients = [user_id] + ([str(actor_id)] if actor_id and str(actor_id) != str(user_id) else [])
     progress_span = progress_end - progress_start
     batch_size = _resolve_batch_size()
     batch_starts = list(range(loop_start, total_docs, batch_size))
@@ -419,6 +441,7 @@ def embed_and_store_documents(
                             "stage": "embedding",
                         },
                         scope={"kind": "source", "id": source_id_str},
+                        actor_id=actor_id,
                     )
                 last_published_pct = progress
 

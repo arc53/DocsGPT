@@ -16,6 +16,16 @@ def _dump_jsonb(value: Any) -> str:
     return json.dumps(strip_null_bytes(value), cls=PGNativeJSONEncoder)
 
 
+def _result_payload(result: Any, artifact_id: Optional[str], app_result: Optional[dict]) -> dict:
+    """The ``result`` JSONB of an executed row."""
+    payload: dict = {"result": result}
+    if artifact_id:
+        payload["artifact_id"] = artifact_id
+    if app_result is not None:
+        payload["app_result"] = app_result
+    return payload
+
+
 class ToolCallAttemptsRepository:
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
@@ -83,6 +93,7 @@ class ToolCallAttemptsRepository:
         artifact_id: Optional[str] = None,
         user_id: Optional[str] = None,
         agent_id: Optional[str] = None,
+        app_result: Optional[dict] = None,
     ) -> None:
         """Insert OR upgrade a row to ``executed`` — or ``confirmed`` when
         there is no ``message_id``, as in ``mark_executed``.
@@ -98,9 +109,7 @@ class ToolCallAttemptsRepository:
         and LLMs reuse ids, so without it a colliding write could upgrade
         another request's (possibly another tenant's) row.
         """
-        result_payload: dict = {"result": result}
-        if artifact_id:
-            result_payload["artifact_id"] = artifact_id
+        result_payload = _result_payload(result, artifact_id, app_result)
         status = "executed" if message_id is not None else "confirmed"
         self._conn.execute(
             text(
@@ -143,6 +152,7 @@ class ToolCallAttemptsRepository:
         message_id: Optional[str] = None,
         artifact_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        app_result: Optional[dict] = None,
     ) -> bool:
         """Flip ``proposed`` → ``executed``, or straight to ``confirmed``
         when there is no ``message_id`` (a ``save_conversation=False``
@@ -150,16 +160,15 @@ class ToolCallAttemptsRepository:
 
         ``artifact_id`` (when present) is stored alongside ``result`` in
         the JSONB as audit data — the reconciler reads it for diagnostic
-        alerts when escalating stuck rows to ``failed``.
+        alerts when escalating stuck rows to ``failed``. ``app_result``
+        (an MCP App view's result) goes there too, for ``get_app_result``.
 
         Guarded to a still-``proposed`` row (and, when ``user_id`` is
         given, to one owned by that user): ``call_id`` is the table-wide
         PK and LLMs reuse ids, so an unguarded update could flip another
         request's already-terminal — or another tenant's — row.
         """
-        result_payload: dict = {"result": result}
-        if artifact_id:
-            result_payload["artifact_id"] = artifact_id
+        result_payload = _result_payload(result, artifact_id, app_result)
         status = "executed" if message_id is not None else "confirmed"
         sql = (
             "UPDATE tool_call_attempts SET "
@@ -179,6 +188,26 @@ class ToolCallAttemptsRepository:
             params["user_id"] = user_id
         result_proxy = self._conn.execute(text(sql), params)
         return result_proxy.rowcount > 0
+
+    def get_app_result(self, message_id: str, call_id: str) -> Optional[dict]:
+        """The MCP App view result journaled for a call of a message, or None.
+
+        Args:
+            message_id: The message the call belongs to.
+            call_id: The call's id as the chat knows it (not the journal key).
+
+        Returns:
+            The ``CallToolResult`` the view was handed live.
+        """
+        row = self._conn.execute(
+            text(
+                "SELECT result -> 'app_result' AS app_result FROM tool_call_attempts "
+                "WHERE call_id = :key AND message_id = CAST(:mid AS uuid)"
+            ),
+            {"key": f"{message_id}:{call_id}", "mid": message_id},
+        ).fetchone()
+        value = row._mapping["app_result"] if row is not None else None
+        return value if isinstance(value, dict) else None
 
     def attach_message(self, call_ids: list[str], message_id: str) -> int:
         """Point journal rows written before their turn's message existed at that message.

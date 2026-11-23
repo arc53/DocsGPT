@@ -42,6 +42,9 @@ publish_package() {
         echo "Cleaning dist directory..."
         rm -rf dist
     fi
+    # A stale Parcel cache can build a bundle that loads but renders nothing
+    # (a hoisted import left undefined), with no build error.
+    rm -rf .parcel-cache
 
     # Update version based on input parameter or default to patch
     if [[ "$VERSION_UPDATE_TYPE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -73,11 +76,9 @@ publish_package "docsgpt-react" "build:react" "true"
 cp package_original.json package.json
 cp package-lock_original.json package-lock.json
 
-# Update the version in the final package.json
-jq --arg version "${LATEST_VERSION#v}" '.version=$version' package.json > temp.json && mv temp.json package.json
-
-# Run npm install to update package-lock-only
-npm install --package-lock-only
+# Write the final version into package.json and package-lock.json (npm version
+# changes only the version fields; it resolves and installs nothing)
+npm version "${LATEST_VERSION#v}" --no-git-tag-version
 
 # Cleanup backup files
 rm -f package_original.json

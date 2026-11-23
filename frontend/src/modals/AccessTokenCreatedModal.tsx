@@ -16,10 +16,10 @@ interface AccessTokenCreatedModalProps {
   /** The secret replaces an existing token's secret rather than belonging to a new token. */
   regenerated?: boolean;
   /**
-   * Creates an API tool that lets agents read the account with this token.
-   * Unset hides the option (a token that can read nothing agents use).
+   * Creates an API tool that lets agents work in the account with this token,
+   * and resolves to the actions that start switched off. Unset hides the option.
    */
-  onCreateTool?: () => Promise<void>;
+  onCreateTool?: () => Promise<string[] | void>;
   onClose: () => void;
 }
 
@@ -35,11 +35,13 @@ export default function AccessTokenCreatedModal({
     'idle' | 'creating' | 'created' | 'failed'
   >('idle');
   const [toolError, setToolError] = useState('');
+  const [someOff, setSomeOff] = useState(false);
   const createTool = async () => {
     if (!onCreateTool) return;
     setToolState('creating');
     try {
-      await onCreateTool();
+      const inactive = await onCreateTool();
+      setSomeOff(Boolean(inactive?.length));
       setToolState('created');
     } catch (err) {
       setToolError(err instanceof Error ? err.message : '');
@@ -49,6 +51,7 @@ export default function AccessTokenCreatedModal({
   const close = () => {
     setToolState('idle');
     setToolError('');
+    setSomeOff(false);
     onClose();
   };
   const copy = regenerated
@@ -120,6 +123,9 @@ export default function AccessTokenCreatedModal({
               <Alert variant="success">
                 <AlertDescription>
                   <p>{t('settings.accessTokens.created.toolCreated')}</p>
+                  {someOff && (
+                    <p>{t('settings.accessTokens.created.toolSomeOff')}</p>
+                  )}
                 </AlertDescription>
               </Alert>
             ) : (

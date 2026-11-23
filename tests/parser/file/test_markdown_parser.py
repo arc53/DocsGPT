@@ -194,3 +194,28 @@ def test_tups_chunk_append_windowed_count_still_chunks_over_budget(encoding, mon
     tups = MarkdownParser(max_tokens=300).tups_chunk_append([], None, "x" * 1000)
     assert [len(chunk) for _, chunk in tups] == [300, 300, 300, 100]
     assert max(encoding.encode_lengths) <= 2 * _WINDOW
+
+
+def test_markdown_to_tups_keeps_later_header_after_consecutive_headers() -> None:
+    raw = "# H1\n# H2\nbody\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(raw)
+    assert tups == [("H2", "body\n\n")]
+
+
+def test_markdown_to_tups_keeps_only_last_header_when_several_chain() -> None:
+    raw = "# H1\n## H2\n### H3\nbody\n"
+    parser = MarkdownParser()
+    tups = parser.markdown_to_tups(raw)
+    assert tups == [("H3", "body\n\n")]
+
+
+def test_markdown_parse_file_attributes_a_body_to_the_header_above_it() -> None:
+    # parse_file puts the header in the text that gets embedded, so the wrong
+    # one here means the wrong heading is indexed with the body.
+    content = "# H1\n# H2\nbody\n"
+    parser = MarkdownParser()
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+
+    assert result == ["\n\nH2\nbody\n\n"]

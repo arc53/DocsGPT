@@ -95,6 +95,7 @@ class TestCategories:
             ("connector_policy_set", "config"),
             ("source_defaults_set", "config"),
             ("agent_defaults_set", "config"),
+            ("model_defaults_set", "config"),
             ("guardrails_settings_set", "config"),
             ("source.deleted", "data"),
             ("agent.created", "data"),

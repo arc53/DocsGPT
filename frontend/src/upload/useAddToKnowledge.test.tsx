@@ -24,6 +24,7 @@ import notificationsReducer, {
 import preferenceReducer, {
   setSelectedDocs,
 } from '../preferences/preferenceSlice';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import uploadReducer from './uploadSlice';
 import {
   knowledgeIdempotencyKey,
@@ -183,6 +184,49 @@ describe('useAddToKnowledge', () => {
     ]);
     expect(store.getState().preference.sourceDocs).toEqual([earlier, created]);
   });
+
+  // The ingest can take minutes: a list read for one workspace must not land
+  // in another, and the new source joins only the selection it was made for.
+  it.each([
+    ['while the list is out', 'list'],
+    ['during the ingest', 'ingest'],
+  ] as const)(
+    'applies nothing after a workspace switch %s',
+    async (_label, when) => {
+      createSourceFromAttachments.mockResolvedValue(
+        okResponse({ success: true, task_id: 'task-9', source_id: 'src-9' }),
+      );
+      const created = { id: 'src-9', name: 'report.pdf', date: '', model: '' };
+      let answer: ((docs: unknown) => void) | null = null;
+      getDocs.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+      setRequestWorkspace('t1', 1);
+      try {
+        await act(async () => {
+          await hook.addToKnowledge(files);
+        });
+        if (when === 'ingest') setRequestWorkspace('t2', 2);
+        await act(async () => {
+          store.dispatch(
+            sseEventReceived({
+              id: 'e1',
+              type: 'source.ingest.completed',
+              scope: { kind: 'source', id: 'src-9' },
+              payload: {},
+            }),
+          );
+        });
+        await vi.waitFor(() => expect(answer).not.toBeNull());
+        if (when === 'list') setRequestWorkspace('t2', 2);
+        await act(async () => answer!([created]));
+
+        expect(store.getState().preference.selectedDocs ?? []).toEqual([]);
+        if (when === 'list')
+          expect(store.getState().preference.sourceDocs ?? []).toEqual([]);
+      } finally {
+        setRequestWorkspace('personal', 0);
+      }
+    },
+  );
 
   it('leaves the selection alone when the ingest fails', async () => {
     createSourceFromAttachments.mockResolvedValue(

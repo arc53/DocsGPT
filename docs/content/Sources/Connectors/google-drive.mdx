@@ -121,7 +121,17 @@ Calls to Google are retried, waiting longer after each attempt, when Google rate
 
 ### Sync
 
-A scheduled sync, or **Sync now**, first compares each file's name, location and modified time with the last ingest. When nothing changed, it keeps the existing index and downloads nothing. Otherwise it downloads and indexes the whole selection again. Changing the source's chunking settings also counts as a change. If a file could not be downloaded last time, the next sync reprocesses the source in full. The exception is a file Google will never export, such as one over the size limit: it does not force a full sync until it is edited.
+A scheduled sync, or **Sync now**, lists the selection from Drive without downloading it and compares each file, by its ID and modified time, with what the last sync indexed. Only new and edited files are downloaded and embedded. A renamed or moved file keeps its chunks, which take its new path and link. A file that left the selection loses its chunks. When nothing changed, nothing is downloaded.
+
+A file that could not be downloaded or read is recorded, and the source says how many there are, with **Try again now**. A new file stays out of the index until it can be read; an edited file usually keeps its earlier content in the index, so search can still return the older version. Later syncs try only those files again. A failure that can pass, such as a rate limit, a timeout or a sharing change, is tried until it has failed three times in all for that version of the file, then again once the file is edited. A file DocsGPT can never read as it is, such as a Google Doc over the export limit or a corrupt file, waits for its next edit or for a change of the OCR or parser settings. **Try again now** retries every recorded file at once.
+
+Changing the source's chunking settings makes the next sync process the whole selection once. So does a source's first sync after an upgrade from a version without this record.
+
+## Team accounts
+
+In a team workspace, an Admin can connect a Google Drive account for the team; see [Team connections](/Using/team-workspaces#team-connections). Only the Admin who connected it picks files and folders from it, and the team's sources read Drive with that account.
+
+If another Admin later chooses **Reconnect** and signs in with their own Google account, the sources stay, but each sync reads Drive as the new account. Files and folders the new account can't open drop out of the sources at the next sync. With `GOOGLE_DRIVE_ACCESS=file` (the default), Google lets DocsGPT open only what the signed-in account picked, so most of what the previous Admin picked drops out: the new Admin picks it again from each source. With `readonly`, only what the new account has no access to in Drive drops out.
 
 ## Troubleshooting
 

@@ -305,6 +305,7 @@ class TestKeylessAgentsStillLoadConfig:
         processor.agent_id = None
         processor.is_shared_usage = False
         processor.shared_token = None
+        processor.conversation_id = None
         processor._agent_data = {}
         processor._authorized_agent_row = {
             "id": "abc",

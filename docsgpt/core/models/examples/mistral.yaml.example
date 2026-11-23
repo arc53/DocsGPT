@@ -16,6 +16,11 @@ base_url: https://api.mistral.ai/v1   # OpenAI-compatible endpoint
 defaults:
   supports_tools: true
   context_window: 128000
+  # Mistral refuses (422) an assistant message that carries
+  # `reasoning_content`, which DocsGPT otherwise sends back with each
+  # stored thought, including thoughts from another model earlier in the
+  # conversation.
+  send_reasoning_content: false
 
 models:
   - id: mistral-large-latest

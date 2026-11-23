@@ -445,3 +445,40 @@ class TestChunkerTokenizerCallsAreBounded:
             assert "".join(c.text[len(header):] for c in chunks) == body
         else:
             assert "".join(c.text for c in chunks) == header + body
+
+
+# =====================================================================
+# Chunker - header budget edges (found by tests/fuzz/fuzz_chunking.py)
+# =====================================================================
+
+
+@pytest.mark.unit
+class TestChunkerHeaderBudgetEdges:
+    """A header that nearly fills the budget must neither crash nor overshoot it."""
+
+    @pytest.mark.parametrize("duplicate_headers", [False, True])
+    def test_header_leaving_less_than_one_character(self, duplicate_headers):
+        counter = tokenization.TiktokenCounter()
+        header = "Title\nAuthor\nDate\n"
+        text = header + "\U0001f9ec" * 5  # 3 cl100k tokens per emoji
+        max_tokens = counter.count(header) + 1
+        chunker = Chunker(max_tokens=max_tokens, min_tokens=0, duplicate_headers=duplicate_headers)
+        chunker.counter = counter
+
+        chunks = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert "".join(c.text for c in chunks) == text
+        assert all(counter.count(c.text) <= max_tokens for c in chunks)
+
+    def test_header_seam_does_not_push_a_chunk_over_budget(self):
+        counter = tokenization.TiktokenCounter()
+        # " . \r\n" + "\n\n\n" is 4 cl100k tokens joined but 3 apart.
+        text = "Title\nAuthor\nword . \r\n" + "\n\n\nbody " * 30
+        chunker = Chunker(max_tokens=8, min_tokens=0)
+        chunker.counter = counter
+
+        chunks = chunker.chunk([Document(text=text, doc_id="d")])
+
+        assert "".join(c.text for c in chunks) == text
+        assert all(counter.count(c.text) <= 8 for c in chunks)
+        assert all(c.extra_info["token_count"] == counter.count(c.text) for c in chunks)

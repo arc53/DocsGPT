@@ -34,6 +34,7 @@ dialing the chosen IP literal directly.
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
 import threading
 import time
@@ -269,8 +270,8 @@ def reject_ambiguous_url(url: str) -> None:
 
     Raises:
         UnsafeUserUrlError: If the URL contains control characters, a
-            backslash or whitespace in its authority, or a host urllib3
-            reads differently.
+            backslash or whitespace in its authority, a percent-encoded
+            host, or a host urllib3 reads differently.
     """
 
     if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in url):
@@ -284,6 +285,10 @@ def reject_ambiguous_url(url: str) -> None:
         raise UnsafeUserUrlError(f"url {url!r} has a backslash or whitespace in its host part")
     if not host:
         return
+    # urllib3 decodes percent-escapes in a host and urlsplit keeps them, so the
+    # two spellings can differ; a hostname never needs them.
+    if "%" in host:
+        raise UnsafeUserUrlError(f"url {url!r} percent-encodes its host")
     # Re-parse the host urlsplit found so both sides get urllib3's spelling
     # (IDNA, brackets, case) before they are compared.
     bracketed = f"[{host}]" if ":" in host else host
@@ -612,6 +617,17 @@ def _pinned_session(
     request_headers["Host"] = host_header
 
     session = requests.Session()
+    # Off, or an env proxy would re-resolve the hostname and dial from its own
+    # vantage point: the validated IP is dropped and the TOCTOU window reopens.
+    session.trust_env = False
+    # ``trust_env`` also carries the CA bundle, which says nothing about which
+    # address is dialled: keep an operator's private CA for internal hosts.
+    session.verify = (
+        os.environ.get("REQUESTS_CA_BUNDLE")
+        or os.environ.get("CURL_CA_BUNDLE")
+        or os.environ.get("SSL_CERT_FILE")
+        or True
+    )
     if url_credentials and parts.username is not None:
         session.auth = (unquote(parts.username), unquote(parts.password or ""))
     if watchdog is not None:

@@ -1,0 +1,270 @@
+[
+  {
+    "key": "mcp:airtable",
+    "name": "Airtable",
+    "description": "Search, read and update records in Airtable bases.",
+    "category": "database",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.airtable.com/mcp",
+    "docs_url": "https://airtable.com/developers/agents/mcp/getting-started"
+  },
+  {
+    "key": "mcp:alphavantage",
+    "name": "Alpha Vantage",
+    "description": "Look up stock quotes, fundamentals, forex, crypto, economic indicators and market news.",
+    "category": "business",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read"
+    ],
+    "mcp_url": "https://mcp.alphavantage.co/mcp",
+    "docs_url": "https://github.com/alphavantage/alpha_vantage_mcp"
+  },
+  {
+    "key": "mcp:calcom",
+    "name": "Cal.com",
+    "description": "Read and manage your Cal.com bookings, event types, availability and schedules.",
+    "category": "business",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.cal.com/mcp",
+    "docs_url": "https://cal.com/docs/mcp-server"
+  },
+  {
+    "key": "mcp:canva",
+    "name": "Canva",
+    "description": "Work with Canva designs, export them and use brand templates.",
+    "category": "business",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.canva.com/mcp",
+    "docs_url": "https://www.canva.dev/docs/mcp"
+  },
+  {
+    "key": "mcp:clickup",
+    "name": "ClickUp",
+    "description": "Search, read and update ClickUp tasks, docs and lists, and add comments.",
+    "category": "projects",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.clickup.com/mcp",
+    "docs_url": "https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server"
+  },
+  {
+    "key": "mcp:cloudflare",
+    "name": "Cloudflare",
+    "description": "Manage Workers, DNS, R2 and more through the Cloudflare API.",
+    "category": "dev",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read"
+    ],
+    "mcp_url": "https://mcp.cloudflare.com/mcp",
+    "docs_url": "https://developers.cloudflare.com/agents/model-context-protocol/cloudflare/servers-for-cloudflare/"
+  },
+  {
+    "key": "mcp:coingecko",
+    "name": "CoinGecko",
+    "description": "Look up live crypto prices, market caps, volumes, trending coins and price history.",
+    "category": "business",
+    "sign_in": "none",
+    "capabilities": [
+      "read"
+    ],
+    "mcp_url": "https://mcp.api.coingecko.com/mcp",
+    "docs_url": "https://docs.coingecko.com/docs/mcp-server"
+  },
+  {
+    "key": "mcp:context7",
+    "name": "Context7",
+    "description": "Look up up-to-date documentation and code examples for libraries.",
+    "category": "dev",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read"
+    ],
+    "mcp_url": "https://mcp.context7.com/mcp/oauth",
+    "docs_url": "https://context7.com/docs/resources/all-clients"
+  },
+  {
+    "key": "mcp:drawio",
+    "name": "draw.io",
+    "description": "Create editable flowcharts and other diagrams with draw.io.",
+    "category": "projects",
+    "sign_in": "none",
+    "capabilities": [
+      "read"
+    ],
+    "mcp_url": "https://mcp.draw.io/mcp",
+    "docs_url": "https://github.com/jgraph/drawio-mcp"
+  },
+  {
+    "key": "mcp:excalidraw",
+    "name": "Excalidraw",
+    "description": "Draw diagrams and get an editable Excalidraw link.",
+    "category": "projects",
+    "sign_in": "none",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.excalidraw.com/mcp",
+    "docs_url": "https://github.com/excalidraw/excalidraw-mcp"
+  },
+  {
+    "key": "mcp:atlassian",
+    "name": "Jira & Confluence",
+    "description": "Search and update Jira issues and Confluence pages.",
+    "category": "projects",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.atlassian.com/v1/mcp",
+    "docs_url": "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"
+  },
+  {
+    "key": "mcp:linear",
+    "name": "Linear",
+    "description": "Sync issues and documents into Knowledge, and let agents find, create and update issues.",
+    "category": "projects",
+    "sign_in": "oauth",
+    "capabilities": [
+      "sync",
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.linear.app/mcp",
+    "docs_url": "https://linear.app/docs/mcp"
+  },
+  {
+    "key": "mcp:miro",
+    "name": "Miro",
+    "description": "Find boards, read content and comments, create diagrams, and reply to comments.",
+    "category": "projects",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.miro.com/",
+    "docs_url": "https://developers.miro.com/docs/miro-mcp"
+  },
+  {
+    "key": "mcp:neon",
+    "name": "Neon",
+    "description": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
+    "category": "database",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.neon.tech/mcp",
+    "docs_url": "https://neon.com/docs/ai/neon-mcp-server"
+  },
+  {
+    "key": "mcp:notion",
+    "name": "Notion",
+    "description": "Search, read and update Notion pages and databases.",
+    "category": "knowledge",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.notion.com/mcp",
+    "docs_url": "https://developers.notion.com/docs/mcp"
+  },
+  {
+    "key": "mcp:resend",
+    "name": "Resend",
+    "description": "Send emails and manage contacts, audiences and domains.",
+    "category": "messaging",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.resend.com/mcp",
+    "docs_url": "https://resend.com/docs/knowledge-base/mcp-server"
+  },
+  {
+    "key": "mcp:sentry",
+    "name": "Sentry",
+    "description": "Look up Sentry issues, events and releases.",
+    "category": "dev",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.sentry.dev/mcp",
+    "docs_url": "https://docs.sentry.io/product/sentry-mcp/"
+  },
+  {
+    "key": "mcp:stripe",
+    "name": "Stripe",
+    "description": "Look up customers, payments and subscriptions in Stripe.",
+    "category": "business",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.stripe.com",
+    "docs_url": "https://docs.stripe.com/mcp"
+  },
+  {
+    "key": "mcp:trello",
+    "name": "Trello",
+    "description": "Find Trello boards and cards, and create and update cards.",
+    "category": "projects",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.trello.com/v1",
+    "docs_url": "https://support.atlassian.com/trello/docs/connect-trello-to-ai-assistants-with-trello-mcp/"
+  },
+  {
+    "key": "mcp:twelvedata",
+    "name": "Twelve Data",
+    "description": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
+    "category": "business",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read"
+    ],
+    "mcp_url": "https://mcp.twelvedata.com/mcp",
+    "docs_url": "https://twelvedata.com/docs/mcp"
+  },
+  {
+    "key": "mcp:zapier",
+    "name": "Zapier",
+    "description": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
+    "category": "business",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.zapier.com/api/v1/connect",
+    "docs_url": "https://docs.zapier.com/mcp/get-started/connect"
+  }
+]

@@ -1,5 +1,6 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 
 const { events } = vi.hoisted(() => ({ events: { recent: [] as unknown[] } }));
 vi.mock('react-redux', () => ({
@@ -8,6 +9,7 @@ vi.mock('react-redux', () => ({
       notifications: { recentEvents: events.recent },
       preference: {},
     }),
+  useDispatch: () => vi.fn(),
 }));
 vi.mock('../preferences/preferenceSlice', () => ({
   selectToken: () => 'token',
@@ -31,10 +33,12 @@ vi.mock('react-i18next', () => ({
 
 const testMCPConnection = vi.fn();
 const saveMCPServer = vi.fn();
+const cancelMCPOAuth = vi.fn();
 vi.mock('../api/services/userService', () => ({
   default: {
     testMCPConnection: (...args: unknown[]) => testMCPConnection(...args),
     saveMCPServer: (...args: unknown[]) => saveMCPServer(...args),
+    cancelMCPOAuth: (...args: unknown[]) => cancelMCPOAuth(...args),
   },
 }));
 
@@ -64,6 +68,7 @@ describe('MCPServerModal', () => {
   beforeEach(() => {
     testMCPConnection.mockReset();
     saveMCPServer.mockReset();
+    cancelMCPOAuth.mockReset().mockResolvedValue({});
     events.recent = [];
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -77,18 +82,22 @@ describe('MCPServerModal', () => {
     vi.restoreAllMocks();
   });
 
-  const render = async (overrides: Partial<typeof server> = {}) => {
+  const renderServer = async (shown: typeof server) => {
     await act(async () => {
       root.render(
-        <MCPServerModal
-          modalState="ACTIVE"
-          setModalState={() => {}}
-          server={{ ...server, ...overrides }}
-          onServerSaved={() => {}}
-        />,
+        <MemoryRouter>
+          <MCPServerModal
+            modalState="ACTIVE"
+            setModalState={() => {}}
+            server={shown}
+            onServerSaved={() => {}}
+          />
+        </MemoryRouter>,
       );
     });
   };
+  const render = (overrides: Partial<typeof server> = {}) =>
+    renderServer({ ...server, ...overrides });
 
   const text = () => document.body.textContent ?? '';
   const button = (label: string) =>
@@ -347,6 +356,136 @@ describe('MCPServerModal', () => {
     const blocked = alertWith('settings.tools.mcp.oauthPopupBlocked')!;
     expect(blocked.dataset.variant).toBe('warning');
     expect(blocked.textContent).toContain('settings.tools.mcp.openAuthPage');
+  });
+
+  it('opens the sign-in window inside the click and points it at the provider later', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    testMCPConnection.mockReturnValue(
+      new Promise((resolve) => (answer = resolve)),
+    );
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    const open = vi
+      .spyOn(window, 'open')
+      .mockReturnValue(popup as unknown as Window);
+    await render({ auth_type: 'oauth', has_encrypted_credentials: false });
+    act(() => button('settings.tools.mcp.testConnection').click());
+    // Opened before the server answered: still the click's own gesture.
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(open.mock.calls[0][0]).toBe('about:blank');
+
+    await act(async () =>
+      answer({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({ requires_oauth: true, task_id: 'task-1' }),
+      }),
+    );
+    events.recent = [
+      {
+        id: 'evt-1',
+        type: 'mcp.oauth.awaiting_redirect',
+        scope: { id: 'task-1' },
+        payload: { authorization_url: 'https://auth.example.com/authorize' },
+      },
+    ];
+    await render({ auth_type: 'oauth', has_encrypted_credentials: false });
+    expect(popup.location.href).toBe('https://auth.example.com/authorize');
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('signs a saved server in again by its id, lists its tools and saves with the finished sign-in', async () => {
+    testMCPConnection.mockReturnValue(
+      json({ requires_oauth: true, task_id: 'task-1' }),
+    );
+    saveMCPServer.mockReturnValue(json({ success: true, id: 'tool-1' }));
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    // The same server on every render: a new one would reset the form.
+    const shown = {
+      ...server,
+      auth_type: 'oauth',
+      has_encrypted_credentials: false,
+    };
+    await renderServer(shown);
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(testMCPConnection.mock.calls[0][0]).toMatchObject({ id: 'tool-1' });
+    events.recent = [
+      {
+        id: 'evt-2',
+        type: 'mcp.oauth.completed',
+        scope: { id: 'task-1' },
+        payload: { tools: [{ name: 'get_rates' }], tools_count: 1 },
+      },
+    ];
+    await renderServer(shown);
+    expect(popup.close).toHaveBeenCalled();
+    expect(
+      alertWith('settings.tools.mcp.oauthCompleted')?.dataset.variant,
+    ).toBe('success');
+    expect(text()).toContain('get_rates');
+    await act(async () => button('settings.tools.mcp.save').click());
+    expect(saveMCPServer.mock.calls[0][0]).toMatchObject({
+      id: 'tool-1',
+      config: { oauth_task_id: 'task-1' },
+    });
+  });
+
+  it('opens a blocked sign-in from its link and closes that window when the sign-in ends', async () => {
+    testMCPConnection.mockReturnValue(
+      json({ requires_oauth: true, task_id: 'task-1' }),
+    );
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const shown = {
+      ...server,
+      auth_type: 'oauth',
+      has_encrypted_credentials: false,
+    };
+    await renderServer(shown);
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    events.recent = [
+      {
+        id: 'evt-1',
+        type: 'mcp.oauth.awaiting_redirect',
+        scope: { id: 'task-1' },
+        payload: { authorization_url: 'https://auth.example.com/authorize' },
+      },
+    ];
+    await renderServer(shown);
+    const popup = { closed: false, close: vi.fn(), location: { href: '' } };
+    open.mockReturnValue(popup as unknown as Window);
+    const link = alertWith(
+      'settings.tools.mcp.oauthPopupBlocked',
+    )!.querySelector('a')!;
+    await act(async () => link.click());
+    expect(open).toHaveBeenLastCalledWith(
+      'https://auth.example.com/authorize',
+      expect.any(String),
+      expect.any(String),
+    );
+    events.recent = [
+      {
+        id: 'evt-2',
+        type: 'mcp.oauth.completed',
+        scope: { id: 'task-1' },
+        payload: {},
+      },
+      ...events.recent,
+    ];
+    await renderServer(shown);
+    expect(popup.close).toHaveBeenCalled();
+  });
+
+  it('stops the sign-in on the server when the form is cancelled', async () => {
+    testMCPConnection.mockReturnValue(
+      json({ requires_oauth: true, task_id: 'task-1' }),
+    );
+    vi.spyOn(window, 'open').mockReturnValue(null);
+    await render({ auth_type: 'oauth', has_encrypted_credentials: false });
+    await act(async () => button('settings.tools.mcp.testConnection').click());
+    expect(cancelMCPOAuth).not.toHaveBeenCalled();
+    await act(async () => button('settings.tools.mcp.cancel').click());
+    expect(cancelMCPOAuth).toHaveBeenCalledWith('task-1', 'token');
   });
 
   it('leaves Alert icons unsized (the Alert sizes them)', async () => {

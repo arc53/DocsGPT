@@ -47,12 +47,21 @@ class TestAllowedActions:
     def test_agent_editor_defaults(self):
         actions = allowed_actions("agent", "editor", {})
         assert {"use", "edit", "publish", "view_logs", "manage_schedules", "export",
-                "manage_access_details", "edit_policy"} <= actions
-        assert not {"delete", "share", "manage_settings", "move_folder"} & actions
+                "edit_policy"} <= actions
+        # Keys, public links and webhooks reach people the owner never shared
+        # with: editors mint them only once the owner allows it.
+        assert not {"delete", "share", "manage_settings", "manage_access_details"} & actions
+        assert "manage_access_details" in allowed_actions(
+            "agent", "editor", {"editors_can_manage_access_details": True}
+        )
 
     def test_agent_viewer_defaults(self):
         actions = allowed_actions("agent", "viewer", {})
-        assert actions == {"use", "pin"}
+        # Filing in one's own folders is personal, so anyone who sees the agent may.
+        assert actions == {"use", "pin", "move_folder"}
+
+    def test_source_viewer_files_too(self):
+        assert "move_folder" in allowed_actions("source", "viewer", {})
 
     def test_switches_widen_and_narrow(self):
         settings = {
@@ -100,7 +109,7 @@ class TestSettings:
         assert settings_for(pg_conn, "agent", aid) == {
             "editors_can_share": False,
             "editors_can_delete": False,
-            "editors_can_manage_access_details": True,
+            "editors_can_manage_access_details": False,
             "viewers_can_see_logs": False,
         }
 
@@ -113,6 +122,20 @@ class TestSettings:
         merged = settings_for(pg_conn, "agent", aid)
         assert merged["viewers_can_see_logs"] is True
         assert merged["editors_can_share"] is True
+
+    def test_only_switches_set_explicitly_are_stored(self, pg_conn):
+        # A switch nobody set follows its default, so a later change of the
+        # default reaches it; one the owner saved keeps the saved value.
+        from sqlalchemy import text
+
+        aid = _agent(pg_conn)
+        set_settings(pg_conn, "agent", aid, {"viewers_can_see_logs": True}, "alice")
+        set_settings(pg_conn, "agent", aid, {"editors_can_manage_access_details": True}, "alice")
+        stored = pg_conn.execute(
+            text("SELECT settings FROM resource_share_settings WHERE resource_id = CAST(:id AS uuid)"),
+            {"id": aid},
+        ).scalar()
+        assert stored == {"viewers_can_see_logs": True, "editors_can_manage_access_details": True}
 
     def test_unknown_key_rejected(self, pg_conn):
         aid = _agent(pg_conn)
@@ -156,7 +179,7 @@ class TestResolve:
         _share(pg_conn, team, "agent", aid2, "viewer", member="carol")
         rv = resolve(pg_conn, "agent", aid2, "carol")
         assert rv.access == "viewer"
-        assert rv.actions == frozenset({"use", "pin"})
+        assert rv.actions == frozenset({"use", "pin", "move_folder"})
 
     def test_switch_applies_to_grantee(self, pg_conn):
         team = _team(pg_conn)

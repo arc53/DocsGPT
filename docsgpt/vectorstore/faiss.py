@@ -444,6 +444,9 @@ class FaissStore(BaseVectorStore):
     def _append(self, texts, metadatas, vectors, ids=None) -> List[str]:
         """Add embedded rows to the index and docstore, returning their ids."""
         ids = list(ids) if ids else [str(uuid.uuid4()) for _ in texts]
+        if len(vectors) != len(texts) or len(ids) != len(texts):
+            # Rows and docstore entries must pair one to one: write nothing.
+            raise ValueError(f"Got {len(vectors)} vectors and {len(ids)} ids for {len(texts)} texts")
         self.index.add(np.array(vectors, dtype=np.float32))
         start = len(self.index_to_docstore_id)
         for offset, (text, metadata, doc_id) in enumerate(zip(texts, metadatas, ids)):
@@ -469,7 +472,13 @@ class FaissStore(BaseVectorStore):
         step = _resolve_batch_size()
         vectors: List[List[float]] = []
         for start in range(0, len(texts), step):
-            vectors.extend(self.embeddings.embed_documents(texts[start:start + step]))
+            part = texts[start:start + step]
+            answer = self.embeddings.embed_documents(part)
+            if len(answer) != len(part):
+                # Checked per batch: a short one and a long one would add up to the
+                # right total and pair the vectors with the wrong texts.
+                raise ValueError(f"Got {len(answer)} embeddings for {len(part)} texts")
+            vectors.extend(answer)
         return vectors
 
     def _to_document(self, doc_id: str) -> Optional[Document]:
@@ -678,6 +687,30 @@ class FaissStore(BaseVectorStore):
 
         self._save_or_undo(undo)
         return chunk_id
+
+    def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
+        """Replace several chunks' metadata, keeping their text and vectors; saved to storage once.
+
+        A failed save puts the metadata back (``_save_or_undo``).
+
+        Args:
+            updates: ``{chunk id: complete new metadata}``; ids not in this index are skipped.
+
+        Returns:
+            How many chunks were updated.
+        """
+        present = {cid: meta for cid, meta in updates.items() if cid in self.documents}
+        if not present:
+            return 0
+        before = {cid: self.documents[cid] for cid in present}
+        for cid, metadata in present.items():
+            self.documents[cid] = {**before[cid], "metadata": self._own_metadata(metadata)}
+
+        def undo() -> None:
+            self.documents.update(before)
+
+        self._save_or_undo(undo)
+        return len(present)
 
     def _replace_vector(self, chunk_id: str, vector: np.ndarray) -> None:
         """Swap one chunk's vector, renumbering the rows to match.

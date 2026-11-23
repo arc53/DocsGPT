@@ -550,6 +550,18 @@ class BaseVectorStore(ABC):
         """Delete the entire index/collection"""
         pass
 
+    def purge_index(self, batch_size: int = 1000) -> Optional[int]:
+        """Delete every chunk of this source; a store that can, does it ``batch_size`` rows at a time.
+
+        Args:
+            batch_size: Rows per delete, for stores that batch.
+
+        Returns:
+            The number of chunks deleted, or ``None`` when the store cannot say.
+        """
+        self.delete_index()
+        return None
+
     def save_local(self, *args, **kwargs):
         """Save vectorstore to local storage"""
         pass
@@ -605,6 +617,30 @@ class BaseVectorStore(ABC):
                 exc_info=True,
             )
         raise RuntimeError(f"Failed to delete old chunk {chunk_id} during update") from delete_error
+
+    def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
+        """Replace several chunks' metadata, keeping their text.
+
+        Stores that can rewrite metadata without embedding the text again
+        override this; the default goes through :meth:`update_chunk`, which
+        embeds each chunk's text again.
+
+        Args:
+            updates: ``{chunk id: complete new metadata}``.
+
+        Returns:
+            How many chunks were updated; ids this source doesn't hold are skipped.
+        """
+        if not updates:
+            return 0
+        texts = {str(chunk.get("doc_id")): chunk.get("text") or "" for chunk in self._scan_chunks()}
+        updated = 0
+        for chunk_id, metadata in updates.items():
+            if str(chunk_id) not in texts:
+                continue
+            self.update_chunk(str(chunk_id), texts[str(chunk_id)], metadata)
+            updated += 1
+        return updated
 
     @classmethod
     def supports_chunk_edits(cls) -> bool:

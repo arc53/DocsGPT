@@ -8,6 +8,7 @@ import {
   isClassicAgentToolVisible,
   isServerAttachedTool,
   isSharedOAuthMcp,
+  isWorkflowNodeToolVisible,
   toolInChat,
 } from './toolUtils';
 
@@ -148,6 +149,28 @@ describe('isAgentPickerToolVisible', () => {
       isAgentPickerToolVisible({ access: 'viewer', allowed_actions: ['use'] }),
     ).toBe(false);
     expect(isAgentPickerToolVisible({ workflow_only: true })).toBe(false);
+  });
+});
+
+describe('isWorkflowNodeToolVisible', () => {
+  it('keeps own tools, usable shared tools and workflow-only builtins', () => {
+    expect(isWorkflowNodeToolVisible({})).toBe(true);
+    expect(
+      isWorkflowNodeToolVisible({ name: 'read_document', workflow_only: true }),
+    ).toBe(true);
+    expect(
+      isWorkflowNodeToolVisible({
+        access: 'viewer',
+        allowed_actions: ['use', 'use_in_own'],
+      }),
+    ).toBe(true);
+  });
+
+  it('hides shared tools without use_in_own and server-attached tools', () => {
+    expect(
+      isWorkflowNodeToolVisible({ access: 'viewer', allowed_actions: ['use'] }),
+    ).toBe(false);
+    expect(isWorkflowNodeToolVisible({ name: 'check_job' })).toBe(false);
   });
 });
 

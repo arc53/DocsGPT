@@ -8,12 +8,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     i18n: { language: 'en' },
     t: (key: string, opts?: Record<string, unknown>) => {
-      if (key === 'demo')
-        return [1, 2, 3, 4].map((n) => ({
-          header: `demo${n}`,
-          query: `q${n}`,
-        }));
-      return opts?.names ? `${key}:${opts.names}` : key;
+      const values = ['name', 'first', 'second', 'names']
+        .map((k) => opts?.[k])
+        .filter(Boolean);
+      return values.length ? `${key}:${values.join('|')}` : key;
     },
   }),
 }));
@@ -24,9 +22,15 @@ vi.mock('./api/services/modelService', () => ({
     transformModels: () => [],
   },
 }));
-vi.mock('./hooks', () => ({ useDarkTheme: () => [false] }));
+vi.mock('./hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./hooks')>()),
+  useDarkTheme: () => [false],
+}));
 
-import connectorsReducer from './connectors/connectorsSlice';
+import connectorsReducer, {
+  loadConnectors,
+} from './connectors/connectorsSlice';
+import chatToolsReducer from './conversation/chatToolsSlice';
 import Hero from './Hero';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -40,20 +44,99 @@ const connector = (
 ) => ({
   key,
   name,
+  icon: key,
   publisher,
   capabilities,
   category,
   available: true,
 });
 
-describe('Hero connect card', () => {
+const CATALOG = [
+  connector('brave', 'Brave Search', ['read'], 'search'),
+  connector('telegram', 'Telegram', ['write'], 'messaging'),
+  connector('google_drive', 'Google Drive', ['sync'], 'files'),
+  connector('mcp:notion', 'Notion', ['read', 'write'], 'knowledge', 'preset'),
+  connector('mcp:linear', 'Linear', ['read', 'write'], 'projects', 'preset'),
+  connector('custom_mcp', 'MCP server', ['read'], 'custom', 'custom'),
+];
+
+type HeroState = {
+  sourceDocs?: unknown[] | null;
+  selectedDocs?: unknown[];
+  conversations?: unknown[] | null;
+  /** The source list's fetch failed (`sourceDocs` stays null). */
+  sourceDocsFailed?: boolean;
+  /** The chat list's fetch failed (`conversations` stays null). */
+  conversationsFailed?: boolean;
+  agents?: unknown[] | null;
+  connections?: unknown[];
+  tools?: unknown[];
+  toolsLoaded?: boolean;
+  availableModels?: unknown[];
+  /** The first connectors load has answered (`false`: none has yet). */
+  connectorsLoaded?: boolean;
+};
+
+const makeStore = ({
+  sourceDocs = [],
+  selectedDocs = [],
+  conversations = [],
+  sourceDocsFailed = false,
+  conversationsFailed = false,
+  agents = [],
+  connections = [],
+  tools = [],
+  toolsLoaded = true,
+  availableModels = [],
+  connectorsLoaded = true,
+}: HeroState = {}) =>
+  configureStore({
+    reducer: {
+      connectors: connectorsReducer,
+      chatTools: chatToolsReducer,
+      preference: (
+        state = {
+          token: null,
+          selectedModel: null,
+          availableModels,
+          modelsLoading: false,
+          sourceDocs,
+          sourceDocsFailed,
+          selectedDocs,
+          conversations: {
+            data: conversations,
+            loading: false,
+            failed: conversationsFailed,
+          },
+          agents,
+        },
+      ) => state,
+    },
+    preloadedState: {
+      connectors: {
+        enabled: true,
+        loading: false,
+        loaded: connectorsLoaded,
+        failed: false,
+        settled: connectorsLoaded,
+        catalog: CATALOG,
+        connections,
+      },
+      chatTools: { tools, loaded: toolsLoaded },
+    },
+  } as Parameters<typeof configureStore>[0]);
+
+describe('Hero suggestions', () => {
   let container: HTMLDivElement;
   let root: Root;
+  const handleQuestion =
+    vi.fn<(args: { question: string; isRetry?: boolean }) => void>();
 
   beforeEach(() => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+    handleQuestion.mockReset();
   });
 
   afterEach(async () => {
@@ -61,94 +144,191 @@ describe('Hero connect card', () => {
     container.remove();
   });
 
-  const render = async (connections: unknown[]) => {
-    const store = configureStore({
-      reducer: {
-        connectors: connectorsReducer,
-        preference: (
-          state = {
-            token: null,
-            selectedModel: null,
-            availableModels: [],
-            modelsLoading: false,
-          },
-        ) => state,
-      },
-      preloadedState: {
-        connectors: {
-          enabled: true,
-          loading: false,
-          loaded: true,
-          failed: false,
-          catalog: [
-            connector('brave', 'Brave Search', ['read'], 'search'),
-            connector('telegram', 'Telegram', ['write'], 'messaging'),
-            connector('google_drive', 'Google Drive', ['sync'], 'files'),
-            connector(
-              'mcp:notion',
-              'Notion',
-              ['read', 'write'],
-              'knowledge',
-              'preset',
-            ),
-            connector(
-              'mcp:linear',
-              'Linear',
-              ['read', 'write'],
-              'projects',
-              'preset',
-            ),
-            connector('custom_mcp', 'MCP server', ['read'], 'custom', 'custom'),
-          ],
-          connections,
-        },
-      },
-    } as Parameters<typeof configureStore>[0]);
+  const render = async (state: HeroState = {}) => {
+    const store = makeStore(state);
     await act(async () => {
       root.render(
         <Provider store={store}>
           <MemoryRouter initialEntries={['/']}>
             <Routes>
-              <Route path="/" element={<Hero handleQuestion={vi.fn()} />} />
+              <Route
+                path="/"
+                element={<Hero handleQuestion={handleQuestion} />}
+              />
               <Route
                 path="/settings/connectors"
                 element={<div>CONNECTORS</div>}
               />
+              <Route path="/c/:id" element={<div>CHAT</div>} />
             </Routes>
           </MemoryRouter>
         </Provider>,
       );
     });
+    return store;
   };
 
-  const card = () =>
-    container.querySelector<HTMLButtonElement>(
-      '[data-testid="hero-connect-card"]',
+  const rows = () =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[data-suggestion]'),
     );
+  const rowKeys = () => rows().map((row) => row.dataset.suggestion);
+  const rowFor = (key: string) =>
+    container.querySelector<HTMLButtonElement>(`[data-suggestion="${key}"]`)!;
 
-  it('names services whose data you can chat with, as a list', async () => {
-    await render([]);
-    // Not a web search or a messaging bot: the card is "Connect your data".
-    const expected = new Intl.ListFormat('en', { type: 'conjunction' }).format([
-      'Google Drive',
-      'Notion',
-      'connectHero.more',
-    ]);
-    expect(card()?.textContent).toContain(`connectHero.body:${expected}`);
-    // It replaces the last demo card.
-    expect(container.textContent).not.toContain('demo4');
-    await act(async () => card()!.click());
+  it('offers setup steps on a fresh install, naming services with data', async () => {
+    await render();
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+    // Not a web search or a messaging bot.
+    // British English, like the rest of the app: no comma before "and".
+    expect(rowFor('connect').textContent).toBe(
+      'hero.suggestions.connect:Google Drive, Notion and hero.suggestions.more',
+    );
+    await act(async () => rowFor('connect').click());
     expect(container.textContent).toContain('CONNECTORS');
   });
 
-  it('keeps the demo cards once something is connected', async () => {
-    await render([{ id: 'c1', status: 'connected' }]);
-    expect(card()).toBeNull();
-    expect(container.textContent).toContain('demo4');
+  it('shows nothing until every list it reads has loaded', async () => {
+    await render({ conversations: null });
+    expect(rows()).toHaveLength(0);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({ toolsLoaded: false });
+    expect(rows()).toHaveLength(0);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({ sourceDocs: null });
+    expect(rows()).toHaveLength(0);
+  });
+
+  // A list that failed to load counts as empty, so the setup steps still
+  // show rather than an empty slot for good.
+  it('offers setup steps when the chats or sources failed to load', async () => {
+    await render({ conversations: null, conversationsFailed: true });
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({ sourceDocs: null, sourceDocsFailed: true });
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+  });
+
+  // The saved selection is checked against the source list; without it the
+  // source may be deleted, or another account's on this browser.
+  it('names no saved source when the source list failed to load', async () => {
+    const saved = [
+      { id: 's1', name: 'Carrier Contracts 2026' },
+      { id: 's2', name: 'Rate Cards' },
+    ];
+    await render({
+      sourceDocs: null,
+      sourceDocsFailed: true,
+      selectedDocs: saved,
+    });
+    expect(rowKeys()).toEqual(['add-knowledge', 'connect', 'create-agent']);
+  });
+
+  // Opening the composer's Tools picker reloads the connectors, and the
+  // reload clears the first load's failure while it runs.
+  it('keeps its rows while the connectors reload after a failed load', async () => {
+    const store = await render({ connectorsLoaded: false });
+    expect(rows()).toHaveLength(0);
+    const arg = { token: null };
+    await act(async () => {
+      store.dispatch(loadConnectors.pending('1', arg));
+      store.dispatch(loadConnectors.rejected(new Error('down'), '1', arg));
+    });
+    expect(rowKeys()).toEqual(['add-knowledge', 'create-agent']);
+    await act(async () => {
+      store.dispatch(loadConnectors.pending('2', arg));
+    });
+    expect(rowKeys()).toEqual(['add-knowledge', 'create-agent']);
+  });
+
+  it('holds room for the most rows, so the logo stays put as they change', async () => {
+    await render({ conversations: null });
+    const slot = container.querySelector(
+      '[data-testid="hero-suggestions-slot"]',
+    );
+    // Four md rows (40px each) at the bottom of the slot.
+    expect(slot?.className.split(' ')).toEqual(
+      expect.arrayContaining(['min-h-40', 'justify-end']),
+    );
+  });
+
+  it('sends a question about the selected sources and opens a recent chat', async () => {
+    const contracts = { id: 's1', name: 'Carrier Contracts 2026' };
+    await render({
+      sourceDocs: [contracts],
+      selectedDocs: [contracts],
+      conversations: [
+        {
+          id: 'c-1',
+          name: 'Halvorsen QBR prep',
+          agent_id: null,
+          date: new Date().toISOString(),
+        },
+      ],
+      agents: [{ id: 'a1' }],
+      connections: [
+        { id: 'conn-1', connector_key: 'brave', status: 'connected' },
+      ],
+    });
+    expect(rowKeys()).toEqual(['summarize-s1', 'continue-c-1']);
+    // The text wraps rather than cuts, so no row carries a title tooltip.
+    expect(rowFor('summarize-s1').querySelector('[title]')).toBeNull();
+    expect(rowFor('summarize-s1').getAttribute('title')).toBeNull();
+    // Both end icons wait for hover or focus (shown on touch): an arrow up
+    // sends, an arrow right opens.
+    const trailing = (key: string) =>
+      rowFor(key).querySelector('svg:last-of-type') as SVGElement;
+    expect(trailing('summarize-s1').getAttribute('class')).toContain(
+      'lucide-arrow-up',
+    );
+    expect(trailing('continue-c-1').getAttribute('class')).toContain(
+      'lucide-arrow-right',
+    );
+    for (const key of ['summarize-s1', 'continue-c-1']) {
+      expect(trailing(key).getAttribute('class')).toContain('opacity-0');
+      expect(trailing(key).getAttribute('class')).toContain(
+        'pointer-coarse:opacity-100',
+      );
+    }
+    await act(async () => rowFor('summarize-s1').click());
+    expect(handleQuestion).toHaveBeenCalledWith({
+      question: 'hero.suggestions.summarize:Carrier Contracts 2026',
+    });
+    await act(async () => rowFor('continue-c-1').click());
+    expect(container.textContent).toContain('CHAT');
+  });
+
+  it('asks about a service only while its tool is on in chat', async () => {
+    const connections = [
+      { id: 'conn-n', connector_key: 'mcp:notion', status: 'connected' },
+    ];
+    const notionTool = { id: 't1', connection_id: 'conn-n', status: true };
+    await render({
+      sourceDocs: [{ id: 's1', name: 'Handbook' }],
+      agents: [{ id: 'a1' }],
+      connections,
+      tools: [notionTool],
+    });
+    expect(rowKeys()).toEqual(['service-mcp:notion']);
+    expect(rowFor('service-mcp:notion').textContent).toBe(
+      'hero.suggestions.service.knowledge:Notion',
+    );
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await render({
+      sourceDocs: [{ id: 's1', name: 'Handbook' }],
+      agents: [{ id: 'a1' }],
+      connections,
+      tools: [{ ...notionTool, status: false }],
+    });
+    expect(rows()).toHaveLength(0);
   });
 
   it('keeps the browser translator off the model picker', async () => {
-    await render([]);
+    await render();
     // A translator that rewraps the picker's text breaks React's next
     // commit; model names are product names anyway.
     const trigger = container.querySelector('[data-slot="select-trigger"]');
@@ -179,19 +359,7 @@ describe('Hero model picker', () => {
   });
 
   const render = async (availableModels: unknown[]) => {
-    const store = configureStore({
-      reducer: {
-        connectors: connectorsReducer,
-        preference: (
-          state = {
-            token: null,
-            selectedModel: null,
-            availableModels,
-            modelsLoading: false,
-          },
-        ) => state,
-      },
-    } as Parameters<typeof configureStore>[0]);
+    const store = makeStore({ availableModels });
     await act(async () => {
       root.render(
         <Provider store={store}>

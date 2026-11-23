@@ -57,7 +57,10 @@ class TestNow:
             resp = _call(app, "/api/activity/now", "GET", ActivityNow().get)
         assert resp.status_code == 200
         assert resp.get_json() == {"running": [], "stats": {}}
-        build.assert_called_once_with(pg_conn, "u1")
+        # No workspace header: Personal.
+        build.assert_called_once()
+        assert build.call_args.args == (pg_conn, "u1")
+        assert build.call_args.kwargs["workspace"].is_personal
 
 
 class TestPlanned:

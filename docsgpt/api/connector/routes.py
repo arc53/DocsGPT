@@ -31,6 +31,14 @@ from docsgpt.api.user.tasks import (
     ingest_connector_task,
 )
 from docsgpt.connectors import oauth_flows, service
+from docsgpt.connectors.team import (
+    ACCOUNT_ALREADY_CONNECTED,
+    CONNECTION_ADMIN_REQUIRED,
+    ConnectionDenied,
+    authorize_connection,
+    connection_access,
+    creation_owner,
+)
 from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.connector_creator import ConnectorCreator
 from docsgpt.security.origins import DEV_FRONTEND_PORT, LOOPBACK_HOSTS, normalize_origin
@@ -38,6 +46,8 @@ from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.context import WorkspaceError
+from docsgpt.workspaces.principal import is_principal_id
 
 
 connector = Blueprint("connector", __name__)
@@ -212,7 +222,13 @@ def app_callback_origin(return_origin: str) -> str:
 
 
 def build_authorization(
-    provider: str, user_id: str, connection_id: Optional[str] = None, *, install: bool = False,
+    provider: str,
+    user_id: str,
+    connection_id: Optional[str] = None,
+    *,
+    install: bool = False,
+    owner_id: Optional[str] = None,
+    replace: bool = False,
 ) -> dict:
     """Start an OAuth sign-in for ``provider`` and return its authorization URL.
 
@@ -221,17 +237,21 @@ def build_authorization(
 
     Args:
         provider: The connector, e.g. ``google_drive`` or ``github``.
-        user_id: The caller.
-        connection_id: The caller's connection to sign in again, if any.
+        user_id: The caller, who alone can finish the sign-in.
+        connection_id: The connection to sign in again, if any.
         install: GitHub: send the user to install the GitHub App (where the
             repositories it can read are chosen) instead of straight to
             authorization. GitHub returns to the callback with the same
             state when the app requests authorization during installation.
+        owner_id: The team principal the account is for (the caller checked
+            they are its Admin); None for the caller's own connection.
+        replace: The sign-in replaces the account of the team connection
+            ``connection_id`` with the caller's.
 
     Raises:
         OriginNotAllowed: See ``requesting_app_origin``.
         service.EncryptionKeyNotConfigured: See ``ensure_can_store_credentials``.
-        service.ConnectionUnavailable: ``connection_id`` is not the caller's.
+        service.ConnectionUnavailable: ``connection_id`` is not the owner's.
         ValueError: ``install`` for a provider with no installation page.
     """
     return_origin = requesting_app_origin()
@@ -239,9 +259,15 @@ def build_authorization(
     auth = ConnectorCreator.create_auth(provider)
     if install and not hasattr(auth, "get_installation_url"):
         raise ValueError(f"{provider} has no installation page")
+    team = owner_id if is_principal_id(owner_id) else None
     with db_session() as conn:
-        session_row = service.begin_oauth(conn, user_id, provider, connection_id)
-        state = oauth_flows.start(conn, user_id, provider, str(session_row["id"]), return_origin)
+        session_row = service.begin_oauth(
+            conn, team or user_id, provider, connection_id, connected_by=user_id if team else None, replace=replace,
+        )
+        state = oauth_flows.start(
+            conn, user_id, provider, str(session_row["id"]), return_origin, owner_id=team,
+            replace_account=bool(team and replace),
+        )
     url = auth.get_installation_url(state=state) if install else auth.get_authorization_url(state=state)
     return {
         "authorization_url": url,
@@ -260,9 +286,52 @@ def origin_not_allowed_response(err: OriginNotAllowed):
     }), 400)
 
 
+def sign_in_owner(
+    conn, user_id: str, connection_id: Optional[str], owner_param: Optional[str],
+) -> tuple[Optional[str], bool]:
+    """Whom a new sign-in is for, and whether it replaces a team connection's account.
+
+    A sign-in into an existing connection goes by the row's owner (the
+    caller must manage it) and ignores ``owner``; a new one is personal
+    unless ``owner=team`` asks for the header's team.
+
+    Args:
+        conn: Open connection.
+        user_id: The caller.
+        connection_id: The connection signed in again, if any.
+        owner_param: The request's ``owner``.
+
+    Returns:
+        ``(team principal or None, replace)``.
+
+    Raises:
+        ConnectionDenied: The caller may not manage ``connection_id``.
+        WorkspaceError: See :func:`creation_owner`.
+    """
+    if connection_id:
+        from docsgpt.api.connector.connections import replaces_account
+
+        access = authorize_connection(conn, connection_id, user_id, "manage")
+        return (access.owner_id, replaces_account(access)) if access.is_team else (None, False)
+    owner_id, connected_by = creation_owner(conn, user_id, owner_param)
+    return (owner_id, False) if connected_by else (None, False)
+
+
 @connectors_ns.route("/api/connectors/auth")
 class ConnectorAuth(Resource):
-    @api.doc(description="Get connector OAuth authorization URL", params={"provider": "Connector provider (e.g., google_drive)"})
+    @api.doc(
+        description=(
+            "Get connector OAuth authorization URL. owner=team connects the account for the team the workspace "
+            "header names (Admins); without it the connection is the caller's own, whatever the header. "
+            "connection_id signs a connection in again (its owner's, or a team's for its Admins; another Admin "
+            "than whoever connected it replaces the account with theirs)."
+        ),
+        params={
+            "provider": "Connector provider (e.g., google_drive)",
+            "owner": "personal (default) or team",
+            "connection_id": "The connection to sign in again",
+        },
+    )
     def get(self):
         try:
             provider = request.args.get('provider') or request.args.get('source')
@@ -276,11 +345,17 @@ class ConnectorAuth(Resource):
             if not decoded_token:
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user_id = decoded_token.get('sub')
+            connection_id = request.args.get("connection_id") or None
             try:
+                with db_readonly() as conn:
+                    owner_id, replace = sign_in_owner(conn, user_id, connection_id, request.args.get("owner"))
                 started = build_authorization(
-                    provider, user_id, request.args.get("connection_id") or None,
+                    provider, user_id, connection_id,
                     install=request.args.get("install") in ("1", "true"),
+                    owner_id=owner_id, replace=replace,
                 )
+            except (ConnectionDenied, WorkspaceError) as err:
+                return err.response()
             except OriginNotAllowed as err:
                 return origin_not_allowed_response(err)
             except service.EncryptionKeyNotConfigured as err:
@@ -343,6 +418,12 @@ class ConnectorsCallback(Resource):
             }))
 
 
+def _paused(err: service.ConnectionUnavailable):
+    from docsgpt.api.connector.connections import unavailable_response
+
+    return unavailable_response(err)
+
+
 def _exchange_code(provider: str, code: str) -> tuple[dict, str]:
     """Exchange an authorization code; return the sanitized token info and the account's name."""
     auth = ConnectorCreator.create_auth(provider)
@@ -363,13 +444,51 @@ def _exchange_code(provider: str, code: str) -> tuple[dict, str]:
     return auth.sanitize_token_info(token_info), account
 
 
+def _team_sign_in_refusal(conn, flow: dict, user_id: str, failed: dict):
+    """403 unless the person finishing a team's sign-in may still manage the team's connection, else None."""
+    row = ConnectorSessionsRepository(conn).get_for_user(str(flow["connection_id"]), flow["owner_id"])
+    if row is None:
+        return make_response(jsonify({**failed, "error": "Connection not found"}), 404)
+    access = connection_access(conn, row, user_id)
+    if access is None or not access.can("manage"):
+        current_app.logger.warning("Team connector sign-in refused: the person is no longer an Admin of the team")
+        return make_response(jsonify({
+            **failed, "error": CONNECTION_ADMIN_REQUIRED, "message": "This needs the admin role in the team",
+        }), 403)
+    return None
+
+
+def _audit_team_sign_in(conn, user_id: str, connection: dict, before: Optional[dict], replace: bool) -> None:
+    """Record a finished team sign-in: a new account, or one connected again (or replaced) by ``user_id``."""
+    from docsgpt.api.connector.connections import audit_team_connection
+
+    if before is None:
+        audit_team_connection(
+            conn, user_id, "team.connection_added", connection,
+            connector_key=connection.get("connector_key"), account_label=service.account_label(connection),
+        )
+        return
+    audit_team_connection(
+        conn, user_id, "team.connection_reconnected", connection,
+        replaced=replace, previous_connected_by=before.get("connected_by"),
+    )
+
+
 @connectors_ns.route("/api/connectors/auth/complete")
 class ConnectorAuthComplete(Resource):
     @api.expect(api.model("ConnectorAuthCompleteModel", {
         "code": fields.String(required=True, description="The provider's authorization code"),
         "state": fields.String(required=True, description="The state the provider echoed"),
     }))
-    @api.doc(description="Finish a connector sign-in: the app's callback page posts the provider's code and state")
+    @api.doc(
+        description=(
+            "Finish a connector sign-in: the app's callback page posts the provider's code and state. Only "
+            "whoever started it finishes it; a sign-in for a team needs them still its Admin (403 "
+            "connection_admin_required, the sign-in is used up) and goes to the team the sign-in named, "
+            "never the request's workspace. A replacing sign-in into an account the team already has: "
+            "409 account_already_connected with connection_id."
+        )
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -390,6 +509,14 @@ class ConnectorAuthComplete(Resource):
                 )
             provider = flow["provider"]
             failed = {"success": False, "provider": provider, "return_origin": flow["return_origin"]}
+            # The flow, never the request, says which team the account is for.
+            team_owner = flow.get("owner_id") if is_principal_id(flow.get("owner_id")) else None
+            if team_owner:
+                # Checked before the code is spent, and again with the write.
+                with db_readonly() as conn:
+                    refused = _team_sign_in_refusal(conn, flow, user_id, failed)
+                if refused is not None:
+                    return refused
             try:
                 token_info, account = _exchange_code(provider, code)
             except Exception as e:
@@ -399,10 +526,31 @@ class ConnectorAuthComplete(Resource):
                     "error": "Authentication failed. Please try again and make sure to grant all requested permissions.",
                 }), 400)
             with db_session() as conn:
-                pending = ConnectorSessionsRepository(conn).get_for_user(str(flow["connection_id"]), user_id)
+                repo = ConnectorSessionsRepository(conn)
+                pending = repo.get_for_user(str(flow["connection_id"]), team_owner or user_id)
                 if pending is None or pending.get("provider") != provider:
                     return make_response(jsonify({**failed, "error": "Connection not found"}), 404)
-                connection = service.complete_oauth(conn, pending, provider, token_info, account)
+                replace = bool(team_owner and flow.get("replace_account"))
+                before = None
+                if team_owner:
+                    refused = _team_sign_in_refusal(conn, flow, user_id, failed)
+                    if refused is not None:
+                        return refused
+                    before = pending if replace else repo.find_account(
+                        team_owner, provider, server_url=None, account_label=account,
+                    )
+                try:
+                    connection = service.complete_oauth(
+                        conn, pending, provider, token_info, account,
+                        connected_by=user_id if team_owner else None, replace=replace,
+                    )
+                except service.AccountAlreadyConnected as err:
+                    return make_response(jsonify({
+                        **failed, "error": ACCOUNT_ALREADY_CONNECTED, "message": str(err),
+                        "connection_id": err.connection_id,
+                    }), 409)
+                if team_owner:
+                    _audit_team_sign_in(conn, user_id, connection, before, replace)
             return make_response(jsonify({
                 "success": True,
                 "provider": provider,
@@ -443,13 +591,20 @@ class ConnectorFiles(Resource):
             if not decoded_token:
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user = decoded_token.get('sub')
-            session = service.resolve_request_connection(user, provider, data)
+            # Listing files browses the account: on a team's, only whoever connected it.
+            try:
+                session = service.resolve_request_connection(user, provider, data, action="pick")
+            except ConnectionDenied as denied:
+                return denied.response()
             if session is None:
                 return make_response(jsonify({"success": False, "error": "Invalid or unauthorized session"}), 401)
 
             try:
+                service.ensure_account_usable(None, session)
                 loader = ConnectorCreator.create_connector(provider, connection_id=str(session["id"]))
-            except service.ConnectionUnavailable:
+            except service.ConnectionUnavailable as err:
+                if err.status == service.STATUS_PAUSED:
+                    return _paused(err)
                 return make_response(
                     jsonify({"success": False, "error": "Reconnect to continue", "reconnect": True}), 401,
                 )
@@ -519,12 +674,17 @@ class ConnectorValidateSession(Resource):
                 return make_response(jsonify({"success": False, "error": "Unauthorized"}), 401)
             user = decoded_token.get('sub')
 
-            session = service.resolve_request_connection(user, provider, data)
+            try:
+                session = service.resolve_request_connection(user, provider, data, action="pick")
+            except ConnectionDenied as denied:
+                return denied.response()
             if session is None:
                 return make_response(jsonify({"success": False, "error": "Invalid or expired session"}), 401)
             try:
                 token = service.picker_token(str(session["id"]), session.get("provider"))
-            except service.ConnectionUnavailable:
+            except service.ConnectionUnavailable as err:
+                if err.status == service.STATUS_PAUSED:
+                    return _paused(err)
                 return make_response(jsonify({
                     "success": False,
                     "expired": True,
@@ -592,7 +752,9 @@ class ConnectorSync(Resource):
         description=(
             "Sync connector source to check for modifications. A 409 with code connection_missing when the "
             "source has no connection (it was removed) and none is named, as for a team editor, who can't "
-            "name one; code reconnect_needed when a team editor's sync finds the source's connection signed out."
+            "name one; code reconnect_needed when a team editor's sync finds the source's connection signed out; "
+            "code connection_paused (with paused_for) for a team's source whose team account is paused. A team's "
+            "source is synced by its Editors and up, through the team's connection, and bills the caller."
         )
     )
     def post(self):
@@ -625,7 +787,8 @@ class ConnectorSync(Resource):
                     err.status,
                 )
             owner_id = ra.owner_id
-            is_owner = ra.access == "owner"
+            # A team's source syncs through the team's own connection, never one the caller names.
+            is_owner = ra.access == "owner" and not ra.is_team_item
             # A converted wiki doesn't sync: it would replace the wiki's pages,
             # and the worker skips it, so a success here would never finish.
             if _is_wiki(source):
@@ -660,7 +823,8 @@ class ConnectorSync(Resource):
                 task_kwargs = connector_sync_kwargs(source, owner_id, user_id, selection, str(session["id"]))
             else:
                 # A grantee can't name a connection: theirs would read the
-                # source's files with another account.
+                # source's files with another account. A team member's sync
+                # bills them, and waits while the team's account is paused.
                 with db_readonly() as conn:
                     task_kwargs = owner_connector_sync(conn, source, owner_id, user_id)
                 if isinstance(task_kwargs, Response):

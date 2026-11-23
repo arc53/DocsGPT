@@ -15,6 +15,9 @@ from docsgpt.background import jobs, pool
 from docsgpt.background.context import BackgroundContext
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 
+
+pytestmark = pytest.mark.fresh_db
+
 _TOOL_ROW_ID = "00000000-0000-0000-0000-0000000000aa"
 _TOOLS = {
     "t1": {

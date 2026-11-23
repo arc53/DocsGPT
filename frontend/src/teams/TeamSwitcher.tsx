@@ -1,29 +1,11 @@
-import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useDispatch, useSelector } from 'react-redux';
+import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import {
-  Check,
-  ChevronsUpDown,
-  Plus,
-  Settings,
-  User,
-  Users,
-} from 'lucide-react';
+import { Check, ChevronsUpDown, Plus, Settings, User } from 'lucide-react';
 
-import DocsGPTLogo from '../assets/full-logo-b.svg';
-import DocsGPTLogoWhite from '../assets/full-logo-w.svg';
 import DocsGPTMark from '../assets/logo-b.svg';
 import DocsGPTMarkWhite from '../assets/logo-w.svg';
 import { useDarkTheme } from '../hooks';
-import { selectToken } from '../preferences/preferenceSlice';
-import { AppDispatch } from '../store';
-import {
-  loadTeams,
-  selectCurrentTeamId,
-  selectTeams,
-  setCurrentTeam,
-} from './teamsSlice';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,6 +17,12 @@ import {
 import { Avatar } from '../components/ui/avatar';
 import { Button } from '../components/ui/button';
 import { focusRing } from '../lib/utils';
+import useWorkspace from '../workspace/useWorkspace';
+import {
+  selectWorkspaces,
+  type WorkspaceRole,
+  type WorkspaceRow,
+} from '../workspace/workspaceSlice';
 
 type TeamSwitcherProps = {
   // Called after a navigation/selection so callers (e.g. the mobile nav) can
@@ -44,95 +32,75 @@ type TeamSwitcherProps = {
   collapsed?: boolean;
 };
 
+const ROLE_KEYS: Record<WorkspaceRole, string> = {
+  owner: 'workspace.common.roles.owner',
+  admin: 'workspace.common.roles.admin',
+  editor: 'workspace.common.roles.editor',
+  viewer: 'workspace.common.roles.viewer',
+};
+
+/** A team's initial in a square, the team's mark wherever it is named. */
+function TeamInitial({
+  name,
+  className,
+}: {
+  name: string;
+  className?: string;
+}) {
+  return (
+    <Avatar size="xs" shape="square" variant="icon" className={className}>
+      <span className="text-foreground text-sm font-semibold">
+        {name.charAt(0).toUpperCase()}
+      </span>
+    </Avatar>
+  );
+}
+
 /**
- * Brand header that doubles as the team/workspace switcher.
+ * Brand header that doubles as the workspace switcher.
  *
- * The whole row is the dropdown trigger and morphs its identity: in a
- * personal context it shows the DocsGPT logo + wordmark; inside a team it
- * shows an initial avatar + the team name. The dropdown lets the user
- * quick-switch teams and ends in "Manage teams" (or "Create team" while the
- * user has none).
- * Switching is a UX-only selection persisted in the teams slice via
- * setCurrentTeam; it does not scope app data.
+ * The row names the workspace the app is in and the caller's place there:
+ * "Personal · Only you", or a team's initial, name and "Team · Admin". The
+ * menu lists Personal and every team with how many people are in it and the
+ * caller's role, checks the current one, and ends in "Manage teams" (or
+ * "Create team" while the user has none). Picking one switches every list,
+ * chats included.
  */
 export default function TeamSwitcher({
   onNavigate,
   collapsed = false,
 }: TeamSwitcherProps) {
   const { t } = useTranslation();
-  const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
-
-  const token = useSelector(selectToken);
-  const teams = useSelector(selectTeams);
-  const currentTeamId = useSelector(selectCurrentTeamId);
+  const { id: currentId, workspace, role, isTeam, switchTo } = useWorkspace();
+  const workspaces = useSelector(selectWorkspaces);
   const [isDarkTheme] = useDarkTheme();
 
-  // Populate the switcher on mount so it works before visiting settings.
-  useEffect(() => {
-    dispatch(loadTeams({ token }));
-  }, [dispatch, token]);
+  const roleWord = (r: WorkspaceRole | null | undefined) =>
+    t(ROLE_KEYS[r ?? 'viewer']);
+  const teams = workspaces.filter((row) => row.kind === 'team');
+  const hasTeams = teams.length > 0;
 
-  const safeTeams = teams ?? [];
-  const currentTeam =
-    safeTeams.find((team) => team.id === currentTeamId) ?? null;
-  const currentRoleLabel = currentTeam
-    ? currentTeam.member_role === 'team_admin'
-      ? t('teams.switcher.roleAdmin')
-      : t('teams.switcher.roleMember')
-    : t('teams.switcher.personalSubtitle');
-  const currentName = currentTeam
-    ? currentTeam.name
-    : t('teams.switcher.personal');
-  const teamInitial = currentTeam
-    ? currentTeam.name.charAt(0).toUpperCase()
-    : '';
+  const currentName = isTeam
+    ? workspace.name
+    : t('workspace.switcher.personal');
+  const currentSubtitle = isTeam
+    ? t('workspace.switcher.teamRole', { role: roleWord(role) })
+    : t('workspace.switcher.onlyYou');
 
-  // The morphing brand identity shown in the trigger: the DocsGPT mark for a
-  // personal context, or an initial avatar for a team. Expanded, a personal
-  // context upgrades this to the full lockup below.
-  const triggerIcon = currentTeam ? (
-    // A solid square reads heavier than the dino, so keep the team avatar a
-    // touch smaller (with a little margin to align with the wordmark).
-    <Avatar size="xs" shape="square" variant="icon" className="mx-1">
-      <span className="text-foreground text-sm font-semibold">
-        {teamInitial}
-      </span>
-    </Avatar>
+  // The mark leading the row: the team's initial, or the DocsGPT mark in
+  // Personal. A solid square reads heavier than the dino, so the team mark
+  // keeps a little margin to align with the labels below it.
+  const mark = isTeam ? (
+    <TeamInitial name={workspace.name} className="mx-1" />
   ) : (
     <img
-      className="h-8 w-auto shrink-0"
+      className="h-6 w-auto shrink-0"
       src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
       alt={t('teams.switcher.logoAlt')}
     />
   );
 
-  // Expanded brand row. In a personal context the full lockup replaces the
-  // mark-plus-label pair outright — the wordmark is part of the artwork, so a
-  // separate "DocsGPT" text label would repeat it. `mr-auto` keeps the chevron
-  // pinned right, the job the label's `flex-1` used to do, and `ml-3` lines the
-  // logo's left edge up with the "Agents"/"Chats" section headings below it
-  // (those sit 32px in: `mx-4` on their row plus `ml-4` on the label; the
-  // header strip adds 8px and the sidebar-item row's `pl-3` 12px).
-  const expandedBrand = currentTeam ? (
-    <>
-      {triggerIcon}
-      <span
-        className="text-foreground min-w-0 flex-1 truncate text-xl font-semibold"
-        title={currentTeam.name}
-      >
-        {currentTeam.name}
-      </span>
-    </>
-  ) : (
-    <img
-      className="mr-auto ml-3 h-4 w-auto shrink-0"
-      src={isDarkTheme ? DocsGPTLogoWhite : DocsGPTLogo}
-      alt="DocsGPT"
-    />
-  );
-
-  // The teams list, where "New team" also lives.
   const goToManage = () => {
     navigate('/teams');
     onNavigate?.();
@@ -144,14 +112,17 @@ export default function TeamSwitcher({
     onNavigate?.();
   };
 
-  const selectTeam = (teamId: string | null) => {
-    dispatch(setCurrentTeam(teamId));
+  const select = (id: string) => {
+    if (id === currentId) return;
+    switchTo(id);
     onNavigate?.();
   };
 
-  // Teams other than the currently active one, for the "switch to" list.
-  const otherTeams = safeTeams.filter((team) => team.id !== currentTeamId);
-  const hasTeams = safeTeams.length > 0;
+  const teamMeta = (team: WorkspaceRow) =>
+    t('workspace.switcher.teamMeta', {
+      count: team.member_count ?? 0,
+      role: roleWord(team.role),
+    });
 
   return (
     <DropdownMenu>
@@ -160,18 +131,31 @@ export default function TeamSwitcher({
           <button
             type="button"
             aria-label={t('teams.switcher.ariaLabel')}
+            title={currentName}
             className={`${focusRing} hover:bg-sidebar-accent flex items-center justify-center rounded-full p-1 transition-colors outline-none`}
           >
-            {triggerIcon}
+            {mark}
           </button>
         ) : (
           <Button
             type="button"
             variant="sidebar-item"
+            size="lg"
             aria-label={t('teams.switcher.ariaLabel')}
             className="w-full"
           >
-            {expandedBrand}
+            {mark}
+            <span className="min-w-0 flex-1 text-left">
+              <span
+                className="text-foreground block truncate text-sm leading-tight font-semibold"
+                title={currentName}
+              >
+                {currentName}
+              </span>
+              <span className="text-muted-foreground block truncate text-xs leading-tight font-normal">
+                {currentSubtitle}
+              </span>
+            </span>
             {/* sidebar-item rows carry no right padding, so the chevron's
                 margin keeps it clear of the pill's end. */}
             <ChevronsUpDown className="text-muted-foreground mr-3 size-4" />
@@ -179,53 +163,46 @@ export default function TeamSwitcher({
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-62">
-        <DropdownMenuLabel>
-          <div className="flex items-center gap-2">
-            <Avatar size="xs" shape="square" variant="icon">
-              {currentTeam ? (
-                <Users className="text-foreground size-4" />
-              ) : (
-                <User className="text-foreground size-4" />
-              )}
-            </Avatar>
-            <span className="min-w-0 flex-1">
-              <span
-                className="text-foreground block truncate text-sm font-semibold"
-                title={currentTeam?.name}
-              >
-                {currentName}
-              </span>
-              <span className="text-muted-foreground block truncate text-xs font-normal">
-                {currentRoleLabel}
-              </span>
+        <DropdownMenuItem onSelect={() => select('personal')}>
+          <Avatar size="xs" shape="square" variant="icon">
+            <User className="text-foreground size-4" />
+          </Avatar>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">
+              {t('workspace.switcher.personal')}
             </span>
-          </div>
-        </DropdownMenuLabel>
-
-        <DropdownMenuSeparator />
-
-        {/* Personal account entry */}
-        {currentTeam && (
-          <DropdownMenuItem onSelect={() => selectTeam(null)}>
-            <User className="size-4" />
-            <span className="min-w-0 flex-1 truncate">
-              {t('teams.switcher.personal')}
+            <span className="text-muted-foreground block truncate text-xs">
+              {t('workspace.switcher.onlyYou')}
             </span>
-            {!currentTeam && <Check className="size-4 shrink-0" />}
-          </DropdownMenuItem>
+          </span>
+          {!isTeam && <Check className="text-primary size-4 shrink-0" />}
+        </DropdownMenuItem>
+
+        {hasTeams && (
+          <DropdownMenuLabel>
+            <span className="text-muted-foreground text-xs">
+              {t('workspace.switcher.teams')}
+            </span>
+          </DropdownMenuLabel>
         )}
-
-        {/* Other teams to switch to */}
-        {otherTeams.map((team) => (
-          <DropdownMenuItem key={team.id} onSelect={() => selectTeam(team.id)}>
-            <Users className="size-4" />
-            <span className="min-w-0 flex-1 truncate" title={team.name}>
-              {team.name}
+        {teams.map((team) => (
+          <DropdownMenuItem key={team.id} onSelect={() => select(team.id)}>
+            <TeamInitial name={team.name} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium" title={team.name}>
+                {team.name}
+              </span>
+              <span className="text-muted-foreground block truncate text-xs">
+                {teamMeta(team)}
+              </span>
             </span>
+            {team.id === currentId && (
+              <Check className="text-primary size-4 shrink-0" />
+            )}
           </DropdownMenuItem>
         ))}
 
-        {hasTeams && <DropdownMenuSeparator />}
+        <DropdownMenuSeparator />
 
         {/* With no teams there is nothing to manage yet, so offer creation;
             once one exists, the teams page covers both. */}
