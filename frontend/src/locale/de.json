@@ -1068,7 +1068,7 @@
         "loopResultVariable": "Elementergebnis",
         "loopResultVariableHint": "Die Variable, deren Wert das Ergebnis jedes Elements ist. Leer verwendet die Ausgabe des zuletzt ausgeführten Knotens.",
         "minConfidence": "Mindestkonfidenz",
-        "minConfidenceHint": "Von 0 bis 1. Darunter läuft Sonst; 0 nimmt immer den wahrscheinlichsten Zweig.",
+        "minConfidenceHint": "Von 0 bis 1. Darunter läuft Sonst. 0 schaltet die Schwelle ab; Sonst läuft trotzdem, wenn kein Zweig passt.",
         "modeAdvanced": "Erweitert",
         "modeAi": "KI",
         "modeSimple": "Einfach",

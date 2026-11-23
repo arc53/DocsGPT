@@ -1067,7 +1067,7 @@
         "loopResultVariable": "項目結果",
         "loopResultVariableHint": "其值作為每個項目結果的變數。留空則使用最後執行之節點的輸出。",
         "minConfidence": "最低信賴度",
-        "minConfidenceHint": "0 到 1。低於此值時執行 Else；為 0 時一律選擇機率最高的分支。",
+        "minConfidenceHint": "0 到 1。低於此值時執行 Else。為 0 時不設門檻；沒有分支相符時仍執行 Else。",
         "modeAdvanced": "進階",
         "modeAi": "AI",
         "modeSimple": "簡易",

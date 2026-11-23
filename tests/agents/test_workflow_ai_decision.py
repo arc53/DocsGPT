@@ -141,6 +141,7 @@ def test_a_model_still_loading_is_waited_for_in_the_background_lane():
 
     assert engine._get_next_node_id("decide") == "support"
     assert fake.calls[1].budget.lane == "background"
+    assert fake.calls[1].budget.seconds <= 30.0
 
 
 def test_an_unanswered_call_is_a_transient_failure():
@@ -170,6 +171,13 @@ def test_the_model_turned_off_fails_the_node_plainly():
         (
             [{"name": f"b{i}", "expression": "", "sourceHandle": f"case_{i}"} for i in range(16)],
             "more than 15 branches",
+        ),
+        (
+            [
+                {"name": "Billing", "expression": "", "sourceHandle": "case_0"},
+                {"name": "billing", "expression": "", "sourceHandle": "case_1"},
+            ],
+            'named "billing" twice',
         ),
     ],
 )

@@ -313,8 +313,8 @@ probability for each branch and writes no text, so routing costs no LLM tokens.
   on it; a branch without a description is described by its name. A node takes
   up to 15 branches, and no branch may be named `other`.
 - **Else** runs when the model answers that no branch fits, or when the most
-  likely branch's probability is under **Minimum confidence** (0 to 1; 0, the
-  default, always takes the most likely branch).
+  likely branch's probability is under **Minimum confidence** (0 to 1). The
+  default, 0, turns the threshold off; Else still runs when no branch fits.
 - **Output Variable**: the decision, also stored as `node_<id>_output`:
   `branch` (the branch taken, or null for Else), `confidence` (the top
   probability) and `probabilities` (one per branch, plus `other`).

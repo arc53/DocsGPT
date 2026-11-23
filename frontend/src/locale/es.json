@@ -1095,7 +1095,7 @@
         "loopResultVariable": "Resultado del elemento",
         "loopResultVariableHint": "La variable cuyo valor es el resultado de cada elemento. Si se deja vacía, se usa la salida del último nodo ejecutado.",
         "minConfidence": "Confianza mínima",
-        "minConfidenceHint": "De 0 a 1. Por debajo, se ejecuta Si no; 0 siempre toma la rama más probable.",
+        "minConfidenceHint": "De 0 a 1. Por debajo, se ejecuta Si no. 0 desactiva el umbral; Si no se sigue ejecutando cuando ninguna rama encaja.",
         "modeAdvanced": "Avanzado",
         "modeAi": "IA",
         "modeSimple": "Simple",

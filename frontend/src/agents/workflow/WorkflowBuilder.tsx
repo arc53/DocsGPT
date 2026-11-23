@@ -726,7 +726,7 @@ function WorkflowBuilderInner() {
           operations: [{ expression: '', target_variable: '' }],
         };
       } else if (paletteType === AI_DECISION_PALETTE_TYPE) {
-        baseNode.data.title = 'AI decision';
+        baseNode.data.title = t('agents.workflow.nodes.aiDecision');
         baseNode.data.config = {
           mode: 'ai',
           cases: [
@@ -764,7 +764,7 @@ function WorkflowBuilderInner() {
 
       setNodes((nds) => nds.concat(baseNode));
     },
-    [availableModels, defaultAgentModelId, takeSnapshot],
+    [availableModels, defaultAgentModelId, takeSnapshot, t],
   );
 
   const onDrop = useCallback(
@@ -1862,7 +1862,10 @@ function WorkflowBuilderInner() {
       errors.push(t('agents.workflow.validation.retryDefaults'));
     }
     nodes
-      .filter((n) => n.type === 'agent' || n.type === 'code')
+      .filter(
+        (n) =>
+          n.type === 'agent' || n.type === 'code' || n.type === 'condition',
+      )
       .forEach((node) => {
         if (!isValidRetryConfig(node.data?.config?.retry)) {
           errors.push(

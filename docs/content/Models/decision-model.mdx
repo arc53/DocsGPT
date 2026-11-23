@@ -31,7 +31,7 @@ Where it runs:
 | A Mac, fast | A native `decide-server` on the Mac's GPU: see [On a Mac's GPU](#on-a-macs-gpu). |
 | An NVIDIA GPU | vLLM: see [On an NVIDIA GPU](#on-an-nvidia-gpu). |
 
-If a call cannot be answered (the model is off, loading, busy or unreachable), the feature falls back to what it does without it, so a missing model never fails a request.
+If a call cannot be answered (the model is off, loading, busy or unreachable), the feature falls back to what it does without it, so a missing model never fails a request. A workflow's [AI decision](#workflow-ai-decisions) is the exception: it has nothing to fall back to, so its node fails.
 
 ### Celery workers
 

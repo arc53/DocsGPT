@@ -1089,7 +1089,7 @@
         "loopResultVariable": "Item result",
         "loopResultVariableHint": "The variable whose value is each item's result. Empty uses the output of the last node that ran.",
         "minConfidence": "Minimum confidence",
-        "minConfidenceHint": "From 0 to 1. Below it, Else runs; 0 always takes the most likely branch.",
+        "minConfidenceHint": "From 0 to 1. Below it, Else runs. 0 turns the threshold off; Else still runs when no branch fits.",
         "modeAdvanced": "Advanced",
         "modeAi": "AI",
         "modeSimple": "Simple",

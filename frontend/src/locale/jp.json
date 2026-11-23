@@ -1067,7 +1067,7 @@
         "loopResultVariable": "項目の結果",
         "loopResultVariableHint": "各項目の結果となる値を持つ変数。空の場合は最後に実行されたノードの出力を使用します。",
         "minConfidence": "最低確信度",
-        "minConfidenceHint": "0 から 1。これを下回ると Else が実行されます。0 なら常に最も確率の高い分岐を選びます。",
+        "minConfidenceHint": "0 から 1。これを下回ると Else が実行されます。0 ならしきい値は無効ですが、どの分岐にも合わない場合は Else が実行されます。",
         "modeAdvanced": "詳細",
         "modeAi": "AI",
         "modeSimple": "シンプル",

@@ -1990,12 +1990,15 @@ class WorkflowEngine:
 
         handles: Dict[str, str] = {}
         criteria: Dict[str, str] = {}
+        seen: set = set()
         for case in config.cases:
             name = (case.name or "").strip()
             if not name:
                 continue
-            if name.casefold() == AI_DECISION_NO_MATCH or name in handles:
+            key = name.casefold()
+            if key == AI_DECISION_NO_MATCH or key in seen:
                 raise WorkflowDecisionError(f'AI decision has a branch named "{name}" twice or "other".')
+            seen.add(key)
             handles[name] = case.source_handle
             criteria[name] = (case.description or "").strip() or name
         if not handles:
@@ -2011,16 +2014,23 @@ class WorkflowEngine:
             "criteria": criteria,
         }
         request = decisions.Request(decisions.states.text(str(text)), {"branch": question})
-        background = decisions.Budget.background(_DECISION_TIMEOUT_SECONDS)
+        started = time.monotonic()
         scheduled = getattr(self.agent, "endpoint", None) == "schedule"
         result = decisions.decide_batch(
             [request],
             feature=WORKFLOW_DECISION,
-            budget=background if scheduled else decisions.Budget.hot(_DECISION_TIMEOUT_SECONDS),
+            budget=(
+                decisions.Budget.background(_DECISION_TIMEOUT_SECONDS)
+                if scheduled
+                else decisions.Budget.hot(_DECISION_TIMEOUT_SECONDS)
+            ),
         )
-        if result[0] is None and result.reasons[0] == "loading":
-            # A hot call never waits for the model to load; the background lane waits until the deadline.
-            result = decisions.decide_batch([request], feature=WORKFLOW_DECISION, budget=background)
+        left = _DECISION_TIMEOUT_SECONDS - (time.monotonic() - started)
+        if result[0] is None and result.reasons[0] == "loading" and left > 0:
+            # A hot call never waits for the model to load; the background lane waits for the rest of the window.
+            result = decisions.decide_batch(
+                [request], feature=WORKFLOW_DECISION, budget=decisions.Budget.background(left)
+            )
         decision = result[0]
         if decision is None:
             reason = result.reasons[0] or result.status

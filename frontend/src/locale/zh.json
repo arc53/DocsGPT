@@ -1067,7 +1067,7 @@
         "loopResultVariable": "项结果",
         "loopResultVariableHint": "其值作为每一项结果的变量。留空则使用最后运行的节点的输出。",
         "minConfidence": "最低置信度",
-        "minConfidenceHint": "0 到 1。低于此值时执行 Else；为 0 时总是选择概率最高的分支。",
+        "minConfidenceHint": "0 到 1。低于此值时执行 Else。为 0 时不设阈值；没有分支匹配时仍执行 Else。",
         "modeAdvanced": "高级",
         "modeAi": "AI",
         "modeSimple": "简单",

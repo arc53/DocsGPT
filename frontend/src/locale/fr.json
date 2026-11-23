@@ -1095,7 +1095,7 @@
         "loopResultVariable": "Résultat de l’élément",
         "loopResultVariableHint": "La variable dont la valeur est le résultat de chaque élément. Si elle est vide, la sortie du dernier nœud exécuté est utilisée.",
         "minConfidence": "Confiance minimale",
-        "minConfidenceHint": "De 0 à 1. En dessous, Sinon s'exécute ; 0 prend toujours la branche la plus probable.",
+        "minConfidenceHint": "De 0 à 1. En dessous, Sinon s'exécute. 0 désactive le seuil ; Sinon s'exécute quand même si aucune branche ne correspond.",
         "modeAdvanced": "Avancé",
         "modeAi": "IA",
         "modeSimple": "Simple",
