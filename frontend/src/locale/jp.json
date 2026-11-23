@@ -3519,6 +3519,7 @@
       "fieldHints": {
         "github_access_token": "fine-grained トークンに Contents と Metadata の読み取り権限を付与します。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みも付与します。<link>GitHub でトークンを作成</link>",
         "mcp_supabase_project_ref": "Supabase ダッシュボードの Project Settings > General からコピーしてください。この接続はこのプロジェクトにのみアクセスします。",
+        "ntfy_server_url": "設定すると、すべてのメッセージとアクセストークンはこのサーバーに送られます。空の場合、トークンは ntfy.sh にのみ送られます。",
         "telegram_chat_id": "メッセージはこのチャットにのみ送られます。ボットを追加してメッセージを送り、<link>getUpdates</link> でチャット ID を確認します。"
       },
       "fields": {
@@ -3531,6 +3532,7 @@
         "endpoint_url": "カスタムエンドポイント URL",
         "github_access_token": "個人用アクセストークン",
         "mcp_supabase_project_ref": "プロジェクト ID",
+        "ntfy_server_url": "サーバー URL",
         "ntfy_token": "アクセストークン",
         "number_posts": "投稿数",
         "postgres_token": "接続文字列",

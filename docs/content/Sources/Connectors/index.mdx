@@ -63,6 +63,8 @@ Under **Customize**, each action lists its parameters. A parameter is either lef
 
 A Telegram connection can hold a **Default chat ID**. When it's set, messages always go to that chat. To find a chat's id, add the bot to the chat, send it a message, and open `https://api.telegram.org/bot<token>/getUpdates`. The same bot with another default chat is a separate connection. When team members use their own accounts, each member's messages go to their own default chat.
 
+An ntfy connection can hold a **Server URL**. When it's set, the access token and every message go to that server, and the AI can't pick another one. When it's empty, the token goes only to `ntfy.sh`, so a self-hosted server needs its URL here. A tool set up without a token has nothing to protect, so there the AI may still name the server.
+
 ### When a connection needs attention
 
 If a provider rejects a token that DocsGPT cannot refresh, the connection is marked **Reconnect needed**, its synced sources pause, and you get a notification. Reconnecting the same account resumes them. In a chat, a tool whose connection is missing or expired shows a **Connect** prompt instead of failing; the answer continues once you connect.

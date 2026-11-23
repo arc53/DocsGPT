@@ -698,7 +698,6 @@
   "ntfy.ntfy_send_message": {
     "type": "object",
     "required": [
-      "server_url",
       "message",
       "topic"
     ],
