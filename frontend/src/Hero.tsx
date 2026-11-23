@@ -23,7 +23,6 @@ import {
   selectSelectedModel,
   selectToken,
   setAvailableModels,
-  setModelsLoading,
   setSelectedModel,
 } from './preferences/preferenceSlice';
 import { captureWorkspace } from './workspace/requestWorkspace';
@@ -60,7 +59,6 @@ export function HeroModelSelect() {
         return;
       }
       const workspace = captureWorkspace();
-      dispatch(setModelsLoading(true));
       try {
         const response = await modelService.getModels(token);
         if (!response.ok) {
@@ -92,8 +90,6 @@ export function HeroModelSelect() {
         }
       } catch (error) {
         console.error('Failed to load models:', error);
-      } finally {
-        dispatch(setModelsLoading(false));
       }
     };
 

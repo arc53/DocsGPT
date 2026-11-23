@@ -199,7 +199,6 @@ const api = vi.hoisted(() => ({
   getWorkflow: vi.fn(),
   createAgent: vi.fn(),
   updateAgent: vi.fn(),
-  updateWorkflow: vi.fn(),
 }));
 vi.mock('../../api/services/userService', () => ({
   default: {
@@ -211,7 +210,6 @@ vi.mock('../../api/services/userService', () => ({
       }),
     createAgent: (...a: unknown[]) => api.createAgent(...a),
     updateAgent: (...a: unknown[]) => api.updateAgent(...a),
-    updateWorkflow: (...a: unknown[]) => api.updateWorkflow(...a),
     getUserTools: () => ok({ tools: api.tools }),
     getWorkflow: (...a: unknown[]) => api.getWorkflow(...a),
   },
@@ -256,9 +254,6 @@ describe('WorkflowBuilder canvas', () => {
       .mockImplementation(() => ok({ success: true, data: api.workflow }));
     api.createAgent.mockReset();
     api.updateAgent.mockReset().mockImplementation(() => ok({ id: 'a1' }));
-    api.updateWorkflow
-      .mockReset()
-      .mockImplementation(() => ok({ success: true }));
     panel.props = null;
     sheet.props = null;
     dialogs.props = [];
@@ -748,7 +743,6 @@ describe('WorkflowBuilder canvas', () => {
       await act(async () => button('agents.form.buttons.saveDraft')!.click());
       await act(async () => undefined);
       expect(api.createAgent).toHaveBeenCalledTimes(1);
-      expect(api.updateWorkflow).not.toHaveBeenCalled();
       expect(sent[0]).toMatchObject({
         name: 'New Workflow',
         description: '',
@@ -843,7 +837,6 @@ describe('WorkflowBuilder canvas', () => {
         'agent',
         'end',
       ]);
-      expect(api.updateWorkflow).not.toHaveBeenCalled();
       expect(container.textContent).toContain('agents.form.status.published');
       expect(button('agents.form.buttons.saveDraft')).toBeUndefined();
       expect(button('agents.form.buttons.save')!.disabled).toBe(true);

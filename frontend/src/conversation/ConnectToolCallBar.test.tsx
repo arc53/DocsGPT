@@ -79,7 +79,6 @@ describe('ConnectToolCallBar', () => {
         ? {
             connectors: {
               enabled: true,
-              loading: false,
               loaded: true,
               failed: false,
               catalog: [],

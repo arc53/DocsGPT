@@ -428,16 +428,6 @@ export const workflowPreviewSlice = createSlice({
         state.queries[index].tool_calls.push(tool_call);
       }
     },
-    updateQuery(
-      state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
-    ) {
-      const { index, query } = action.payload;
-      state.queries[index] = {
-        ...state.queries[index],
-        ...query,
-      };
-    },
     updateExecutionStep(
       state,
       action: PayloadAction<{
@@ -588,10 +578,6 @@ export const workflowPreviewSlice = createSlice({
       state.executionSteps = [];
       state.activeNodeId = null;
     },
-    clearExecutionSteps: (state) => {
-      state.executionSteps = [];
-      state.activeNodeId = null;
-    },
     setPreviewOpen: (state, action: PayloadAction<boolean>) => {
       state.previewOpen = action.payload;
     },
@@ -638,7 +624,6 @@ export const selectWorkflowPreviewOpen = (
 
 export const {
   addQuery,
-  updateQuery,
   resendQuery,
   updateStreamingQuery,
   updateThought,
@@ -651,7 +636,6 @@ export const {
   setStatus,
   raiseError,
   resetWorkflowPreview,
-  clearExecutionSteps,
   clearQueryRun,
   setPreviewOpen,
 } = workflowPreviewSlice.actions;

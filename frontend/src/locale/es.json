@@ -2520,11 +2520,6 @@
       "type": "Tipo"
     },
     "createAPIKey": {
-      "apiKeyName": "Nombre de la Clave de API",
-      "chunks": "Fragmentos procesados por consulta",
-      "create": "Crear",
-      "label": "Crear Nueva Clave de API",
-      "prompt": "Selecciona el prompt activo",
       "sourceDoc": "Documento Fuente"
     },
     "deleteConv": {
@@ -2622,12 +2617,8 @@
       "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable."
     },
     "saveKey": {
-      "apiKeyLabel": "Clave de API",
-      "confirm": "He guardado la Clave",
       "copied": "Copiado",
-      "copy": "Copiar",
-      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
-      "note": "Por favor, guarda tu Clave"
+      "copy": "Copiar"
     },
     "searchConversations": {
       "noResults": "No se encontraron resultados",
@@ -2640,7 +2631,6 @@
       "option": "Permitir a los usuarios realizar más consultas"
     },
     "uploadDoc": {
-      "cancel": "Cancelar",
       "choose": "Seleccionar Archivos",
       "connectors": {
         "auth": {
@@ -2705,9 +2695,7 @@
         }
       },
       "label": "Añadir conocimiento",
-      "link": "Enlace",
       "name": "Nombre",
-      "noFilesSelected": "No hay archivos seleccionados",
       "progress": {
         "clear": "Limpiar",
         "collapseDetails": "Contraer detalles de subida",
@@ -2729,18 +2717,13 @@
         "uploadProgress": "Progreso de subida {{progress}}%",
         "wait": "Esto puede tardar varios minutos"
       },
-      "remote": "Recoger desde un sitio web",
       "removeFile": "Quitar {{name}}",
       "repoUrl": "URL del Repositorio",
       "select": "Elige cómo cargar tu documento en DocsGPT",
       "selectFolder": "O elige una carpeta entera",
       "selectSource": "Añadir conocimiento",
       "selectedFiles": "Archivos Seleccionados",
-      "start": "Comenzar a chatear",
       "train": "Añadir al conocimiento",
-      "uploadedFiles": "Archivos Subidos",
-      "urlLink": "Enlace URL",
-      "wait": "Por favor espera ...",
       "website": {
         "addAnotherPage": "Añadir otra página",
         "discovery": {
@@ -3282,7 +3265,6 @@
     "analytics": {
       "completed": "Completadas",
       "failed": "Fallidas",
-      "filterByChatbot": "Filtrar por chatbot",
       "filterOptions": {
         "hour": "Hora",
         "last15Days": "15 días",
@@ -3543,7 +3525,6 @@
         "usedOf": "{{used}} de {{limit}}"
       },
       "scheduledRuns": "Ejecuciones programadas",
-      "selectChatbot": "Seleccionar chatbot",
       "skipped": "Omitidas",
       "stats": {
         "feedback": "Retroalimentación",
@@ -4149,21 +4130,13 @@
       "subtitle": "Empareja máquinas remotas que los agentes pueden controlar mediante comandos de shell."
     },
     "general": {
-      "addNew": "Añadir Nuevo",
-      "chunks": "Fragmentos procesados por consulta",
-      "convHistory": "Historial de conversaciones",
       "dark": "Oscuro",
-      "default": "Predeterminado",
       "deleteAllInWorkspace": "Elimina de forma permanente todos los chats que iniciaste en {{name}}. No se puede deshacer.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
-      "high": "Alto",
       "label": "General",
       "language": "Idioma",
       "languageDescription": "Idioma de los menús y las etiquetas.",
       "light": "Claro",
-      "low": "Bajo",
-      "medium": "Medio",
-      "none": "Ninguno",
       "sections": {
         "appearance": "Apariencia",
         "dangerZone": "Zona de peligro",
@@ -4179,8 +4152,7 @@
       "taskModelUnavailable": "Tu modelo de tareas ya no puede ejecutarse (se desactivó o se eliminó), así que se usa el valor predeterminado de la instancia. Si el modelo vuelve, se usará de nuevo; elige una opción aquí para reemplazarlo.",
       "taskModelUnavailableValue": "Modelo no disponible",
       "theme": "Tema",
-      "themeDescription": "Interfaz clara u oscura.",
-      "unlimited": "Ilimitado"
+      "themeDescription": "Interfaz clara u oscura."
     },
     "insights": {
       "label": "Información"
@@ -4217,7 +4189,6 @@
         "dislike": "No me gusta",
         "like": "Me gusta"
       },
-      "filterByChatbot": "Filtrar por chatbot",
       "label": "Registros",
       "labels": {
         "asksHuman": "Pidió una persona",
@@ -4255,7 +4226,6 @@
       "retriedStep_other": "{{node}}: {{count}} intentos",
       "running": "en curso",
       "searchPlaceholder": "Buscar registros...",
-      "selectChatbot": "Seleccionar chatbot",
       "subtitle": "Visualiza y monitorea las llamadas a la API y los registros de conversaciones",
       "trace": {
         "chips": {
@@ -4509,7 +4479,6 @@
       "deleteWarning": "¿Eliminar \"{{name}}\"?",
       "deleting": "Eliminando…",
       "deletingTitle": "Eliminando...",
-      "editAlt": "Editar",
       "editChunk": "Editar fragmento",
       "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
       "editChunkDescriptionUnplaced": "{{file}} · fragmento editado · {{tokens}} tokens",
@@ -4530,7 +4499,6 @@
         "sync": "No se pudo sincronizar la fuente.",
         "syncFrequency": "No se pudo cambiar la frecuencia de sincronización."
       },
-      "fileAlt": "Archivo",
       "fileName": "Nombre",
       "files": "Archivos",
       "filesByline_many": "{{files}} archivos · {{tokens}} tokens",
@@ -4541,7 +4509,6 @@
       "filesFailed_other": "No se pudo indexar la última versión de {{count}} archivos en la última sincronización. Los que ya estaban indexados pueden seguir mostrando su contenido anterior en las búsquedas.",
       "filesLoadError": "No se pudieron cargar los archivos",
       "filterFiles": "Filtrar archivos",
-      "folderAlt": "Carpeta",
       "folders": {
         "emptyHint": "Añade conocimiento aquí o mueve fuentes desde su menú ⋯.",
         "noMatchIn": "Nada en {{name}} coincide con «{{query}}».",
@@ -4671,18 +4638,14 @@
       "needsAttention": "Requiere atención",
       "nextChunk": "Fragmento siguiente",
       "noChunks": "No se encontraron fragmentos",
-      "noChunksAlt": "No se encontraron fragmentos",
       "noData": "Aún no hay conocimiento",
       "noKnowledgeFound": "No se encontró conocimiento",
       "noResults": "No se encontraron resultados",
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} fuentes",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} fuente",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} fuentes",
-      "parentFolderAlt": "Carpeta padre",
       "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
-      "preLoaded": "Precargado",
       "previousChunk": "Fragmento anterior",
-      "private": "Privado",
       "queued": "En cola: {{count}}",
       "reingest": "Reindexar",
       "retrievalOptions": {
@@ -4792,7 +4755,6 @@
         "title": "Configuración avanzada"
       },
       "retryFailedFiles": "Reintentar ahora",
-      "searchAlt": "Buscar",
       "searchChunks": "Buscar fragmentos",
       "searchPlaceholder": "Buscar conocimiento…",
       "sections": {

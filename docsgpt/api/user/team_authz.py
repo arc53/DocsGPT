@@ -33,7 +33,6 @@ from flask import jsonify, make_response, request
 from docsgpt.api.user.authz import ROLE_ADMIN, has_role
 from docsgpt.storage.db.repositories.team_members import (
     ROLE_TEAM_ADMIN,
-    ROLE_TEAM_EDITOR,
     ROLE_TEAM_VIEWER,
     TeamMembersRepository,
 )
@@ -128,5 +127,4 @@ def require_team_role(name: str):
 
 
 team_admin_required = require_team_role(ROLE_TEAM_ADMIN)
-team_editor_required = require_team_role(ROLE_TEAM_EDITOR)
 team_member_required = require_team_role(ROLE_TEAM_VIEWER)

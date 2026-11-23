@@ -16,9 +16,6 @@ from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
 
-VALID_RESOURCE_TYPES = ("agent", "source", "prompt", "tool")
-VALID_ACCESS_LEVELS = ("viewer", "editor")
-
 
 class TeamResourceGrantsRepository:
     """Share grants keyed by ``(team_id, resource_type, resource_id)``."""

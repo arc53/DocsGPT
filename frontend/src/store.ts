@@ -43,12 +43,10 @@ import {
 } from './workspace/workspaceListener';
 import workspaceReducer from './workspace/workspaceSlice';
 
-const key = localStorage.getItem('DocsGPTApiKey');
 const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
 const preloadedState: { preference: Preference } = {
   preference: {
-    apiKey: key ?? '',
     token: localStorage.getItem('authToken') ?? null,
     // The server's choice replaces it once loaded (useDataInitializer).
     prompt: { name: 'default', id: 'default', type: 'public' },
@@ -68,7 +66,6 @@ const preloadedState: { preference: Preference } = {
     selectedAgent: null,
     selectedModel: selectedModel ? JSON.parse(selectedModel) : null,
     availableModels: [],
-    modelsLoading: false,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,

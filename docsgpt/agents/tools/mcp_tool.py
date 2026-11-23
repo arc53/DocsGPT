@@ -719,7 +719,6 @@ class MCPTool(Tool):
                 executor.shutdown(wait=False)
         except Exception as e:
             raise self._map_error(operation, e) from e
-            raise self._map_error(operation, e) from e
 
     def _run_in_new_loop(self, operation, *args, **kwargs):
         lock = _client_lock(self._client)

@@ -208,7 +208,6 @@ describe('AddToolModal', () => {
                 t1: {
                   catalog: team.catalog,
                   connections: [],
-                  loading: false,
                   loaded: true,
                   failed: false,
                   latestRequestId: null,

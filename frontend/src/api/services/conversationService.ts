@@ -74,8 +74,6 @@ const conversationService = {
     ),
   delete: (id: string, data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.DELETE(id), data, token, {}),
-  deleteAll: (token: string | null): Promise<any> =>
-    apiClient.get(endpoints.CONVERSATION.DELETE_ALL, token, {}),
   update: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.UPDATE, data, token, {}),
   chatCompletions: (

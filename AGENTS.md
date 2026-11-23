@@ -291,9 +291,8 @@ DocsGPT historically mixed three icon sources: `lucide-react`, inline SVG compon
    variants in this branch). The pattern is acceptable for existing call sites — don't
    bulk-migrate without a reason.
 
-Three pre-existing dark-variant pairs (`documentation`, `no-files`, `science-spark`) are
-hand-tuned multi-color illustrations, not pure inverts; they keep their `-dark` companion
-files until a per-illustration refactor.
+One pre-existing dark-variant pair (`no-files`) is a hand-tuned multi-color illustration,
+not a pure invert; it keeps its `-dark` companion file until a per-illustration refactor.
 
 ## PR readiness
 

@@ -343,8 +343,6 @@ type WithActivity = { activity?: ActivityState };
 
 export const selectActivityNow = (state: WithActivity) =>
   state.activity?.now ?? null;
-export const selectActivityLoading = (state: WithActivity) =>
-  state.activity?.loading ?? false;
 export const selectActivityError = (state: WithActivity) =>
   state.activity?.error ?? false;
 /** Follow this, not the snapshot, to reload when activity may have changed. */

@@ -119,11 +119,6 @@ MODELS: Tuple[EmbeddingModel, ...] = (
     OPENAI_ADA_002,
 )
 
-#: Fallback vector width when the configured model is unknown -- the width
-#: every DocsGPT install has used to date, so an unrecognised model does not
-#: silently reshape an existing table.
-DEFAULT_EMBEDDING_DIMENSION = 768
-
 #: Name that a fresh install should be configured with.
 DEFAULT_NEW_INSTALL = GRANITE_311M.name
 

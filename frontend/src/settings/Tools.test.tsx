@@ -20,7 +20,6 @@ const reduxState = {
     catalog: [] as unknown[],
     connections: [] as unknown[],
     loaded: true,
-    loading: false,
     failed: false,
   },
 };

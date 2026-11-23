@@ -196,10 +196,6 @@ ANALYTICS_TURN = register(
     )
 )
 
-#: The label the sweep's conversation calls (goal met and the agent's tags) pass as ``feature``; it follows
-#: DECISION_ANALYTICS_ENABLED with ``ANALYTICS_TURN``.
-ANALYTICS_CONVERSATION = "analytics_conversation"
-
 
 def _rerank_shape(settings: Any, runtime: Optional[str]) -> Shape:
     """A relevance call over the default candidate pool (``reranker.candidate_k`` unset): best-window passages where

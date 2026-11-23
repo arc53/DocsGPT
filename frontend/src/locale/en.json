@@ -2447,11 +2447,6 @@
       "type": "Type"
     },
     "createAPIKey": {
-      "apiKeyName": "API Key Name",
-      "chunks": "Chunks processed per query",
-      "create": "Create",
-      "label": "Create New API Key",
-      "prompt": "Select active prompt",
       "sourceDoc": "Source document"
     },
     "deleteConv": {
@@ -2548,12 +2543,8 @@
       "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy."
     },
     "saveKey": {
-      "apiKeyLabel": "API Key",
-      "confirm": "I saved the Key",
       "copied": "Copied",
-      "copy": "Copy",
-      "disclaimer": "This is the only time your key will be shown.",
-      "note": "Please save your Key"
+      "copy": "Copy"
     },
     "searchConversations": {
       "noResults": "No results found",
@@ -2566,7 +2557,6 @@
       "option": "Allow users to prompt further"
     },
     "uploadDoc": {
-      "cancel": "Cancel",
       "choose": "Choose Files",
       "connectors": {
         "auth": {
@@ -2631,9 +2621,7 @@
         }
       },
       "label": "Add knowledge",
-      "link": "Link",
       "name": "Name",
-      "noFilesSelected": "No files selected",
       "progress": {
         "clear": "Clear",
         "collapseDetails": "Collapse upload details",
@@ -2654,18 +2642,13 @@
         "uploadProgress": "Upload progress {{progress}}%",
         "wait": "This may take several minutes"
       },
-      "remote": "Collect from website",
       "removeFile": "Remove {{name}}",
       "repoUrl": "Repository URL",
       "select": "Choose how to upload your document to DocsGPT",
       "selectFolder": "Or choose a whole folder",
       "selectSource": "Add knowledge",
       "selectedFiles": "Selected Files",
-      "start": "Start Chatting",
       "train": "Add to Knowledge",
-      "uploadedFiles": "Uploaded Files",
-      "urlLink": "URL Link",
-      "wait": "Please wait ...",
       "website": {
         "addAnotherPage": "Add another page",
         "discovery": {
@@ -3188,7 +3171,6 @@
     "analytics": {
       "completed": "Completed",
       "failed": "Failed",
-      "filterByChatbot": "Filter by chatbot",
       "filterOptions": {
         "hour": "Hour",
         "last15Days": "15 days",
@@ -3435,7 +3417,6 @@
         "usedOf": "{{used}} of {{limit}}"
       },
       "scheduledRuns": "Scheduled runs",
-      "selectChatbot": "Select chatbot",
       "skipped": "Skipped",
       "stats": {
         "feedback": "Feedback",
@@ -4029,21 +4010,13 @@
       "subtitle": "Pair remote machines that agents can drive via shell commands."
     },
     "general": {
-      "addNew": "Add New",
-      "chunks": "Chunks processed per query",
-      "convHistory": "Conversation History",
       "dark": "Dark",
-      "default": "Default",
       "deleteAllInWorkspace": "Permanently deletes every chat you started in {{name}}. This can't be undone.",
       "deleteAllLabel": "Delete all conversations",
-      "high": "High",
       "label": "General",
       "language": "Language",
       "languageDescription": "Language of menus and labels.",
       "light": "Light",
-      "low": "Low",
-      "medium": "Medium",
-      "none": "None",
       "sections": {
         "appearance": "Appearance",
         "dangerZone": "Danger zone",
@@ -4059,8 +4032,7 @@
       "taskModelUnavailable": "Your task model can't run any more (it was disabled or removed), so the instance default runs. If the model comes back, it runs again; pick an option here to replace it.",
       "taskModelUnavailableValue": "Unavailable model",
       "theme": "Theme",
-      "themeDescription": "Light or dark interface.",
-      "unlimited": "Unlimited"
+      "themeDescription": "Light or dark interface."
     },
     "insights": {
       "label": "Insights"
@@ -4097,7 +4069,6 @@
         "dislike": "Disliked",
         "like": "Liked"
       },
-      "filterByChatbot": "Filter by chatbot",
       "label": "Logs",
       "labels": {
         "asksHuman": "Asked for a person",
@@ -4134,7 +4105,6 @@
       "retriedStep_other": "{{node}}: {{count}} attempts",
       "running": "running",
       "searchPlaceholder": "Search logs...",
-      "selectChatbot": "Select chatbot",
       "subtitle": "View and monitor API calls, scheduled runs and errors across your account",
       "trace": {
         "chips": {
@@ -4376,7 +4346,6 @@
       "deleteWarning": "Delete \"{{name}}\"?",
       "deleting": "Deleting…",
       "deletingTitle": "Deleting...",
-      "editAlt": "Edit",
       "editChunk": "Edit chunk",
       "editChunkDescription": "{{file}} · chunk {{n}} · {{tokens}} tokens",
       "editChunkDescriptionUnplaced": "{{file}} · edited chunk · {{tokens}} tokens",
@@ -4397,7 +4366,6 @@
         "sync": "Couldn't sync the source.",
         "syncFrequency": "Couldn't change the sync frequency."
       },
-      "fileAlt": "File",
       "fileName": "Name",
       "files": "Files",
       "filesByline_one": "{{files}} file · {{tokens}} tokens",
@@ -4406,7 +4374,6 @@
       "filesFailed_other": "{{count}} files couldn’t be indexed in their latest version when this source last synced. Files indexed before may still show their earlier content in search.",
       "filesLoadError": "Could not load the files",
       "filterFiles": "Filter files",
-      "folderAlt": "Folder",
       "folders": {
         "emptyHint": "Add knowledge here, or move sources in from their ⋯ menu.",
         "noMatchIn": "Nothing in {{name}} matches “{{query}}”.",
@@ -4527,17 +4494,13 @@
       "needsAttention": "Needs attention",
       "nextChunk": "Next chunk",
       "noChunks": "No chunks found",
-      "noChunksAlt": "No chunks found",
       "noData": "No knowledge yet",
       "noKnowledgeFound": "No knowledge found",
       "noResults": "No results found",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} source",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} sources",
-      "parentFolderAlt": "Parent folder",
       "paused": "Sync paused. Reconnect {{name}} to resume.",
-      "preLoaded": "Pre-loaded",
       "previousChunk": "Previous chunk",
-      "private": "Private",
       "queued": "Queued: {{count}}",
       "reingest": "Reingest",
       "retrievalOptions": {
@@ -4647,7 +4610,6 @@
         "title": "Advanced settings"
       },
       "retryFailedFiles": "Try again now",
-      "searchAlt": "Search",
       "searchChunks": "Search chunks",
       "searchPlaceholder": "Search knowledge…",
       "sections": {
