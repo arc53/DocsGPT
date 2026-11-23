@@ -72,6 +72,8 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+# Pagefind's index from the Nextra docs build; old checkouts may still have it.
+docs/public/_pagefind/
 
 # PyBuilder
 target/
@@ -165,6 +167,9 @@ frontend/vite.config.d.ts
 # Keep frontend utility helpers tracked (overrides global lib/ ignore)
 !frontend/src/lib/
 !frontend/src/lib/**
+# The docs site's content source and API pages live in docs/lib/ too.
+!docs/lib/
+!docs/lib/**
 
 frontend/node_modules
 frontend/dist
