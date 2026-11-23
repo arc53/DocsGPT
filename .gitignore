@@ -72,7 +72,6 @@ instance/
 
 # Sphinx documentation
 docs/_build/
-docs/public/_pagefind/
 
 # PyBuilder
 target/

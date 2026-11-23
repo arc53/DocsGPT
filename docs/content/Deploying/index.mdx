@@ -1,10 +1,9 @@
 ---
 title: Choose a Deployment
+sidebarTitle: 🧭 Choose a Deployment
 description: Compare the ways to self-host DocsGPT (one-command installer, Docker Compose, pip, Kubernetes or air-gapped) and pick the deployment that fits your setup.
 lastUpdated: 2026-09-30
 ---
-
-import { Callout } from 'nextra/components'
 
 # Choose a Deployment
 
@@ -55,7 +54,7 @@ differ in who manages them, where the data lives, and which version you get.
 - **Use Kubernetes** when you already run a cluster and want replicas, rolling
   upgrades and your own Ingress.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
   Before DocsGPT is reachable by anyone else, set `AUTH_TYPE`, a real
   `INTERNAL_KEY` and `ENCRYPTION_SECRET_KEY`, and publish it over HTTPS.
   `docsgpt up` does most of this for you. Work through the

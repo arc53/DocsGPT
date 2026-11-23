@@ -6,15 +6,19 @@ still apply; [README.md](README.md) explains the layout and how to run the site.
 
 ## Every page's frontmatter
 
-Each page under `content/` opens with three fields:
+Each page under `content/` opens with three fields, plus an optional sidebar label:
 
 ```yaml
 ---
 title: GitHub Connector
+sidebarTitle: 🔗 GitHub
 description: One sentence on what the page covers; it becomes the meta description and the llms.txt note.
 lastUpdated: 2026-10-01
 ---
 ```
+
+`sidebarTitle` is the page's label in the sidebar and in `llms.txt`; without it the sidebar shows
+`title`. The sidebar labels open with an emoji, the page titles don't.
 
 ### `lastUpdated`
 
@@ -57,6 +61,9 @@ request, which is the only place they change:
 - `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`)
 - `public/llms.txt` (`npm run llms`)
 
+The REST endpoint pages under `/API/endpoints/` are not files at all: `lib/openapi.js` builds
+them from `data/swagger.json` during `npm run build`, so they follow the snapshot.
+
 If one shows up in your diff, restore it: `git checkout origin/main -- <file>`. Run a
 command without `--write` (or `npm run llms -- --print`) to preview its output.
 
@@ -71,16 +78,38 @@ npm run build          # fails on broken MDX
 node scripts/check-links.mjs   # after the build: internal links and #anchors
 ```
 
+- Adding a page: list it in its folder's `meta.js` `pages`, where it belongs in the sidebar (a
+  page left out of `pages` is not shown).
 - Moving or deleting a page: add a permanent redirect from the old URL in
-  `next.config.js`, and update the folder's `_meta.js`.
+  `next.config.mjs`, and update the folder's `meta.js`. Never rename a page or a heading
+  someone may link to without that redirect; the URL is the file path, case included.
 - Prose follows the Vale rules in `../.github/styles`; run `vale --minAlertLevel=error docs`
   from the repository root when Vale is installed.
+
+## Writing pages
+
+The site is built with [Fumadocs](https://fumadocs.dev) (Fumadocs MDX, Fumadocs UI) on the
+Next.js App Router. Its APIs may differ from what you remember; check
+[its docs](https://fumadocs.dev/llms.txt) for anything not covered here. Pages use these
+components without importing them (`mdx-components.jsx`):
+
+- `<Callout type="info">` (also `warning`, `error`, `success`, `idea`), with an optional `title`.
+- `<Tabs items={['React', 'HTML']}>` with one `<Tab>` per item, in order. Every tab's text
+  stays in the page's HTML, so search engines and `#anchor` links reach it.
+- `<Steps>` around `### Step` headings, which become numbered steps.
+- `<Cards>` with `<Card title="…" href="/…" />`.
+- A ` ```mermaid ` code block renders as a diagram.
+
+Code blocks need a language Shiki knows (`dotenv`, not `env`); an unknown one fails the build.
+Give a code block a caption with `title="file.yaml"` after the language. Keep headings unique
+in a page where you can: a repeated heading gets `-1`, `-2` added to its anchor. `## Heading
+[#custom-id]` sets an anchor explicitly.
 
 ## Page metadata
 
 `page-meta.js` builds each page's canonical URL, Open Graph and Twitter card, and JSON-LD
 (`TechArticle` and `BreadcrumbList`; `WebSite` on the home page). `app/sitemap.js` serves
-`/sitemap.xml` from the page map, `public/robots.txt` allows every crawler and points at
+`/sitemap.xml` from every page, the REST endpoint pages included, `public/robots.txt` allows every crawler and points at
 the sitemap, and `public/og/default.png` is the share image. They read only the
 frontmatter above, so a page with a good `title`, `description` and an honest
 `lastUpdated` needs nothing else.

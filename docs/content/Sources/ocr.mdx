@@ -1,10 +1,9 @@
 ---
 title: Document Parsing and OCR
+sidebarTitle: 🔍 Document Parsing and OCR
 description: Which engine parses uploaded documents, how OCR works in DocsGPT, how to configure it, and what changes for source ingestion vs chat attachments.
 lastUpdated: 2026-09-30
 ---
-
-import { Callout } from 'nextra/components'
 
 # Document Parsing and OCR
 
@@ -13,7 +12,7 @@ import { Callout } from 'nextra/components'
 DocsGPT converts uploaded documents to Markdown before chunking, embedding or
 handing them to a model. The engine is selected with one setting:
 
-```env
+```dotenv
 DOC_PARSER_ENGINE=anydoc
 ```
 
@@ -79,7 +78,7 @@ system package. With `OCR_ENABLED=true` and no binary on `PATH`,
 scanned pages fail with an install hint (text-layer documents are
 unaffected).
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 **Upgrading:** earlier images always included docling, and OCR ran through the
 RapidOCR engine bundled with it, so no system package was needed. The default
 image now ships neither docling nor tesseract. If your deployment uses the
@@ -131,7 +130,7 @@ primary parser.
 OCR is optional and controlled by two on/off settings, a backend and an
 engine choice:
 
-```env
+```dotenv
 OCR_ENABLED=false
 OCR_ATTACHMENTS_ENABLED=false
 OCR_BACKEND=auto
@@ -148,7 +147,7 @@ are still accepted as aliases.
 
 Two more settings tune OCR output:
 
-```env
+```dotenv
 OCR_RENDER_DPI=200
 OCR_MIN_CHARS_PER_PAGE=20
 ```
@@ -229,7 +228,7 @@ under docling, a missing tesseract binary or non-macOS `ocrmac` falls back to
 tesseract, and a missing tesseract binary fails the scanned file with an
 install hint (text-layer documents are unaffected).
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 A language listed in `OCR_LANGS` whose tesseract pack is not installed fails
 every scanned page loudly (tesseract exits with "Error opening data file
 ... chi_sim.traineddata"), on both backends. Install the pack before
@@ -265,7 +264,7 @@ whenever they are set, which is how you point `ollama` at another host or
 ollama pull deepseek-ocr:3b
 ```
 
-```env
+```dotenv
 OCR_ENABLED=true
 OCR_ENGINE=deepseek
 # OCR_DEEPSEEK_PROVIDER=ollama is the default
@@ -280,14 +279,14 @@ preset sends four pages at a time. A server behind a token takes it in
 
 ### Hosted API
 
-```env
+```dotenv
 OCR_ENABLED=true
 OCR_ENGINE=deepseek
 OCR_DEEPSEEK_PROVIDER=novita          # or deepinfra
 OCR_DEEPSEEK_API_KEY=sk-...           # novita falls back to NOVITA_API_KEY
 ```
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 A hosted preset sends every scanned page and OCR'd image — source uploads and,
 with `OCR_ATTACHMENTS_ENABLED`, chat attachments — to that provider. Do not
 use one for documents that must stay on your infrastructure, or in an
@@ -423,7 +422,7 @@ pack; for other languages install their packs in the image (e.g.
 `apt-get install tesseract-ocr-chi-sim`) and list them in `OCR_LANGS`
 (`eng+chi_sim`).
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Upgrading from a RapidOCR-based deployment? RapidOCR covered English *and*
 Chinese with no configuration. The tesseract default only OCRs the languages
 in `OCR_LANGS` (`eng` out of the box), so CJK scans stop ingesting until
@@ -439,7 +438,7 @@ at 1.5s either way, so the warmup is overhead a per-file parse never recovers.
 Compiling also fails outright on Apple Silicon, on install paths containing a
 space, on Windows without MSVC, and in slim images with no C compiler.
 
-```env
+```dotenv
 DOCLING_COMPILE_TORCH_MODELS=false
 ```
 
@@ -461,7 +460,7 @@ This means OCR quality is especially important for text fallback paths and for m
 For most OCR-enabled use cases, enable both flags and leave the backend on
 `auto`:
 
-```env
+```dotenv
 OCR_ENABLED=true
 OCR_ATTACHMENTS_ENABLED=true
 ```

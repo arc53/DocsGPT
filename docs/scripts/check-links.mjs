@@ -7,7 +7,7 @@
 // and that a #fragment names an id on the target page. External links are not
 // fetched; the weekly job in .github/workflows/docs.yml covers those.
 //
-// A link to a path that next.config.js redirects is reported too: it works, but
+// A link to a path that next.config.mjs redirects is reported too: it works, but
 // the page should link the destination directly.
 //
 //   node scripts/check-links.mjs [built-app-dir]
@@ -67,7 +67,7 @@ function safeDecode(value) {
 }
 
 /**
- * Reads the redirects from next.config.js without loading Next.js.
+ * Reads the redirects from next.config.mjs without loading Next.js.
  *
  * Redirects are listed as `['/old', '/new']` pairs; `source:`/`destination:`
  * objects are read too, in case one is written out in full.
@@ -75,7 +75,7 @@ function safeDecode(value) {
  * @returns {Map<string, string>} Redirected path to its destination.
  */
 function readRedirects() {
-  const file = join(DOCS_ROOT, 'next.config.js');
+  const file = join(DOCS_ROOT, 'next.config.mjs');
   if (!existsSync(file)) return new Map();
   const text = readFileSync(file, 'utf8');
   const normalize = (path) => path.replace(/\/$/, '') || '/';

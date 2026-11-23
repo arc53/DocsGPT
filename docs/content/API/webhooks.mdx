@@ -1,10 +1,9 @@
 ---
 title: Triggering Agents with Webhooks
+sidebarTitle: 🪝 Agent Webhooks
 description: "Trigger DocsGPT agents from other systems through a webhook URL: send a POST or GET, prevent duplicate runs with an Idempotency-Key, then poll for the result."
 lastUpdated: 2026-10-31
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # Triggering Agents with Webhooks
 
@@ -41,15 +40,15 @@ Send an HTTP `POST` request to the agent's unique webhook URL with the required 
 The whole JSON body becomes the agent's input, serialized as JSON text; no field has a special meaning to the agent. (The agent's sources are searched with the body's text fields; see [How a webhook run behaves](#how-a-webhook-run-behaves).) The request `{"question": "Summarize order 4567"}` reaches the agent as the message `{"question": "Summarize order 4567"}`, so write the agent's prompt to expect the payload your system sends. Non-ASCII text reaches it as written (`{"question": "Résumé"}`), not as `\u00e9` escapes; the agent's `input` [guardrails](/Agents/guardrails) scan the payload as that message.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     curl -X POST \
       http://localhost:7091/api/webhooks/agents/your_webhook_token \
       -H "Content-Type: application/json" \
       -d '{"question": "Your message to agent"}'
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
 
@@ -64,8 +63,8 @@ The whole JSON body becomes the agent's input, serialized as JSON text; no field
     except requests.exceptions.RequestException as e:
         print(f"Error triggering webhook: {e}")
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const webhookUrl = 'http://localhost:7091/api/webhooks/agents/your_webhook_token';
     const payload = { question: 'Your message to agent' };
@@ -88,7 +87,7 @@ The whole JSON body becomes the agent's input, serialized as JSON text; no field
     
     triggerWebhook();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ### Triggering with GET (query parameters)
@@ -167,13 +166,13 @@ Two more cases to handle:
 - **A crashed run is not retried.** If the run raises an error (for example the model provider is unreachable), the task ends `FAILURE` and the agent does not run again on its own: a retry would repeat any tool actions that already took effect. To try again, send the webhook again, with a new `Idempotency-Key` if you set one. If the worker process itself dies mid-run (a restart or a deploy), the task is delivered again and the agent runs from the start.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     # Replace the task_id with the one you received
     curl http://localhost:7091/api/task_status?task_id=YOUR_TASK_ID
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
     import time
@@ -200,8 +199,8 @@ Two more cases to handle:
         
         time.sleep(2)
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const statusUrl = 'http://localhost:7091/api/task_status';
     const taskId = 'YOUR_TASK_ID';
@@ -234,7 +233,7 @@ Two more cases to handle:
 
     pollForResult();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ## How a webhook run behaves

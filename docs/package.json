@@ -1,8 +1,7 @@
 {
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
-    "postbuild": "node scripts/pagefind-index.mjs",
+    "dev": "next dev",
+    "build": "next build",
     "start": "next start",
     "llms": "node scripts/generate-llms.mjs",
     "llms:check": "node scripts/generate-llms.mjs --check",
@@ -13,23 +12,26 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@scalar/openapi-upgrader": "^0.4.11",
     "@vercel/analytics": "^2.0.1",
     "docsgpt-react": "^0.14.0",
+    "fumadocs-core": "16.19.7",
+    "fumadocs-mdx": "15.6.4",
+    "fumadocs-openapi": "^12.6.7",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.19.7",
+    "lucide-react": "^1.71.0",
+    "mermaid": "^12.3.0",
     "next": "^16.4.4",
     "next-themes": "^0.4.6",
-    "nextra": "^4.6.1",
-    "nextra-theme-docs": "^4.6.1",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "shiki": "^4.6.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "pagefind": "^1.5.2",
+    "@tailwindcss/postcss": "^4.3.5",
+    "postcss": "^8.5.32",
+    "tailwindcss": "^4.3.5",
     "typescript": "^6.0.3"
-  },
-  "overrides": {
-    "@xmldom/xmldom": "^0.9.12",
-    "katex": "^0.18.2",
-    "minimatch": "^11.0.4",
-    "zod": "~4.3.6"
   }
 }

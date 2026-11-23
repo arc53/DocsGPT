@@ -1,10 +1,9 @@
 ---
 title: Usage Quotas
+sidebarTitle: 📊 Usage Quotas
 description: Cap how many tokens or dollars each user may spend per day, week or month, with an instance default, per-team allowances and per-user overrides.
 lastUpdated: 2026-09-30
 ---
-
-import { Callout } from 'nextra/components'
 
 # Usage Quotas
 
@@ -15,7 +14,7 @@ An instance admin can limit how much each user spends on language models. A quot
 
 Set either, both or neither. Quotas are managed from **Admin → Quotas**, or through the [API](#api). With no quota set, nothing is limited.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Quotas need an instance admin, which exists only under `AUTH_TYPE=oidc` (or in a single-user install with no authentication and `LOCAL_MODE_ADMIN=true`). Under `simple_jwt`, the default for `docsgpt up --expose network` and `--domain`, nobody can manage quotas, and every request counts as the one shared user `local`, so per-user and per-team limits cannot tell people apart. See [Access Control](/Deploying/Access-Control#admin-dashboard).
 </Callout>
 
@@ -35,7 +34,7 @@ A team allowance is **per member**, not a pool the team shares: if the allowance
 
 A user in several teams gets the **most generous** allowance among them, and allowances are never added together. Usage is always counted per user, whichever teams they belong to. To hold one person below their team's allowance, give them a user override.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Team membership can change without an instance admin — team admins add members; OIDC group sync and SCIM don't. The most generous team allowance applies, so joining another team can't lower a limit a user already gets from a team; but a team allowance overrides the instance default, so a team below the default lowers its members' limit. Only instance admins set allowances; team admins cannot.
 </Callout>
 
@@ -122,7 +121,7 @@ models:
 
 The built-in catalogs ship list prices for hosted models. Override or add rates by dropping a YAML with the same model `id` into `MODELS_CONFIG_DIR`. The cost of each call is stored with its usage row when the call is made, so later price changes do not rewrite history.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 A model with no declared price is recorded at $0, so a cost budget cannot see it. The Quotas tab lists such models once they have been used. Either limit them with a token budget, declare their rates, or set [`QUOTA_UNPRICED_RATE_PER_MILLION`](/Deploying/Settings-Reference#quotas) to charge a fallback rate. Custom models, added by a user or a team with their own API key, are always $0, but their tokens still count.
 </Callout>
 
