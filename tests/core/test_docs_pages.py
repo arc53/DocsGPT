@@ -2,7 +2,7 @@
 
 import pytest
 
-from docsgpt.core.docs_pages import read_last_updated, set_last_updated
+from docsgpt.core.docs_pages import page_body, read_last_updated, set_last_updated
 
 PAGE = "---\ntitle: Example\ndescription: An example page.\nlastUpdated: 2026-09-30\n---\n\n# Example\n"
 
@@ -41,3 +41,12 @@ class TestSetLastUpdated:
     def test_rejects_a_page_without_frontmatter(self):
         with pytest.raises(ValueError):
             set_last_updated("# Example\n", "2026-10-03")
+
+
+@pytest.mark.unit
+class TestPageBody:
+    def test_drops_the_frontmatter(self):
+        assert page_body("---\ntitle: Example\n---\n\n# Example\n") == "\n\n# Example\n"
+
+    def test_keeps_a_page_without_frontmatter(self):
+        assert page_body("# Example\n---\n") == "# Example\n---\n"

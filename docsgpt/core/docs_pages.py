@@ -38,6 +38,19 @@ def read_last_updated(text: str) -> Optional[str]:
     return field.group(2) if field else None
 
 
+def page_body(text: str) -> str:
+    """Return a page's source without its frontmatter block.
+
+    Args:
+        text: The page source, frontmatter included.
+
+    Returns:
+        Everything after the frontmatter, or the whole text when there is none.
+    """
+    frontmatter = _FRONTMATTER.match(text)
+    return text[frontmatter.end():] if frontmatter else text
+
+
 def set_last_updated(text: str, day: str) -> str:
     """Return the page with its ``lastUpdated`` date set to ``day``.
 
