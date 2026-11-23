@@ -29,7 +29,7 @@ if settings.POSTGRES_URI:
 
 if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     # ``fileConfig`` reconfigures the ROOT logger from ``[logger_root]``
-    # (level WARNING, a stderr handler), which drops every ``application.*``
+    # (level WARNING, a stderr handler), which drops every ``docsgpt.*``
     # INFO record, detaches the OTLP handler and the request/trace filter that
     # ``setup_logging()`` installed, and cannot be undone by
     # ``disable_existing_loggers=False`` — that flag only governs whether
