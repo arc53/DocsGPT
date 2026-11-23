@@ -63,7 +63,6 @@ export interface Preference {
   selectedAgent: Agent | null;
   selectedModel: Model | null;
   availableModels: Model[];
-  modelsLoading: boolean;
   // RBAC roles for the current principal, fetched fresh from /api/user/me each
   // session (DB-authoritative — deliberately NOT persisted to localStorage, so
   // a demotion can't survive a reload). ``rolesResolved`` gates UI that must
@@ -108,7 +107,6 @@ const initialState: Preference = {
   selectedAgent: null,
   selectedModel: null,
   availableModels: [],
-  modelsLoading: false,
   roles: [],
   rolesResolved: false,
   ttsAvailable: true,
@@ -263,9 +261,6 @@ export const prefSlice = createSlice({
     setAvailableModels: (state, action: PayloadAction<Model[]>) => {
       state.availableModels = action.payload;
     },
-    setModelsLoading: (state, action: PayloadAction<boolean>) => {
-      state.modelsLoading = action.payload;
-    },
     setRoles: (state, action: PayloadAction<string[]>) => {
       state.roles = action.payload;
       state.rolesResolved = true;
@@ -348,7 +343,6 @@ export const {
   setSelectedAgent,
   setSelectedModel,
   setAvailableModels,
-  setModelsLoading,
   setRoles,
   clearRoles,
   setSpeechAvailability,
@@ -479,8 +473,6 @@ prefListenerMiddleware.startListening({
   },
 });
 
-export const selectSelectedDocsStatus = (state: RootState) =>
-  state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
 export const selectSourceDocsFailed = (state: RootState) =>
@@ -509,8 +501,6 @@ export const selectSelectedModel = (state: RootState) =>
   state.preference.selectedModel;
 export const selectAvailableModels = (state: RootState) =>
   state.preference.availableModels;
-export const selectModelsLoading = (state: RootState) =>
-  state.preference.modelsLoading;
 export const selectRoles = (state: RootState) => state.preference.roles;
 export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;

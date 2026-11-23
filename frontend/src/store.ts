@@ -66,7 +66,6 @@ const preloadedState: { preference: Preference } = {
     selectedAgent: null,
     selectedModel: selectedModel ? JSON.parse(selectedModel) : null,
     availableModels: [],
-    modelsLoading: false,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,

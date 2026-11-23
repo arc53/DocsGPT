@@ -229,8 +229,6 @@ export const selectWorkspaces = (state: RootLike): WorkspaceRow[] =>
   state.workspace.workspaces;
 export const selectWorkspacesLoaded = (state: RootLike): boolean =>
   state.workspace.loaded;
-export const selectWorkspaceEpoch = (state: RootLike): number =>
-  state.workspace.epoch;
 export const selectIsTeamWorkspace = (state: RootLike): boolean =>
   state.workspace.current !== PERSONAL_WORKSPACE;
 
