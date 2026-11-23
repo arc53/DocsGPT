@@ -43,6 +43,11 @@ const movedPages = [
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  poweredByHeader: false,
+  // The search index and the OpenAPI document are data for the site's own pages, not pages.
+  async headers() {
+    return [{ source: '/api/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] }];
+  },
   async redirects() {
     return movedPages.map(([source, destination]) => ({
       source,

@@ -183,7 +183,7 @@ docsgpt down       # 停止（資料與設定會保留）
 - **後端**：Python、Flask 與 flask-restx，運行於 Starlette ASGI 應用程式（uvicorn/gunicorn）之後；Celery 搭配 RedBeat，以及 Pydantic settings。
 - **資料**：PostgreSQL（SQLAlchemy、Alembic）、Redis，以及用於向量的 FAISS、pgvector、Elasticsearch、Qdrant、Milvus 或 MongoDB。
 - **前端**：React、Vite、Redux Toolkit、Tailwind CSS 與 React Flow。
-- **文件**：使用 Nextra 的 Next.js。
+- **文件**：使用 Fumadocs 的 Next.js。
 
 專案結構：
 

@@ -13,6 +13,19 @@ import { openapi } from './openapi';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * A URL segment for a generated endpoint page: lower case, words joined by hyphens.
+ *
+ * @param {string} name A tag name or operation id, such as `agents_folders`.
+ * @returns {string} The segment, such as `agents-folders`.
+ */
+function urlSegment(name) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 const docs = defineDocs({
   dir: 'content',
   docs: {
@@ -60,9 +73,17 @@ function sidebarTitles() {
 export const source = loader(
   {
     docs: docs.toFumadocsSource(),
+    // One page per operation, in a folder per tag: /API/endpoints/<tag>/<operation>.
     openapi: await openapi.staticSource({
       baseDir: 'API/endpoints',
-      per: 'tag',
+      per: 'operation',
+      groupBy: 'tag',
+      slugify: urlSegment,
+      name(output) {
+        const { path, method } = output.item;
+        const operation = this.document.paths?.[path]?.[method];
+        return urlSegment(operation?.operationId ?? `${method}-${path}`);
+      },
     }),
   },
   {
@@ -70,3 +91,24 @@ export const source = loader(
     plugins: [sidebarTitles(), openapi.loaderPlugin()],
   },
 );
+
+export const ENDPOINTS_URL = '/API/endpoints';
+
+/**
+ * The sidebar for every page but the REST endpoint pages: the endpoint folder
+ * becomes one link to its overview. Its 265 pages stay in the endpoint pages'
+ * own sidebar (app/API/endpoints/layout.jsx), so the other pages don't carry
+ * them in their HTML.
+ *
+ * @returns {import('fumadocs-core/page-tree').Root} The page tree.
+ */
+export function docsTree() {
+  const trim = (nodes) =>
+    nodes.map((node) => {
+      if (node.type !== 'folder') return node;
+      if (node.index?.url === ENDPOINTS_URL) return { ...node.index, name: node.name, icon: node.icon };
+      return { ...node, children: trim(node.children) };
+    });
+  const tree = source.getPageTree();
+  return { ...tree, children: trim(tree.children) };
+}

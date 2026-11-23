@@ -21,7 +21,7 @@ const APP_DIR = process.argv[2] ?? join(DOCS_ROOT, '.next', 'server', 'app');
 const PUBLIC_DIR = join(DOCS_ROOT, 'public');
 const SITE_ORIGIN = 'https://docs.docsgpt.cloud';
 // Next.js internals and build output that is not a page.
-const IGNORED_PREFIXES = ['/_next/', '/_pagefind/', '/_vercel/'];
+const IGNORED_PREFIXES = ['/_next/', '/_vercel/'];
 const INTERNAL_PAGES = new Set(['/_not-found', '/_global-error']);
 
 /**
@@ -130,6 +130,10 @@ function main() {
     if (INTERNAL_PAGES.has(normalized)) continue;
     const html = readFileSync(file, 'utf8');
     pages.set(normalized, { html, ids: extractIds(html) });
+  }
+  if (pages.size === 0) {
+    console.error(`No prerendered pages under ${APP_DIR}; nothing was checked. Was the build written elsewhere?`);
+    process.exit(2);
   }
   const redirects = readRedirects();
 

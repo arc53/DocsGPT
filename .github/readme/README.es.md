@@ -183,7 +183,7 @@ Aceptamos issues, preguntas y pull requests. Empieza con [CONTRIBUTING.md](../..
 - **Backend:** Python, Flask y flask-restx detrás de una aplicación Starlette ASGI (uvicorn/gunicorn), Celery con RedBeat y configuración de Pydantic.
 - **Datos:** PostgreSQL (SQLAlchemy, Alembic), Redis y FAISS, pgvector, Elasticsearch, Qdrant, Milvus o MongoDB para vectores.
 - **Frontend:** React, Vite, Redux Toolkit, Tailwind CSS y React Flow.
-- **Documentación:** Next.js con Nextra.
+- **Documentación:** Next.js con Fumadocs.
 
 Estructura del proyecto:
 

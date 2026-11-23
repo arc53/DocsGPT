@@ -1,12 +1,16 @@
 import { DocsBody, DocsPage } from 'fumadocs-ui/layouts/docs/page';
 import Link from 'next/link';
 
+import { DocsShell } from '../components/DocsShell';
 import { SiteFooter } from '../components/SiteFooter';
+import { docsTree } from '../lib/source';
 
-export const metadata = { title: 'Page not found', robots: { index: false } };
+// Next.js marks a 404 noindex itself.
+export const metadata = { title: 'Page not found' };
 
 export default function NotFound() {
   return (
+    <DocsShell tree={docsTree()}>
     <DocsPage>
       <DocsBody>
         <h1>Page not found</h1>
@@ -17,5 +21,6 @@ export default function NotFound() {
       </DocsBody>
       <SiteFooter />
     </DocsPage>
+    </DocsShell>
   );
 }

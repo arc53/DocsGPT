@@ -61,8 +61,10 @@ request, which is the only place they change:
 - `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`)
 - `public/llms.txt` (`npm run llms`)
 
-The REST endpoint pages under `/API/endpoints/` are not files at all: `lib/openapi.js` builds
-them from `data/swagger.json` during `npm run build`, so they follow the snapshot.
+The REST endpoint pages under `/API/endpoints/` are not files at all: `lib/openapi.js` and
+`lib/source.js` build one page per endpoint from `data/swagger.json` during `npm run build`, so
+they follow the snapshot. Their URLs come from the operation ids, so link to the overview,
+`/API/endpoints`, rather than to one endpoint page.
 
 If one shows up in your diff, restore it: `git checkout origin/main -- <file>`. Run a
 command without `--write` (or `npm run llms -- --print`) to preview its output.
@@ -80,6 +82,10 @@ node scripts/check-links.mjs   # after the build: internal links and #anchors
 
 - Adding a page: list it in its folder's `meta.js` `pages`, where it belongs in the sidebar (a
   page left out of `pages` is not shown).
+- Adding a folder: give it a `meta.js` (`export default { title: '🧩 Name', pages: [...] }`, a
+  plain object with no imports; `scripts/generate-llms.mjs` loads it as data) and list the
+  folder in its parent's `pages`. Write sidebars as `meta.js` only, never `meta.json`: the
+  llms.txt generator refuses any other format.
 - Moving or deleting a page: add a permanent redirect from the old URL in
   `next.config.mjs`, and update the folder's `meta.js`. Never rename a page or a heading
   someone may link to without that redirect; the URL is the file path, case included.

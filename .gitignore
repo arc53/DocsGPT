@@ -74,6 +74,8 @@ instance/
 docs/_build/
 # Pagefind's index from the Nextra docs build; old checkouts may still have it.
 docs/public/_pagefind/
+# Fumadocs MDX's generated folder.
+docs/.source/
 
 # PyBuilder
 target/

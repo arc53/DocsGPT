@@ -13,6 +13,8 @@ export const OpenAPIPage = createOpenAPIPage({
       const { openapi } = await import('../lib/openapi');
       return (await openapi.getSchema(id)).bundled;
     }
-    return (await fetch(`/api/openapi/${id}`)).json();
+    const response = await fetch(`/api/openapi/${id}`);
+    if (!response.ok) throw new Error(`Could not load the API document (${response.status}).`);
+    return response.json();
   },
 });

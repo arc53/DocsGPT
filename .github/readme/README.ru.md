@@ -183,7 +183,7 @@ docsgpt down       # остановка (данные и настройки со
 - **Backend:** Python, Flask и flask-restx за приложением Starlette ASGI (uvicorn/gunicorn), Celery с RedBeat, настройки Pydantic.
 - **Данные:** PostgreSQL (SQLAlchemy, Alembic), Redis и FAISS, pgvector, Elasticsearch, Qdrant, Milvus или MongoDB для векторов.
 - **Frontend:** React, Vite, Redux Toolkit, Tailwind CSS и React Flow.
-- **Документация:** Next.js с Nextra.
+- **Документация:** Next.js с Fumadocs.
 
 Структура проекта:
 

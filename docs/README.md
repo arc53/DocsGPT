@@ -38,12 +38,16 @@ that already exists.
   it when you add a page. A page's own sidebar label is `sidebarTitle` in its frontmatter.
 - `lib/source.js`: the content source (Fumadocs MDX) and the page tree, including the REST
   endpoint pages from `lib/openapi.js`.
-- `app/layout.jsx`: the sidebar, navbar links, search and the page head.
-  `app/[[...slug]]/page.jsx` renders every page.
+- `app/layout.jsx`: the page head and the providers. `components/DocsShell.jsx` is the sidebar,
+  navbar links and search, used by `app/(docs)/layout.jsx` (every docs page) and
+  `app/API/endpoints/layout.jsx` (the endpoint pages, the only ones whose sidebar lists every
+  endpoint). `app/(docs)/[[...slug]]/page.jsx` renders the docs pages and
+  `app/API/endpoints/[...slug]/page.jsx` the endpoint pages.
 - `content/API/`: the API section: an overview, DocsGPT's MCP server, and the REST API reference
-  (`reference.mdx`), which renders every endpoint from the snapshot below. `/API/endpoints/`
-  holds one interactive page per group of endpoints (with a request playground), built from
-  the same snapshot by `lib/openapi.js`; they are not files under `content/`.
+  (`reference.mdx`), which renders every endpoint from the snapshot below. `/API/endpoints`
+  (`API/endpoints/index.mdx`) lists one interactive page per endpoint (with a request
+  playground), built from the same snapshot by `lib/openapi.js` and `lib/source.js`; those
+  pages are not files under `content/`.
 - `data/swagger.json`: a generated snapshot of the REST API's flask-restx Swagger document, rendered by
   `components/ApiReference.jsx` and `lib/openapi.js`. Don't edit it by hand; see [Generated pages](#generated-pages).
 - `mdx-components.jsx` and `components/`: React components available to the pages. Callouts,
