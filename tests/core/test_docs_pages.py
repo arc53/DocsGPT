@@ -2,7 +2,7 @@
 
 import pytest
 
-from docsgpt.core.docs_pages import page_body, read_last_updated, set_last_updated
+from docsgpt.core.docs_pages import page_body, read_last_updated, reader_text, set_last_updated
 
 PAGE = "---\ntitle: Example\ndescription: An example page.\nlastUpdated: 2026-09-30\n---\n\n# Example\n"
 
@@ -50,3 +50,9 @@ class TestPageBody:
 
     def test_keeps_a_page_without_frontmatter(self):
         assert page_body("# Example\n---\n") == "# Example\n---\n"
+
+
+@pytest.mark.unit
+class TestReaderText:
+    def test_collapses_whitespace_and_drops_the_frontmatter(self):
+        assert reader_text("---\ntitle: Example\n---\n\n# Example\n\n\nSome   text.\n") == "# Example Some text."

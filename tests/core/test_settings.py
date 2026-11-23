@@ -273,6 +273,12 @@ class TestReference:
         older_header = render_reference("2026-10-01").replace("sidebarTitle: 📖 Settings Reference\n", "")
         assert updated_reference(older_header) == render_reference("2026-10-01")
 
+    def test_whitespace_only_change_keeps_the_date(self, monkeypatch):
+        """Whitespace in the body doesn't count, as in sync-dates; the page is rewritten canonically."""
+        monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
+        reflowed = render_reference("2026-10-01").replace("\n## ", "\n\n\n## ", 1)
+        assert updated_reference(reflowed) == render_reference("2026-10-01")
+
     def test_page_without_a_date_gets_todays_date(self, monkeypatch):
         monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
         undated = render_reference("2026-10-01").replace("lastUpdated: 2026-10-01\n", "")

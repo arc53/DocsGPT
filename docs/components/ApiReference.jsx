@@ -7,12 +7,13 @@ import { useMDXComponents } from '../mdx-components';
 
 const METHOD_ORDER = ['get', 'post', 'put', 'patch', 'delete'];
 
+// The app's status tokens (app/theme.css), so the methods follow the light and dark themes.
 const METHOD_COLORS = {
-  get: '#2563eb',
-  post: '#16a34a',
-  put: '#d97706',
-  patch: '#9333ea',
-  delete: '#dc2626',
+  get: 'var(--color-fd-info)',
+  post: 'var(--color-fd-success)',
+  put: 'var(--color-fd-warning)',
+  patch: 'var(--color-fd-primary)',
+  delete: 'var(--color-fd-error)',
 };
 
 function slug(text) {

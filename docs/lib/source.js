@@ -7,6 +7,7 @@ import { loader } from 'fumadocs-core/source';
 import { metaSchema, pageSchema } from 'fumadocs-core/source/schema';
 import { applyMdxPreset } from 'fumadocs-mdx/config';
 import { defineDocs } from 'fumadocs-mdx/macro';
+import remarkSmartypants from 'remark-smartypants';
 import { z } from 'zod';
 
 import { openapi } from './openapi';
@@ -40,7 +41,8 @@ const docs = defineDocs({
         .optional(),
     }),
     mdxOptions: applyMdxPreset({
-      remarkPlugins: (plugins) => [...plugins, remarkMdxMermaid],
+      // Curly quotes, dashes and ellipses, as the Nextra site rendered them.
+      remarkPlugins: (plugins) => [...plugins, remarkMdxMermaid, remarkSmartypants],
     }),
     postprocess: {
       includeProcessedMarkdown: true,
