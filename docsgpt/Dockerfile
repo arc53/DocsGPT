@@ -160,8 +160,6 @@ COPY --from=ui --chown=appuser:appuser /src/docsgpt/static /app/docsgpt/static
 # and uploads work without running the container as root.
 RUN mkdir -p /app/docsgpt/inputs/local /app/inputs /app/indexes /app/vectors
 
-ENV FLASK_APP=app.py
-
 # Thread caps. onnxruntime (FastEmbed) ignores OMP_NUM_THREADS and sizes its
 # pool to the host's core count, which a CPU-limited container still reports;
 # EMBEDDINGS_THREADS pins it the way OMP_NUM_THREADS pinned torch before.
