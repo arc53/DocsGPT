@@ -16,7 +16,6 @@ export default [
       'node_modules/',
       'dist/',
       'prettier.config.cjs',
-      'custom.d.ts',
       'package-lock.json',
       'package.json',
     ],

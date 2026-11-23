@@ -172,8 +172,6 @@ const endpoints = {
       }${install ? '&install=1' : ''}${owner === 'team' ? '&owner=team' : ''}`,
     CONNECTOR_AUTH_COMPLETE: '/api/connectors/auth/complete',
     CONNECTOR_FILES: '/api/connectors/files',
-    CONNECTOR_VALIDATE_SESSION: '/api/connectors/validate-session',
-    CONNECTOR_DISCONNECT: '/api/connectors/disconnect',
     CONNECTORS_CATALOG: '/api/connectors/catalog',
     /** The catalog's states for the header's team's connections. */
     CONNECTORS_CATALOG_TEAM: '/api/connectors/catalog?owner=team',
@@ -260,7 +258,6 @@ const endpoints = {
     },
     RESTORE_ARTIFACT: (artifactId: string) =>
       `/api/artifacts/${artifactId}/restore`,
-    WORKFLOWS: '/api/workflows',
     WORKFLOW_RUN_STEP: (workflowRunId: string, stepIndex: number) =>
       `/api/workflow_runs/${encodeURIComponent(workflowRunId)}/steps/${stepIndex}`,
     WORKFLOW: (id: string) => `/api/workflows/${id}`,
@@ -321,7 +318,6 @@ const endpoints = {
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
-    MODELS: '/v1/models',
   },
   ADMIN: {
     OVERVIEW: '/api/admin/overview',

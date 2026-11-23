@@ -14,7 +14,6 @@ import { RootState } from '../store';
 import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   getLocalRecentDocs,
-  setLocalApiKey,
   setLocalRecentDocs,
   setStoredRecentFolders,
   type SelectedFolder,
@@ -36,7 +35,6 @@ const isOlderThan = (
   return c.id < last.id;
 };
 export interface Preference {
-  apiKey: string;
   prompt: { name: string; id: string; type: string };
   prompts: Prompt[];
   selectedDocs: Doc[];
@@ -65,7 +63,6 @@ export interface Preference {
   selectedAgent: Agent | null;
   selectedModel: Model | null;
   availableModels: Model[];
-  modelsLoading: boolean;
   // RBAC roles for the current principal, fetched fresh from /api/user/me each
   // session (DB-authoritative — deliberately NOT persisted to localStorage, so
   // a demotion can't survive a reload). ``rolesResolved`` gates UI that must
@@ -92,7 +89,6 @@ export interface Preference {
 }
 
 const initialState: Preference = {
-  apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
   prompts: presetPrompts(),
   selectedDocs: [],
@@ -111,7 +107,6 @@ const initialState: Preference = {
   selectedAgent: null,
   selectedModel: null,
   availableModels: [],
-  modelsLoading: false,
   roles: [],
   rolesResolved: false,
   ttsAvailable: true,
@@ -127,9 +122,6 @@ export const prefSlice = createSlice({
   name: 'preference',
   initialState,
   reducers: {
-    setApiKey: (state, action) => {
-      state.apiKey = action.payload;
-    },
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
     },
@@ -269,9 +261,6 @@ export const prefSlice = createSlice({
     setAvailableModels: (state, action: PayloadAction<Model[]>) => {
       state.availableModels = action.payload;
     },
-    setModelsLoading: (state, action: PayloadAction<boolean>) => {
-      state.modelsLoading = action.payload;
-    },
     setRoles: (state, action: PayloadAction<string[]>) => {
       state.roles = action.payload;
       state.rolesResolved = true;
@@ -333,7 +322,6 @@ export const prefSlice = createSlice({
 });
 
 export const {
-  setApiKey,
   setSelectedDocs,
   setSelectedFolders,
   setSourceDocs,
@@ -355,7 +343,6 @@ export const {
   setSelectedAgent,
   setSelectedModel,
   setAvailableModels,
-  setModelsLoading,
   setRoles,
   clearRoles,
   setSpeechAvailability,
@@ -366,13 +353,6 @@ export const {
 export default prefSlice.reducer;
 
 export const prefListenerMiddleware = createListenerMiddleware();
-prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setApiKey),
-  effect: (action, listenerApi) => {
-    setLocalApiKey((listenerApi.getState() as RootState).preference.apiKey);
-  },
-});
-
 prefListenerMiddleware.startListening({
   matcher: isAnyOf(setSelectedDocs),
   effect: (action, listenerApi) => {
@@ -493,11 +473,6 @@ prefListenerMiddleware.startListening({
   },
 });
 
-export const selectApiKey = (state: RootState) => state.preference.apiKey;
-export const selectApiKeyStatus = (state: RootState) =>
-  !!state.preference.apiKey;
-export const selectSelectedDocsStatus = (state: RootState) =>
-  state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
   state.preference.sourceDocs;
 export const selectSourceDocsFailed = (state: RootState) =>
@@ -526,8 +501,6 @@ export const selectSelectedModel = (state: RootState) =>
   state.preference.selectedModel;
 export const selectAvailableModels = (state: RootState) =>
   state.preference.availableModels;
-export const selectModelsLoading = (state: RootState) =>
-  state.preference.modelsLoading;
 export const selectRoles = (state: RootState) => state.preference.roles;
 export const selectRolesResolved = (state: RootState) =>
   state.preference.rolesResolved;

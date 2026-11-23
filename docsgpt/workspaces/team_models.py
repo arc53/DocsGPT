@@ -414,20 +414,3 @@ def index_models(rows: Iterable[Mapping[str, Any]]) -> dict[tuple[str, str], dic
         if key[0] and key[1]:
             index.setdefault(key, row)
     return index
-
-
-def owners_matching_model(conn: Any, owner_id: Optional[str], row: Optional[Mapping[str, Any]]) -> Optional[dict]:
-    """``owner_id``'s own model that is the same as ``row`` (same endpoint and upstream id), or None.
-
-    Args:
-        conn: Open connection.
-        owner_id: A person or a team's principal.
-        row: The model to match.
-
-    Returns:
-        The owner's matching row, or None.
-    """
-    if not owner_id or not row:
-        return None
-    rows = UserCustomModelsRepository(conn).list_for_user(owner_id)
-    return matching_model(rows, row.get("base_url"), row.get("upstream_model_id"))

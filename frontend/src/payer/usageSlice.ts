@@ -277,8 +277,6 @@ export function noticeFor(
 }
 
 // A store without the slice (a component test's) reads as nothing loaded.
-export const selectUsage = (state: { usage?: UsageState }): UsageState =>
-  state.usage ?? initialState;
 export const selectQuota = (state: {
   usage?: UsageState;
 }): QuotaResponse | null => state.usage?.quota ?? null;

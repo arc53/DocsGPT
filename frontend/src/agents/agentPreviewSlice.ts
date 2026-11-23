@@ -39,10 +39,9 @@ import {
   selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 
-const initialState: ConversationState = {
+const initialState: Omit<ConversationState, 'conversationId'> = {
   queries: [],
   status: 'idle',
-  conversationId: null,
 };
 
 const API_STREAMING = envVar('VITE_API_STREAMING') === 'true';
@@ -429,7 +428,6 @@ export const agentPreviewSlice = createSlice({
     resetPreview: (state) => {
       state.queries = initialState.queries;
       state.status = initialState.status;
-      state.conversationId = initialState.conversationId;
       handlePreviewAbort();
     },
   },

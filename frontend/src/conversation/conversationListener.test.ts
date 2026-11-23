@@ -75,7 +75,6 @@ const makeStore = (
   initialStatus: ConversationState['status'] = 'idle',
 ) => {
   const preference: Preference = {
-    apiKey: '',
     prompt: { name: 'default', id: 'default', type: 'public' },
     prompts: [],
     selectedDocs: [],
@@ -91,7 +90,6 @@ const makeStore = (
     selectedAgent: null,
     selectedModel: null,
     availableModels: [],
-    modelsLoading: false,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,

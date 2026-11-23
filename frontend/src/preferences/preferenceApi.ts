@@ -184,11 +184,6 @@ export async function searchConversations(
   }
 }
 
-export function getLocalApiKey(): string | null {
-  const key = localStorage.getItem('DocsGPTApiKey');
-  return key;
-}
-
 function parseStoredRecentDocs(docsString: string | null): Doc[] | null {
   if (!docsString) {
     return null;
@@ -284,10 +279,6 @@ export function setStoredRecentFolders(folders: SelectedFolder[]): void {
   } catch {
     // Storage off (a private window): the pick lasts for this visit.
   }
-}
-
-export function setLocalApiKey(key: string): void {
-  localStorage.setItem('DocsGPTApiKey', key);
 }
 
 export function setLocalRecentDocs(docs: Doc[] | null): void {

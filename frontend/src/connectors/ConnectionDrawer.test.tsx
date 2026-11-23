@@ -135,7 +135,6 @@ describe('ConnectionDrawer', () => {
         connectors: {
           enabled: true,
           startedSyncs,
-          loading: !loaded,
           loaded,
           failed: false,
           catalog: [DRIVE],

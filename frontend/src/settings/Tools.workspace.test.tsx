@@ -13,7 +13,6 @@ const reduxState = vi.hoisted(() => ({
     catalog: [] as unknown[],
     connections: [] as unknown[],
     loaded: true,
-    loading: false,
     failed: false,
     // Each team's accounts, by team id (the team's tools run on them).
     teams: {} as Record<string, unknown>,
@@ -506,7 +505,6 @@ describe('Tools page in a workspace', () => {
         t1: {
           catalog: [],
           connections,
-          loading: false,
           loaded: true,
           failed: false,
           latestRequestId: null,

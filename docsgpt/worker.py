@@ -107,8 +107,6 @@ from docsgpt.utils import (
 # Constants
 
 
-MIN_TOKENS = 150
-MAX_TOKENS = 1250
 # Attachment content stored for prompting is capped in tokens — the same
 # unit the gate is expressed in — so a stored row can never exceed the cap.
 ATTACHMENT_MAX_TOKENS = 100_000
