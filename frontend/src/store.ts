@@ -44,7 +44,6 @@ import {
 import workspaceReducer from './workspace/workspaceSlice';
 
 const key = localStorage.getItem('DocsGPTApiKey');
-const chunks = localStorage.getItem('DocsGPTChunks');
 const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
 const preloadedState: { preference: Preference } = {
@@ -54,7 +53,6 @@ const preloadedState: { preference: Preference } = {
     // The server's choice replaces it once loaded (useDataInitializer).
     prompt: { name: 'default', id: 'default', type: 'public' },
     prompts: presetPrompts(),
-    chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
     selectedFolders: getStoredRecentFolders(),
     conversations: {

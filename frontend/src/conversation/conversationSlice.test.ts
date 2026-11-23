@@ -284,7 +284,6 @@ const preferenceStub = {
   token: 'tok',
   selectedDocs: [],
   prompt: { id: 'default' },
-  chunks: '2',
   selectedAgent: null,
   selectedModel: null,
 };
@@ -318,7 +317,7 @@ describe('fetchAnswer — attachment ids on the wire', () => {
       }),
     );
 
-    expect(vi.mocked(handleFetchAnswer).mock.calls[0][8]).toEqual([
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][7]).toEqual([
       'row-1',
       'row-2',
     ]);
@@ -340,7 +339,7 @@ describe('fetchAnswer — attachment ids on the wire', () => {
     });
     store.dispatch(addQuery({ prompt: 'q' }));
     await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
-    expect(vi.mocked(handleFetchAnswer).mock.calls[0][12]).toEqual([
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][11]).toEqual([
       'carriers',
     ]);
   });
@@ -353,7 +352,7 @@ describe('fetchAnswer — attachment ids on the wire', () => {
 
     await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
 
-    expect(vi.mocked(handleFetchAnswer).mock.calls[0][8]).toEqual(['srv-1']);
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][7]).toEqual(['srv-1']);
     // clearAttachments keeps in-flight rows.
     expect(store.getState().upload.attachments.map((a) => a.id)).toEqual([
       'c-2',
@@ -375,7 +374,7 @@ describe('fetchAnswer — attachment ids on the wire', () => {
 
     await store.dispatch(fetchAnswer({ question: 'q', indx: 0 }));
 
-    expect(vi.mocked(handleFetchAnswer).mock.calls[0][8]).toEqual(['srv-1']);
+    expect(vi.mocked(handleFetchAnswer).mock.calls[0][7]).toEqual(['srv-1']);
   });
 });
 

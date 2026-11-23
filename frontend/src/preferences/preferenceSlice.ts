@@ -39,7 +39,6 @@ export interface Preference {
   apiKey: string;
   prompt: { name: string; id: string; type: string };
   prompts: Prompt[];
-  chunks: string;
   selectedDocs: Doc[];
   /**
    * Whole knowledge folders picked in the composer, sent as
@@ -96,7 +95,6 @@ const initialState: Preference = {
   apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
   prompts: presetPrompts(),
-  chunks: '6',
   selectedDocs: [],
   selectedFolders: [],
   sourceDocs: null,
@@ -253,9 +251,6 @@ export const prefSlice = createSlice({
     setPrompts: (state, action: PayloadAction<Prompt[]>) => {
       state.prompts = action.payload;
     },
-    setChunks: (state, action) => {
-      state.chunks = action.payload;
-    },
     setModalStateDeleteConv: (state, action: PayloadAction<ActiveState>) => {
       state.modalState = action.payload;
     },
@@ -353,7 +348,6 @@ export const {
   setToken,
   setPrompt,
   setPrompts,
-  setChunks,
   setModalStateDeleteConv,
   setPaginatedDocuments,
   setAgents,
@@ -432,16 +426,6 @@ prefListenerMiddleware.startListening({
     setStoredRecentFolders([]);
     if (!(listenerApi.getState() as RootState).preference.selectedModel)
       localStorage.removeItem('DocsGPTSelectedModel');
-  },
-});
-
-prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setChunks),
-  effect: (action, listenerApi) => {
-    localStorage.setItem(
-      'DocsGPTChunks',
-      JSON.stringify((listenerApi.getState() as RootState).preference.chunks),
-    );
   },
 });
 
@@ -531,7 +515,6 @@ export const selectConversationId = (state: RootState) =>
 export const selectToken = (state: RootState) => state.preference.token;
 export const selectPrompt = (state: RootState) => state.preference.prompt;
 export const selectPrompts = (state: RootState) => state.preference.prompts;
-export const selectChunks = (state: RootState) => state.preference.chunks;
 export const selectPaginatedDocuments = (state: RootState) =>
   state.preference.paginatedDocuments;
 export const selectAgents = (state: RootState) => state.preference.agents;
