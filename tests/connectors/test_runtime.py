@@ -401,6 +401,13 @@ class TestNtfyServer:
         params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
         assert "server_url" in params["ntfy_send_message"]["properties"]
 
+    def test_without_a_server_the_model_may_leave_it_out(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": {"token": "t"}})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _ntfy_tool(cid)})
+        params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert params["ntfy_send_message"]["required"] == ["message", "topic"]
+
 
 class TestAccountsTellApartForTheModel:
     @staticmethod

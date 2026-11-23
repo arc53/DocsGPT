@@ -163,6 +163,12 @@ class TestNtfyMetadata:
         assert "message" in meta[0]["parameters"]["properties"]
         assert "topic" in meta[0]["parameters"]["properties"]
 
+    def test_server_url_is_not_required_of_the_model(self, tool):
+        # The tool falls back to ntfy.sh, and with a token any other server the
+        # model names is refused, so asking for one would only invite errors.
+        params = tool.get_actions_metadata()[0]["parameters"]
+        assert params["required"] == ["message", "topic"]
+
     def test_config_requirements(self, tool):
         reqs = tool.get_config_requirements()
         assert "token" in reqs

@@ -3677,6 +3677,7 @@
       "fieldHints": {
         "github_access_token": "Précis (fine-grained), avec accès en lecture à Contents et Metadata. Pour les modifications par l’agent, ajoutez aussi la lecture et l’écriture sur Issues et Pull requests. <link>Créer un jeton sur GitHub</link>",
         "mcp_supabase_project_ref": "Copiez-le depuis Project Settings > General dans votre tableau de bord Supabase. La connexion n’accède qu’à ce projet.",
+        "ntfy_server_url": "Le jeton d’accès et les messages sont envoyés uniquement à ce serveur. Laissez vide pour utiliser ntfy.sh.",
         "telegram_chat_id": "Les messages sont envoyés uniquement à cette conversation. Ajoutez le bot, envoyez-lui un message, puis trouvez l’ID de la conversation avec <link>getUpdates</link>."
       },
       "fields": {
@@ -3689,6 +3690,7 @@
         "endpoint_url": "URL de point de terminaison personnalisée",
         "github_access_token": "Jeton d’accès personnel",
         "mcp_supabase_project_ref": "ID du projet",
+        "ntfy_server_url": "URL du serveur",
         "ntfy_token": "Jeton d’accès",
         "number_posts": "Nombre de publications",
         "postgres_token": "Chaîne de connexion",

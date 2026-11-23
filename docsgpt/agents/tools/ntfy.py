@@ -148,7 +148,10 @@ class NtfyTool(Tool):
                     "properties": {
                         "server_url": {
                             "type": "string",
-                            "description": "Base URL of the ntfy server (ignored when the tool has its own server)",
+                            "description": (
+                                "Base URL of the ntfy server (optional, defaults to https://ntfy.sh; "
+                                "ignored when the tool has its own server)"
+                            ),
                         },
                         "message": {
                             "type": "string",
@@ -167,7 +170,7 @@ class NtfyTool(Tool):
                             "description": "Priority of the notification (1-5, optional)",
                         },
                     },
-                    "required": ["server_url", "message", "topic"],
+                    "required": ["message", "topic"],
                     "additionalProperties": False,
                 },
             },

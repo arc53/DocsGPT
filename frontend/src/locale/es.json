@@ -3677,6 +3677,7 @@
       "fieldHints": {
         "github_access_token": "Detallado, con acceso de lectura a Contents y Metadata. Para que los agentes hagan cambios, también lectura y escritura en Issues y Pull requests. <link>Crear un token en GitHub</link>",
         "mcp_supabase_project_ref": "Cópialo desde Project Settings > General en tu panel de Supabase. La conexión solo accede a este proyecto.",
+        "ntfy_server_url": "El token de acceso y los mensajes van solo a este servidor. Déjalo vacío para usar ntfy.sh.",
         "telegram_chat_id": "Los mensajes van solo a este chat. Añade el bot, envíale un mensaje y busca el ID del chat con <link>getUpdates</link>."
       },
       "fields": {
@@ -3689,6 +3690,7 @@
         "endpoint_url": "URL de endpoint personalizada",
         "github_access_token": "Token de acceso personal",
         "mcp_supabase_project_ref": "ID del proyecto",
+        "ntfy_server_url": "URL del servidor",
         "ntfy_token": "Token de acceso",
         "number_posts": "Número de publicaciones",
         "postgres_token": "Cadena de conexión",
