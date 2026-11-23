@@ -17,8 +17,15 @@ from typing import Any, Iterator, Mapping, Optional
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
+from docsgpt.storage.db.serialization import wire_safe
 
 logger = logging.getLogger(__name__)
+
+
+def _payload_json(payload: Any) -> str:
+    """Serialize a journal payload for the ``CAST(... AS jsonb)`` in its write."""
+    return json.dumps(wire_safe(payload))
+
 
 
 class MessageEventsRepository:
@@ -71,7 +78,7 @@ class MessageEventsRepository:
                 "message_id": str(message_id),
                 "sequence_no": int(sequence_no),
                 "event_type": event_type,
-                "payload": json.dumps(materialised_payload),
+                "payload": _payload_json(materialised_payload),
             },
         )
 
@@ -101,7 +108,7 @@ class MessageEventsRepository:
                 "message_id": str(message_id),
                 "sequence_no": int(seq),
                 "event_type": event_type,
-                "payload": json.dumps(payload if payload is not None else {}),
+                "payload": _payload_json(payload if payload is not None else {}),
             }
             for seq, event_type, payload in events
         ]
@@ -334,7 +341,7 @@ class MessageEventsRepository:
                     "UPDATE message_events SET payload = CAST(:payload AS jsonb) "
                     "WHERE message_id = CAST(:message_id AS uuid) AND sequence_no = :seq"
                 ),
-                {"message_id": str(message_id), "seq": seq, "payload": json.dumps(payload)},
+                {"message_id": str(message_id), "seq": seq, "payload": _payload_json(payload)},
             )
         return len(changed)
 

@@ -304,7 +304,7 @@ class TestResourceSettings:
             resp = client.get(f"/api/resource_settings?resource_type=agent&resource_id={aid}")
         assert resp.status_code == 200
         assert _body(resp)["access"] == "viewer"
-        assert _body(resp)["allowed_actions"] == ["pin", "use"]
+        assert _body(resp)["allowed_actions"] == ["move_folder", "pin", "use"]
 
     def test_stranger_404(self, client, db):
         aid = _agent(db)
@@ -431,7 +431,10 @@ class TestGrantListing:
         assert tool_row["target_user_label"] is None
         assert tool_row["caller"] == {
             "access": "viewer",
-            "allowed_actions": ["use", "use_in_own"],
+            "allowed_actions": ["move_folder", "use", "use_in_own"],
+            "workspace": {"kind": "personal", "team_id": None},
+            "team_role": None,
+            "origin": "shared",
         }
 
     def test_owner_caller_and_missing_labels(self, client, db):
@@ -517,6 +520,66 @@ class TestTeamOwnerProtection:
         with _as("bob"):
             resp = client.put(f"/api/teams/{tid}/members/carol", json={"role": "team_member"})
         assert resp.status_code == 200
+
+    # Re-adding an existing member with a role is a role change too.
+    def test_admin_cannot_demote_owner_by_re_adding(self, client, db):
+        tid = _team(db, members=(("bob", "team_admin"),))
+        with _as("bob"):
+            resp = client.post(
+                f"/api/teams/{tid}/members", json={"user_id": "alice", "role": "team_member"}
+            )
+        assert resp.status_code == 403
+        assert _body(resp)["message"] == "The team owner can't be demoted"
+        assert TeamMembersRepository(db).role_for("alice", tid) == "team_admin"
+
+    def test_owner_cannot_self_demote_by_re_adding(self, client, db):
+        tid = _team(db, members=(("bob", "team_admin"),))
+        with _as("alice"):
+            resp = client.post(
+                f"/api/teams/{tid}/members", json={"user_id": "alice", "role": "team_member"}
+            )
+        assert resp.status_code == 400
+        assert "transfer" in _body(resp)["message"].lower()
+        assert TeamMembersRepository(db).role_for("alice", tid) == "team_admin"
+
+    def test_re_adding_cannot_demote_the_last_admin(self, client, db):
+        # The owner holds no admin row here, so bob is the only admin.
+        tid = _team(db, owner="carol", members=(("bob", "team_admin"),))
+        TeamMembersRepository(db).remove_member(tid, "carol")
+        with _as("bob"):
+            resp = client.post(
+                f"/api/teams/{tid}/members", json={"user_id": "bob", "role": "team_member"}
+            )
+        assert resp.status_code == 409
+        assert _body(resp)["message"] == "Cannot demote the last team admin"
+        assert TeamMembersRepository(db).role_for("bob", tid) == "team_admin"
+
+    def test_re_adding_demotes_another_admin(self, client, db):
+        tid = _team(db, members=(("bob", "team_admin"), ("carol", "team_admin")))
+        with _as("bob"):
+            resp = client.post(
+                f"/api/teams/{tid}/members", json={"user_id": "carol", "role": "team_member"}
+            )
+        assert resp.status_code == 200
+        assert TeamMembersRepository(db).role_for("carol", tid) == "team_viewer"
+
+    def test_re_adding_owner_as_admin_is_allowed(self, client, db):
+        tid = _team(db, members=(("bob", "team_admin"),))
+        with _as("bob"):
+            resp = client.post(
+                f"/api/teams/{tid}/members", json={"user_id": "alice", "role": "team_admin"}
+            )
+        assert resp.status_code == 200
+        assert TeamMembersRepository(db).role_for("alice", tid) == "team_admin"
+
+    def test_last_admin_cannot_leave(self, client, db):
+        tid = _team(db, owner="carol", members=(("bob", "team_admin"),))
+        TeamMembersRepository(db).remove_member(tid, "carol")
+        with _as("bob"):
+            resp = client.delete(f"/api/teams/{tid}/members/bob")
+        assert resp.status_code == 409
+        assert _body(resp)["message"] == "Cannot remove the last team admin"
+        assert TeamMembersRepository(db).is_member("bob", tid)
 
     def test_team_payloads_carry_is_owner(self, client, db):
         tid = _team(db)

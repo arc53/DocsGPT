@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 const state = vi.hoisted(() => ({
   preference: { analyticsEnabled: true },
   connectors: { enabled: true },
+  workspace: undefined as undefined | { current: string },
 }));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (s: unknown) => unknown) => selector(state),
@@ -16,11 +17,16 @@ vi.mock('./SidebarLevelProvider', () => ({
   useSidebarLevel: () => ({ goToLevel: vi.fn() }),
 }));
 
-import { agentInsightsPath, agentLogsPath } from '@/agents/paths';
+import {
+  agentInsightsPath,
+  agentLogsPath,
+  agentsFilterPath,
+} from '@/agents/paths';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 import SectionRail from './SectionRail';
 import {
+  AGENTS_SECTION,
   SETTINGS_SECTION,
   buildAgentSection,
   getSectionItems,
@@ -54,6 +60,7 @@ describe('SectionRail', () => {
   beforeEach(() => {
     state.preference.analyticsEnabled = true;
     state.connectors.enabled = true;
+    state.workspace = undefined;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -111,5 +118,17 @@ describe('SectionRail', () => {
     render(agent);
     expect(hrefs()).not.toContain(agentInsightsPath('a1'));
     expect(hrefs()).toContain(agentLogsPath('a1'));
+  });
+
+  it('leaves out Shared with you and Discovered in a team', () => {
+    render(AGENTS_SECTION);
+    expect(hrefs()).toContain(agentsFilterPath('sharedWithYou'));
+    expect(hrefs()).toContain(agentsFilterPath('shared'));
+
+    state.workspace = { current: 't1' };
+    render(AGENTS_SECTION);
+    expect(hrefs()).not.toContain(agentsFilterPath('sharedWithYou'));
+    expect(hrefs()).not.toContain(agentsFilterPath('shared'));
+    expect(hrefs()).toContain(agentsFilterPath('user'));
   });
 });

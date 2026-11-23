@@ -209,6 +209,7 @@ class TestGetValidTokenInfo:
                 service.get_valid_token_info(cid)
         assert exc.value.status == "disconnected"
 
+    @pytest.mark.fresh_db
     def test_concurrent_refresh_spends_the_refresh_token_once(self, pg_engine):
         """Two workers with an expiring rotating token: one refresh, both succeed."""
         with pg_engine.begin() as conn:
@@ -237,6 +238,49 @@ class TestGetValidTokenInfo:
         assert errors == []
         assert fake.calls == ["rt-0"]
         assert results == ["new-at-1", "new-at-1"]
+
+
+def _share_point_auth(refresh_result):
+    """A real SharePointAuth whose MSAL app answers a refresh with ``refresh_result``."""
+    settings = MagicMock(
+        MICROSOFT_CLIENT_ID="ms-client-id", MICROSOFT_CLIENT_SECRET="secret",
+        MICROSOFT_TENANT_ID="common", MICROSOFT_AUTHORITY=None,
+    )
+    with patch("docsgpt.parser.connectors.share_point.auth.settings", settings), patch(
+        "docsgpt.parser.connectors.share_point.auth.ConfidentialClientApplication"
+    ) as msal:
+        msal.return_value.acquire_token_by_refresh_token.return_value = refresh_result
+        from docsgpt.parser.connectors.share_point.auth import SharePointAuth
+
+        return SharePointAuth()
+
+
+class TestSharePointStoredExpiryHeals:
+    """A connection saved with the id_token's ``exp`` as its expiry gets the access token's on its next refresh."""
+
+    @pytest.mark.parametrize("with_id_token", [True, False])
+    def test_rejected_token_refresh_rewrites_expiry(self, pg_conn, with_id_token):
+        now = int(time.time())
+        stale = {
+            "access_token": "old-at", "refresh_token": "rt-0", "token_uri": "https://issuer",
+            "expiry": now + 1800, "allows_shared_content": True,
+        }
+        cid = _connection(pg_conn, provider="share_point", secrets={"token_info": stale})
+        refresh = {
+            "token_type": "Bearer", "expires_in": 3600, "ext_expires_in": 3600,
+            "access_token": "new-at", "refresh_token": "rt-1",
+        }
+        if with_id_token:
+            refresh["id_token_claims"] = {"iss": "https://issuer", "exp": now + 600, "tid": "work-tenant"}
+
+        with _patch_service_db(pg_conn), _auth(_share_point_auth(refresh)):
+            info = service.get_valid_token_info(cid, rejected_access_token="old-at")
+
+        stored = service.read_secrets(_row(pg_conn, cid))["token_info"]
+        assert info["access_token"] == stored["access_token"] == "new-at"
+        assert now + 3600 <= stored["expiry"] <= int(time.time()) + 3600
+        assert stored["allows_shared_content"] is True
+        assert stored["token_uri"] == "https://issuer"
 
 
 class TestApiKeyConnections:
@@ -609,6 +653,71 @@ class TestRevoke:
 
         with patch("requests.post", side_effect=requests.exceptions.Timeout()):
             assert not service.revoke_at_provider({"provider": "google_drive"}, {"token_info": {"access_token": "a"}})
+
+
+def _team_principal(conn) -> str:
+    """A team's principal, which owns the team's connections."""
+    import uuid
+
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+    from docsgpt.workspaces.principal import principal_id
+
+    return principal_id(TeamsRepository(conn).create("Ops", f"ops-{uuid.uuid4().hex[:6]}", "alice")["id"])
+
+
+class TestSharedGoogleGrant:
+    """Google revokes a person's whole grant to the app, so one of their connections never signs out another."""
+
+    _SECRETS = {"token_info": {"access_token": "at", "refresh_token": "rt"}}
+
+    def _pair(self, conn):
+        personal = _connection(conn, user="adam", account_label="adam@example.com", secrets=self._SECRETS)
+        team = _connection(conn, user=_team_principal(conn), connected_by="adam",
+                           account_label="adam@example.com", secrets=self._SECRETS)
+        return personal, team
+
+    def test_disconnecting_one_keeps_the_grant_the_other_holds(self, pg_conn):
+        personal, team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.disconnect(pg_conn, _row(pg_conn, team))
+        revoke.assert_not_called()
+        assert _row(pg_conn, team)["encrypted_credentials"] is None
+        assert _row(pg_conn, personal)["encrypted_credentials"] is not None
+
+    def test_removing_one_keeps_the_grant_the_other_holds(self, pg_conn):
+        personal, _team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.remove_connection(pg_conn, _row(pg_conn, personal))
+        revoke.assert_not_called()
+        assert _row(pg_conn, personal) is None
+
+    def test_the_last_connection_holding_it_revokes(self, pg_conn):
+        personal, team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.disconnect(pg_conn, _row(pg_conn, team))
+            revoke.assert_not_called()
+            service.disconnect(pg_conn, _row(pg_conn, personal))
+        revoke.assert_called_once()
+
+    def test_another_account_or_service_does_not_count(self, pg_conn):
+        team = _connection(pg_conn, user=_team_principal(pg_conn), connected_by="adam",
+                           account_label="adam@example.com", secrets=self._SECRETS)
+        _connection(pg_conn, user="adam", account_label="ana@example.com", secrets=self._SECRETS)
+        _connection(pg_conn, user="adam", provider="share_point", account_label="adam@example.com",
+                    secrets=self._SECRETS)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service.disconnect(pg_conn, _row(pg_conn, team))
+        revoke.assert_called_once()
+
+    def test_another_admins_reconnect_keeps_the_grant_the_old_account_still_uses(self, pg_conn):
+        personal, team = self._pair(pg_conn)
+        with patch("docsgpt.connectors.service.revoke_at_provider") as revoke:
+            service._replace_account(
+                pg_conn, _row(pg_conn, team), "google_drive", {"access_token": "new"}, "ana@example.com", "ana",
+            )
+        revoke.assert_not_called()
+        assert _row(pg_conn, team)["account_label"] == "ana@example.com"
+        assert _row(pg_conn, personal)["encrypted_credentials"] is not None
 
 
 class TestMcpConnectionScope:

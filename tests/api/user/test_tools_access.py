@@ -132,7 +132,8 @@ class TestGetToolsAccess:
         _share(pg_conn, tool["id"], "bob", "viewer", team_name="Research")
         row = self._tools(app, pg_conn, "bob")[str(tool["id"])]
         assert row["access"] == "viewer"
-        assert row["allowed_actions"] == ["use", "use_in_own"]
+        # A viewer files a shared tool in their own folders.
+        assert row["allowed_actions"] == ["move_folder", "use", "use_in_own"]
         assert row["in_chat"] is False  # sharing never adds to chats
         assert row["shared_via"] == "Research"
         assert row["owner_label"] == "alice@example.com"

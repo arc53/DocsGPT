@@ -735,20 +735,21 @@ class TestByIdConnectionTestAcceptsOverrides:
         assert ca.kwargs["json"]["model"] == "new-model"
 
     def test_blank_overrides_fall_back_to_stored(self, app, pg_conn):
-        """The classic edit-mode flow: user changed base_url, left
-        api_key blank — server uses the new URL but the stored key."""
+        """The classic edit-mode flow: user changed base_url's path, left
+        api_key blank — server uses the new URL but the stored key. (A new
+        host needs the key again; see test_team_models.py.)"""
         row = self._make_row(pg_conn)
         ca = self._post_test(
             app,
             pg_conn,
             row["id"],
             {
-                "base_url": "https://new.example.com/v1",
+                "base_url": "https://stored.example.com/v2",
                 "api_key": "",
                 "upstream_model_id": "",
             },
         )
-        assert ca.args[0] == "https://new.example.com/v1/chat/completions"
+        assert ca.args[0] == "https://stored.example.com/v2/chat/completions"
         # Stored key (decrypted) was used.
         assert ca.kwargs["headers"]["Authorization"] == "Bearer sk-stored"
         # Stored upstream_model_id was used.

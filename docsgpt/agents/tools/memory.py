@@ -386,7 +386,7 @@ class MemoryTool(Tool):
             import re as regex_module
             updated_content = regex_module.sub(
                 regex_module.escape(old_str),
-                new_str,
+                lambda _m: new_str,
                 current_content,
                 flags=regex_module.IGNORECASE,
             )

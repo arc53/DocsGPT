@@ -78,6 +78,7 @@ describe('useReingestSseWaiter', () => {
     reason: null,
     failedPages: [],
     paths: null,
+    itemsNotDownloaded: 0,
     ...extra,
   });
 
@@ -158,6 +159,12 @@ describe('useReingestSseWaiter', () => {
       'completed',
       { paths: [] },
       outcome({ paths: [] }),
+    ],
+    [
+      'the items a partial download lost',
+      'completed',
+      { partial: true, files_failed: 2, folders_failed: 1 },
+      outcome({ itemsNotDownloaded: 3 }),
     ],
   ] as const)('carries %s', async (_, type, payload, expected) => {
     mount();

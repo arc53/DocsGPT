@@ -451,6 +451,38 @@ class TestGetSingleConversationHappy:
 
 
 @pytest.mark.unit
+class TestGetSingleConversationCompressionSummary:
+    def test_flags_stored_summary_rows_and_keeps_their_positions(self, app, pg_conn):
+        from docsgpt.api.user.conversations.routes import GetSingleConversation
+        from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+        user = "u-summary-flag"
+        conv_id = _seed_conversation(pg_conn, user)
+        repo = ConversationsRepository(pg_conn)
+        repo.append_message(conv_id, {"prompt": "q0", "response": "a0"})
+        repo.append_message(
+            conv_id,
+            {"prompt": "[Context Compression Summary]", "response": "s",
+             "metadata": {"compression_summary": True}},
+        )
+        repo.append_message(conv_id, {"prompt": "[Context Compression Summary]", "response": "legacy"})
+        repo.append_message(conv_id, {"prompt": "q1", "response": "a1"})
+
+        with _patch_conversations_db(pg_conn), app.test_request_context(
+            f"/api/get_single_conversation?id={conv_id}"
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            queries = GetSingleConversation().get().json["queries"]
+
+        assert [q["prompt"] for q in queries][-4:] == [
+            "q0", "[Context Compression Summary]", "[Context Compression Summary]", "q1",
+        ]
+        assert [bool(q.get("compression_summary")) for q in queries][-4:] == [False, True, True, False]
+
+
+@pytest.mark.unit
 class TestGetMessageTail:
     """Tail-poll endpoint (``GET /api/messages/<id>/tail``) used by the
     frontend to recover a placeholder/streaming row after a refresh.
@@ -1004,8 +1036,9 @@ class TestGetConversationsPaging:
 
         assert [c["id"] for c in items] == _expected_order(pg_conn, user)[:30]
         assert set(items[0]) == {
-            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date", "unread",
+            "id", "name", "agent_id", "is_shared_usage", "shared_token", "date", "unread", "workspace",
         }
+        assert items[0]["workspace"] == {"kind": "personal", "team_id": None}
         # No continuation landed unseen.
         assert items[0]["unread"] is False
         parsed = dt.datetime.fromisoformat(items[0]["date"])

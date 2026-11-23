@@ -377,7 +377,7 @@ class TestFlaskCors:
         response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
         assert response.headers["Access-Control-Allow-Origin"] == "*"
         assert response.headers["Access-Control-Allow-Headers"] == (
-            "Content-Type, Authorization, Idempotency-Key"
+            "Content-Type, Authorization, Idempotency-Key, X-DocsGPT-Workspace"
         )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 
@@ -394,7 +394,7 @@ class TestFlaskCors:
         assert response.status_code == 200
         assert response.headers["Access-Control-Allow-Origin"] == "*"
         assert response.headers["Access-Control-Allow-Headers"] == (
-            "Content-Type, Authorization, Idempotency-Key"
+            "Content-Type, Authorization, Idempotency-Key, X-DocsGPT-Workspace"
         )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
 

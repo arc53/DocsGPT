@@ -5,7 +5,7 @@ import { useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import { selectToken } from '../preferences/preferenceSlice';
 import { isTrustedConnectorMessage } from '../utils/connectorAuthUtils';
-import { Alert, AlertDescription } from './ui/alert';
+import { Alert, AlertAction, AlertDescription } from './ui/alert';
 import { Button } from './ui/button';
 
 interface ConnectorAuthOptions {
@@ -17,6 +17,12 @@ interface ConnectorAuthOptions {
    * it can read are chosen) instead of the sign-in page.
    */
   install?: boolean;
+  /**
+   * `team`: a new account is connected for the current team (its Admins).
+   * Explicit, never inferred from the workspace: a sign-in from a team's
+   * chat still connects the person's own account.
+   */
+  owner?: 'team';
   onSuccess: (data: { connection_id: string; user_email: string }) => void;
   onError: (error: string) => void;
 }
@@ -41,6 +47,7 @@ export function useConnectorAuth({
   provider,
   connectionId,
   install = false,
+  owner,
   onSuccess,
   onError,
 }: ConnectorAuthOptions): () => void {
@@ -138,6 +145,7 @@ export function useConnectorAuth({
           token,
           connectionId,
           install,
+          owner,
         );
         if (!mountedRef.current) {
           authWindow.close();
@@ -263,15 +271,9 @@ const ConnectorAuth: React.FC<ConnectorAuthProps> = ({
               })}
             </span>
             {onDisconnect && (
-              <Button
-                type="button"
-                variant="link"
-                size="xs"
-                onClick={onDisconnect}
-                className="-my-1 ml-2 shrink-0"
-              >
+              <AlertAction onClick={onDisconnect} className="ml-2 shrink-0">
                 {t('modals.uploadDoc.connectors.auth.disconnect')}
-              </Button>
+              </AlertAction>
             )}
           </AlertDescription>
         </Alert>

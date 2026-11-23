@@ -13,7 +13,10 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { deriveArtifactChips } from './artifactChips';
+import {
+  conversationArtifactChips,
+  deriveArtifactChips,
+} from './artifactChips';
 import type { ToolCallsType } from './types';
 
 const reloadedTurn = [
@@ -128,5 +131,60 @@ describe('artifact chips after reload', () => {
       ref: 'A1',
       callId: 'c2',
     });
+  });
+});
+
+// A background job's files go on the reply that reports it
+// (``metadata.job_artifacts``) and stay on the turn that started the job.
+describe('a finished job reported by a later reply', () => {
+  const launching = [
+    {
+      tool_name: 'code_executor',
+      call_id: 'c1',
+      status: 'completed',
+      job_id: 'j1',
+      artifacts: [{ id: 'chart', filename: 'chart.png', ref: 'A1' }],
+    },
+  ] as unknown as ToolCallsType[];
+  const reported = [
+    {
+      id: 'chart',
+      filename: 'chart.png',
+      ref: 'A1',
+      tool_name: 'code_executor',
+      job_id: 'j1',
+    },
+    { id: 'report', ref: 'A2', tool_name: 'artifact_generator', job_id: 'j1' },
+  ];
+
+  it("shows the job's files on the reply", () => {
+    expect(deriveArtifactChips(undefined, reported)).toEqual([
+      {
+        id: 'chart',
+        ref: 'A1',
+        label: 'chart.png',
+        filename: 'chart.png',
+        toolName: 'code_executor',
+        callId: 'j1',
+      },
+      {
+        id: 'report',
+        ref: 'A2',
+        label: 'Artifact',
+        filename: undefined,
+        toolName: 'artifact_generator',
+        callId: 'j1',
+      },
+    ]);
+  });
+
+  it('lists a file on both turns once in the conversation', () => {
+    const chips = conversationArtifactChips([
+      { tool_calls: launching },
+      { job_artifacts: reported },
+    ]);
+    expect(chips.map((chip) => chip.id)).toEqual(['chart', 'report']);
+    // Where it first appeared: the call that wrote it.
+    expect(chips[0].callId).toBe('c1');
   });
 });

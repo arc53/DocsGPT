@@ -581,6 +581,10 @@ class PGVectorStore(BaseVectorStore):
 
         texts = [strip_null_bytes(text) for text in texts]
         embeddings = self._embedding.embed_documents(texts)
+        if len(embeddings) != len(texts):
+            # A short answer from the embeddings service: write nothing, rather
+            # than commit fewer rows than the caller believes it added.
+            raise ValueError(f"Got {len(embeddings)} embeddings for {len(texts)} texts")
         metadatas = [strip_null_bytes(metadata or {}) for metadata in (metadatas or [{}] * len(texts))]
 
         self._ensure_schema_once()
@@ -629,6 +633,27 @@ class PGVectorStore(BaseVectorStore):
             raise
         finally:
             cursor.close()
+
+    def purge_index(self, batch_size: int = 1000) -> int:
+        """Delete every chunk of this source, one short transaction per ``batch_size`` rows.
+
+        Args:
+            batch_size: Rows per delete.
+
+        Returns:
+            The number of chunks deleted.
+        """
+        size = max(1, int(batch_size))
+        total = 0
+        while True:
+            deleted = self._run_statement(
+                f"DELETE FROM {self._table_name} WHERE id IN "
+                f"(SELECT id FROM {self._table_name} WHERE source_id = %s LIMIT %s);",
+                (self._source_id, size),
+            )
+            total += deleted
+            if deleted < size:
+                return total
 
     def save_local(self, *args, **kwargs):
         """No-op for PostgreSQL - data is already persisted"""
@@ -814,6 +839,41 @@ class PGVectorStore(BaseVectorStore):
         finally:
             cursor.close()
 
+    def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
+        """Replace several chunks' metadata in one transaction, without embedding their text again.
+
+        Args:
+            updates: ``{chunk id: complete new metadata}``; ``source_id`` is
+                stamped on each as :meth:`add_chunk` does.
+
+        Returns:
+            How many rows of this source were updated.
+        """
+        rows = [
+            (Jsonb({**strip_null_bytes(dict(metadata or {})), "source_id": self._source_id}), int(chunk_id))
+            for chunk_id, metadata in updates.items()
+            if str(chunk_id).isdigit()
+        ]
+        if not rows:
+            return 0
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        # Only internal names are interpolated; every value is a bound parameter.
+        statement = (
+            f"UPDATE {self._table_name} SET {self._metadata_column} = %s "  # nosec B608
+            "WHERE id = %s AND source_id = %s;"
+        )
+        try:
+            cursor.executemany(statement, [(metadata, chunk_id, self._source_id) for metadata, chunk_id in rows])
+            updated = max(0, cursor.rowcount or 0)
+            conn.commit()
+            return updated
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+
     def delete_chunk(self, chunk_id: str) -> bool:
         """Delete a specific chunk by its ID"""
         conn = self._get_connection()
@@ -953,3 +1013,31 @@ class PGVectorStore(BaseVectorStore):
         except Exception:
             # Interpreter teardown can null out module globals; never raise here.
             pass
+
+
+def chunk_counts_by_source(*, connection_string: Optional[str] = None) -> Dict[str, int]:
+    """Count the chunks of every source in the vectors table, without building a store.
+
+    One ``GROUP BY`` over the whole ``documents`` table (the store's default,
+    the only one ``VectorCreator`` builds): meant for an operator's report,
+    not a request path.
+
+    Args:
+        connection_string: The vectors database; defaults like ``PGVectorStore``.
+
+    Returns:
+        ``{source_id: chunk count}``.
+    """
+    dsn = connection_string or settings.PGVECTOR_CONNECTION_STRING
+    if not dsn and settings.POSTGRES_URI:
+        from docsgpt.core.db_uri import normalize_pgvector_connection_string
+
+        dsn = normalize_pgvector_connection_string(settings.POSTGRES_URI)
+    if not dsn:
+        raise ValueError("Set PGVECTOR_CONNECTION_STRING or POSTGRES_URI to count pgvector chunks.")
+    import psycopg
+
+    with psycopg.connect(dsn) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT source_id, count(*) FROM documents GROUP BY source_id;")
+            return {str(source_id): int(count) for source_id, count in cursor.fetchall()}

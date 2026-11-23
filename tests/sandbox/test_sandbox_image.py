@@ -310,8 +310,8 @@ def test_shell_scripts_parse(script):
 
 def test_dockerfile_installs_from_the_generated_files():
     text = _DOCKERFILE.read_text()
-    assert "COPY requirements.txt" in text
-    assert "pip install --no-cache-dir -r /opt/docsgpt/requirements.txt" in text
+    assert "COPY requirements.lock" in text
+    assert "pip install --no-cache-dir --require-hashes -r /opt/docsgpt/requirements.lock" in text
     assert "COPY install-system.sh" in text
     assert "sh /opt/docsgpt/install-system.sh" in text
     # No package pins left in the Dockerfile itself: they come from the manifest.
@@ -319,11 +319,23 @@ def test_dockerfile_installs_from_the_generated_files():
         assert spec not in text
 
 
+def test_requirements_lock_carries_every_manifest_pin():
+    """A manifest pin change without re-running scripts/export_requirements.sh fails here."""
+    locked = {
+        line.split(" ", 1)[0]
+        for line in (_SANDBOX_DIR / "requirements.lock").read_text().splitlines()
+        if line[:1].isalnum()
+    }
+    for spec in manifest.pip_specs(include_runner=True):
+        name, version = spec.split("==")
+        assert f"{manifest._normalize_package(name)}=={version}" in locked, spec
+
+
 def test_dockerfile_installs_system_packages_and_python_before_dropping_root():
     text = _DOCKERFILE.read_text()
     user = text.index("USER 10001")
     assert text.index("sh /opt/docsgpt/install-system.sh") < user
-    assert text.index("pip install --no-cache-dir -r") < user
+    assert text.index("pip install --no-cache-dir --require-hashes -r") < user
 
 
 def test_dockerfile_puts_every_helper_on_path():

@@ -44,6 +44,7 @@ _EXACT: dict[str, str] = {
     "connector_policy_set": "config",
     "source_defaults_set": "config",
     "agent_defaults_set": "config",
+    "model_defaults_set": "config",
     "guardrails_settings_set": "config",
 }
 

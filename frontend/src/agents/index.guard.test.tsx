@@ -5,6 +5,7 @@ import {
   Route,
   Routes,
   useNavigate,
+  useLocation,
   useParams,
   type NavigateFunction,
 } from 'react-router-dom';
@@ -52,10 +53,14 @@ vi.mock('./AgentInsights', async () => {
 });
 vi.mock('./AgentAnalytics', () => ({ default: () => null }));
 vi.mock('./AgentsList', () => ({ default: () => null }));
-vi.mock('./NewAgent', () => ({ default: () => null }));
+vi.mock('./NewAgent', () => ({
+  default: () => <input data-testid="classic-form" name="name" />,
+}));
 vi.mock('./schedules/SchedulesView', () => ({ default: () => null }));
 vi.mock('./SharedAgent', () => ({ default: () => null }));
-vi.mock('./workflow/WorkflowBuilder', () => ({ default: () => null }));
+vi.mock('./workflow/WorkflowBuilder', () => ({
+  default: () => <div data-testid="workflow-builder" />,
+}));
 
 import Agents from './index';
 
@@ -114,5 +119,61 @@ describe('Agents routes and the route guard', () => {
     await act(async () => undefined);
     expect(container.querySelector('[data-testid="insights"]')).not.toBeNull();
     expect(container.textContent).toBe('new');
+  });
+
+  // The Teams fallback, an old `/agents/edit/<id>` bookmark or a typed URL
+  // reach a workflow on the classic edit path, whose form would save it
+  // back as a classic agent.
+  it('opens a workflow agent on the classic edit path in the workflow editor', async () => {
+    getAgent.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: 'a',
+            name: 'flow',
+            agent_type: 'workflow',
+            allowed_actions: ['view'],
+          }),
+      }),
+    );
+    let pathname = '';
+    function CapturePath() {
+      pathname = useLocation().pathname;
+      return null;
+    }
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={['/agents/edit/a']}>
+          <Routes>
+            <Route path="/agents/*" element={<Agents />} />
+          </Routes>
+          <CapturePath />
+        </MemoryRouter>,
+      ),
+    );
+    await act(async () => undefined);
+    await act(async () => undefined);
+    expect(pathname).toBe('/agents/manage/workflow/edit/a');
+    expect(
+      container.querySelector('[data-testid="workflow-builder"]'),
+    ).not.toBeNull();
+    expect(container.querySelector('[data-testid="classic-form"]')).toBeNull();
+  });
+
+  it('keeps a classic agent on the classic edit path', async () => {
+    await act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={['/agents/manage/edit/a']}>
+          <Routes>
+            <Route path="/agents/*" element={<Agents />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
+    );
+    await act(async () => undefined);
+    expect(
+      container.querySelector('[data-testid="classic-form"]'),
+    ).not.toBeNull();
   });
 });

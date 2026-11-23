@@ -18,7 +18,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.engine import Connection
 
-from docsgpt.activity.common import as_datetime, parse_time, query_rows
+from docsgpt.activity.common import (
+    as_datetime,
+    in_workspace_sql,
+    parse_time,
+    query_rows,
+    schedule_team_sql,
+    workspace_params,
+)
 from docsgpt.activity.syncs import calendar_slots, sync_schedule
 from docsgpt.agents.scheduler_utils import (
     ScheduleValidationError,
@@ -27,6 +34,7 @@ from docsgpt.agents.scheduler_utils import (
     resolve_timezone,
 )
 from docsgpt.core.settings import settings
+from docsgpt.workspaces.context import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -117,8 +125,8 @@ def _minute(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(second=0, microsecond=0)
 
 
-def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, Any]]:
-    """The user's active and paused schedules, monitors left out, created before the window ends."""
+def _schedules(conn: Connection, user_id: str, end: datetime, team_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """The user's active and paused schedules in one workspace, monitors left out, created before the window ends."""
     return query_rows(
         conn,
         """
@@ -134,13 +142,16 @@ def _schedules(conn: Connection, user_id: str, end: datetime) -> List[Dict[str, 
           AND s.trigger_type <> 'monitor'
           AND s.status IN ('active', 'paused')
           AND s.created_at < :end
-        """,
-        {"user_id": user_id, "end": end},
+          AND {schedule_in_workspace}
+        """.format(schedule_in_workspace=in_workspace_sql(schedule_team_sql())),
+        {"user_id": user_id, "end": end, **workspace_params(team_id)},
     )
 
 
-def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
-    """The user's schedule runs whose slot falls in the window, oldest first.
+def _runs(
+    conn: Connection, user_id: str, start: datetime, end: datetime, team_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """The user's schedule runs in one workspace whose slot falls in the window, oldest first.
 
     Each schedule keeps its first ``MAX_FREQUENT_SLOTS``; ``rank`` numbers a
     schedule's runs and ``in_window`` says how many it had in all, so the
@@ -163,11 +174,12 @@ def _runs(conn: Connection, user_id: str, start: datetime, end: datetime) -> Lis
             LEFT JOIN conversations c ON c.id = s.origin_conversation_id
             WHERE sr.user_id = :user_id
               AND sr.scheduled_for >= :start AND sr.scheduled_for < :end
+              AND {schedule_in_workspace}
         ) runs
         WHERE rank <= :limit
         ORDER BY scheduled_for ASC
-        """,
-        {"user_id": user_id, "start": start, "end": end, "limit": MAX_FREQUENT_SLOTS},
+        """.format(schedule_in_workspace=in_workspace_sql(schedule_team_sql())),
+        {"user_id": user_id, "start": start, "end": end, "limit": MAX_FREQUENT_SLOTS, **workspace_params(team_id)},
     )
 
 
@@ -328,8 +340,10 @@ def _sum_up_days(
     return out
 
 
-def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
-    """The user's monitors that overlap the window, drawn as ranges."""
+def _monitors(
+    conn: Connection, user_id: str, start: datetime, end: datetime, team_id: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """The user's monitors in one workspace (their chat's) that overlap the window, drawn as ranges."""
     rows = query_rows(
         conn,
         """
@@ -337,14 +351,21 @@ def _monitors(conn: Connection, user_id: str, start: datetime, end: datetime) ->
                m.interval_seconds, m.conversation_id, m.last_checked_at
         FROM schedules s
         JOIN monitors m ON m.schedule_id = s.id
+        LEFT JOIN agents a ON a.id = s.agent_id
+        LEFT JOIN conversations mc ON mc.id = m.conversation_id
         WHERE s.user_id = :user_id
           AND s.trigger_type = 'monitor'
           AND s.status IN ('active', 'paused')
           AND s.created_at < :end
           AND (s.end_at IS NULL OR s.end_at > :start)
+          AND {monitor_in_workspace}
         ORDER BY s.created_at ASC
-        """,
-        {"user_id": user_id, "start": start, "end": end},
+        """.format(
+            monitor_in_workspace=in_workspace_sql(
+                f"CASE WHEN mc.id IS NOT NULL THEN mc.team_id::text ELSE {schedule_team_sql()} END"
+            )
+        ),
+        {"user_id": user_id, "start": start, "end": end, **workspace_params(team_id)},
     )
     return [
         {
@@ -370,8 +391,12 @@ def build_planned(
     *,
     now: Optional[datetime] = None,
     tz: Optional[str] = None,
+    workspace: Optional[Workspace] = None,
 ) -> Dict[str, Any]:
-    """Collect the calendar of one window.
+    """Collect the calendar of one window in one workspace.
+
+    In a team workspace: the caller's schedules and monitors there and the
+    team's knowledge syncs. Personal shows nothing of any team.
 
     Args:
         conn: A read-only connection.
@@ -381,6 +406,7 @@ def build_planned(
         now: The current time (tests).
         tz: The viewer's IANA time zone (default UTC); a frequent schedule's
             days are summed up in it.
+        workspace: From ``current_workspace``; None means Personal.
 
     Returns:
         ``{from, to, events, monitors, truncated}``. Each event has a
@@ -397,6 +423,9 @@ def build_planned(
     """
     zone = resolve_timezone(parse_zone(tz))
     current = now or datetime.now(timezone.utc)
+    team_id = workspace.team_id if workspace is not None and workspace.is_team else None
+    # Whose sources sync: the caller's in Personal, the team's in a team.
+    sources_owner = workspace.owner_id if team_id else user_id
     frequent_cache: Dict[str, bool] = {}
     expansions: Dict[Tuple[Any, ...], List[datetime]] = {}
     events: List[Dict[str, Any]] = []
@@ -408,7 +437,7 @@ def build_planned(
     # had runs too, so none of them is missed.
     runs_cut_at: Dict[str, datetime] = {}
 
-    for run in _runs(conn, user_id, start, end):
+    for run in _runs(conn, user_id, start, end, team_id):
         at = as_datetime(run.get("scheduled_for"))
         if at is None:
             continue
@@ -440,7 +469,7 @@ def build_planned(
     # with no run may have run: none of them counts as missed.
     retained_since = current - timedelta(days=settings.SCHEDULE_RUN_OUTPUT_RETENTION_DAYS)
     future_start = max(start, current - MISSED_GRACE)
-    for row in _schedules(conn, user_id, end):
+    for row in _schedules(conn, user_id, end, team_id):
         frequent = _is_frequent(row, frequent_cache)
         limit = MAX_FREQUENT_SLOTS if frequent else MAX_SLOTS_PER_SCHEDULE
         ahead, cut = _planned_slots(row, future_start, end, limit, expansions)
@@ -475,12 +504,12 @@ def build_planned(
     for schedule_runs in runs.values():
         events += _sum_up_days(schedule_runs, [], None, zone)
 
-    events += calendar_slots(conn, user_id, start, end, sync_schedule(), now=current)
+    events += calendar_slots(conn, sources_owner, start, end, sync_schedule(), now=current)
     events.sort(key=lambda event: event["at"])
     return {
         "from": _utc_iso(start),
         "to": _utc_iso(end),
         "events": events,
-        "monitors": _monitors(conn, user_id, start, end),
+        "monitors": _monitors(conn, user_id, start, end, team_id),
         "truncated": list(dict.fromkeys(truncated)),
     }

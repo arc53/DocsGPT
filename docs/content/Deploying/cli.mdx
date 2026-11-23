@@ -1,7 +1,7 @@
 ---
 title: docsgpt CLI Reference
 description: Every docsgpt subcommand and its main options, for the installer, pip installs, the Docker image and a source checkout.
-lastUpdated: 2026-10-21
+lastUpdated: 2026-11-02
 ---
 
 import { Callout } from 'nextra/components'
@@ -84,7 +84,7 @@ and print the data home and env file they use.
 
 ## Database and maintenance commands
 
-`migrate`, `grant-admin`, `connectors reencrypt` and `reembed` act on the database in `POSTGRES_URI`. On a Docker install, including the installer's default,
+`migrate`, `grant-admin`, `connectors reencrypt`, `reembed` and `ingest orphans` act on the database in `POSTGRES_URI`. On a Docker install, including the installer's default,
 the host has neither that setting nor a route to the stack's Postgres, so run them inside the backend
 container from the stack directory, for example
 `docker compose exec backend python -m docsgpt grant-admin <user_id>`.
@@ -94,6 +94,7 @@ container from the stack directory, for example
 | `docsgpt migrate [--no-create]` | Create the Postgres database if it is missing and apply the migrations. `--no-create` fails instead of creating it. See [PostgreSQL for User Data](/Deploying/Postgres-Migration#production-hardening). |
 | `docsgpt grant-admin USER_ID [--revoke\|--force]`, `docsgpt grant-admin --list` | Grant, revoke or list the admin role. Takes effect under `AUTH_TYPE=oidc`; `USER_ID` is the OIDC `sub`. See [Access Control](/Deploying/Access-Control#bootstrapping-the-first-admin). |
 | `docsgpt connectors reencrypt` | Rewrite stored connections, tool secrets and custom-model keys with the current `ENCRYPTION_SECRET_KEY` after a key rotation. |
+| `docsgpt ingest orphans` | List vectors that no source owns and whether the hourly `cleanup-orphaned-ingests` task deletes them. On pgvector it counts each source's chunks, which reads the whole vectors table; on other stores it lists the ingests that ended without a source, without counts. Read-only. See [Vectors of failed ingests](/Deploying/Background-Jobs#vectors-of-failed-ingests). |
 | `docsgpt reembed [--dry-run] [--sources IDS] [--batch-size N]` | Re-embed every index after changing `EMBEDDINGS_NAME`. See [Upgrading](/upgrading). |
 | `docsgpt prefetch-models [MODEL ...]` | Download the embedding models and their tokenizers ahead of time. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |
 | `docsgpt decisions prefetch [--runtime onnx\|torch]` | Download the decision model's pinned files into `DECISION_CACHE_DIR` ahead of time (`torch`: the weights `decide-server --device mps\|cuda` reads). Every decision feature ships off, and nothing downloads until one is turned on. See [Air-Gapped Deployment](/Deploying/Air-Gapped). |

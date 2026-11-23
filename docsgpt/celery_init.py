@@ -6,7 +6,7 @@ import sys
 import threading
 from typing import Any, Optional
 
-from celery import Celery
+from docsgpt.celery_publish import Celery
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from celery.signals import (
@@ -115,6 +115,37 @@ def _unbind_task_log_context(task_id, **_):
         logging.getLogger(__name__).debug(
             "log_context reset skipped for task %s", task_id
         )
+
+
+@task_prerun.connect
+def _track_in_flight(task_id=None, task=None, **_):
+    """Count the task as running from its queue for the queue gauge.
+
+    The gauge never fails a task: a broker error only loses the count.
+    """
+    request = getattr(task, "request", None)
+    if request is None or getattr(request, "is_eager", False):
+        return
+    queue = (getattr(request, "delivery_info", None) or {}).get("routing_key")
+    if not queue:
+        return
+    try:
+        from docsgpt.events import queue_gauge
+
+        queue_gauge.task_started(task_id, str(queue))
+    except Exception:
+        logging.getLogger(__name__).debug("in-flight tracking failed for task %s", task_id, exc_info=True)
+
+
+@task_postrun.connect
+def _untrack_in_flight(task_id=None, **_):
+    """Stop counting the task as running."""
+    try:
+        from docsgpt.events import queue_gauge
+
+        queue_gauge.task_finished(task_id)
+    except Exception:
+        logging.getLogger(__name__).debug("in-flight untracking failed for task %s", task_id, exc_info=True)
 
 
 def _trim_native_heap() -> None:

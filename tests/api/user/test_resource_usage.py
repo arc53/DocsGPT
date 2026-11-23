@@ -1,0 +1,351 @@
+"""Which agents use a tool, prompt or source (``used_by`` on the Workspace lists)."""
+
+from __future__ import annotations
+
+import uuid
+
+from docsgpt.agents.default_tools import default_tool_id
+from docsgpt.api.user.resource_usage import EMPTY_USAGE, is_in_use, used_by_many
+from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.storage.db.repositories.prompts import PromptsRepository
+from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.team_resource_grants import (
+    TeamResourceGrantsRepository,
+)
+from docsgpt.storage.db.repositories.teams import TeamsRepository
+from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+from docsgpt.storage.db.repositories.workflow_nodes import WorkflowNodesRepository
+from docsgpt.storage.db.repositories.workflows import WorkflowsRepository
+
+ALICE = "alice"
+BOB = "bob"
+
+
+def _agent(conn, owner, name, **kwargs):
+    return AgentsRepository(conn).create(owner, name, "published", **kwargs)
+
+
+def _tool(conn, owner=ALICE, name="read_webpage"):
+    return UserToolsRepository(conn).create(owner, name, config={}, display_name=name)
+
+
+def _source(conn, owner=ALICE, name="src"):
+    return SourcesRepository(conn).create(name, user_id=owner)
+
+
+def _share(conn, resource_type, resource_id, owner, member, level="viewer"):
+    team = TeamsRepository(conn).create("Acme", f"t-{uuid.uuid4().hex[:8]}", owner)
+    TeamMembersRepository(conn).add_member(str(team["id"]), member)
+    TeamResourceGrantsRepository(conn).grant(
+        str(team["id"]), resource_type, str(resource_id), owner, owner, access_level=level
+    )
+
+
+def _workflow_agent(conn, owner, name, versions: dict[int, dict], current: int):
+    """A workflow agent whose workflow holds one agent node per graph version."""
+    wf = WorkflowsRepository(conn).create(owner, f"wf-{name}")
+    WorkflowsRepository(conn).update(str(wf["id"]), owner, {"current_graph_version": current})
+    nodes = WorkflowNodesRepository(conn)
+    for version, config in versions.items():
+        nodes.create(str(wf["id"]), version, "start", "start")
+        nodes.create(str(wf["id"]), version, "agent-1", "agent", config=config)
+    return _agent(conn, owner, name, agent_type="workflow", workflow_id=str(wf["id"]))
+
+
+def _names(usage):
+    return [a["name"] for a in usage["agents"]]
+
+
+class TestTools:
+    def test_classic_agents_sorted_by_name(self, pg_conn):
+        tool = _tool(pg_conn)
+        tid = str(tool["id"])
+        _agent(pg_conn, ALICE, "zeta", tools=[tid])
+        a = _agent(pg_conn, ALICE, "Alpha", tools=[tid, str(uuid.uuid4())])
+        _agent(pg_conn, ALICE, "unrelated", tools=[])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert _names(usage[tid]) == ["Alpha", "zeta"]
+        assert usage[tid]["agents"][0] == {
+            "id": str(a["id"]), "name": "Alpha", "agent_type": "classic", "can_edit": True, "status": "published",
+        }
+        assert usage[tid]["others"] == 0
+
+    def test_unused_resource_gets_empty_usage(self, pg_conn):
+        tid = str(_tool(pg_conn)["id"])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert usage[tid] == EMPTY_USAGE
+        assert not is_in_use(usage[tid])
+
+    def test_default_tool_matches_its_synthetic_id(self, pg_conn):
+        memory_id = default_tool_id("memory")
+        _agent(pg_conn, ALICE, "mem agent", tools=[memory_id])
+        _agent(pg_conn, BOB, "bob's mem agent", tools=[memory_id])
+        usage = used_by_many(pg_conn, ALICE, "tool", [memory_id], deletable_ids=[])
+        # Nobody owns a default tool: other users' agents are neither listed nor counted.
+        assert _names(usage[memory_id]) == ["mem agent"]
+        assert usage[memory_id]["others"] == 0
+
+    def test_workflow_agent_counts_current_graph_version_only(self, pg_conn):
+        old_tool = str(_tool(pg_conn, name="old")["id"])
+        new_tool = str(_tool(pg_conn, name="new")["id"])
+        _workflow_agent(
+            pg_conn, ALICE, "flow",
+            {1: {"tools": [old_tool]}, 2: {"tools": [new_tool]}},
+            current=2,
+        )
+        usage = used_by_many(pg_conn, ALICE, "tool", [old_tool, new_tool], deletable_ids=[old_tool, new_tool])
+        assert _names(usage[new_tool]) == ["flow"]
+        # The type picks the editor a link opens.
+        assert usage[new_tool]["agents"][0]["agent_type"] == "workflow"
+        assert usage[old_tool] == EMPTY_USAGE
+
+    def test_workflow_node_settings_under_config_count(self, pg_conn):
+        # Graphs saved through the API may nest a node's settings under ``config``,
+        # which the engine reads like the flat shape.
+        nested = str(_tool(pg_conn, name="nested")["id"])
+        scalar = str(_tool(pg_conn, name="scalar")["id"])
+        _workflow_agent(pg_conn, ALICE, "nested flow", {1: {"config": {"tools": [nested]}}}, current=1)
+        _workflow_agent(pg_conn, ALICE, "scalar flow", {1: {"config": {"tools": scalar}}}, current=1)
+        usage = used_by_many(pg_conn, ALICE, "tool", [nested, scalar], deletable_ids=[nested, scalar])
+        assert _names(usage[nested]) == ["nested flow"]
+        assert _names(usage[scalar]) == ["scalar flow"]
+
+    def test_workflow_agent_classic_columns_are_ignored(self, pg_conn):
+        tid = str(_tool(pg_conn)["id"])
+        # Classic ``tools`` left over on a workflow agent do not run.
+        _agent(pg_conn, ALICE, "leftover", agent_type="workflow", tools=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert usage[tid] == EMPTY_USAGE
+
+
+class TestVisibility:
+    def test_owner_counts_teammates_agents_as_others(self, pg_conn):
+        tool = _tool(pg_conn)
+        tid = str(tool["id"])
+        _share(pg_conn, "tool", tid, ALICE, BOB)
+        _agent(pg_conn, ALICE, "mine", tools=[tid])
+        _agent(pg_conn, BOB, "bob private", tools=[tid])
+        shared_agent = _agent(pg_conn, BOB, "bob shared", tools=[tid])
+        _share(pg_conn, "agent", shared_agent["id"], BOB, ALICE)
+
+        mine = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
+        assert _names(mine) == ["bob shared", "mine"]
+        assert mine["others"] == 1
+        assert is_in_use(mine)
+
+        # Bob sees the tool through the team; he does not own it, so no others.
+        theirs = used_by_many(pg_conn, BOB, "tool", [tid], deletable_ids=[])[tid]
+        assert _names(theirs) == ["bob private", "bob shared"]
+        assert theirs["others"] == 0
+
+    def test_only_others_still_counts_as_in_use(self, pg_conn):
+        tid = str(_tool(pg_conn)["id"])
+        _agent(pg_conn, BOB, "bob private", tools=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
+        assert usage == {"agents": [], "others": 1}
+        assert is_in_use(usage)
+
+    def test_agent_allowlist_hides_agents_outside_it(self, pg_conn):
+        tid = str(_tool(pg_conn)["id"])
+        keep = _agent(pg_conn, ALICE, "keep", tools=[tid])
+        _agent(pg_conn, ALICE, "hidden", tools=[tid])
+        usage = used_by_many(
+            pg_conn, ALICE, "tool", [tid], deletable_ids=[tid], agent_allowlist={str(keep["id"])}
+        )[tid]
+        assert _names(usage) == ["keep"]
+        assert usage["others"] == 1
+
+
+class TestStatus:
+    def test_each_agent_says_whether_it_is_a_draft(self, pg_conn):
+        # A viewer's Used by link can't open a teammate's draft: its chat runs only finished work.
+        tid = str(_tool(pg_conn)["id"])
+        published = _agent(pg_conn, ALICE, "live", tools=[tid])
+        draft = AgentsRepository(pg_conn).create(ALICE, "wip", "draft", tools=[tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
+        assert {a["id"]: a["status"] for a in usage["agents"]} == {
+            str(published["id"]): "published",
+            str(draft["id"]): "draft",
+        }
+
+
+class TestCanEdit:
+    def test_own_and_editor_shared_agents_open_their_editor_viewer_shared_do_not(self, pg_conn):
+        tid = str(_tool(pg_conn)["id"])
+        mine = _agent(pg_conn, ALICE, "mine", tools=[tid])
+        edited = _agent(pg_conn, BOB, "bob edited", tools=[tid])
+        viewed = _agent(pg_conn, BOB, "bob viewed", tools=[tid])
+        _share(pg_conn, "agent", edited["id"], BOB, ALICE, level="editor")
+        _share(pg_conn, "agent", viewed["id"], BOB, ALICE)
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])[tid]
+        assert {a["id"]: a["can_edit"] for a in usage["agents"]} == {
+            str(mine["id"]): True,
+            str(edited["id"]): True,
+            str(viewed["id"]): False,
+        }
+
+
+class TestDeletable:
+    def test_others_follow_the_delete_right_not_ownership(self, pg_conn):
+        sid = str(_source(pg_conn, owner=BOB, name="bob's")["id"])
+        _agent(pg_conn, BOB, "bob private", source_id=sid)
+        # Alice may delete Bob's source (an editor with editors_can_delete on): she is told it is used.
+        usage = used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[sid])[sid]
+        assert usage == {"agents": [], "others": 1}
+        assert used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[])[sid] == EMPTY_USAGE
+
+
+class TestSources:
+    def test_primary_extra_and_workflow_sources(self, pg_conn):
+        s1 = str(_source(pg_conn, name="one")["id"])
+        s2 = str(_source(pg_conn, name="two")["id"])
+        _agent(pg_conn, ALICE, "primary", source_id=s1)
+        _agent(pg_conn, ALICE, "both", source_id=s1, extra_source_ids=[s1, s2])
+        _workflow_agent(pg_conn, ALICE, "flow", {3: {"sources": [s2]}}, current=3)
+        usage = used_by_many(pg_conn, ALICE, "source", [s1, s2], deletable_ids=[s1, s2])
+        assert _names(usage[s1]) == ["both", "primary"]
+        assert _names(usage[s2]) == ["both", "flow"]
+
+    def test_workflow_node_sources_under_config(self, pg_conn):
+        sid = str(_source(pg_conn)["id"])
+        _workflow_agent(pg_conn, ALICE, "nested flow", {1: {"config": {"sources": [sid]}}}, current=1)
+        usage = used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[sid])
+        assert _names(usage[sid]) == ["nested flow"]
+
+
+class TestLegacyMongoIds:
+    """Installs migrated by ``scripts/db/backfill.py`` keep 24-hex ObjectIds in tool and node refs."""
+
+    TOOL_OID = "65a1b2c3d4e5f6a7b8c9d0e1"
+    SOURCE_OID = "65a1b2c3d4e5f6a7b8c9d0e2"
+
+    def test_tool_named_by_its_object_id(self, pg_conn):
+        tool = UserToolsRepository(pg_conn).create(
+            ALICE, "read_webpage", config={}, display_name="Web", legacy_mongo_id=self.TOOL_OID,
+        )
+        tid = str(tool["id"])
+        _agent(pg_conn, ALICE, "classic", tools=[self.TOOL_OID])
+        _workflow_agent(pg_conn, ALICE, "flow", {1: {"tools": [self.TOOL_OID]}}, current=1)
+        _agent(pg_conn, BOB, "Bob's", tools=[self.TOOL_OID])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert _names(usage[tid]) == ["classic", "flow"]
+        assert usage[tid]["others"] == 1
+
+    def test_tool_named_by_both_ids_is_listed_once(self, pg_conn):
+        tool = UserToolsRepository(pg_conn).create(
+            ALICE, "read_webpage", config={}, legacy_mongo_id=self.TOOL_OID,
+        )
+        tid = str(tool["id"])
+        _agent(pg_conn, ALICE, "twice", tools=[self.TOOL_OID, tid])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[])
+        assert _names(usage[tid]) == ["twice"]
+
+    def test_workflow_source_named_by_its_object_id(self, pg_conn):
+        source = SourcesRepository(pg_conn).create("src", user_id=ALICE, legacy_mongo_id=self.SOURCE_OID)
+        sid = str(source["id"])
+        _workflow_agent(pg_conn, ALICE, "flow", {1: {"config": {"sources": [self.SOURCE_OID]}}}, current=1)
+        _agent(pg_conn, ALICE, "classic", source_id=sid)
+        usage = used_by_many(pg_conn, ALICE, "source", [sid], deletable_ids=[sid])
+        assert _names(usage[sid]) == ["classic", "flow"]
+
+    def test_object_id_of_another_tool_does_not_match(self, pg_conn):
+        UserToolsRepository(pg_conn).create(ALICE, "read_webpage", config={}, legacy_mongo_id=self.TOOL_OID)
+        tid = str(_tool(pg_conn)["id"])
+        _agent(pg_conn, ALICE, "other", tools=[self.TOOL_OID])
+        usage = used_by_many(pg_conn, ALICE, "tool", [tid], deletable_ids=[tid])
+        assert usage[tid] == EMPTY_USAGE
+
+
+class TestPrompts:
+    def test_prompt_row_and_presets(self, pg_conn):
+        prompt = PromptsRepository(pg_conn).create(ALICE, "P", "content")
+        pid = str(prompt["id"])
+        _agent(pg_conn, ALICE, "custom", prompt_id=pid)
+        _agent(pg_conn, ALICE, "plain")  # NULL prompt_id: the default preset
+        _agent(pg_conn, ALICE, "inventive", prompt_id="creative")
+        _agent(pg_conn, BOB, "bob plain")  # not visible to alice
+        _agent(pg_conn, BOB, "bob inventive", prompt_id="creative")  # nor this one
+        _workflow_agent(pg_conn, ALICE, "flow", {1: {"system_prompt": "inline"}}, current=1)
+        ids = ["default", "creative", "strict", pid]
+        usage = used_by_many(pg_conn, ALICE, "prompt", ids, deletable_ids=[pid])
+        assert _names(usage[pid]) == ["custom"]
+        # A creative agent runs creative, not default.
+        assert _names(usage["default"]) == ["plain"]
+        assert usage["default"]["others"] == 0
+        assert _names(usage["creative"]) == ["inventive"]
+        assert usage["creative"]["others"] == 0
+        assert usage["strict"] == EMPTY_USAGE
+
+    def test_presets_alone_are_counted(self, pg_conn):
+        _agent(pg_conn, ALICE, "careful", prompt_id="strict")
+        usage = used_by_many(pg_conn, ALICE, "prompt", ["strict"], deletable_ids=[])
+        assert _names(usage["strict"]) == ["careful"]
+
+    def test_shared_agent_with_default_prompt_is_listed(self, pg_conn):
+        agent = _agent(pg_conn, BOB, "bob shared")
+        _share(pg_conn, "agent", agent["id"], BOB, ALICE)
+        usage = used_by_many(pg_conn, ALICE, "prompt", ["default"], deletable_ids=[])
+        assert _names(usage["default"]) == ["bob shared"]
+
+
+class TestBounded:
+    def test_query_count_does_not_grow_with_resources(self, pg_conn):
+        from sqlalchemy import event
+
+        tools = [str(_tool(pg_conn, name=f"t{i}")["id"]) for i in range(6)]
+        for i, tid in enumerate(tools):
+            _agent(pg_conn, ALICE, f"a{i}", tools=[tid])
+        statements: list[str] = []
+
+        def _count(conn, cursor, statement, *args):
+            statements.append(statement)
+
+        event.listen(pg_conn, "before_cursor_execute", _count)
+        try:
+            used_by_many(pg_conn, ALICE, "tool", tools, deletable_ids=tools)
+        finally:
+            event.remove(pg_conn, "before_cursor_execute", _count)
+        assert len(statements) <= 4
+
+    def test_agents_are_read_only_where_the_caller_needs_them(self, pg_conn):
+        from docsgpt.api.user.resource_usage import _usage_rows
+
+        memory_id = default_tool_id("memory")
+        tid = str(_tool(pg_conn)["id"])
+        _agent(pg_conn, ALICE, "mine", tools=[memory_id, tid])
+        _agent(pg_conn, BOB, "bob private", tools=[memory_id, tid])
+        shared = _agent(pg_conn, BOB, "bob shared", tools=[memory_id])
+        _workflow_agent(pg_conn, BOB, "bob flow", {1: {"tools": [memory_id]}}, current=1)
+
+        def _names_for(full, scoped):
+            rows = _usage_rows(pg_conn, "tool", full, scoped, ALICE, [str(shared["id"])], [])
+            return sorted({(row.name, row.ref) for row in rows})
+
+        # A tool nobody may delete (a default tool): only agents Alice can open are read.
+        assert _names_for([], [memory_id]) == [("bob shared", memory_id), ("mine", memory_id)]
+        # One she may delete: every agent, so the hidden ones can be counted.
+        assert ("bob private", tid) in _names_for([tid], [memory_id])
+
+    def test_empty_ids_runs_no_query(self, pg_conn):
+        assert used_by_many(pg_conn, ALICE, "tool", [], deletable_ids=[]) == {}
+
+
+class TestAttachUsedByFailure:
+    """A failed usage read leaves ``used_by`` unknown; the listing and its transaction carry on."""
+
+    def test_the_listing_keeps_its_rows_and_its_connection(self, pg_conn):
+        from unittest.mock import patch
+
+        from sqlalchemy import text
+
+        from docsgpt.api.user.resource_usage import attach_used_by
+
+        def broken(conn, *args, **kwargs):
+            conn.execute(text("SELECT 1 / 0"))
+
+        items = [{"id": str(_source(pg_conn)["id"])}]
+        with patch("docsgpt.api.user.resource_usage.used_by_many", side_effect=broken):
+            assert attach_used_by(pg_conn, ALICE, "source", items, deletable_ids=[]) is items
+        assert "used_by" not in items[0]
+        assert pg_conn.execute(text("SELECT 1")).scalar() == 1

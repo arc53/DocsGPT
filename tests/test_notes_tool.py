@@ -99,6 +99,22 @@ def test_str_replace(notes_tool):
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "new_str",
+    [r"C:\Users\fyx", r"\1", r"\g<name>", r"a\\b"],
+)
+def test_str_replace_new_str_is_literal(notes_tool, new_str):
+    notes_tool.execute_action("overwrite", text="replace here")
+    result = notes_tool.execute_action(
+        "str_replace", old_str="replace here", new_str=new_str
+    )
+    assert "updated" in result.lower()
+
+    note = notes_tool.execute_action("view")
+    assert new_str in note
+
+
+@pytest.mark.unit
 def test_str_replace_not_found(notes_tool):
     notes_tool.execute_action("overwrite", text="Hello world")
     result = notes_tool.execute_action("str_replace", old_str="goodbye", new_str="hi")

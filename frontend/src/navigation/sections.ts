@@ -13,8 +13,8 @@ import {
   KeyRound,
   LayoutDashboard,
   LayoutGrid,
-  LayoutTemplate,
   Lightbulb,
+  MessageSquareText,
   Plug,
   Radar,
   ScrollText,
@@ -48,6 +48,8 @@ import {
 } from '../agents/paths';
 import { type AccessFields } from '../utils/accessUtils';
 import { canAgent } from '../agents/agentAccess';
+import { teamPath } from '../teams/page/teamTabs';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
 
 /** A single destination in a section's vertical nav. */
 export type SectionItem = {
@@ -63,6 +65,10 @@ export type SectionItem = {
   leavesSection?: boolean;
   /** Hidden when the backend reports this feature off (`/api/config`). */
   feature?: 'connectors' | 'analytics';
+  /** Hidden in a team workspace (people share with a person, not a team). */
+  personalOnly?: boolean;
+  /** Hidden in Personal (other teams share with a team). */
+  teamOnly?: boolean;
 };
 
 /** Items sharing a heading in the nav. */
@@ -149,6 +155,12 @@ export const SETTINGS_SECTION: Section = {
           path: '/settings/tools',
           labelKey: 'settings.tools.label',
           icon: Wrench,
+        },
+        {
+          key: 'prompts',
+          path: '/settings/prompts',
+          labelKey: 'settings.prompts.label',
+          icon: MessageSquareText,
         },
         {
           key: 'customModels',
@@ -350,28 +362,33 @@ export const AGENTS_SECTION: Section = {
           icon: LayoutGrid,
         },
         {
-          key: 'template',
-          path: agentsFilterPath('template'),
-          labelKey: 'agents.filters.byDocsGPT',
-          icon: LayoutTemplate,
-        },
-        {
           key: 'user',
           path: agentsFilterPath('user'),
           labelKey: 'agents.filters.byMe',
           icon: User,
         },
         {
-          key: 'team',
-          path: agentsFilterPath('team'),
-          labelKey: 'agents.filters.team',
+          key: 'teamShared',
+          path: agentsFilterPath('teamShared'),
+          labelKey: 'workspace.page.sharedFromTeams.title',
           icon: Users,
+          teamOnly: true,
+        },
+        {
+          key: 'sharedWithYou',
+          path: agentsFilterPath('sharedWithYou'),
+          // The old Team section's address lands here in Personal.
+          aliases: [agentsFilterPath('team')],
+          labelKey: 'workspace.page.sharedWithYou',
+          icon: Users,
+          personalOnly: true,
         },
         {
           key: 'shared',
           path: agentsFilterPath('shared'),
           labelKey: 'agents.filters.shared',
           icon: Globe,
+          personalOnly: true,
         },
       ],
     },
@@ -382,8 +399,8 @@ export const AGENTS_SECTION: Section = {
 const TAB_ACTIONS: Record<string, string> = {
   overview: 'view',
   schedules: 'manage_schedules',
-  analytics: 'view_logs',
-  insights: 'view_logs',
+  analytics: 'view_analytics',
+  insights: 'view_analytics',
   logs: 'view_logs',
 };
 
@@ -398,7 +415,8 @@ const TAB_ACTIONS: Record<string, string> = {
  *
  * `access` is the agent's record once loaded: each tab shows only when the
  * caller's role allows its page (Overview `view`, Schedules
- * `manage_schedules`, the Monitoring pages `view_logs`); a group left
+ * `manage_schedules`, the Monitoring pages `view_logs`) and its state
+ * suits it (a draft keeps Overview and Logs, see `canAgent`); a group left
  * empty is dropped. Insights also only shows while the server labels
  * conversations (`feature`, applied by `getVisibleGroups`). Until the
  * record arrives every tab shows, and the route guard sends a caller who
@@ -414,8 +432,9 @@ export function buildAgentSection(
   access?: (AccessFields & { status?: string; agent_type?: string }) | null,
 ): Section {
   const isWorkflow = workflow || access?.agent_type === 'workflow';
-  // The classic edit path still renders a workflow (an old link, or a
-  // fallback before the agent loads), so it stays Overview's too.
+  // The classic edit path opens a workflow in its editor once the agent
+  // loads (an old link, or one built before the type was known); until
+  // then it is still this agent's Overview.
   const overviewAliases = isWorkflow ? [agentEditPath(agentId, false)] : [];
   const allows = (item: SectionItem) =>
     !access || canAgent(access, TAB_ACTIONS[item.key]);
@@ -486,6 +505,26 @@ export function buildAgentSection(
   };
 }
 
+/**
+ * The sidebar's "Team" entry while the app is in a team workspace: it opens
+ * that team's page (members, shared items, settings). Personal has none.
+ *
+ * Args:
+ *   workspaceId: The current workspace, `personal` or a team id.
+ *
+ * Returns:
+ *   The entry, or null in Personal.
+ */
+export function teamNavItem(workspaceId: string): SectionItem | null {
+  if (!workspaceId || workspaceId === PERSONAL_WORKSPACE) return null;
+  return {
+    key: 'team',
+    path: teamPath(workspaceId),
+    labelKey: 'workspace.team.navEntry',
+    icon: Users,
+  };
+}
+
 export const SECTIONS: Section[] = [
   ACTIVITY_SECTION,
   SETTINGS_SECTION,
@@ -515,15 +554,20 @@ export function getSectionItems(
     .filter((item) => !item.adminOnly || isAdmin);
 }
 
-/** Groups with admin-only entries removed, dropping any group left empty. */
+/**
+ * Groups with admin-only entries removed (and, in a team, Personal-only
+ * ones), dropping any group left empty.
+ */
 export function getVisibleGroups(
   section: Section,
   {
     isAdmin = true,
     features = {},
+    inTeam = false,
   }: {
     isAdmin?: boolean;
     features?: Partial<Record<NonNullable<SectionItem['feature']>, boolean>>;
+    inTeam?: boolean;
   } = {},
 ): SectionGroup[] {
   return section.groups
@@ -532,7 +576,9 @@ export function getVisibleGroups(
       items: group.items.filter(
         (item) =>
           (!item.adminOnly || isAdmin) &&
-          (!item.feature || features[item.feature] !== false),
+          (!item.feature || features[item.feature] !== false) &&
+          (!item.personalOnly || !inTeam) &&
+          (!item.teamOnly || inTeam),
       ),
     }))
     .filter((group) => group.items.length > 0);

@@ -1,6 +1,9 @@
-"""
-Agent folders management routes.
-Provides virtual folder organization for agents (Google Drive-like structure).
+"""``/api/agents/folders/*``: the agent folder routes, kept as aliases of ``/api/folders`` with ``type=agent``.
+
+Existing clients, tokens and docs call these. They follow the same rules
+(:mod:`docsgpt.api.user.folders.service`): a list or a create works in the
+request's workspace (the team's one tree in a team), a route about one folder
+goes by the folder's own tree, and in a team changing anything needs Editor.
 """
 
 from flask import current_app, jsonify, make_response, request
@@ -8,27 +11,30 @@ from flask_restx import Namespace, Resource, fields
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
-from docsgpt.api.user.resource_access import AccessDenied, payload_for, require, settings_many
-from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agent_folders import AgentFoldersRepository
-from docsgpt.storage.db.repositories.agents import AgentsRepository
+from docsgpt.api.user.agents.starters import stored_starters
+from docsgpt.api.user.folders.service import (
+    FolderError,
+    create_folder,
+    delete_folder,
+    file_items,
+    folder_by_id,
+    list_folders,
+    serialize_folder,
+    update_folder,
+    visible_item_id,
+    workspace_tree,
+)
+from docsgpt.api.user.resource_access import payload_for, settings_many
+from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.storage.db.repositories.folders import FoldersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.context import WorkspaceError, current_workspace
 
 
 agents_folders_ns = Namespace(
-    "agents_folders", description="Agent folder management", path="/api/agents/folders"
+    "agents_folders", description="Agent folder management (aliases of /api/folders?type=agent)",
+    path="/api/agents/folders",
 )
-
-
-def _resolve_folder_id(repo: AgentFoldersRepository, folder_id: str, user: str):
-    """Resolve a folder id that may be either a UUID or legacy Mongo ObjectId."""
-    if not folder_id:
-        return None
-    if looks_like_uuid(folder_id):
-        row = repo.get(folder_id, user)
-        if row is not None:
-            return row
-    return repo.get_by_legacy_id(folder_id, user)
 
 
 def _folder_error_response(message: str, err: Exception):
@@ -36,35 +42,30 @@ def _folder_error_response(message: str, err: Exception):
     return make_response(jsonify({"success": False, "message": message}), 400)
 
 
-def _serialize_folder(f: dict) -> dict:
-    created_at = f.get("created_at")
-    updated_at = f.get("updated_at")
-    return {
-        "id": str(f["id"]),
-        "name": f.get("name"),
-        "parent_id": str(f["parent_id"]) if f.get("parent_id") else None,
-        "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
-        "updated_at": updated_at.isoformat() if hasattr(updated_at, "isoformat") else updated_at,
-    }
+def _user():
+    decoded_token = request.decoded_token
+    return decoded_token.get("sub") if decoded_token else None
 
 
 @agents_folders_ns.route("/")
 class AgentFolders(Resource):
-    @api.doc(description="Get all folders for the user")
+    @api.doc(description="The workspace's folder tree, as GET /api/folders?type=agent")
     def get(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                folders = AgentFoldersRepository(conn).list_for_user(user)
-            result = [_serialize_folder(f) for f in folders]
+                tree = workspace_tree(current_workspace(conn))
+                tree.require("list")
+                result = list_folders(conn, user, "agent", tree=tree)
             return make_response(jsonify({"folders": result}), 200)
+        except (FolderError, WorkspaceError) as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to fetch folders", err)
 
-    @api.doc(description="Create a new folder")
+    @api.doc(description="Create a folder in the workspace's tree, as POST /api/folders")
     @api.expect(
         api.model(
             "CreateFolder",
@@ -75,211 +76,139 @@ class AgentFolders(Resource):
         )
     )
     def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        if not data or not data.get("name"):
-            return make_response(jsonify({"success": False, "message": "Folder name is required"}), 400)
-
-        parent_id_input = data.get("parent_id")
-        description = data.get("description")
-
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data.get("name"):
+            return make_response(
+                jsonify({"success": False, "error": "invalid_folder_name", "message": "Folder name is required"}),
+                400,
+            )
         try:
             with db_session() as conn:
-                repo = AgentFoldersRepository(conn)
-                pg_parent_id = None
-                if parent_id_input:
-                    parent = _resolve_folder_id(repo, parent_id_input, user)
-                    if not parent:
-                        return make_response(
-                            jsonify({"success": False, "message": "Parent folder not found"}),
-                            404,
-                        )
-                    pg_parent_id = str(parent["id"])
-                folder = repo.create(
-                    user, data["name"],
-                    description=description,
-                    parent_id=pg_parent_id,
+                tree = workspace_tree(current_workspace(conn))
+                tree.require("create")
+                folder = create_folder(
+                    conn, tree.owner_id, "agent", data["name"], data.get("parent_id"),
+                    description=data.get("description"), created_by=user,
                 )
-            return make_response(
-                jsonify(
-                    {
-                        "id": str(folder["id"]),
-                        "name": folder["name"],
-                        "parent_id": pg_parent_id,
-                    }
-                ),
-                201,
-            )
+        except (FolderError, WorkspaceError) as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to create folder", err)
+        return make_response(jsonify(serialize_folder(folder)), 201)
 
 
 @agents_folders_ns.route("/<string:folder_id>")
 class AgentFolder(Resource):
-    @api.doc(description="Get a specific folder with its agents")
+    @api.doc(description="A folder with the agents filed in it and its subfolders")
     def get(self, folder_id):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
-                folders_repo = AgentFoldersRepository(conn)
-                folder = _resolve_folder_id(folders_repo, folder_id, user)
-                if not folder:
-                    return make_response(
-                        jsonify({"success": False, "message": "Folder not found"}),
-                        404,
-                    )
+                folder, tree = folder_by_id(conn, folder_id, user)
+                tree.require("list")
                 pg_folder_id = str(folder["id"])
-
+                # A team's tree holds the team's agents; a person's, their own and ones shared with them.
+                team = {} if tree.is_team else visible_with_access(conn, user, "agent")
                 agents_rows = conn.execute(
                     _sql_text(
-                        "SELECT id, name, description FROM agents "
-                        "WHERE user_id = :user_id AND folder_id = CAST(:fid AS uuid) "
-                        "ORDER BY created_at DESC"
+                        "SELECT a.id, a.user_id, a.name, a.description, a.starters FROM agents a "
+                        "JOIN folder_items fi ON fi.resource_id = a.id AND fi.resource_type = 'agent' "
+                        "WHERE fi.user_id = :owner AND fi.folder_id = CAST(:fid AS uuid) "
+                        "AND (a.user_id = :owner OR a.id = ANY(CAST(:team AS uuid[]))) "
+                        "ORDER BY a.created_at DESC"
                     ),
-                    {"user_id": user, "fid": pg_folder_id},
+                    {"owner": tree.owner_id, "fid": pg_folder_id, "team": sorted(team)},
                 ).fetchall()
-                switches = settings_many(
-                    conn, "agent", [str(row._mapping["id"]) for row in agents_rows]
-                )
-                # Folder contents are the caller's own agents.
-                agents_list = [
-                    {
-                        "id": str(row._mapping["id"]),
-                        "name": row._mapping["name"],
-                        "description": row._mapping.get("description", "") or "",
-                        **payload_for("agent", "owner", switches[str(row._mapping["id"])]),
-                    }
-                    for row in agents_rows
-                ]
-
-                subfolders = folders_repo.list_children(pg_folder_id, user)
-                subfolders_list = [
-                    {"id": str(sf["id"]), "name": sf["name"]}
-                    for sf in subfolders
-                ]
-
+                switches = settings_many(conn, "agent", [str(row._mapping["id"]) for row in agents_rows])
+                agents_list = []
+                for row in agents_rows:
+                    agent = row._mapping
+                    aid = str(agent["id"])
+                    if tree.is_team:
+                        access = payload_for(
+                            "agent", None, None, team_id=tree.team_id, team_role=tree.role, policy=tree.policy
+                        )
+                    else:
+                        access = payload_for(
+                            "agent", "owner" if agent["user_id"] == user else team.get(aid), switches[aid]
+                        )
+                    agents_list.append(
+                        {
+                            "id": aid,
+                            "name": agent["name"],
+                            "description": agent.get("description", "") or "",
+                            "starters": stored_starters(agent),
+                            **access,
+                        }
+                    )
+                subfolders = FoldersRepository(conn).list_children(pg_folder_id, tree.owner_id)
             return make_response(
                 jsonify(
                     {
                         "id": pg_folder_id,
                         "name": folder["name"],
-                        "parent_id": (
-                            str(folder["parent_id"]) if folder.get("parent_id") else None
-                        ),
+                        "parent_id": str(folder["parent_id"]) if folder.get("parent_id") else None,
                         "agents": agents_list,
-                        "subfolders": subfolders_list,
+                        "subfolders": [{"id": str(sf["id"]), "name": sf["name"]} for sf in subfolders],
                     }
                 ),
                 200,
             )
+        except FolderError as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to fetch folder", err)
 
-    @api.doc(description="Update a folder")
+    @api.doc(description="Rename or move a folder, as PUT /api/folders/<id>")
     def put(self, folder_id):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        if not data:
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data:
             return make_response(jsonify({"success": False, "message": "No data provided"}), 400)
-
         try:
             with db_session() as conn:
-                repo = AgentFoldersRepository(conn)
-                folder = _resolve_folder_id(repo, folder_id, user)
-                if not folder:
-                    return make_response(
-                        jsonify({"success": False, "message": "Folder not found"}),
-                        404,
-                    )
-                pg_folder_id = str(folder["id"])
-
-                update_fields: dict = {}
-                if "name" in data:
-                    update_fields["name"] = data["name"]
-                if "description" in data:
-                    update_fields["description"] = data["description"]
+                folder, tree = folder_by_id(conn, folder_id, user)
+                if "name" in data or "description" in data:
+                    tree.require("rename")
                 if "parent_id" in data:
-                    parent_input = data.get("parent_id")
-                    if parent_input:
-                        if parent_input == folder_id or parent_input == pg_folder_id:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Cannot set folder as its own parent",
-                                    }
-                                ),
-                                400,
-                            )
-                        parent = _resolve_folder_id(repo, parent_input, user)
-                        if not parent:
-                            return make_response(
-                                jsonify({"success": False, "message": "Parent folder not found"}),
-                                404,
-                            )
-                        if str(parent["id"]) == pg_folder_id:
-                            return make_response(
-                                jsonify(
-                                    {
-                                        "success": False,
-                                        "message": "Cannot set folder as its own parent",
-                                    }
-                                ),
-                                400,
-                            )
-                        update_fields["parent_id"] = str(parent["id"])
-                    else:
-                        update_fields["parent_id"] = None
-
-                if update_fields:
-                    repo.update(pg_folder_id, user, update_fields)
-
+                    tree.require("move")
+                kwargs = {key: data[key] for key in ("name", "parent_id", "description") if key in data}
+                update_folder(conn, tree.owner_id, folder, **kwargs)
             return make_response(jsonify({"success": True}), 200)
+        except FolderError as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to update folder", err)
 
-    @api.doc(description="Delete a folder")
+    @api.doc(description="Delete a folder; its folders and items move to its parent")
     def delete(self, folder_id):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
         try:
             with db_session() as conn:
-                repo = AgentFoldersRepository(conn)
-                folder = _resolve_folder_id(repo, folder_id, user)
-                if not folder:
-                    return make_response(
-                        jsonify({"success": False, "message": "Folder not found"}),
-                        404,
-                    )
-                pg_folder_id = str(folder["id"])
-                # Clear folder assignments from agents; self-FK
-                # ``ON DELETE SET NULL`` handles child folders.
-                AgentsRepository(conn).clear_folder_for_all(pg_folder_id, user)
-                deleted = repo.delete(pg_folder_id, user)
-            if not deleted:
-                return make_response(
-                    jsonify({"success": False, "message": "Folder not found"}),
-                    404,
-                )
-            return make_response(jsonify({"success": True}), 200)
+                folder, tree = folder_by_id(conn, folder_id, user)
+                tree.require("delete")
+                moved = delete_folder(conn, folder)
+            return make_response(jsonify({"success": True, **moved}), 200)
+        except FolderError as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to delete folder", err)
 
 
 @agents_folders_ns.route("/move_agent")
 class MoveAgentToFolder(Resource):
-    @api.doc(description="Move an agent to a folder or remove from folder")
+    @api.doc(
+        description="File an agent into a folder, or take it out of the workspace's tree (as POST /api/folders/items)"
+    )
     @api.expect(
         api.model(
             "MoveAgent",
@@ -290,52 +219,28 @@ class MoveAgentToFolder(Resource):
         )
     )
     def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        if not data or not data.get("agent_id"):
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not data.get("agent_id"):
             return make_response(jsonify({"success": False, "message": "Agent ID is required"}), 400)
-
-        agent_id_input = data["agent_id"]
-        folder_id_input = data.get("folder_id")
-
         try:
             with db_session() as conn:
-                agents_repo = AgentsRepository(conn)
-                # Folders are the owner's own organisation of their agents.
-                try:
-                    ra = require(conn, "agent", agent_id_input, user, "move_folder")
-                except AccessDenied as denied:
-                    return make_response(
-                        jsonify({"success": False, "message": denied.message}), denied.status
-                    )
-                agent = agents_repo.get_by_id(ra.resource_id)
-                if not agent:
-                    return make_response(
-                        jsonify({"success": False, "message": "Agent not found"}),
-                        404,
-                    )
-                pg_folder_id = None
-                if folder_id_input:
-                    folders_repo = AgentFoldersRepository(conn)
-                    folder = _resolve_folder_id(folders_repo, folder_id_input, user)
-                    if not folder:
-                        return make_response(
-                            jsonify({"success": False, "message": "Folder not found"}),
-                            404,
-                        )
-                    pg_folder_id = str(folder["id"])
-                agents_repo.set_folder(str(agent["id"]), user, pg_folder_id)
+                if visible_item_id(conn, "agent", data["agent_id"], user) is None:
+                    return make_response(jsonify({"success": False, "message": "Agent not found"}), 404)
+                tree = None if data.get("folder_id") else workspace_tree(current_workspace(conn))
+                file_items(conn, user, "agent", data.get("folder_id"), [data["agent_id"]], tree=tree)
             return make_response(jsonify({"success": True}), 200)
+        except (FolderError, WorkspaceError) as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to move agent", err)
 
 
 @agents_folders_ns.route("/bulk_move")
 class BulkMoveAgents(Resource):
-    @api.doc(description="Move multiple agents to a folder")
+    @api.doc(description="File several agents into a folder (null takes them out of the workspace's tree)")
     @api.expect(
         api.model(
             "BulkMoveAgents",
@@ -346,42 +251,18 @@ class BulkMoveAgents(Resource):
         )
     )
     def post(self):
-        decoded_token = request.decoded_token
-        if not decoded_token:
+        user = _user()
+        if not user:
             return make_response(jsonify({"success": False}), 401)
-        user = decoded_token.get("sub")
-        data = request.get_json()
-        if not data or not data.get("agent_ids"):
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("agent_ids"), list) or not data["agent_ids"]:
             return make_response(jsonify({"success": False, "message": "Agent IDs are required"}), 400)
-
-        agent_ids = data["agent_ids"]
-        folder_id_input = data.get("folder_id")
-
         try:
             with db_session() as conn:
-                agents_repo = AgentsRepository(conn)
-                pg_folder_id = None
-                if folder_id_input:
-                    folders_repo = AgentFoldersRepository(conn)
-                    folder = _resolve_folder_id(folders_repo, folder_id_input, user)
-                    if not folder:
-                        return make_response(
-                            jsonify({"success": False, "message": "Folder not found"}),
-                            404,
-                        )
-                    pg_folder_id = str(folder["id"])
-                # Only the caller's own agents move (``move_folder`` is
-                # owner-only); anything else is reported back, not dropped.
-                moved, skipped = [], []
-                for agent_id_input in agent_ids:
-                    agent = agents_repo.get_any(agent_id_input, user)
-                    if agent is not None:
-                        agents_repo.set_folder(str(agent["id"]), user, pg_folder_id)
-                        moved.append(str(agent_id_input))
-                    else:
-                        skipped.append(str(agent_id_input))
-            return make_response(
-                jsonify({"success": True, "moved": moved, "skipped": skipped}), 200
-            )
+                tree = None if data.get("folder_id") else workspace_tree(current_workspace(conn))
+                moved, skipped = file_items(conn, user, "agent", data.get("folder_id"), data["agent_ids"], tree=tree)
+            return make_response(jsonify({"success": True, "moved": moved, "skipped": skipped}), 200)
+        except (FolderError, WorkspaceError) as err:
+            return err.response()
         except Exception as err:
             return _folder_error_response("Failed to move agents", err)

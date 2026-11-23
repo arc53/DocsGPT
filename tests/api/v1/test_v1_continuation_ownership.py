@@ -28,6 +28,9 @@ from tests.api.v1.test_v1_tool_pause_finalization import (
 )
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 CLIENT_TOOL = {
     "type": "function",
     "function": {

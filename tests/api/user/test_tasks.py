@@ -133,7 +133,7 @@ class TestConvertSourceToWikiTask:
 
         result = convert_source_to_wiki("source123", "user1")
 
-        mock_worker.assert_called_once_with(ANY, "source123", "user1")
+        mock_worker.assert_called_once_with(ANY, "source123", "user1", actor_id=None)
         assert result == {"status": "converted"}
 
 
@@ -202,7 +202,7 @@ class TestSyncSourceTask:
 
         mock_sync.assert_called_once_with(
             ANY, {"data": 1}, "job1", "user1", "web", "daily", "classic", "doc1",
-            connection_id=None, actor_id=None,
+            connection_id=None, actor_id=None, notify_skip=True,
         )
         assert result == {"status": "ok"}
 
@@ -370,6 +370,8 @@ class TestIngestConnectorTask:
             idempotency_key=None,
             source_id=None,
             actor_id=None,
+            # A sync someone asked for retries every file the last one couldn't read.
+            retry_failed=True,
         )
         assert result == {"status": "ok"}
 
@@ -398,7 +400,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 23
+        assert sender.add_periodic_task.call_count == 26
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -442,29 +444,38 @@ class TestSetupPeriodicTasks:
         # schedule runs cleanup (24h)
         assert calls[14][0][0] == timedelta(hours=24)
         assert calls[14][1].get("name") == "cleanup-schedule-runs"
-        # sandbox session reaper (60s)
+        # SSE connection and Celery queue gauge (60s)
         assert calls[15][0][0] == timedelta(seconds=60)
-        assert calls[15][1].get("name") == "reap-sandbox-sessions"
+        assert calls[15][1].get("name") == "sse-connections-gauge"
+        # sandbox session reaper (60s)
+        assert calls[16][0][0] == timedelta(seconds=60)
+        assert calls[16][1].get("name") == "reap-sandbox-sessions"
         # stale workflow-run reaper (5m)
-        assert calls[16][0][0] == timedelta(seconds=300)
-        assert calls[16][1].get("name") == "reap-stale-workflow-runs"
+        assert calls[17][0][0] == timedelta(seconds=300)
+        assert calls[17][1].get("name") == "reap-stale-workflow-runs"
         # background jobs: lost leases and deadlines (60s), retention (24h)
-        assert calls[17][0][0] == timedelta(seconds=60)
-        assert calls[17][1].get("name") == "sweep-background-jobs"
-        assert calls[18][0][0] == timedelta(hours=24)
-        assert calls[18][1].get("name") == "cleanup-background-jobs"
-        assert calls[19][1].get("name") == "cleanup-trigger-hits"
+        assert calls[18][0][0] == timedelta(seconds=60)
+        assert calls[18][1].get("name") == "sweep-background-jobs"
+        assert calls[19][0][0] == timedelta(hours=24)
+        assert calls[19][1].get("name") == "cleanup-background-jobs"
+        assert calls[20][1].get("name") == "cleanup-trigger-hits"
+        # vectors of ingests that ended without a source (1h)
+        assert calls[21][0][0] == timedelta(hours=1)
+        assert calls[21][1].get("name") == "cleanup-orphaned-ingests"
+        # stored parses unused for PARSE_CACHE_TTL_DAYS (24h)
+        assert calls[22][0][0] == timedelta(hours=24)
+        assert calls[22][1].get("name") == "cleanup-parsed-files"
         # conversation analytics: the sweep (5 min), retention (24h), the digest (weekly)
-        assert calls[20][0][0] == timedelta(seconds=300)
-        assert calls[20][1].get("name") == "analytics-sweep"
-        assert calls[21][0][0] == timedelta(hours=24)
-        assert calls[21][1].get("name") == "cleanup-conversation-labels"
-        assert calls[22][0][0] == timedelta(weeks=1)
-        assert calls[22][1].get("name") == "analytics-gap-digest"
+        assert calls[23][0][0] == timedelta(seconds=300)
+        assert calls[23][1].get("name") == "analytics-sweep"
+        assert calls[24][0][0] == timedelta(hours=24)
+        assert calls[24][1].get("name") == "cleanup-conversation-labels"
+        assert calls[25][0][0] == timedelta(weeks=1)
+        assert calls[25][1].get("name") == "analytics-gap-digest"
         # A sweep or digest a worker receives after its interval is dropped rather than run late, back to back.
-        assert calls[20][1].get("expires") == 300
-        assert calls[21][1].get("expires") == 24 * 3600
-        assert calls[22][1].get("expires") == 6 * 3600
+        assert calls[23][1].get("expires") == 300
+        assert calls[24][1].get("expires") == 24 * 3600
+        assert calls[25][1].get("expires") == 6 * 3600
 
     @pytest.mark.unit
     def test_the_analytics_queue_gets_nothing_while_analytics_is_off(self, monkeypatch):
@@ -482,7 +493,7 @@ class TestSetupPeriodicTasks:
         assert "analytics-sweep" not in names
         assert "analytics-gap-digest" not in names
         assert "cleanup-conversation-labels" in names
-        assert sender.add_periodic_task.call_count == 21
+        assert sender.add_periodic_task.call_count == 24
 
 
 class TestMcpOauthTask:
@@ -495,7 +506,7 @@ class TestMcpOauthTask:
 
         result = mcp_oauth_task({"server": "mcp"}, "user1")
 
-        mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1")
+        mock_worker.assert_called_once_with(ANY, {"server": "mcp"}, "user1", None)
         assert result == {"url": "http://auth"}
 
 
@@ -988,6 +999,46 @@ class TestCleanupContentScoresTask:
         assert pg_conn.execute(_text("SELECT content_hash FROM content_scores")).scalars().all() == ["recent"]
 
 
+class TestCleanupParsedFilesTask:
+    """Retention janitor for ``parsed_files``."""
+
+    @pytest.mark.unit
+    def test_skips_when_postgres_uri_missing(self, monkeypatch):
+        from docsgpt.api.user.tasks import cleanup_parsed_files
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "POSTGRES_URI", None, raising=False)
+
+        assert cleanup_parsed_files.run() == {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    @pytest.mark.unit
+    def test_deletes_rows_unused_past_the_ttl(self, pg_conn, monkeypatch):
+        from sqlalchemy import text as _text
+
+        from docsgpt.api.user.tasks import cleanup_parsed_files
+        from docsgpt.core.settings import settings
+        from docsgpt.parser import parse_cache
+        from docsgpt.storage.db.repositories.parsed_files import ParsedFilesRepository
+
+        repo = ParsedFilesRepository(pg_conn)
+        repo.store("alice", "old", "key", content="text")
+        repo.store("alice", "recent", "key", content="text")
+        pg_conn.execute(_text(
+            "UPDATE parsed_files SET last_used_at = now() - interval '100 days' WHERE content_sha256 = 'old'"
+        ))
+        monkeypatch.setattr(settings, "POSTGRES_URI", "postgresql://stub", raising=False)
+        monkeypatch.setattr(settings, "PARSE_CACHE_TTL_DAYS", 90)
+
+        @contextmanager
+        def _use_pg_conn():
+            yield pg_conn
+
+        monkeypatch.setattr(parse_cache, "db_session", _use_pg_conn)
+
+        assert cleanup_parsed_files.run() == {"deleted": 1, "ttl_days": 90}
+        assert pg_conn.execute(_text("SELECT content_sha256 FROM parsed_files")).scalars().all() == ["recent"]
+
+
 class TestCleanupTracesTask:
     """Retention janitor for ``request_traces``."""
 
@@ -1170,7 +1221,7 @@ class TestIngestPoisonEvent:
             published.append((user, event_type, payload, scope))
 
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
             side_effect=_fake_publish,
         ):
             _emit_ingest_poison_event(
@@ -1192,7 +1243,7 @@ class TestIngestPoisonEvent:
         from docsgpt.api.user.tasks import _emit_ingest_poison_event
 
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
         ) as mock_publish:
             _emit_ingest_poison_event("ingest", {"user": "u1"})
 
@@ -1204,7 +1255,7 @@ class TestIngestPoisonEvent:
 
         published = []
         with patch(
-            "docsgpt.events.publisher.publish_user_event",
+            "docsgpt.worker.publish_user_event",
             side_effect=lambda *a, **k: published.append((a, k)),
         ):
             _emit_ingest_poison_event(
@@ -1398,3 +1449,15 @@ class TestReconciliationTaskShape:
         assert {k: v for k, v in result.items() if k != "skipped"} == (
             reconciliation.zero_summary()
         )
+
+
+class TestCleanupOrphanedIngests:
+    @pytest.mark.unit
+    def test_runs_the_sweep(self):
+        from docsgpt.api.user.tasks import cleanup_orphaned_ingests
+
+        with patch(
+            "docsgpt.api.user.ingest_orphans.sweep_orphaned_ingests", return_value={"orphans_deleted": 2},
+        ):
+            assert cleanup_orphaned_ingests.run() == {"orphans_deleted": 2}
+

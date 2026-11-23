@@ -1,4 +1,6 @@
+import type { FolderRefDetail } from '../../components/folders/pickedFolders';
 import type { SponsorAudience } from '../sponsorConsent';
+import type { OutsideAccess } from '../../payer/types';
 import type { AccessFields } from '../../utils/accessUtils';
 
 export type ToolSummary = {
@@ -32,14 +34,22 @@ export type ResourceSponsor = {
   can_confirm?: boolean;
 };
 
-/** Why an attached item doesn't run (`ResourceState.reason`). */
+/**
+ * Why an attached item doesn't run (`ResourceState.reason`).
+ * `team_share_ended`: another team stopped sharing it with the agent's team,
+ * or the reader left; `team_locked`: the team that shares it is locked.
+ */
 export type ResourceStateReason =
   | 'deleted'
   | 'owner_lost_access'
+  | 'team_share_ended'
+  | 'team_locked'
   | ResourceSponsorReason
   | 'connection_needs_reconnect'
   | 'connection_removed'
-  | 'connector_disabled';
+  | 'connector_disabled'
+  // A team's account it uses is paused (whoever connected it left).
+  | 'connection_paused';
 
 /** Something to know about an item that runs (`ResourceState.note`). */
 export type ResourceStateNote = 'per_user_account';
@@ -106,6 +116,8 @@ export type Agent = {
   name: string;
   slug?: string;
   description: string;
+  /** Up to four questions shown under the agent's card on a new chat. */
+  starters?: string[];
   image: string;
   source: string;
   sources?: string[];
@@ -130,12 +142,26 @@ export type Agent = {
   /** The caller's role and the actions it allows (see `utils/accessUtils`). */
   access?: AccessFields['access'];
   allowed_actions?: AccessFields['allowed_actions'];
+  /** Where it lives, how it reached this list, and who added it. */
+  workspace?: AccessFields['workspace'];
+  origin?: AccessFields['origin'];
+  created_by?: AccessFields['created_by'];
+  /** Another team's agent shared with this team: the team it comes from. */
+  shared_from?: AccessFields['shared_from'];
   // Owner-agnostic display names resolved server-side (GET /api/get_agent) so a
   // team member viewing a shared agent sees the owner's prompt/source names
   // instead of a blank prompt / "External KB" (the client can only resolve
   // names for resources the caller themselves owns).
   prompt_name?: string | null;
   source_details?: { id: string; name: string | null }[];
+  /** Whole knowledge folders on the agent, read live on every answer. */
+  folders?: string[];
+  /**
+   * Those folders named and counted (GET /api/get_agent): a teammate's
+   * carries `owner_id` and `owner_name`, a stopped one `stopped` and its
+   * `reason`.
+   */
+  folder_details?: FolderRefDetail[];
   // Resources the owner can't use that run as the editor who attached them
   // (GET /api/get_agent, callers who may view the config).
   resource_sponsors?: ResourceSponsor[];
@@ -145,6 +171,13 @@ export type Agent = {
   // Who reaches the agent's resources, sent when the caller may take one
   // over, so the take-over confirmation can say who it extends to.
   sponsor_audience?: SponsorAudience;
+  /** Its owner's account is deactivated, so its key, link, webhook and schedules stop. */
+  owner_inactive?: boolean;
+  /**
+   * Its key, public link and webhook: which are on, who pays, why they are
+   * paused (GET /api/get_agent, callers who manage access details).
+   */
+  outside_access?: OutsideAccess;
   created_at?: string;
   updated_at?: string;
   last_used_at?: string;
@@ -155,6 +188,7 @@ export type Agent = {
   request_limit?: number;
   models?: string[];
   default_model_id?: string;
+  /** The caller's own folder for the agent (folders are personal). */
   folder_id?: string;
   workflow?: string;
   allow_system_prompt_override?: boolean;
@@ -259,14 +293,6 @@ export type GuardrailCatalog = {
   pii_entities: string[];
   default_pii_entities: string[];
   floor: GuardrailsConfig | null;
-};
-
-export type AgentFolder = {
-  id: string;
-  name: string;
-  parent_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
 };
 
 export * from './schedule';

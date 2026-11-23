@@ -3,7 +3,9 @@
 The turn writes the job and queues it; the worker rebuilds the caller's
 ``ToolExecutor`` (same user, agent, caller rules and connections), resolves
 the tool by its row id, runs the call and finishes the job. The call was
-already approved, if it needed approval, before it got here.
+already approved, if it needed approval, before it got here. A model call
+inside it (a tool that asks one, the guardrail judge) bills the turn's payer,
+not the identity the executor is rebuilt as.
 
 At most once: the task is never retried or redelivered, because a tool call
 may have side effects. A worker that dies mid-call leaves the job's heartbeat
@@ -14,9 +16,13 @@ note.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, Tuple
+from contextlib import nullcontext
+from typing import Any, ContextManager, Dict, Optional, Tuple
 
 from docsgpt.background import jobs, pool
+from docsgpt.quotas.payer import RUN_KINDS, billed_to, current_run_billing, payer_for
+from docsgpt.quotas.run_limits import RunLimits
+from docsgpt.quotas.service import NoPayerError
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
@@ -35,10 +41,24 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
         arguments: The model's arguments, without ``background`` / ``watch``.
 
     Returns:
-        A JSON-safe dict.
+        A JSON-safe dict. ``payer``, ``run_kind`` and ``team_id`` are the
+        turn's billing (``billed_to``; every chat and run opens one), each None
+        when the turn set none: the identity then pays. ``workspace_team_id``
+        is the chat's workspace, whose tools the worker offers. ``reader`` is
+        who reads the turn's answers (``resource_access.current_run_reader``),
+        so the worker leaves out the team items they can't use, as the turn
+        does.
     """
+    # Lazy: docsgpt.api's package import pulls in every route module.
+    from docsgpt.api.user.resource_access import current_run_reader
+
+    billing = current_run_billing()
     return {
         "user": executor.user,
+        "reader": current_run_reader(),
+        "payer": billing.payer if billing is not None and billing.payer else None,
+        "run_kind": billing.kind if billing is not None else None,
+        "team_id": billing.team_id if billing is not None else None,
         "user_api_key": executor.user_api_key,
         "agent_id": str(executor.agent_id) if executor.agent_id else None,
         "external_caller": bool(executor.external_caller),
@@ -46,6 +66,8 @@ def worker_payload(executor: Any, tool_data: Dict[str, Any], action_name: str, a
         "api_write_allowlist": sorted(executor.api_write_allowlist or []),
         "conversation_id": executor.conversation_id,
         "message_id": executor.message_id,
+        # The chat's workspace, whose tools the call is looked up among.
+        "workspace_team_id": getattr(executor, "workspace_team_id", None),
         "tool_row_id": str(tool_data.get("id")) if tool_data.get("id") else None,
         "tool_name": tool_data.get("name"),
         "action_name": action_name,
@@ -87,7 +109,15 @@ def _resolve_tool(executor: Any, payload: Dict[str, Any]) -> Optional[Tuple[str,
 
 
 def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Run a queued background call in this worker and finish its job.
+    """Run a queued background call in this worker and finish its job, billed to the turn's payer.
+
+    The executor is rebuilt as the turn's identity (for a team agent reached
+    by its key, the team's principal), so the payer travels separately: the
+    payload's ``payer``, or for a job queued without one, whoever pays for the
+    agent's published access when the identity is a principal. The job's
+    usage keeps the turn's run kind and workspace, and its model calls are
+    checked against the payer's allowance and the agent's limit, as the
+    turn's were.
 
     Args:
         job_id: The job.
@@ -96,6 +126,66 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         A summary for the task result.
     """
+    payer = payload.get("payer")
+    if not payer:
+        try:
+            payer = payer_for(payload.get("user"), payload.get("agent_id"))
+        except Exception:
+            logger.exception("background job %s: reading its payer failed", job_id)
+            payer = None
+    kind = payload.get("run_kind")
+    team_id = payload.get("team_id")
+    agent_id, api_key = payload.get("agent_id"), payload.get("user_api_key")
+    try:
+        limits = RunLimits.start(
+            payer,
+            bucket="agent" if agent_id or api_key else "direct",
+            agent_id=agent_id,
+            api_key=api_key,
+            outside=kind == "published",
+        )
+    except NoPayerError as exc:
+        # A team principal is never a payer: the call never starts, so nothing is spent.
+        logger.error("background job %s: its payer is a team principal; the call is refused", job_id)
+        jobs.finalize(job_id, status="failed", error={"type": "NoPayerError", "message": exc.message})
+        return {"state": "no_payer"}
+    billing = billed_to(
+        payer,
+        # A payload from an older worker may carry neither; an unknown kind is dropped, not fatal.
+        kind=kind if kind in RUN_KINDS else None,
+        team_id=team_id if isinstance(team_id, str) else None,
+        limits=limits,
+    )
+    with billing, _read_as(payload):
+        return _run_job(job_id, payload)
+
+
+def _read_as(payload: Dict[str, Any]) -> ContextManager[None]:
+    """The turn's reader around the worker's call, so a team item they can't use stays out, as in the turn.
+
+    A payload queued before the reader travelled with it: an agent's job reads
+    as an outside caller nobody signed in as, which leaves out any other team's
+    item (the call then fails as no longer available rather than run for
+    someone who may have lost it); an agentless job has no holder refs to judge.
+
+    Args:
+        payload: From :func:`worker_payload`.
+
+    Returns:
+        The context to run the call in.
+    """
+    from docsgpt.api.user.resource_access import run_reader
+
+    if "reader" in payload:
+        reader = payload["reader"]
+    else:
+        reader = "" if payload.get("agent_id") else None
+    # None: the turn ran outside any run's reader, so nothing was left out there either.
+    return run_reader(reader) if reader is not None else nullcontext()
+
+
+def _run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """The body of :func:`run_job`."""
     from celery.exceptions import SoftTimeLimitExceeded
 
     from docsgpt.agents.tool_executor import ToolExecutor, api_tool_action_with_secrets
@@ -128,6 +218,7 @@ def run_job(job_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         executor.conversation_id = payload.get("conversation_id")
         executor.message_id = payload.get("message_id")
+        executor.workspace_team_id = payload.get("workspace_team_id") or None
         found = _resolve_tool(executor, payload)
         if found is None:
             raise LookupError(f"the tool {payload.get('tool_name')!r} is no longer available")

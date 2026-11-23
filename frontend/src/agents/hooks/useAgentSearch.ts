@@ -4,12 +4,16 @@ import { useSelector } from 'react-redux';
 import {
   selectAgents,
   selectSharedAgents,
-  selectTemplateAgents,
 } from '../../preferences/preferenceSlice';
+import { splitByOrigin } from '../../workspace/itemOrigin';
 import { AgentSectionId } from '../agents.config';
 import { Agent } from '../types';
 
-export type AgentFilterTab = 'all' | AgentSectionId;
+/**
+ * A list filter: All, one section, or `team`, the old Team section's
+ * address (read as Shared with you in Personal, the team's agents in a team).
+ */
+export type AgentFilterTab = 'all' | AgentSectionId | 'team';
 
 export type AgentsBySection = Record<AgentSectionId, Agent[]>;
 
@@ -23,7 +27,7 @@ interface UseAgentSearchResult {
   isDataLoaded: Record<AgentSectionId, boolean>;
 }
 
-const filterAgentsByQuery = (
+export const filterAgentsByQuery = (
   agents: Agent[] | null,
   query: string,
 ): Agent[] => {
@@ -48,28 +52,23 @@ export function useAgentSearch(
 ): UseAgentSearchResult {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const templateAgents = useSelector(selectTemplateAgents);
   const allUserAgents = useSelector(selectAgents);
   const sharedAgents = useSelector(selectSharedAgents);
 
-  // /api/get_agents returns both the caller's own agents and agents shared
-  // with their teams (tagged ownership:'team'). Split them so "By me" shows
-  // only owned agents and "Shared with my team" gets its own section.
-  // Preserve the null (still-loading) state for both buckets.
+  // /api/get_agents lists the workspace's own agents (the caller's in
+  // Personal, the team's in a team) and the ones shared in: with the caller
+  // in Personal, by other teams in a team. Split them by `origin`, keeping
+  // the null (still-loading) state for each.
+  const split = useMemo(
+    () => (allUserAgents === null ? null : splitByOrigin(allUserAgents)),
+    [allUserAgents],
+  );
   const userAgents = useMemo(
-    () =>
-      allUserAgents === null
-        ? null
-        : allUserAgents.filter((a) => a.ownership !== 'team'),
-    [allUserAgents],
+    () => (split === null ? null : [...split.own, ...split.team]),
+    [split],
   );
-  const teamAgents = useMemo(
-    () =>
-      allUserAgents === null
-        ? null
-        : allUserAgents.filter((a) => a.ownership === 'team'),
-    [allUserAgents],
-  );
+  const sharedWithYouAgents = split === null ? null : split.shared;
+  const teamSharedAgents = split === null ? null : split.teamShared;
 
   const handleSearchChange = useCallback((query: string) => {
     setSearchQuery(query);
@@ -77,29 +76,29 @@ export function useAgentSearch(
 
   const isDataLoaded = useMemo(
     (): Record<AgentSectionId, boolean> => ({
-      template: templateAgents !== null,
       user: userAgents !== null,
-      team: teamAgents !== null,
+      teamShared: teamSharedAgents !== null,
+      sharedWithYou: sharedWithYouAgents !== null,
       shared: sharedAgents !== null,
     }),
-    [templateAgents, userAgents, teamAgents, sharedAgents],
+    [userAgents, teamSharedAgents, sharedWithYouAgents, sharedAgents],
   );
 
   const totalAgentsBySection = useMemo(
     (): Record<AgentSectionId, number> => ({
-      template: templateAgents?.length ?? 0,
       user: userAgents?.length ?? 0,
-      team: teamAgents?.length ?? 0,
+      teamShared: teamSharedAgents?.length ?? 0,
+      sharedWithYou: sharedWithYouAgents?.length ?? 0,
       shared: sharedAgents?.length ?? 0,
     }),
-    [templateAgents, userAgents, teamAgents, sharedAgents],
+    [userAgents, teamSharedAgents, sharedWithYouAgents, sharedAgents],
   );
 
   const filteredAgentsBySection = useMemo((): AgentsBySection => {
     const filtered = {
-      template: filterAgentsByQuery(templateAgents, searchQuery),
       user: filterAgentsByQuery(userAgents, searchQuery),
-      team: filterAgentsByQuery(teamAgents, searchQuery),
+      teamShared: filterAgentsByQuery(teamSharedAgents, searchQuery),
+      sharedWithYou: filterAgentsByQuery(sharedWithYouAgents, searchQuery),
       shared: filterAgentsByQuery(sharedAgents, searchQuery),
     };
 
@@ -108,15 +107,16 @@ export function useAgentSearch(
     }
 
     return {
-      template: activeFilter === 'template' ? filtered.template : [],
       user: activeFilter === 'user' ? filtered.user : [],
-      team: activeFilter === 'team' ? filtered.team : [],
+      teamShared: activeFilter === 'teamShared' ? filtered.teamShared : [],
+      sharedWithYou:
+        activeFilter === 'sharedWithYou' ? filtered.sharedWithYou : [],
       shared: activeFilter === 'shared' ? filtered.shared : [],
     };
   }, [
-    templateAgents,
     userAgents,
-    teamAgents,
+    teamSharedAgents,
+    sharedWithYouAgents,
     sharedAgents,
     searchQuery,
     activeFilter,
@@ -124,18 +124,18 @@ export function useAgentSearch(
 
   const hasAnyAgents = useMemo(() => {
     return (
-      totalAgentsBySection.template > 0 ||
       totalAgentsBySection.user > 0 ||
-      totalAgentsBySection.team > 0 ||
+      totalAgentsBySection.teamShared > 0 ||
+      totalAgentsBySection.sharedWithYou > 0 ||
       totalAgentsBySection.shared > 0
     );
   }, [totalAgentsBySection]);
 
   const hasFilteredResults = useMemo(() => {
     return (
-      filteredAgentsBySection.template.length > 0 ||
       filteredAgentsBySection.user.length > 0 ||
-      filteredAgentsBySection.team.length > 0 ||
+      filteredAgentsBySection.teamShared.length > 0 ||
+      filteredAgentsBySection.sharedWithYou.length > 0 ||
       filteredAgentsBySection.shared.length > 0
     );
   }, [filteredAgentsBySection]);

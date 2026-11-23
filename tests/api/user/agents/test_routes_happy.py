@@ -100,6 +100,60 @@ class TestGetAgent:
         assert response.json["name"] == "Al"
 
 
+def _share_with_member(pg_conn, agent_id, owner, member):
+    import uuid
+
+    from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+    from docsgpt.storage.db.repositories.team_resource_grants import TeamResourceGrantsRepository
+    from docsgpt.storage.db.repositories.teams import TeamsRepository
+
+    team = TeamsRepository(pg_conn).create("T", f"t-{uuid.uuid4().hex[:8]}", owner)
+    TeamMembersRepository(pg_conn).add_member(str(team["id"]), member)
+    TeamResourceGrantsRepository(pg_conn).grant(
+        str(team["id"]), "agent", agent_id, owner, owner, access_level="viewer",
+    )
+
+
+def _set_active(pg_conn, user_id, active):
+    from sqlalchemy import text
+
+    from docsgpt.storage.db.repositories.users import UsersRepository
+
+    UsersRepository(pg_conn).upsert(user_id)
+    pg_conn.execute(text("UPDATE users SET active = :a WHERE user_id = :u"), {"a": active, "u": user_id})
+
+
+class TestOwnerInactiveFlag:
+    """A teammate sees that a deactivated owner's agent has its outside access paused."""
+
+    def _as(self, app, pg_conn, user, resource, url):
+        with _patch_db(pg_conn), app.test_request_context(url):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            return resource().get()
+
+    def test_the_list_flags_a_deactivated_owners_shared_agent(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgents
+
+        agent = _seed_agent(pg_conn, user="owner-d", name="Shared")
+        _share_with_member(pg_conn, str(agent["id"]), "owner-d", "member-d")
+        _set_active(pg_conn, "owner-d", False)
+        response = self._as(app, pg_conn, "member-d", GetAgents, "/api/get_agents")
+        listed = {a["name"]: a for a in response.json}
+        assert listed["Shared"]["owner_inactive"] is True
+
+    def test_the_detail_flags_it_and_clears_on_reactivation(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import GetAgent
+
+        agent = _seed_agent(pg_conn, user="owner-d", name="Shared")
+        _share_with_member(pg_conn, str(agent["id"]), "owner-d", "member-d")
+        url = f"/api/get_agent?id={agent['id']}"
+        _set_active(pg_conn, "owner-d", False)
+        assert self._as(app, pg_conn, "member-d", GetAgent, url).json["owner_inactive"] is True
+        _set_active(pg_conn, "owner-d", True)
+        assert self._as(app, pg_conn, "member-d", GetAgent, url).json["owner_inactive"] is False
+
+
 class TestGetAgents:
     def test_returns_401_unauthenticated(self, app):
         from docsgpt.api.user.agents.routes import GetAgents
@@ -608,7 +662,7 @@ class TestUpdateAgent:
             ({"chunks": "not-an-int"}, "chunks"),
             ({"tools": "not-a-list"}, "tools"),
             ({"prompt_id": "not-a-uuid"}, "prompt_id"),
-            ({"description": "   "}, "description"),
+            ({"description": "   ", "status": "published"}, "description"),
         ],
     )
     def test_validation_rejection_is_logged(
@@ -695,6 +749,88 @@ class TestUpdateAgent:
                 "name": "n", "description": "d", "status": "draft",
                 "chunks": -1,
             },
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 400
+
+    def test_updates_published_agent_with_zero_chunks(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-zero-chunks"
+        agent = _seed_agent(pg_conn, user=user, with_source=False, chunks=0)
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"tools": []},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+
+    def test_publishes_agent_with_zero_chunks(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        user = "u-publish-zero-chunks"
+        agent = _seed_agent(pg_conn, user=user, with_source=False, status="draft")
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"status": "published", "chunks": "0"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+        assert AgentsRepository(pg_conn).get(str(agent["id"]), user)["chunks"] == 0
+
+    def test_draft_saves_with_empty_description(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-draft-no-description"
+        agent = _seed_agent(
+            pg_conn, user=user, with_source=False, status="draft", description="",
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"name": "renamed", "description": "", "status": "draft"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 200
+
+    def test_published_agent_rejects_empty_description(self, app, pg_conn):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-published-no-description"
+        agent = _seed_agent(pg_conn, user=user, with_source=False)
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"description": ""},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = UpdateAgent().put(str(agent["id"]))
+        assert response.status_code == 400
+
+    @pytest.mark.parametrize("description", ["", "   "])
+    def test_publishing_draft_with_blank_description_returns_400(self, app, pg_conn, description):
+        from docsgpt.api.user.agents.routes import UpdateAgent
+
+        user = "u-publish-no-description"
+        agent = _seed_agent(
+            pg_conn, user=user, with_source=False, status="draft", description=description,
+        )
+
+        with _patch_db(pg_conn), app.test_request_context(
+            f"/api/update_agent/{agent['id']}", method="PUT",
+            json={"status": "published"},
         ):
             from flask import request
             request.decoded_token = {"sub": user}

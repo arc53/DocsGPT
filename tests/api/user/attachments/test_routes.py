@@ -40,6 +40,17 @@ def _patch_agents_repo(row):
     )
 
 
+@pytest.fixture(autouse=True)
+def _owners_active(monkeypatch):
+    """The fake read connection is None: every agent owner reads as active there."""
+    from docsgpt.api import owner_pause
+
+    real = owner_pause.any_deactivated
+    monkeypatch.setattr(
+        owner_pause, "any_deactivated", lambda conn, *ids: False if conn is None else real(conn, *ids)
+    )
+
+
 def _get_response_status(response):
     if isinstance(response, tuple):
         return response[1]
@@ -554,6 +565,26 @@ class TestResolveAuthenticatedUser:
                 result = _resolve_authenticated_user()
                 assert hasattr(result, "status_code")
                 assert result.status_code == 401
+
+    def test_refuses_the_key_of_a_deactivated_owner(self, flask_app, monkeypatch):
+        from docsgpt.api import owner_pause
+        from docsgpt.api.user.attachments import routes
+
+        monkeypatch.setattr(owner_pause, "any_deactivated", lambda conn, *ids: True)
+        app = Flask(__name__)
+        p1, p2 = _patch_agents_repo({"key": "valid_key", "user_id": "apikey_user"})
+
+        with p1, p2:
+            with app.test_request_context(
+                "/api/store_attachment",
+                method="POST",
+                data={"api_key": "valid_key"},
+            ):
+                request.decoded_token = None
+                result = routes._resolve_authenticated_user()
+                assert result.status_code == 403
+                assert result.json["code"] == "agent_paused"
+                assert "apikey_user" not in result.get_data(as_text=True)
 
     def test_returns_none_no_auth(self, flask_app):
         from docsgpt.api.user.attachments.routes import _resolve_authenticated_user

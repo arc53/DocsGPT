@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.storage.db.repositories.agents import AgentsRepository
-from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+from docsgpt.storage.db.repositories.team_members import (
+    MembershipChangeRefused,
+    TeamMembersRepository,
+)
 from docsgpt.storage.db.repositories.team_resource_grants import (
     TeamResourceGrantsRepository,
 )
@@ -101,11 +105,42 @@ class TestTeamMembers:
         members = TeamMembersRepository(pg_conn)
         team = _new_team(pg_conn)
         members.add_member(team["id"], "alice", role="team_admin")
+        # The legacy member role is stored as a viewer.
         members.set_manual_role(team["id"], "alice", "team_member")
-        assert members.role_for("alice", team["id"]) == "team_member"
+        assert members.role_for("alice", team["id"]) == "team_viewer"
         # Exactly one manual row remains.
         rows = [m for m in members.list_members(team["id"]) if m["source"] == "manual"]
-        assert len(rows) == 1 and rows[0]["role"] == "team_member"
+        assert len(rows) == 1 and rows[0]["role"] == "team_viewer"
+
+    def test_new_roles_and_the_viewer_default(self, pg_conn):
+        members = TeamMembersRepository(pg_conn)
+        team = _new_team(pg_conn)
+        members.add_member(team["id"], "bob")
+        members.add_member(team["id"], "carol", role="team_editor")
+        stored = {m["user_id"]: m["role"] for m in members.list_members(team["id"])}
+        assert stored == {"bob": "team_viewer", "carol": "team_editor"}
+        assert members.role_for("carol", team["id"]) == "team_editor"
+        assert members.role_for("bob", team["id"]) == "team_viewer"
+        members.change_membership(team["id"], "bob", "team_member", actor="alice")
+        assert {m["role"] for m in members.list_members(team["id"]) if m["user_id"] == "bob"} == {"team_viewer"}
+
+    def test_role_for_answers_the_strongest_real_role(self, pg_conn):
+        members = TeamMembersRepository(pg_conn)
+        team = _new_team(pg_conn)
+        members.add_member(team["id"], "bob", role="team_viewer", source="manual")
+        members.add_member(team["id"], "bob", role="team_editor", source="oidc_group")
+        assert members.role_for("bob", team["id"]) == "team_editor"
+        members.add_member(team["id"], "bob", role="team_admin", source="scim")
+        assert members.role_for("bob", team["id"]) == "team_admin"
+
+    def test_roles_by_team(self, pg_conn):
+        members = TeamMembersRepository(pg_conn)
+        one, two = _new_team(pg_conn), _new_team(pg_conn)
+        members.add_member(one["id"], "bob", role="team_editor")
+        members.add_member(two["id"], "bob", role="team_viewer")
+        members.add_member(two["id"], "bob", role="team_admin", source="oidc_group")
+        assert members.roles_by_team("bob") == {str(one["id"]): "team_editor", str(two["id"]): "team_admin"}
+        assert members.roles_by_team("nobody") == {}
 
     def test_count_admins_and_last_admin_guard_data(self, pg_conn):
         members = TeamMembersRepository(pg_conn)
@@ -126,6 +161,85 @@ class TestTeamMembers:
         assert members.is_member("alice", team["id"]) is True
         members.remove_member(team["id"], "alice")
         assert members.is_member("alice", team["id"]) is False
+
+
+class TestChangeMembership:
+    """``change_membership``: the guarded write every membership route uses."""
+
+    def _team(self, pg_conn, owner="alice", admins=("alice",), members=()):
+        team = _new_team(pg_conn, owner=owner)
+        repo = TeamMembersRepository(pg_conn)
+        for user in admins:
+            repo.add_member(team["id"], user, role="team_admin")
+        for user in members:
+            repo.add_member(team["id"], user, role="team_member")
+        return team["id"], repo
+
+    def test_owner_cannot_be_demoted(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"))
+        with pytest.raises(MembershipChangeRefused) as refused:
+            repo.change_membership(tid, "alice", "team_member", actor="bob")
+        assert refused.value.reason == MembershipChangeRefused.OWNER
+        assert refused.value.change == "demote"
+        assert refused.value.self_change is False
+        assert repo.role_for("alice", tid) == "team_admin"
+
+    @pytest.mark.parametrize("role", ["team_editor", "team_viewer", "editor", "viewer"])
+    def test_owner_cannot_be_demoted_to_any_lesser_role(self, pg_conn, role):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"))
+        with pytest.raises(MembershipChangeRefused) as refused:
+            repo.change_membership(tid, "alice", role, actor="bob")
+        assert refused.value.reason == MembershipChangeRefused.OWNER
+        assert repo.role_for("alice", tid) == "team_admin"
+
+    def test_owner_role_is_not_assignable(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"))
+        with pytest.raises(ValueError):
+            repo.change_membership(tid, "bob", "owner", actor="alice")
+
+    def test_only_people_can_be_added(self, pg_conn):
+        tid, repo = self._team(pg_conn)
+        other = _new_team(pg_conn)
+        for not_a_person in (f"__team__{other['id']}", "ghost", "__system__"):
+            with pytest.raises(MembershipChangeRefused) as refused:
+                repo.change_membership(tid, not_a_person, "team_viewer", actor="alice")
+            assert refused.value.reason == MembershipChangeRefused.NOT_A_PERSON
+            assert not repo.is_member(not_a_person, tid)
+        assert UsersRepository(pg_conn).get("ghost") is None
+
+    def test_owner_cannot_be_removed_even_by_themselves(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"))
+        with pytest.raises(MembershipChangeRefused) as refused:
+            repo.change_membership(tid, "alice", None, actor="alice")
+        assert refused.value.reason == MembershipChangeRefused.OWNER
+        assert refused.value.change == "remove"
+        assert refused.value.self_change is True
+        assert repo.is_member("alice", tid)
+
+    def test_last_admin_cannot_be_demoted_or_removed(self, pg_conn):
+        tid, repo = self._team(pg_conn, owner="carol", admins=("bob",), members=("dave",))
+        for role in ("team_member", "team_editor", "editor", "viewer", None):
+            with pytest.raises(MembershipChangeRefused) as refused:
+                repo.change_membership(tid, "bob", role, actor="bob")
+            assert refused.value.reason == MembershipChangeRefused.LAST_ADMIN
+        assert repo.role_for("bob", tid) == "team_admin"
+
+    def test_other_changes_go_through(self, pg_conn):
+        tid, repo = self._team(pg_conn, admins=("alice", "bob"), members=("dave",))
+        repo.change_membership(tid, "bob", "team_member", actor="alice")
+        assert repo.role_for("bob", tid) == "team_viewer"
+        repo.change_membership(tid, "dave", "team_admin", actor="alice")
+        assert repo.role_for("dave", tid) == "team_admin"
+        repo.change_membership(tid, "dave", None, actor="alice")
+        assert not repo.is_member("dave", tid)
+        UsersRepository(pg_conn).upsert("erin")
+        repo.change_membership(tid, "erin", "team_member", actor="alice")
+        assert repo.role_for("erin", tid) == "team_viewer"
+        repo.change_membership(tid, "erin", "editor", actor="alice")
+        assert repo.role_for("erin", tid) == "team_editor"
+        # Promoting the owner, or re-adding them as admin, is not a demotion.
+        repo.change_membership(tid, "alice", "team_admin", actor="alice")
+        assert repo.role_for("alice", tid) == "team_admin"
 
 
 class TestResourceGrants:
@@ -174,7 +288,8 @@ class TestTeamScope:
         grants = TeamResourceGrantsRepository(pg_conn)
         scope = TeamScopeRepository(pg_conn)
         members.add_member(team["id"], "bob", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        rid = str(AgentsRepository(pg_conn).create("alice", "a", "published")["id"])
         grants.grant(team["id"], "agent", rid, owner_id="alice", granted_by="alice")
         assert scope.visible_resource_ids("bob", "agent") == {rid}
         # A non-member sees nothing.
@@ -203,7 +318,10 @@ class TestTeamScope:
         scope = TeamScopeRepository(pg_conn)
         members.add_member(t1["id"], "bob", role="team_member")
         members.add_member(t2["id"], "bob", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        rid = str(UserToolsRepository(pg_conn).create("alice", "api_tool")["id"])
         grants.grant(t1["id"], "tool", rid, owner_id="alice", granted_by="alice")  # viewer
         grants.grant(
             t2["id"], "tool", rid, owner_id="alice", granted_by="alice", access_level="editor"
@@ -224,7 +342,8 @@ class TestPerMemberSharing:
         scope = TeamScopeRepository(pg_conn)
         members.add_member(team["id"], "bob", role="team_member")
         members.add_member(team["id"], "carol", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        rid = str(AgentsRepository(pg_conn).create("alice", "a", "published")["id"])
         grants.grant(
             team["id"], "agent", rid, owner_id="alice", granted_by="alice", target_user_id="bob"
         )
@@ -241,7 +360,8 @@ class TestPerMemberSharing:
         scope = TeamScopeRepository(pg_conn)
         members.add_member(team["id"], "bob", role="team_member")
         members.add_member(team["id"], "carol", role="team_member")
-        rid = str(uuid.uuid4())
+        # A grant counts only on an item that exists, while its owner is in the team.
+        rid = str(AgentsRepository(pg_conn).create("alice", "a", "published")["id"])
         grants.grant(team["id"], "agent", rid, owner_id="alice", granted_by="alice")  # whole team
         grants.grant(
             team["id"], "agent", rid, owner_id="alice", granted_by="alice",

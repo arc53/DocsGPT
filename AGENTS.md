@@ -31,7 +31,7 @@ Use these commands once the dev prerequisites above are satisfied.
 ```bash
 uv sync                    # deps from uv.lock + the dev group (test tools, ruff) + docsgpt itself, editable
 source .venv/bin/activate  # macOS/Linux
-# pip instead: pip install -r docsgpt/requirements.txt -r tests/requirements.txt && pip install -e .
+# pip instead: pip install -r tests/requirements.txt && pip install -e .   (core + docling + test tools)
 # Optional extras (not installed by default); name every extra you want, `uv sync` removes the others:
 # uv sync --extra docling   # docling parser engine (OCR backend, structured output)
 # uv sync --extra milvus    # VECTOR_STORE=milvus
@@ -82,8 +82,9 @@ in `docsgpt/asgi.py`:
 - the `/mcp` FastMCP endpoint,
 - the chat reconnect reader `GET /api/messages/<id>/events`,
 - the notification stream `GET /api/events`,
-- the remote-device command stream `GET /api/devices/sessions/<id>/events`, and
-- artifact downloads `GET /api/artifacts/<id>/download`.
+- the remote-device command stream `GET /api/devices/sessions/<id>/events`,
+- artifact downloads `GET /api/artifacts/<id>/download`, and
+- a workflow run's file downloads `GET /api/workflow_runs/<run_id>/artifacts/<artifact_id>/download`.
 
 These are native-async Starlette routes because they hold a response open
 for a long time; on Flask each would pin a WSGI threadpool slot. Under
@@ -177,11 +178,15 @@ python -m pytest
 ```
 
 The suite needs the test dependencies (`uv sync` installs the `dev` group; pip users
-install `tests/requirements.txt`, and pytest-cov is mandatory because `pytest.ini`
-passes `--cov`). DB-backed tests start a throwaway cluster through
+install `tests/requirements.txt`). Coverage is off by default; CI passes `--cov=docsgpt`,
+and `python -m pytest --cov=docsgpt --cov-report=html` gives a local report. DB-backed tests start a throwaway cluster through
 `pytest-postgresql`, so the PostgreSQL server binaries (`pg_ctl`, `initdb`) must be
 on `PATH` or reachable through `pg_config`; a running Postgres is not required.
-See CONTRIBUTING.md "Running the tests".
+DB tests share one database per worker and roll back through `pg_conn`; a test that
+commits needs `@pytest.mark.fresh_db`, or it fails at teardown naming the tables it wrote.
+Mark only tests that must commit (each one clones a database); `test_migration_*` files get it
+automatically. Keep tests fast: patch sleeps and retry back-off and assert the attempt count,
+rather than waiting them out. See CONTRIBUTING.md "Running the tests".
 
 On **macOS**, run the suite with `KMP_DUPLICATE_LIB_OK=TRUE`:
 
@@ -201,6 +206,7 @@ process, so a green run on one selection and an abort on another is expected.
 
 ```bash
 cd frontend && npm run lint
+cd frontend && npm test
 cd frontend && npm run build
 ```
 
@@ -210,8 +216,12 @@ cd frontend && npm run build
 cd docs && npm run dates:check && npm run build
 ```
 
-Read `docs/AGENTS.md` first: every page carries a `lastUpdated` date that you bump when
-you change what the page tells the reader.
+Read `docs/AGENTS.md` first. Leave the `lastUpdated` date of an existing page alone (a new
+page gets today's date) and leave the generated files alone: the "Generated docs" workflow
+updates both on `main` after the merge, and CI fails a pull request that changes them. For a
+docs change a reader would not notice (a typo, wording polish), put `[keep-date]` in the pull
+request title or in the subject line of every commit that changes the page, so the page keeps
+its date; `docs/AGENTS.md` has the details.
 
 If Vale is installed locally and you edited prose, also run:
 
@@ -246,8 +256,9 @@ vale .
 - Parsers live in `docsgpt/parser/` and handle different document formats in the ingestion stage.
 - Agents and tools are in `docsgpt/agents/` and `docsgpt/agents/tools/`.
 - Celery setup/config lives in `docsgpt/celery_init.py` and `docsgpt/celeryconfig.py`.
-- Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`; regenerate the docs reference with `python -m docsgpt.core.settings.reference --write`.
-- REST routes are documented from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale).
+- Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`. Don't regenerate the docs reference (`docs/content/Deploying/Settings-Reference.mdx`) in your branch: the "Generated docs" workflow (`.github/workflows/generated-docs.yml`) does it on `main` after the merge, and CI fails a pull request that changes the file.
+- REST routes are documented from the flask-restx Swagger document; the snapshot `docs/data/swagger.json` is regenerated the same way, on `main` after the merge, so leave it out of your branch too.
+- A curated MCP connector preset is one file, `docsgpt/connectors/presets/mcp/<name>.yaml` (see the README there). The docs' preset table is generated from those files after the merge.
 
 ### Frontend
 
@@ -260,6 +271,8 @@ vale .
   keep typography, spacing, radius and motion on its roles.
 - Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
   key in all eight locales under `frontend/src/locale/` (`de en es fr jp ru zh zh-TW`). Admin pages stay English.
+  The files keep their keys sorted at every level: put a new key where its name goes, or run `npm run locale:sort`
+  (the pre-commit hook does). `npm test` and CI fail on an unsorted file.
 
 #### Icons
 

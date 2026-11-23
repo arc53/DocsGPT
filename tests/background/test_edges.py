@@ -22,6 +22,9 @@ from docsgpt.sandbox.base import DetachedState, ExecResult
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 
 
+pytestmark = pytest.mark.fresh_db
+
+
 def _context(conversation_id, message_id=None, auto_resume=True):
     context = BackgroundContext(user_id="u1", conversation_id=conversation_id, origin_message_id=message_id)
     context._auto_resume = auto_resume
@@ -245,6 +248,86 @@ class TestCeleryRunnerEdges:
         assert failed["status"] == "failed"
         assert "no longer available" in failed["error"]["message"]
 
+    def test_the_rebuilt_executor_keeps_the_turns_team_workspace(self, bg_db, conversation, monkeypatch):
+        # An agentless team chat offers the team's tools; the worker must look them up there too.
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        row = _job(conversation[0], conversation[1], key="k-ws", runner="celery")
+        seen = []
+
+        def _tools(self):
+            seen.append(self.workspace_team_id)
+            return {}
+
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolExecutor.get_tools", _tools)
+        turn = SimpleNamespace(
+            user="u1", user_api_key=None, agent_id=None, external_caller=False, public_link_caller=False,
+            api_write_allowlist=[], conversation_id=conversation[0], message_id=conversation[1],
+            workspace_team_id="team-7",
+        )
+        payload = celery_runner.worker_payload(turn, {"id": "x", "name": "t"}, "a", {})
+
+        assert payload["workspace_team_id"] == "team-7"
+        celery_runner.run_job(row["id"], payload)
+        assert seen == ["team-7"]
+
+    @pytest.mark.parametrize(("turn_reader", "agent_id"), [
+        ("rita", "00000000-0000-0000-0000-0000000000a1"),
+        ("", "00000000-0000-0000-0000-0000000000a1"),
+        (None, None),
+    ])
+    def test_the_worker_reads_as_the_turns_reader(self, bg_db, conversation, monkeypatch, turn_reader, agent_id):
+        # The foreground call leaves out another team's tool its reader can't use; the queued one must too.
+        from types import SimpleNamespace
+
+        from docsgpt.api.user.resource_access import current_run_reader, run_reader
+
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        row = _job(conversation[0], conversation[1], key=f"k-reader-{turn_reader}", runner="celery")
+        seen = []
+
+        def _tools(self):
+            seen.append(current_run_reader())
+            return {}
+
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolExecutor.get_tools", _tools)
+        turn = SimpleNamespace(
+            user="u1", user_api_key=None, agent_id=agent_id, external_caller=False, public_link_caller=False,
+            api_write_allowlist=[], conversation_id=conversation[0], message_id=conversation[1],
+            workspace_team_id=None,
+        )
+        if turn_reader is None:
+            payload = celery_runner.worker_payload(turn, {"id": "x", "name": "t"}, "a", {})
+        else:
+            with run_reader(turn_reader):
+                payload = celery_runner.worker_payload(turn, {"id": "x", "name": "t"}, "a", {})
+
+        assert payload["reader"] == turn_reader
+        celery_runner.run_job(row["id"], payload)
+        assert seen == [turn_reader]
+        assert current_run_reader() is None
+
+    @pytest.mark.parametrize(("agent_id", "expected"), [
+        ("00000000-0000-0000-0000-0000000000a1", ""),
+        (None, None),
+    ])
+    def test_a_payload_queued_before_the_reader_travelled(self, bg_db, conversation, monkeypatch, agent_id, expected):
+        # An agent's job reads as nobody (another team's items stay out); an agentless one has no refs to judge.
+        from docsgpt.api.user.resource_access import current_run_reader
+
+        monkeypatch.setattr(jobs, "_deliver", lambda row: None)
+        row = _job(conversation[0], conversation[1], key=f"k-old-{agent_id}", runner="celery")
+        seen = []
+
+        def _tools(self):
+            seen.append(current_run_reader())
+            return {}
+
+        monkeypatch.setattr("docsgpt.agents.tool_executor.ToolExecutor.get_tools", _tools)
+        celery_runner.run_job(row["id"], {"user": "u1", "agent_id": agent_id, "tool_row_id": "x", "action_name": "a"})
+        assert seen == [expected]
+
     def test_soft_time_limit(self, bg_db, conversation, monkeypatch):
         from celery.exceptions import SoftTimeLimitExceeded
 
@@ -410,6 +493,8 @@ class TestContinuationEdges:
         assert captured["endpoint"] == "continuation"
         assert captured["conversation_id"] == "c"
         assert captured["query"].rstrip().endswith("NO_REPLY.")
+        # The turn carries on the chat's run: the person chatting pays.
+        assert captured["payer"] == "u1"
 
     @pytest.mark.parametrize("agent_type, bounded", [("classic", True), ("workflow", False)])
     def test_only_agents_that_can_defer_run_under_a_round_budget(self, monkeypatch, agent_type, bounded):

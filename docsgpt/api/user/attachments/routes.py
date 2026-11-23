@@ -11,6 +11,7 @@ from flask_restx import fields, Namespace, Resource
 from werkzeug.datastructures import FileStorage
 
 from docsgpt.api import api
+from docsgpt.api.owner_pause import outside_access_refusal
 from docsgpt.cache import get_redis_instance
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -95,9 +96,15 @@ def _resolve_authenticated_user():
     if api_key:
         with db_readonly() as conn:
             agent = AgentsRepository(conn).find_by_key(api_key)
+            paused = outside_access_refusal(conn, agent)
         if not agent:
             return make_response(
                 jsonify({"success": False, "message": "Invalid API key"}), 401
+            )
+        if paused is not None:
+            # The key pauses while its owner or payer is deactivated, or nobody pays for it.
+            return make_response(
+                jsonify({"success": False, "message": paused.message, "code": paused.code}), 403
             )
         return agent.get("user_id")
 

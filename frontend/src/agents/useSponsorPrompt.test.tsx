@@ -98,6 +98,39 @@ describe('useSponsorPrompt with a workflow save', () => {
     expect(document.querySelector('[data-slot="modal-content"]')).toBeNull();
   });
 
+  it('names a knowledge folder, says it stays live, and confirms its key', async () => {
+    const folderRefusal = json(409, {
+      code: 'sponsor_confirmation_required',
+      resources: [
+        { key: 'folder:f1', type: 'folder', id: 'f1', name: 'Carriers' },
+      ],
+      audience: { teams: [], api_key: false, public_link: false },
+    });
+    const send = vi
+      .fn<(keys: string[]) => Promise<Response>>()
+      .mockResolvedValueOnce(folderRefusal)
+      .mockResolvedValueOnce(json(200, { success: true }));
+    const onOutcome = await start(send);
+    const text = document.body.textContent;
+    expect(text).toContain('Carriers');
+    expect(text).toContain('agents.form.sponsorConfirm.types.folder');
+    expect(text).toContain('agents.form.sponsorConfirm.folderLive');
+    await act(async () =>
+      dialogButton('agents.form.sponsorConfirm.confirm').click(),
+    );
+    expect(send.mock.calls.map(([keys]) => keys)).toEqual([[], ['folder:f1']]);
+    expect(onOutcome).toHaveBeenCalledWith('saved');
+  });
+
+  it('adds no live-folder note without a folder', async () => {
+    const send = vi.fn(async () => refused());
+    await start(send);
+    expect(document.body.textContent).not.toContain(
+      'agents.form.sponsorConfirm.folderLive',
+    );
+    await act(async () => dialogButton('cancel').click());
+  });
+
   it('ends as cancelled, not failed, when the caller declines', async () => {
     const send = vi.fn(async () => refused());
     const onOutcome = await start(send);

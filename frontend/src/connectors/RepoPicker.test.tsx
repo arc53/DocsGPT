@@ -221,4 +221,26 @@ describe('RepoPicker', () => {
     await act(async () => retry.click());
     expect(service.repositories).toHaveBeenCalledTimes(2);
   });
+
+  // A team's account is browsed only by whoever connected it, and not while
+  // it is paused: those refusals are worded, with nothing to retry or sign in.
+  it.each([
+    ['connection_picker_owner_only', 'pickerOwnerOnly'],
+    ['connection_paused', 'paused'],
+  ])('words a team account refusal (%s), with no retry', async (code, key) => {
+    service.repositories.mockResolvedValue({
+      success: false,
+      error: code,
+      message: 'Only the Admin who connected it',
+    });
+    await render(null, vi.fn(), vi.fn());
+    expect(container.textContent).toContain(
+      `settings.connectors.team.errors.${key}`,
+    );
+    const labels = Array.from(container.querySelectorAll('button')).map(
+      (b) => b.textContent,
+    );
+    expect(labels).not.toContain('retry');
+    expect(labels).not.toContain('settings.connectors.status.reconnect');
+  });
 });

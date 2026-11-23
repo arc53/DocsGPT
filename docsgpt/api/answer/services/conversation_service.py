@@ -13,13 +13,10 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import text as sql_text
 
+from docsgpt import tracing
 from docsgpt.activity.flags import cancel_streams
 from docsgpt.core.settings import settings
 from docsgpt.events.publisher import publish_user_event
-from docsgpt.api.answer.services.compression.types import (
-    COMPRESSION_SUMMARY_MARKER,
-    COMPRESSION_SUMMARY_PROMPT,
-)
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.conversation_unread import ConversationUnreadRepository
@@ -43,6 +40,56 @@ TERMINATED_RESPONSE_PLACEHOLDER = (
 # A failed answer's codes for an end its user chose: a Stop, or leaving the
 # stream (New Chat, a reload, a closed tab). Neither marks the chat failed.
 _USER_ENDED_CODES = frozenset({"stopped", "client_disconnect"})
+
+
+#: ``team_id`` left out of a create: take it from the chat's agent.
+_FROM_AGENT: Any = object()
+
+
+def agent_chat_team_id(
+    conn: Any, *, agent_id: Optional[str], api_key: Optional[str], chatter: Optional[str]
+) -> Optional[str]:
+    """The team workspace a new chat with an agent lives in, for this chatter.
+
+    A team agent's chat lives in its team when the chatter is a member or the
+    team's own principal (an API-key, widget or ``/v1`` run). Anyone else
+    reaching it (a public link) chats in their own Personal workspace, as with
+    a personal agent.
+
+    Args:
+        conn: Open connection.
+        agent_id: The agent's id, if known.
+        api_key: The agent's key, when the chat came through it.
+        chatter: Who the conversation is stored under (the token's ``sub``).
+
+    Returns:
+        Optional[str]: The team id, or None for Personal.
+    """
+    from docsgpt.workspaces.principal import team_of_principal
+    from docsgpt.workspaces.roles import team_role_for
+
+    agent = None
+    if agent_id and looks_like_uuid(str(agent_id)):
+        agent = AgentsRepository(conn).get_by_id(str(agent_id))
+    if agent is None and api_key:
+        agent = AgentsRepository(conn).find_by_key(api_key)
+    owner = (agent or {}).get("user_id")
+    team_id = team_of_principal(owner)
+    if team_id is None or not chatter:
+        return None
+    if chatter == owner or team_role_for(conn, chatter, team_id):
+        return team_id
+    return None
+
+
+def _create_team_id(team_id: Any, *, agent_id: Optional[str], api_key: Optional[str], chatter: str) -> Optional[str]:
+    """The ``team_id`` a new conversation is created with: as given, else from its agent."""
+    if team_id is not _FROM_AGENT:
+        return str(team_id) if team_id else None
+    if not agent_id and not api_key:
+        return None
+    with db_readonly() as conn:
+        return agent_chat_team_id(conn, agent_id=agent_id, api_key=api_key, chatter=chatter)
 
 
 def _final_finish_reason(llm: Any) -> Optional[str]:
@@ -129,6 +176,7 @@ class ConversationService:
         metadata: Optional[Dict[str, Any]] = None,
         visibility: str = "hidden",
         status: str = "complete",
+        team_id: Any = _FROM_AGENT,
     ) -> str:
         """Save or update a conversation in Postgres.
 
@@ -136,6 +184,10 @@ class ConversationService:
         an answer. It defaults to ``complete``, matching the column default
         this path relied on before; passing ``failed`` is what stops a blank
         errored turn from rendering as an empty bubble with no retry.
+
+        ``team_id`` is the workspace a new conversation lives in (None for
+        Personal); left out, it comes from the agent
+        (:func:`agent_chat_team_id`). An existing conversation keeps its own.
 
         Returns the string conversation id (PG UUID as string, or the
         caller-provided id if it was already a UUID).
@@ -194,6 +246,8 @@ class ConversationService:
                 conv_pg_id = str(conv["id"])
                 repo.update_message_at(conv_pg_id, index, message_payload)
                 repo.truncate_after(conv_pg_id, index)
+                # The row at ``index`` was rewritten: a point covering it is stale.
+                repo.prune_compression_points(conv_pg_id, keep_up_to=index - 1)
             cancel_streams(repo.retired_message_ids)
             return conversation_id
         elif conversation_id:
@@ -246,6 +300,9 @@ class ConversationService:
                     agent = AgentsRepository(conn).find_by_key(api_key)
                 if agent:
                     resolved_api_key = agent.get("key")
+            new_team_id = _create_team_id(
+                team_id, agent_id=resolved_agent_id, api_key=resolved_api_key, chatter=user_id
+            )
 
             with db_session() as conn:
                 repo = ConversationsRepository(conn)
@@ -261,6 +318,7 @@ class ConversationService:
                         else None
                     ),
                     visibility=visibility,
+                    team_id=new_team_id,
                 )
                 conv_pg_id = str(conv["id"])
                 append_payload = dict(message_payload)
@@ -285,6 +343,7 @@ class ConversationService:
         status: str = "pending",
         index: Optional[int] = None,
         passthrough: Optional[Dict[str, Any]] = None,
+        team_id: Any = _FROM_AGENT,
     ) -> Dict[str, str]:
         """Reserve the placeholder message row before the LLM call.
 
@@ -293,6 +352,9 @@ class ConversationService:
         lands at ``position = index`` rather than appending.
         ``passthrough`` (already bounded) replaces the conversation's
         stored values; a turn without any clears them.
+        ``team_id`` is the workspace a new conversation lives in (None for
+        Personal); left out, it comes from the agent
+        (:func:`agent_chat_team_id`). It never changes afterwards.
 
         Returns ``{"conversation_id", "message_id", "request_id"}``.
         """
@@ -312,6 +374,10 @@ class ConversationService:
                 agent = AgentsRepository(conn).find_by_key(api_key)
             if agent:
                 resolved_api_key = agent.get("key")
+        new_team_id = (
+            None if conversation_id
+            else _create_team_id(team_id, agent_id=resolved_agent_id, api_key=resolved_api_key, chatter=user_id)
+        )
 
         with db_session() as conn:
             repo = ConversationsRepository(conn)
@@ -343,6 +409,7 @@ class ConversationService:
                     ),
                     visibility=visibility,
                     passthrough=passthrough,
+                    team_id=new_team_id,
                 )
                 conv_pg_id = str(conv["id"])
 
@@ -518,7 +585,9 @@ class ConversationService:
         if title_inputs and status in ("complete", "failed"):
             if async_title_generation:
                 threading.Thread(
-                    target=self._generate_title_safely,
+                    # The title is part of the run: its call bills the run's
+                    # payer, kind and workspace, and meets its limits.
+                    target=tracing.wrap(self._generate_title_safely),
                     args=(message_id, title_inputs),
                     name="docsgpt-title-generation",
                     daemon=True,
@@ -547,6 +616,10 @@ class ConversationService:
                     else None
                 )
         except Exception as e:
+            if getattr(e, "stops_run", False):
+                # The run's limit is used up: the chat keeps its question as its name.
+                logger.info("finalize_message title skipped: the run's limit is used up")
+                return
             logger.error(
                 f"finalize_message title generation failed: {e}",
                 exc_info=True,
@@ -657,15 +730,21 @@ class ConversationService:
                 conv_pg_id = (
                     str(conv["id"]) if conv is not None else conversation_id
                 )
+                # A mid-turn point whose turn was replaced is refused; the
+                # flags then stay as they are.
+                if not repo.append_compression_point(
+                    conv_pg_id,
+                    compression_metadata,
+                    max_points=settings.COMPRESSION_MAX_HISTORY_POINTS,
+                ):
+                    logger.info(
+                        f"Compression point not stored for conversation {conversation_id}: its turn is gone"
+                    )
+                    return
                 repo.set_compression_flags(
                     conv_pg_id,
                     is_compressed=True,
                     last_compression_at=compression_metadata.get("timestamp"),
-                )
-                repo.append_compression_point(
-                    conv_pg_id,
-                    compression_metadata,
-                    max_points=settings.COMPRESSION_MAX_HISTORY_POINTS,
                 )
             logger.info(
                 f"Updated compression metadata for conversation {conversation_id}"
@@ -675,44 +754,6 @@ class ConversationService:
                 f"Error updating compression metadata: {str(e)}", exc_info=True
             )
             raise
-
-    def append_compression_message(
-        self, conversation_id: str, compression_metadata: Dict[str, Any]
-    ) -> None:
-        """Append a synthetic compression summary message to the conversation."""
-        try:
-            summary = compression_metadata.get("compressed_summary", "")
-            if not summary:
-                return
-            timestamp = compression_metadata.get(
-                "timestamp", datetime.now(timezone.utc)
-            )
-
-            with db_session() as conn:
-                repo = ConversationsRepository(conn)
-                conv = repo.get_by_legacy_id(conversation_id)
-                conv_pg_id = (
-                    str(conv["id"]) if conv is not None else conversation_id
-                )
-                repo.append_message(conv_pg_id, {
-                    "prompt": COMPRESSION_SUMMARY_PROMPT,
-                    # Durable marker: replay filters on this, not on the label.
-                    "metadata": {COMPRESSION_SUMMARY_MARKER: True},
-                    "response": summary,
-                    "thought": "",
-                    "sources": [],
-                    "tool_calls": [],
-                    "attachments": [],
-                    "model_id": compression_metadata.get("model_used"),
-                    "timestamp": timestamp,
-                })
-            logger.info(
-                f"Appended compression summary to conversation {conversation_id}"
-            )
-        except Exception as e:
-            logger.error(
-                f"Error appending compression summary: {str(e)}", exc_info=True
-            )
 
     def get_compression_metadata(
         self, conversation_id: str

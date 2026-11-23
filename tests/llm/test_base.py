@@ -1055,9 +1055,6 @@ class TestPerformMidExecutionCompressionAdditional:
         # The current turn's message is carried over after the summary, verbatim.
         assert msgs == rebuilt + [{"role": "user", "content": "hi"}]
         assert agent.compressed_summary == "compressed text"
-        # The DB path already wrote the point and the summary row; the
-        # route must not persist them again.
-        assert agent.compression_saved is True
         assert agent.context_limit_reached is False
 
     def test_compression_not_performed_returns_false(self, monkeypatch):
@@ -1300,7 +1297,6 @@ class TestPerformInMemoryCompressionAdditional:
         # The current turn's message is carried over after the summary, verbatim.
         assert result_msgs == rebuilt + [messages[2]]
         assert agent.compressed_summary == "compressed summary"
-        assert agent.compression_saved is False
         assert agent.context_limit_reached is False
 
     def test_in_memory_compression_not_enough_queries(self, monkeypatch):
@@ -1639,9 +1635,7 @@ class TestConvertPdfDpiArg:
 
 @pytest.mark.unit
 class TestMidExecutionCompressionMetadata:
-    """Cover line 499 (conversation_service.append_compression_message)
-    and line 506 (agent.compression_saved = False).
-    """
+    """The DB path stores the result on the agent and marks it saved."""
 
     def test_metadata_stored_on_agent(self, monkeypatch):
         handler = ConcreteHandler()
@@ -1688,12 +1682,10 @@ class TestMidExecutionCompressionMetadata:
             agent, [{"role": "user", "content": "hi"}]
         )
         assert success is True
-        # The DB path already wrote the point and the summary row; the
-        # route must not persist them again.
-        assert agent.compression_saved is True
+        # The DB path wrote the point; no summary row goes into the conversation.
         assert agent.context_limit_reached is False
         assert agent.current_token_count == 0
-        mock_conv_service.append_compression_message.assert_called_once()
+        assert [call[0] for call in mock_conv_service.method_calls] == ["get_conversation"]
 
 
 # ---------------------------------------------------------------------------
@@ -1830,7 +1822,6 @@ class TestInMemoryCompressionNoQueries:
         assert success is True
         # The current turn's message is carried over after the summary, verbatim.
         assert msgs == rebuilt + [{"role": "user", "content": "Q1"}]
-        assert agent.compression_saved is False
 
 
 # ---------------------------------------------------------------------------
@@ -1945,8 +1936,7 @@ class TestHandleToolCallsMessagesCopy:
 
 # ---------------------------------------------------------------------------
 # Additional coverage for docsgpt/llm/handlers/base.py
-# Lines: 298 (_commit_query), 499 (append_compression_message),
-# 506 (compression_saved), 525-527 (exception in mid-exec compression),
+# Lines: 298 (_commit_query), 525-527 (exception in mid-exec compression),
 # 538/540 (in-memory compression imports), 586 (compress_up_to),
 # 590 (compress_conversation), 635-636 (in-memory log), 660 (messages.copy)
 # ---------------------------------------------------------------------------
@@ -2057,9 +2047,6 @@ class TestPerformMidExecutionCompressionSuccess:
         assert success is True
         # The current turn's message is carried over after the summary, verbatim.
         assert result_msgs == rebuilt + [messages[0]]
-        # The DB path already wrote the point and the summary row; the
-        # route must not persist them again.
-        assert agent.compression_saved is True
 
 
 @pytest.mark.unit

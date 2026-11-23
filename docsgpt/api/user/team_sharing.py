@@ -53,10 +53,12 @@ def owns_resource(
 def team_access_for(
     conn: Connection, user_id: str, resource_type: str, resource_id: str
 ) -> Optional[str]:
-    """Strongest team access (``editor``/``viewer``) ``user_id`` has on a resource.
+    """Strongest team-grant access (``editor``/``viewer``) ``user_id`` has on a personal resource.
 
     None when no team grant reaches the user (they may still be the owner — that
-    is a separate dual-key check at the repo).
+    is a separate dual-key check at the repo). Grants never answer for an item
+    a team workspace owns (``TeamScopeRepository`` skips them); use
+    :func:`resource_access.resolve` for the role-derived access there.
     """
     return TeamScopeRepository(conn).effective_access(user_id, resource_type, resource_id)
 
@@ -71,7 +73,11 @@ def visible_ids_via_teams(
 def visible_with_access(
     conn: Connection, user_id: str, resource_type: str
 ) -> dict[str, str]:
-    """Map ``resource_id -> strongest access`` shared to the user's teams."""
+    """Map ``resource_id -> strongest access`` of personal items shared to the user's teams.
+
+    This is the "Shared with you" part of a Personal list. Items a team
+    workspace owns are never in it, even with a stale grant row.
+    """
     return TeamScopeRepository(conn).visible_with_access(user_id, resource_type)
 
 
@@ -80,18 +86,29 @@ def effective_write_owner(
 ) -> Optional[str]:
     """The owner id to write a resource AS, or None if the caller can't write.
 
-    Returns ``user_id`` when the caller owns the resource, or the resource's
-    real ``owner_id`` when the caller holds a team ``editor`` grant — so callers
-    can pass the result straight to the existing owner-scoped ``update(id, owner,
-    ...)`` repo methods (which match on ``WHERE id AND user_id = :owner``) without
-    a separate ownerless write path. None means viewer-only or no access → the
-    route should answer 403/404. Delete is never authorized here — owner-only.
+    Returns ``user_id`` when the caller owns the resource, the resource's real
+    ``owner_id`` when the caller holds a team ``editor`` grant, and the team's
+    principal when a team owns it and the caller is an Editor, Admin or the
+    Owner there — so callers can pass the result straight to the existing
+    owner-scoped ``update(id, owner, ...)`` repo methods (which match on
+    ``WHERE id AND user_id = :owner``) without a separate ownerless write path.
+    None means view-only or no access → the route should answer 403/404.
+    Delete is never authorized here.
 
     A thin wrapper over :func:`resource_access.resolve`; new code should call
     ``resource_access.require`` with a specific action instead.
+
+    Args:
+        conn: Open database connection.
+        resource_type: ``agent``, ``source``, ``prompt`` or ``tool``.
+        resource_id: The resource's id.
+        user_id: The caller.
+
+    Returns:
+        Optional[str]: The id to write as, or None.
     """
     ra = resolve(conn, resource_type, resource_id, user_id)
-    if ra is None or ra.access not in ("owner", "editor"):
+    if ra is None or not ra.can("edit"):
         return None
     return ra.owner_id
 

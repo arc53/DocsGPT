@@ -33,6 +33,7 @@ from docsgpt.storage.db.repositories.auth_events import (
 from docsgpt.storage.db.repositories.user_roles import UserRolesRepository
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -214,25 +215,43 @@ def _record_login_denied(user_id: str, metadata: dict) -> None:
         logger.warning("Failed to record oidc_login_denied for %s", user_id, exc_info=True)
 
 
-def _gate_and_audit_login(user_id: str, effective: dict, groups: list[str]) -> bool:
-    """Reject disabled users, provision new ones, audit the login.
+def _not_a_person(row: dict | None) -> bool:
+    """Whether a ``users`` row exists and is not a person (a team principal, ``__system__``)."""
+    return row is not None and row.get("kind", "user") != "user"
 
-    Returns False only when the user row was readable and marked inactive;
-    a DB outage logs an error and lets the login proceed.
+
+def _gate_and_audit_login(user_id: str, effective: dict, groups: list[str]) -> str | None:
+    """Reject disabled users and rows that are not a person, provision new users, audit the login.
+
+    Args:
+        user_id: The id the user-id claim maps to.
+        effective: The merged id_token and userinfo claims.
+        groups: The groups claim, for the audit row.
+
+    Returns:
+        str | None: The ``oidc_error`` code that refuses the login
+        (``account_disabled`` or ``not_authorized``), or None to let it
+        through. A DB outage logs an error and lets the login proceed; the
+        callback refuses a principal id by syntax before this runs.
     """
-    disabled = False
+    refusal = None
     try:
         with db_session() as conn:
             users = UsersRepository(conn)
             row = users.get(user_id)
-            if row is not None and row.get("active") is False:
-                disabled = True
+            if _not_a_person(row):
+                refusal = "not_authorized"
+                reason = "account_not_a_person"
+            elif row is not None and row.get("active") is False:
+                refusal = "account_disabled"
+                reason = "account_disabled"
+            if refusal is not None:
                 AuthEventsRepository(conn).insert(
                     user_id,
                     "oidc_login_denied",
                     ip=request.remote_addr,
                     user_agent=request.headers.get("User-Agent"),
-                    metadata={"reason": "account_disabled"},
+                    metadata={"reason": reason},
                 )
             else:
                 if row is None:
@@ -254,10 +273,10 @@ def _gate_and_audit_login(user_id: str, effective: dict, groups: list[str]) -> b
         logger.error(
             "OIDC provisioning/audit failed for %s%s",
             user_id,
-            "" if disabled else "; continuing login",
+            "" if refusal else "; continuing login",
             exc_info=True,
         )
-    return not disabled
+    return refusal
 
 
 def oidc_login():
@@ -346,6 +365,13 @@ def oidc_callback():
         return _frontend_redirect("oidc_error=missing_claim")
     user_id = str(user_id)
 
+    if is_principal_id(user_id):
+        # A team principal owns its team's items; a claim that maps to one
+        # must never sign in as it. Refused by syntax, so a DB outage can't let it through.
+        logger.warning("OIDC login denied for %s: the id names a team principal", user_id)
+        _record_login_denied(user_id, {"reason": "account_not_a_person"})
+        return _frontend_redirect("oidc_error=not_authorized")
+
     allowed = _allowed_groups()
     groups = _claim_groups(effective)
     if allowed and not set(groups) & set(allowed):
@@ -353,8 +379,9 @@ def oidc_callback():
         _record_login_denied(user_id, {"reason": "not_authorized", "groups": groups})
         return _frontend_redirect("oidc_error=not_authorized")
 
-    if not _gate_and_audit_login(user_id, effective, groups):
-        return _frontend_redirect("oidc_error=account_disabled")
+    refusal = _gate_and_audit_login(user_id, effective, groups)
+    if refusal is not None:
+        return _frontend_redirect(f"oidc_error={refusal}")
 
     # Reconcile OIDC-group-derived admin against the fresh group claims so
     # adds/removals take effect at login (manual grants are untouched). Pass
@@ -405,15 +432,30 @@ def oidc_token():
     return jsonify({"token": token})
 
 
-def _is_account_disabled(user_id: str) -> bool:
-    """True only when a readable user row is marked inactive (DB outage fails open)."""
+def _refresh_refusal(user_id: str) -> str | None:
+    """Why a refresh may not mint a session for ``user_id``, or None.
+
+    Args:
+        user_id: The session's (or the remapped) user id.
+
+    Returns:
+        str | None: ``not_authorized`` for a team principal (by syntax) or a
+        row that is not a person, ``account_disabled`` for an inactive row,
+        else None. A DB outage fails open, as the login gate does.
+    """
+    if is_principal_id(user_id):
+        return "not_authorized"
     try:
         with db_readonly() as conn:
             row = UsersRepository(conn).get(user_id)
     except Exception:
         logger.error("User lookup failed during OIDC refresh", exc_info=True)
-        return False
-    return bool(row is not None and row.get("active") is False)
+        return None
+    if _not_a_person(row):
+        return "not_authorized"
+    if row is not None and row.get("active") is False:
+        return "account_disabled"
+    return None
 
 
 def oidc_refresh():
@@ -434,8 +476,9 @@ def oidc_refresh():
         return make_response(jsonify({"error": "token_revoked"}), 401)
 
     # Gate the current session identity before spending the refresh token.
-    if _is_account_disabled(str(decoded["sub"])):
-        return make_response(jsonify({"error": "account_disabled"}), 401)
+    refusal = _refresh_refusal(str(decoded["sub"]))
+    if refusal is not None:
+        return make_response(jsonify({"error": refusal}), 401)
 
     redis = get_redis_instance()
     if redis is None:
@@ -501,9 +544,12 @@ def oidc_refresh():
             user_id = str(user_id)
             # The pre-grant gate only saw the old sub. If the refreshed identity
             # maps to a different user id, re-check that account is enabled
-            # before minting a session for it.
-            if user_id != str(decoded["sub"]) and _is_account_disabled(user_id):
-                return make_response(jsonify({"error": "account_disabled"}), 401)
+            # (and is a person) before minting a session for it.
+            refusal = _refresh_refusal(user_id) if user_id != str(decoded["sub"]) else None
+            if refusal == "not_authorized":
+                _record_login_denied(user_id, {"reason": "account_not_a_person", "via": "refresh"})
+            if refusal is not None:
+                return make_response(jsonify({"error": refusal}), 401)
             identity["sub"] = user_id
         for claim in ("email", "name", "picture"):
             if effective.get(claim):

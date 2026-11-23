@@ -12,7 +12,9 @@
 # (scripts/build_daytona_snapshot.py) builds from too. This Dockerfile installs
 # from files generated from it -- requirements.txt, install-system.sh,
 # sandbox.env, manifest.json; edit the manifest and run
-# `python scripts/export_sandbox_manifest.py`, never these files.
+# `python scripts/export_sandbox_manifest.py`, never these files. Then run
+# `bash scripts/export_requirements.sh`, which resolves requirements.txt with
+# hashes into requirements.lock, the file pip installs here.
 #
 # LICENSES. The Python libraries but one are permissive (MIT, BSD, Apache-2.0,
 # HPND for Pillow; uharfbuzz bundles HarfBuzz, MIT), and so are Node.js (MIT,
@@ -35,7 +37,7 @@
 # runtime, add network-layer SSRF blocks (drop RFC1918 / link-local /
 # 169.254.169.254), seccomp profile, read-only root FS + quota'd scratch dir,
 # and cgroup CPU/mem/PID caps wired from SANDBOX_MEMORY / SANDBOX_CPUS.
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 # Non-root user for the runner (untrusted code runs as this UID).
 RUN useradd --create-home --uid 10001 sandbox
@@ -46,9 +48,11 @@ RUN useradd --create-home --uid 10001 sandbox
 COPY install-system.sh /opt/docsgpt/install-system.sh
 RUN sh /opt/docsgpt/install-system.sh
 
-# Python libraries, exact pins from the manifest.
-COPY requirements.txt /opt/docsgpt/requirements.txt
-RUN PIP_ROOT_USER_ACTION=ignore pip install --no-cache-dir -r /opt/docsgpt/requirements.txt
+# Python libraries: the manifest's exact pins (requirements.txt) resolved with
+# their dependencies and hashes into requirements.lock by
+# scripts/export_requirements.sh. --require-hashes refuses anything else.
+COPY requirements.lock /opt/docsgpt/requirements.lock
+RUN PIP_ROOT_USER_ACTION=ignore pip install --no-cache-dir --require-hashes -r /opt/docsgpt/requirements.lock
 
 # Docling (MIT) — OFF by default because it pulls torch + models and makes the
 # image multi-GB. NOTE: document parsing now runs on the Celery `parsing` worker
@@ -57,6 +61,8 @@ RUN PIP_ROOT_USER_ACTION=ignore pip install --no-cache-dir -r /opt/docsgpt/requi
 # it remains only for sandbox code that opts into Docling explicitly. The build
 # mechanics are kept for that case. Docling is MIT and uses its own PDF backend;
 # PyMuPDF (AGPL) is NOT installed here. The base image stays docling-free.
+# Unlike requirements.lock this install is not hash-pinned: it would need a lock
+# of its own for docling and torch, for a path no default build takes.
 ARG INSTALL_DOCLING=false
 RUN if [ "$INSTALL_DOCLING" = "true" ]; then \
         pip install --no-cache-dir docling==2.8.3; \

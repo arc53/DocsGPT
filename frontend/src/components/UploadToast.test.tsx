@@ -100,6 +100,19 @@ describe('UploadToast', () => {
     expect(message?.className).toContain('text-destructive');
   });
 
+  it('says how many items a finished ingest could not download', async () => {
+    store.dispatch(
+      addUploadTask(task({ status: 'completed', itemsNotDownloaded: 3 })),
+    );
+    await render();
+    const row = container.querySelector('[data-slot="toast-item"]');
+    expect(row?.querySelector('[data-status="warning"]')).not.toBeNull();
+    const message = container.querySelector('[data-slot="toast-message"]');
+    expect(message?.textContent).toBe(
+      'modals.uploadDoc.progress.partialDownload',
+    );
+  });
+
   it('collapses the rows and dismisses every task', async () => {
     store.dispatch(addUploadTask(task({})));
     await render();

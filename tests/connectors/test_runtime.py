@@ -331,12 +331,14 @@ class TestTelegramDefaultChat:
         params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
         assert "chat_id" in params["telegram_send_message"]["properties"]
 
+    @pytest.mark.fresh_db
     def test_the_default_chat_wins_over_what_the_model_sends(self, pg_conn):
         cid = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
         with _service_db(pg_conn):
             call = _run_send(_executor(), _telegram_tool(cid), {"text": "hi", "chat_id": "666"})
         assert call.kwargs == {"text": "hi", "chat_id": "-1001"}
 
+    @pytest.mark.fresh_db
     def test_each_member_uses_their_own_chat(self, pg_conn):
         owner = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
         _connection(pg_conn, user="bob", secrets={"credentials": {"token": "b", "chat_id": "-2002"}})
@@ -730,20 +732,17 @@ class TestMcpServerMismatch:
     def test_save_keeps_previous_connection_only_for_the_same_server(self, pg_conn):
         from docsgpt.api.user.tools.mcp import _previous_connection
 
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
         cid = _connection(pg_conn, provider="custom_mcp", server_url="https://old.example.com")
         existing = {"connection_id": cid}
         same = {"server_url": "https://old.example.com/mcp", "auth_type": "bearer"}
-        with patch("docsgpt.api.user.tools.mcp.db_readonly", _yield):
-            assert _previous_connection(existing, same, "alice") == cid
-            assert _previous_connection(existing, {**same, "server_url": "https://new.example.com/mcp"}, "alice") is None
-            assert _previous_connection(None, same, "alice") is None
-            # Someone else's connection, or one that signs in another way, is not kept.
-            assert _previous_connection(existing, same, "bob") is None
-            assert _previous_connection(existing, {**same, "auth_type": "oauth"}, "alice") is None
+        assert _previous_connection(pg_conn, existing, same, "alice") == cid
+        assert _previous_connection(
+            pg_conn, existing, {**same, "server_url": "https://new.example.com/mcp"}, "alice",
+        ) is None
+        assert _previous_connection(pg_conn, None, same, "alice") is None
+        # Someone else's connection, or one that signs in another way, is not kept.
+        assert _previous_connection(pg_conn, existing, same, "bob") is None
+        assert _previous_connection(pg_conn, existing, {**same, "auth_type": "oauth"}, "alice") is None
 
 
 class TestExternalApiCallers:

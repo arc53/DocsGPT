@@ -1,7 +1,7 @@
 ---
 title: Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-01
 ---
 
 import { Callout } from 'nextra/components';
@@ -33,13 +33,15 @@ When you create or configure an agent, you'll work with these key components:
     * **Describe your agent:** A brief description for you or users to understand the agent's purpose.
 
 **Source:**
-    * **Select source:** The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know."
+    * **Knowledge** (**Select knowledge**): The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know." The picker shows each source's kind and details, lists the selected ones first, filters by kind, and ends with **Go to Knowledge** and **Upload new**; see [Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents). You can also pick a whole Knowledge folder: it stays up to date, so sources filed in it later reach the agent without editing it. See [Pick a whole folder](/Sources/adding-knowledge#pick-a-whole-folder).
     * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
-The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond.
+The main set of instructions or system [prompt](/Agents/prompts) that defines the agent's persona, objectives, constraints, and how it should behave or respond. The **Prompt** field lists **Included**, **Yours** and **Shared with team**, each prompt with a line saying what it does (a built-in prompt's purpose, or the start of yours), and **Go to Prompts** and **Add prompt** at the bottom. Pointing at a prompt (or moving to it with the arrow keys, then Tab) shows a pencil (**Edit**) or, for a prompt you can't change, an eye (**View**): it opens that prompt in place of the form without picking it, with **Improve** to change it with [Draft with DocsGPT](/Agents/draft-with-docsgpt). With more than 10 prompts it can filter by section, and on a phone it opens as a sheet from the bottom of the screen.
 
-**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information.
+**Tools:** A selection of available [DocsGPT Tools](/Tools/basics) that the agent can use to perform actions or access external information. The picker groups them as the Tools page does (**Included**, **Added**, one group per connected service, **Custom**), lists the selected ones first, and ends with **Go to Tools** and **Add tool**; see [The Tools page](/Tools/basics#the-tools-page).
+
+**Starters:** Up to four questions shown under the agent's card when someone starts a new chat with it: on the agent's page, through its public link, in **Preview** and in the [chat widget](/Extensions/chat-widget#suggested-questions) unless the site passes its own questions. Selecting one sends it. They are optional: the section starts empty, **Add a starter** adds a field and the × beside one removes it. A save trims them and drops repeats, and each can be up to 200 characters. With no starters, a new chat shows only the agent's card. A workflow agent's starters are with its name and description in the builder's **Edit details**.
 
 **Agent type:** The underlying operational logic or architecture the agent uses. DocsGPT supports different types of agents, each suited for different kinds of tasks. The agent form offers **Classic** and **Research**; workflow agents are chosen when you create the agent, and the Agentic type is set through the API or an imported YAML file.
 
@@ -110,7 +112,7 @@ You can easily access and manage your agents through the DocsGPT user interface.
   <source src="/create-agent.mp4" type="video/mp4" />
 </video>
 
-*The recording clicks **New Agent** on the Agents page and chooses **Classic Agent**. It names the agent "Espresso support", adds a description, picks the "Espresso One handbook" knowledge source, the **Read Webpage (browser)** tool and the "Espresso support" prompt, then clicks **Publish**. Publishing opens **Access Details** with the agent's new API key; the same dialog is under the **⋯** menu later. Finally it opens **Preview**, asks how often to descale the machine, and the agent answers from the handbook with the source listed.*
+*The recording clicks **New Agent** on the Agents page and chooses **Classic Agent**. It names the agent "Contract Terms Helper" and adds a description. In **Knowledge** it picks the "Policies & Contracts Library" source, in **Tools** the **Read Webpage (browser)** tool, and in **Prompt** the included **strict** prompt, each row with a line saying what it is. It then clicks **Publish**. Publishing opens **Access Details** with the agent's new API key; the same dialog is under the **⋯** menu later. Finally it opens **Preview** and asks what credit applies when an Assured Plus shipment is late, and the agent answers from the library's SLA schedule with its sources listed.*
 
 1.  Navigate to the "Agents" page.
 2.  Click the **"New Agent"** button. The **Create New Agent** dialog asks which kind of agent you want:
@@ -120,14 +122,16 @@ You can easily access and manage your agents through the DocsGPT user interface.
 
 <Image
   src="/new-agent.png"
-  alt="The New Agent configuration form"
+  alt="The New Agent form: Basics (avatar, name, description), Knowledge and behaviour (Knowledge, Tools, Prompt) and Model, with Save Draft and Publish at the top"
   width={800}
-  height={450}
+  height={500}
   style={{ margin: '1em auto', display: 'block', borderRadius: '8px' }}
 />
 
-4.  Fill in the fields as described in the "Core Components of an Agent" section.
-5.  Once configured, you can **"Save Draft"** to continue editing later or **"Publish"** to make the agent active.
+4.  Fill in the fields as described in the "Core Components of an Agent" section. Or choose **Build** in the toolbar, and DocsGPT builds the agent with you step by step in a panel beside the form, for you to review before you save; see [Draft with DocsGPT](/Agents/draft-with-docsgpt).
+5.  Once configured, choose **Publish** to make the agent active, or **Save Draft** in the toolbar's **⋯** menu to continue editing later. The same menu holds **Preview**, to try the agent before you publish it. Workflow agents work the same way: **Save draft** keeps an unfinished workflow, and **Publish** checks its [graph rules](/Agents/nodes#graph-rules) first.
+
+While the builder has changes you haven't saved, links that leave the builder (**Go to Knowledge**, **Go to Tools**, the prompt's link, and the connector links in **Add tool** and **Upload new**) ask before they discard them. Opening one in a new tab with Cmd/Ctrl-click doesn't ask.
 
 ## Interacting with and Editing Agents
 
@@ -136,11 +140,11 @@ Once an agent is created, you can:
 * **Chat with it:** Select the agent to start an interaction.
 * **View Logs:** Access usage statistics, monitor token consumption per interaction, and review user message feedbacks. This is crucial for understanding how your agent is being used and performing. See [Analytics and Logs](/Using/analytics-and-logs).
 * **Edit an Agent:**
-    * Modify any of its configuration settings (name, description, source, prompt, tools, type).
+    * Modify any of its configuration settings (name, description, starters, source, prompt, tools, type). **Improve** in the toolbar asks [Draft with DocsGPT](/Agents/draft-with-docsgpt) to make a change you describe, and the toolbar's **⋯** menu holds **Preview** (and **Save Draft** on a draft).
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
     * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).
-    * On a team-shared agent, editors can manage Access Details too, unless the owner turns off **Editors can manage access details**.
+    * On a team-shared agent, only the owner manages Access Details unless the owner turns on **Editors can manage access details** (off by default). In a team workspace, Admins manage a team agent's Access Details.
 * **Share it with a team:** Viewers chat with it; editors can also change it. The share dialog lists what the agent uses and whose access each item runs with. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
 * **Use it via API:** Every published agent has an API key (in **Access Details**) that can be used with the native [Agent API](/API/agent-api) or the [OpenAI-Compatible API](/API/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
 
@@ -152,4 +156,4 @@ You can bootstrap a fresh DocsGPT deployment with a curated set of agents by see
 2. **Ensure dependencies are running** – Postgres must be reachable using `POSTGRES_URI` from `.env` (schema applied via `python scripts/db/init_postgres.py`), and a Celery worker should be available if any agent sources need to be ingested via `ingest_remote`.
 3. **Execute the seeder** – run `python -m docsgpt.seed.commands init`. Add `--force` when you need to reseed an existing environment.
 
-The seeded agents are owned by the `__system__` user. They appear under **Templates** on the Agents page, where users can adopt a copy to use and customize. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.
+The seeded agents are owned by the `__system__` user. The web app doesn't list them; `GET /api/template_agents` returns them, and `POST /api/adopt_agent?id=<id>` copies one into the current workspace: the caller's agents in Personal, or the team's agents in a team, which takes the Editor role or higher. A team's copy keeps only the team's own sources and prompts: the template's sources and stored prompt are left off, so attach the team's own before using it. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.

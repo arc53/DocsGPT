@@ -553,6 +553,7 @@ class DaytonaSandbox(CodeSandbox):
                 error_name=type(failure).__name__,
                 error_value=str(failure) or "code_run failed",
                 exit_code=-1,
+                sandbox_error=True,
             )
             # An auto-DELETED sandbox (vs a merely stopped one, handled above) can't be
             # woken and would fail every retry on this cached handle. Drop the dead
@@ -787,6 +788,7 @@ class DaytonaSandbox(CodeSandbox):
                     error_value="the sandbox running this job no longer exists",
                     exit_code=-1,
                     runtime_invalidated=True,
+                    sandbox_error=True,
                 )
                 return DetachedState(done=True, result=result, gone=True)
             raise

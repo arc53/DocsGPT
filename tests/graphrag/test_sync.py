@@ -15,6 +15,7 @@ import uuid
 import pytest
 
 import docsgpt.graphrag.extraction as extraction_module
+from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.storage.db.source_config import SourceConfig
 from tests.graphrag.test_extraction import _ScriptedLLM, _live_store, stub_embedding  # noqa: F401
 
@@ -63,7 +64,7 @@ class TestGraphSync:
     @pytest.fixture
     def llm(self, monkeypatch):
         llm = _ScriptedLLM(SCRIPT)
-        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(lambda *a, **k: llm))
+        monkeypatch.setattr(LLMCreator, "create_llm", staticmethod(lambda *a, **k: llm))
         return llm
 
     def _sync(self, source_id, chunks, config=None):

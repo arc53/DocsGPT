@@ -68,7 +68,25 @@ vi.mock('./AddToKnowledgeAction', () => ({
   ),
 }));
 
-vi.mock('../Hero', () => ({ default: () => null }));
+// The scroller's own props, to read whether it may follow the bottom.
+const scroller = vi.hoisted(() => ({
+  autoScroll: [] as (boolean | undefined)[],
+}));
+vi.mock('../components/ui/message-scroller', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../components/ui/message-scroller')>();
+  return {
+    ...actual,
+    MessageScrollerProvider: (
+      props: React.ComponentProps<typeof actual.MessageScrollerProvider>,
+    ) => {
+      scroller.autoScroll.push(props.autoScroll);
+      return <actual.MessageScrollerProvider {...props} />;
+    },
+  };
+});
+
+vi.mock('../Hero', () => ({ default: () => <div data-testid="hero" /> }));
 
 vi.mock('./StreamingStatusLine', () => ({ default: () => null }));
 
@@ -164,6 +182,28 @@ describe('ConversationMessages', () => {
     expect(container.textContent).not.toContain('Knowledge');
   });
 
+  it('hides a stored compression summary but keeps the turns after it in place', () => {
+    onKnowledgeAdded.mockReset();
+    render(
+      [
+        { prompt: 'first question', response: 'first answer' },
+        {
+          prompt: '[Context Compression Summary]',
+          response: 'summary text',
+          compressionSummary: true,
+        },
+        overflow,
+      ],
+      true,
+    );
+    expect(container.textContent).not.toContain('Context Compression Summary');
+    expect(container.textContent).not.toContain('summary text');
+    expect(container.textContent).toContain('first answer');
+    // The overflow turn keeps its stored index for actions on it.
+    act(() => (action() as HTMLButtonElement).click());
+    expect(onKnowledgeAdded).toHaveBeenCalledWith(2);
+  });
+
   it("shows the server's text for an error it has no wording for", () => {
     render([
       { prompt: 'q', error: 'Blocked by policy.', errorCode: 'guardrail' },
@@ -183,6 +223,32 @@ describe('ConversationMessages', () => {
     expect(notice?.className).toContain('bg-warning/10');
     expect(notice?.querySelector('svg')).not.toBeNull();
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('draws a chat that is still loading as one, not as the new-chat hero', () => {
+    const renderEmpty = (isLoading: boolean) =>
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[]}
+            status="idle"
+            isLoading={isLoading}
+            headerContent={<div data-testid="agent-card" />}
+          />,
+        );
+      });
+    renderEmpty(true);
+    expect(container.querySelector('[data-testid="hero"]')).toBeNull();
+    expect(container.querySelector('[role="status"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="agent-card"]'),
+    ).not.toBeNull();
+    renderEmpty(false);
+    expect(container.querySelector('[data-testid="hero"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
   });
 
   it('collapses the pin spacer once it has scrolled below the fold', () => {
@@ -262,12 +328,14 @@ describe('ConversationMessages', () => {
       expect(growByOneRow(300).scrollTop).toBe(500);
     });
 
+    // The bottom of a 1023px content in a 500px viewport.
     it('keeps the answer’s end in view once nothing is pinned', () => {
-      expect(growByOneRow(0).scrollTop).toBe(1023);
+      expect(growByOneRow(0).scrollTop).toBe(523);
     });
 
     // A scroll gesture releases the primitive's pin but leaves its spacer;
-    // the spacer's height alone must not stop the answer being followed.
+    // the spacer's height alone must not stop the answer being followed. Its
+    // end is followed, not the spacer's: 3px short of the bottom.
     it.each([
       ['a wheel', new WheelEvent('wheel', { deltaY: 40, bubbles: true })],
       ['a touch drag', new Event('touchmove', { bubbles: true })],
@@ -276,7 +344,14 @@ describe('ConversationMessages', () => {
         new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }),
       ],
     ])('follows the answer again once %s releases the pin', (_, gesture) => {
-      expect(growByOneRow(3, gesture).scrollTop).toBe(1023);
+      expect(growByOneRow(3, gesture).scrollTop).toBe(520);
+    });
+
+    // A released pin's spacer still showing under the answer: its end has
+    // not reached the bottom, so following would scroll into the spacer.
+    it('does not follow into a released spacer the answer has not reached', () => {
+      const wheel = new WheelEvent('wheel', { deltaY: -40, bubbles: true });
+      expect(growByOneRow(200, wheel).scrollTop).toBe(500);
     });
 
     // Opening a step resizes the answer; following would scroll the step
@@ -301,12 +376,44 @@ describe('ConversationMessages', () => {
     it('keeps following after a click that toggles nothing', () => {
       const click = new MouseEvent('click', { bubbles: true });
       const plain = document.createElement('span');
-      expect(growByOneRow(0, click, plain).scrollTop).toBe(1023);
+      expect(growByOneRow(0, click, plain).scrollTop).toBe(523);
     });
 
     it('ignores keys that do not scroll', () => {
       const typing = new KeyboardEvent('keydown', { key: 'a', bubbles: true });
       expect(growByOneRow(3, typing).scrollTop).toBe(500);
+    });
+
+    const autoScroll = () =>
+      scroller.autoScroll[scroller.autoScroll.length - 1];
+
+    // The primitive measures its follow without the spacer; following the
+    // bottom from here would scroll the spacer away under the reader.
+    it('stops the primitive following the bottom while a released spacer shows', () => {
+      const wheel = new WheelEvent('wheel', { deltaY: -40, bubbles: true });
+      growByOneRow(200, wheel);
+      expect(autoScroll()).toBe(false);
+      stream('a longer answer', 'third');
+      expect(autoScroll()).toBe(true);
+    });
+
+    it('keeps the question pinned when the answer ends under it', () => {
+      growByOneRow(300);
+      expect(autoScroll()).toBe(true);
+      act(() => {
+        root.render(
+          <ConversationMessages
+            handleQuestion={() => undefined}
+            handleQuestionSubmission={() => undefined}
+            queries={[
+              { prompt: 'first', response: 'done' },
+              { prompt: 'second', response: 'a longer answer' },
+            ]}
+            status="idle"
+          />,
+        );
+      });
+      expect(autoScroll()).toBe(false);
     });
 
     it('pins the next question again after a release', () => {
@@ -352,7 +459,10 @@ describe('ConversationMessages', () => {
       vi.unstubAllGlobals();
     });
 
-    const renderTurn = (status: 'loading' | 'idle') =>
+    const renderTurn = (
+      status: 'loading' | 'idle' | 'awaiting_tool_actions',
+      next?: Query,
+    ) =>
       act(() => {
         root.render(
           <ConversationMessages
@@ -361,6 +471,7 @@ describe('ConversationMessages', () => {
             queries={[
               { prompt: 'first', response: 'done' },
               { prompt: 'second', response: 'streaming' },
+              ...(next ? [next] : []),
             ]}
             status={status}
           />,
@@ -397,12 +508,104 @@ describe('ConversationMessages', () => {
       expect(answer(0).style.minHeight).toBe('');
     });
 
-    it('releases the hold when the stream ends', () => {
+    // The end of a stream shrinks the turn too (a step window folding, the
+    // status line going); releasing then dropped the pinned question.
+    it('keeps the hold after the stream ends', () => {
       renderTurn('loading');
       const item = answer(1);
       resize(item, 300);
       renderTurn('idle');
+      expect(item.style.minHeight).toBe('300px');
+    });
+
+    it('releases the hold when the next question arrives', () => {
+      renderTurn('loading');
+      const item = answer(1);
+      resize(item, 300);
+      renderTurn('idle');
+      renderTurn('loading', { prompt: 'third' });
       expect(item.style.minHeight).toBe('');
+    });
+
+    it('keeps the hold across an approval, not into a retry', () => {
+      renderTurn('loading');
+      const item = answer(1);
+      resize(item, 300);
+      renderTurn('awaiting_tool_actions');
+      renderTurn('loading');
+      expect(item.style.minHeight).toBe('300px');
+      renderTurn('idle');
+      renderTurn('loading');
+      expect(item.style.minHeight).toBe('');
+    });
+  });
+
+  describe('a resize while the chat sits at its end', () => {
+    let observers: { cb: ResizeObserverCallback; el?: Element }[];
+
+    beforeEach(() => {
+      observers = [];
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          cb: ResizeObserverCallback;
+          el?: Element;
+          constructor(cb: ResizeObserverCallback) {
+            this.cb = cb;
+            observers.push(this);
+          }
+          observe(el: Element) {
+            this.el = el;
+          }
+          unobserve() {}
+          disconnect() {}
+        },
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    // jsdom has no layout: a viewport at the bottom whose content then grows
+    // by 300px (an image loading), reported as the browser would.
+    const growContent = (spacerHeight: number) => {
+      render([{ prompt: 'hi', response: 'hello ![chart](chart.png)' }]);
+      const viewport = container.querySelector<HTMLElement>(
+        '[data-slot="message-scroller-viewport"]',
+      )!;
+      const content = container.querySelector<HTMLElement>(
+        '[data-slot="message-scroller-content"]',
+      )!;
+      const spacer = container.querySelector<HTMLElement>(
+        '[data-message-scroller-spacer]',
+      )!;
+      Object.defineProperty(spacer, 'offsetHeight', { value: spacerHeight });
+      Object.defineProperty(viewport, 'clientHeight', { value: 500 });
+      let scrollHeight = 1000 + spacerHeight;
+      Object.defineProperty(viewport, 'scrollHeight', {
+        get: () => scrollHeight,
+        configurable: true,
+      });
+      viewport.scrollTop = 500;
+      act(() => {
+        viewport.dispatchEvent(new Event('scroll'));
+      });
+      scrollHeight += 300;
+      // The primitive observes the content too; its re-pin waits a frame.
+      act(() => {
+        for (const observer of observers.filter((o) => o.el === content))
+          observer.cb([], observer as unknown as ResizeObserver);
+      });
+      return viewport;
+    };
+
+    it('keeps the end in view in the same frame', () => {
+      expect(growContent(0).scrollTop).toBe(800);
+    });
+
+    it('leaves a pinned question to the primitive', () => {
+      expect(growContent(200).scrollTop).toBe(500);
     });
   });
 
@@ -444,6 +647,33 @@ describe('ConversationMessages', () => {
         container.querySelector('[aria-label="conversation.retry"]'),
       ).not.toBeNull();
     });
+  });
+
+  // A resume the server refused (a 429, no connection) leaves the turn's
+  // questions waiting: they stay in view to answer again, and Retry, which
+  // would send the prompt as a new turn, is not offered.
+  it('keeps waiting questions in view beside a refused resume error', () => {
+    render([
+      {
+        prompt: 'write the QBR deck',
+        error: 'Too many requests',
+        tool_calls: [
+          {
+            call_id: 'ask-1',
+            tool_name: 'ask_user',
+            action_name: 'ask_user',
+            arguments: {},
+            status: 'awaiting_answer',
+            questions: [{ id: 'q1', text: 'Which quarter?', options: [] }],
+          },
+        ],
+      },
+    ]);
+    expect(container.textContent).toContain('ask-1');
+    expect(container.textContent).toContain('Too many requests');
+    expect(
+      container.querySelector('[aria-label="conversation.retry"]'),
+    ).toBeNull();
   });
 
   it('keeps a timed-out message partial answer visible beside its error', () => {

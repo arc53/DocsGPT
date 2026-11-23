@@ -26,6 +26,7 @@ from docsgpt.storage.db.repositories.auth_events import (
 )
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.workspaces.principal import is_principal_id
 
 
 logger = logging.getLogger(__name__)
@@ -308,6 +309,9 @@ def create_user():
     active = _coerce_active(body.get("active", True))
     if active is None:
         return _scim_error(400, "active must be a boolean", "invalidValue")
+    if is_principal_id(user_name.lower()):
+        # The team principal prefix is reserved (userName is case-insensitive).
+        return _scim_error(409, f"userName {user_name} is reserved", "uniqueness")
     with db_session() as conn:
         row = UsersRepository(conn).create(user_name, active=active)
         if row is None:

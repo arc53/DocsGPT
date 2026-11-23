@@ -303,4 +303,24 @@ describe('GoogleDrivePicker', () => {
     );
     expect(drive.openPicker.mock.calls[0][0].customViews).toBeUndefined();
   });
+
+  // Only whoever connected a team's account gets its picker token, and not
+  // while it is paused: worded, never read as an expired sign-in.
+  it.each([
+    ['connection_picker_owner_only', 'pickerOwnerOnly'],
+    ['connection_paused', 'paused'],
+  ])('words a team account refusal (%s)', async (code, key) => {
+    drive.pickerToken.mockResolvedValue({ success: false, error: code });
+    await render({ onReconnect: vi.fn() });
+    await act(async () =>
+      button('modals.uploadDoc.connectors.googleDrive.selectFiles')!.click(),
+    );
+    expect(drive.openPicker).not.toHaveBeenCalled();
+    const alert = container.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toContain(
+      `settings.connectors.team.errors.${key}`,
+    );
+    expect(alert.textContent).not.toContain('detail.expired');
+    expect(button('settings.connectors.status.reconnect')).toBeUndefined();
+  });
 });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from docsgpt.background import jobs, service, wake
@@ -9,6 +10,9 @@ from docsgpt.background.context import BackgroundContext
 from docsgpt.storage.db.repositories.background_jobs import BackgroundJobsRepository
 from docsgpt.storage.db.repositories.conversation_wakes import ConversationWakesRepository
 from docsgpt.storage.db.repositories.conversations import ConversationsRepository
+
+
+pytestmark = pytest.mark.fresh_db
 
 
 def _context(conversation_id, message_id):

@@ -21,7 +21,7 @@ def _team(conn, slug: str) -> str:
     )
 
 
-def _member(conn, team_id: str, user_id: str, role: str = "team_member", source: str = "manual") -> None:
+def _member(conn, team_id: str, user_id: str, role: str = "team_viewer", source: str = "manual") -> None:
     conn.execute(
         text(
             "INSERT INTO team_members (team_id, user_id, role, source) "
@@ -103,9 +103,9 @@ class TestPoliciesForUser:
     def test_a_team_counts_once_however_many_memberships(self, pg_conn):
         repo = _repo(pg_conn)
         team = _team(pg_conn, "qp-multi")
-        _member(pg_conn, team, "u1", "team_member", "manual")
+        _member(pg_conn, team, "u1", "team_viewer", "manual")
         _member(pg_conn, team, "u1", "team_admin", "manual")
-        _member(pg_conn, team, "u1", "team_member", "oidc_group")
+        _member(pg_conn, team, "u1", "team_viewer", "oidc_group")
         repo.upsert(scope="team", subject_id=team, token_limit=7)
         assert [r["token_limit"] for r in repo.policies_for_user("u1")] == [7]
 

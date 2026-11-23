@@ -16,6 +16,9 @@ type ToolLike = {
   customName?: string | null;
   connection_id?: string | null;
   config?: unknown;
+  credential_mode?: 'owner' | 'member' | null;
+  /** The service a tool on each person's own account signs in to. */
+  connector_key?: string | null;
 };
 
 // Templates any server can use (an MCP server, an OpenAPI spec): a tool
@@ -40,6 +43,13 @@ const connectorForTool = (
   tool: ToolLike,
   catalog: ConnectorDefinition[],
 ): ConnectorDefinition | undefined => {
+  // A tool on each person's own account records its service.
+  const recorded = tool.connector_key
+    ? catalog.find(
+        (c) => c.key === tool.connector_key && c.publisher !== 'custom',
+      )
+    : undefined;
+  if (recorded) return recorded;
   if (!GENERIC_TEMPLATES.has(tool.name)) {
     return catalog.find(
       (c) =>
@@ -62,7 +72,9 @@ const connectorForTool = (
  * tool pickers. The caller's own connection names it; a teammate's
  * connection is never in the caller's list, so a shared tool is named from
  * the catalog, or failing that from its own name without the " · account"
- * the server adds. Undefined for a tool with no connection.
+ * the server adds. A team tool on each person's own account has no
+ * connection but records its service, and goes with that service the same
+ * way. Undefined for any other tool with no connection.
  *
  * Args:
  *   tool: The tool, as `/api/get_tools` returns it.
@@ -77,8 +89,14 @@ export function toolServiceOf(
   connections: Connection[],
   catalog: ConnectorDefinition[],
 ): ToolService | undefined {
-  if (!tool.connection_id) return undefined;
-  const connection = connections.find((c) => c.id === tool.connection_id);
+  const eachPerson =
+    !tool.connection_id &&
+    tool.credential_mode === 'member' &&
+    !!tool.connector_key;
+  if (!tool.connection_id && !eachPerson) return undefined;
+  const connection = tool.connection_id
+    ? connections.find((c) => c.id === tool.connection_id)
+    : undefined;
   if (connection) {
     const connector = catalog.find((c) => c.key === connection.connector_key);
     return {

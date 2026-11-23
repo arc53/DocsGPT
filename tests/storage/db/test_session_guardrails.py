@@ -181,3 +181,11 @@ class TestEngineConnectArgs:
         # 30s is the documented default. If this needs to change, update
         # the constant *and* this test, and explain why in the PR.
         assert STATEMENT_TIMEOUT_MS == 30_000
+
+
+class TestDisposeEngine:
+    def test_drops_the_cached_engine_so_the_next_call_builds_a_new_one(self, wired_engine):
+        # Each forked Celery worker calls this so it doesn't reuse the parent's pool.
+        engine_module.dispose_engine()
+        assert engine_module._engine is None
+        assert engine_module.get_engine() is not wired_engine
