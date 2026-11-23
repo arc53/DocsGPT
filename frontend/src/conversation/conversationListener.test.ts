@@ -75,7 +75,6 @@ const makeStore = (
   initialStatus: ConversationState['status'] = 'idle',
 ) => {
   const preference: Preference = {
-    apiKey: '',
     prompt: { name: 'default', id: 'default', type: 'public' },
     prompts: [],
     selectedDocs: [],

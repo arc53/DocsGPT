@@ -14,7 +14,6 @@ import { RootState } from '../store';
 import { switchWorkspace } from '../workspace/workspaceSlice';
 import {
   getLocalRecentDocs,
-  setLocalApiKey,
   setLocalRecentDocs,
   setStoredRecentFolders,
   type SelectedFolder,
@@ -36,7 +35,6 @@ const isOlderThan = (
   return c.id < last.id;
 };
 export interface Preference {
-  apiKey: string;
   prompt: { name: string; id: string; type: string };
   prompts: Prompt[];
   selectedDocs: Doc[];
@@ -92,7 +90,6 @@ export interface Preference {
 }
 
 const initialState: Preference = {
-  apiKey: 'xxx',
   prompt: { name: 'default', id: 'default', type: 'public' },
   prompts: presetPrompts(),
   selectedDocs: [],
@@ -127,9 +124,6 @@ export const prefSlice = createSlice({
   name: 'preference',
   initialState,
   reducers: {
-    setApiKey: (state, action) => {
-      state.apiKey = action.payload;
-    },
     setSelectedDocs: (state, action) => {
       state.selectedDocs = action.payload;
     },
@@ -333,7 +327,6 @@ export const prefSlice = createSlice({
 });
 
 export const {
-  setApiKey,
   setSelectedDocs,
   setSelectedFolders,
   setSourceDocs,
@@ -366,13 +359,6 @@ export const {
 export default prefSlice.reducer;
 
 export const prefListenerMiddleware = createListenerMiddleware();
-prefListenerMiddleware.startListening({
-  matcher: isAnyOf(setApiKey),
-  effect: (action, listenerApi) => {
-    setLocalApiKey((listenerApi.getState() as RootState).preference.apiKey);
-  },
-});
-
 prefListenerMiddleware.startListening({
   matcher: isAnyOf(setSelectedDocs),
   effect: (action, listenerApi) => {
@@ -493,9 +479,6 @@ prefListenerMiddleware.startListening({
   },
 });
 
-export const selectApiKey = (state: RootState) => state.preference.apiKey;
-export const selectApiKeyStatus = (state: RootState) =>
-  !!state.preference.apiKey;
 export const selectSelectedDocsStatus = (state: RootState) =>
   state.preference.selectedDocs.length > 0;
 export const selectSourceDocs = (state: RootState) =>
