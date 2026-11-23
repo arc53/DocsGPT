@@ -179,18 +179,6 @@ class MonitorsRepository:
         ).fetchone()
         return row_to_dict(row) if row is not None else None
 
-    def lock(self, monitor_id: str) -> Optional[dict]:
-        """A monitor with its schedule row locked for the rest of the transaction."""
-        if not looks_like_uuid(str(monitor_id)):
-            return None
-        locked = self._conn.execute(
-            text("SELECT id FROM schedules WHERE id = CAST(:id AS uuid) AND trigger_type = 'monitor' FOR UPDATE"),
-            {"id": str(monitor_id)},
-        ).fetchone()
-        if locked is None:
-            return None
-        return self.get_internal(str(monitor_id))
-
     def list_for_user(
         self,
         user_id: str,

@@ -6,8 +6,6 @@ workflow routes perform on ``workflow_edges_collection`` in Mongo.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -127,27 +125,6 @@ class WorkflowEdgesRepository:
             {"wf_id": workflow_id, "ver": graph_version},
         )
         return [row_to_dict(r) for r in result.fetchall()]
-
-    def resolve_node_id(
-        self, workflow_id: str, graph_version: int, node_id: str,
-    ) -> Optional[str]:
-        """Look up the UUID PK of a node by its user-provided ``node_id``.
-
-        Callers that receive edges in the frontend shape (``source_id`` /
-        ``target_id`` are user-provided strings) use this helper to
-        translate to the UUID PK before calling :meth:`create` /
-        :meth:`bulk_create`.
-        """
-        result = self._conn.execute(
-            text(
-                "SELECT id FROM workflow_nodes "
-                "WHERE workflow_id = CAST(:wf_id AS uuid) "
-                "AND graph_version = :ver AND node_id = :node_id"
-            ),
-            {"wf_id": workflow_id, "ver": graph_version, "node_id": node_id},
-        )
-        row = result.fetchone()
-        return str(row[0]) if row else None
 
     def delete_by_version(self, workflow_id: str, graph_version: int) -> int:
         result = self._conn.execute(
