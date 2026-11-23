@@ -67,10 +67,11 @@ _YAML_KEY = re.compile(r"[^\s#:\-][^:\n]*:(?:[ \t]|\r?$)")
 _YAML_LINE = re.compile(r"[ \t\r]*$|[ \t]*#|[ \t]*-(?:[ \t]|\r?$)|[ \t]+\S")
 # A whole import statement ends in its quoted module, which prose such as
 # "import the SDK first" does not. Its words and the whitespace between them
-# never overlap, so a long run of spaces is matched in linear time.
+# never overlap, and neither do the whitespace runs after the module, so a long
+# run of spaces is matched in linear time.
 _MDX_IMPORT = re.compile(
     r"^import\s+(?:[\w$*{},]+(?:\s+[\w$*{},]+)*\s+from\s*)?(['\"])[^'\"\n]+\1"
-    r"[ \t]*;?[ \t]*(?://[^\n]*)?[ \t\r]*$",
+    r"[ \t]*(?:;[ \t]*)?(?://[^\n]*)?\r?$",
     re.MULTILINE,
 )
 _MDX_EXPORT = re.compile(

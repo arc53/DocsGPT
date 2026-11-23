@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
@@ -241,6 +242,17 @@ def test_markdown_component_tag_with_long_attributes_is_parsed():
 def test_markdown_import_followed_by_long_whitespace_is_parsed():
     # The import pattern's words and whitespace never overlap, so this is quick.
     tups = MarkdownParser().markdown_to_tups("import" + " " * 50_000 + "\n# Install\nrun it\n")
+    assert tups[-1] == ("Install", "run it\n\n")
+
+
+def test_markdown_quoted_module_followed_by_long_whitespace_is_kept_quickly():
+    # Nor do the whitespace runs after the quoted module, so a line that only starts
+    # like an import fails in linear time and stays text.
+    preamble = "import 'x'" + " " * 2000 + "x\n"
+    start = time.perf_counter()
+    tups = MarkdownParser().markdown_to_tups(preamble + "# Install\nrun it\n")
+    assert time.perf_counter() - start < 1
+    assert tups[0] == (None, preamble)
     assert tups[-1] == ("Install", "run it\n\n")
 
 
