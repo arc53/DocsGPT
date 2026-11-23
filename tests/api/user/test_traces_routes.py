@@ -455,3 +455,18 @@ class TestSharedWorkflowRunTraces:
                         {"i": record["id"]})
 
         assert self._ids(app, pg_conn, record) == []
+
+
+class TestMergeTraceSummaries:
+    def test_cost_is_summed_and_rounded(self):
+        from docsgpt.api.user.analytics.routes import _merge_trace_summaries
+
+        merged = _merge_trace_summaries(
+            [
+                {"summary": {"cost_usd": 0.1, "llm_calls": 1}, "duration_ms": 10},
+                {"summary": {"cost_usd": 0.2, "llm_calls": 1}, "duration_ms": 20},
+                {"summary": {"llm_calls": 1}, "duration_ms": 5},
+            ]
+        )
+        assert merged["summary"]["cost_usd"] == 0.3
+        assert merged["summary"]["llm_calls"] == 3
