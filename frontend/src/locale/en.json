@@ -2647,7 +2647,6 @@
         "partialDownload_one": "{{count}} item couldn’t be read, so it was left out. Sync the source to try it again.",
         "partialDownload_other": "{{count}} items couldn’t be read, so they were left out. Sync the source to try them again.",
         "preparing": "Preparing upload",
-        "tokenLimit": "Over the token limit, please consider uploading a smaller document",
         "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
         "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources.",
         "training": "Upload is in progress",

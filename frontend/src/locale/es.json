@@ -2722,7 +2722,6 @@
         "partialDownload_one": "No se pudo leer {{count}} elemento, así que se omitió. Sincroniza la fuente para volver a intentarlo.",
         "partialDownload_other": "No se pudieron leer {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
         "preparing": "Preparando subida",
-        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",
         "tooManyFiles": "Esta fuente tiene más de {{limit}} archivos, el máximo que admite una fuente. Elige una carpeta, ruta o selección más pequeña.",
         "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas.",
         "training": "Subida en progreso",

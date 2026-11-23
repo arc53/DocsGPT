@@ -2722,7 +2722,6 @@
         "partialDownload_one": "{{count}} élément n’a pas pu être lu et a été ignoré. Synchronisez la source pour réessayer.",
         "partialDownload_other": "{{count}} éléments n’ont pas pu être lus et ont été ignorés. Synchronisez la source pour réessayer.",
         "preparing": "Préparation de l’import",
-        "tokenLimit": "Limite de jetons dépassée, essayez d’importer un document plus petit",
         "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
         "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
         "training": "Import en cours",
