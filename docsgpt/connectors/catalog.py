@@ -396,7 +396,7 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
                 secret=False,
                 required=False,
                 parameter="server_url",
-                hint="The access token and messages go only to this server. Leave empty for ntfy.sh.",
+                hint="When set, every message and the access token go to this server. When empty, the token goes only to ntfy.sh.",
             ),
         ),
         tool_templates=("ntfy",),

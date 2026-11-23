@@ -3546,7 +3546,7 @@
       "fieldHints": {
         "github_access_token": "Feingranular, mit Lesezugriff auf „Contents“ und „Metadata“. Für Änderungen durch Agenten außerdem Lese- und Schreibzugriff auf „Issues“ und „Pull requests“. <link>Token auf GitHub erstellen</link>",
         "mcp_supabase_project_ref": "Kopiere sie in deinem Supabase-Dashboard unter Project Settings > General. Die Verbindung erreicht nur dieses Projekt.",
-        "ntfy_server_url": "Das Zugriffstoken und die Nachrichten gehen nur an diesen Server. Leer lassen für ntfy.sh.",
+        "ntfy_server_url": "Wenn gesetzt, gehen alle Nachrichten und das Zugriffstoken an diesen Server. Wenn leer, geht das Token nur an ntfy.sh.",
         "telegram_chat_id": "Nachrichten gehen nur an diesen Chat. Füge den Bot hinzu, sende ihm eine Nachricht und finde die Chat-ID mit <link>getUpdates</link>."
       },
       "fields": {

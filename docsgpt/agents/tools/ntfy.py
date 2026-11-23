@@ -61,7 +61,14 @@ class NtfyTool(Tool):
         else:
             raise ValueError(f"Unknown action: {action_name}")
 
-    def _send_message(self, message, topic, server_url=None, title=None, priority=None):
+    def _send_message(
+        self,
+        message: str,
+        topic: str,
+        server_url: str | None = None,
+        title: str | None = None,
+        priority: int | str | None = None,
+    ) -> dict:
         """
         Send a message to an ntfy topic.
 
@@ -190,8 +197,9 @@ class NtfyTool(Tool):
                 "type": "string",
                 "label": "Server URL",
                 "description": (
-                    "The ntfy server to send to, and the only one that gets the access token. "
-                    f"Leave empty for {DEFAULT_SERVER}"
+                    "The ntfy server to send to. When set, every message and the access token go to it. "
+                    f"When empty, the token goes only to {DEFAULT_SERVER}, "
+                    "and without a token the model may name the server."
                 ),
                 "required": False,
                 "secret": False,

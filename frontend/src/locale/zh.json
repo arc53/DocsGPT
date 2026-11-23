@@ -3518,7 +3518,7 @@
       "fieldHints": {
         "github_access_token": "细粒度令牌，授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。<link>在 GitHub 上创建令牌</link>",
         "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中复制。此连接只能访问该项目。",
-        "ntfy_server_url": "访问令牌和消息只会发送到此服务器。留空则使用 ntfy.sh。",
+        "ntfy_server_url": "设置后，所有消息和访问令牌都会发送到此服务器。留空时，令牌只会发送到 ntfy.sh。",
         "telegram_chat_id": "消息只会发送到此聊天。添加机器人并给它发一条消息，然后用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
