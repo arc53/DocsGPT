@@ -44,6 +44,7 @@ export type TraceCounts = {
   retrieval_ms?: number;
   input_tokens?: number;
   output_tokens?: number;
+  cost_usd?: number;
   errors?: number;
 };
 

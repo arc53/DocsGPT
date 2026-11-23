@@ -270,11 +270,16 @@ for the engines and flows.
 | `OCR_DEEPSEEK_MODEL` | preset | Model name at that endpoint; overrides the preset's. |
 | `OCR_DEEPSEEK_API_KEY` | unset | Bearer token. Required by `novita` (falls back to `NOVITA_API_KEY`) and `deepinfra`. |
 | `OCR_DEEPSEEK_CONCURRENCY` | preset | Page requests in flight per file: 4 for `vllm`, `novita`, `deepinfra`; 1 for `ollama`, `custom`. |
-| `OCR_DEEPSEEK_MAX_RETRIES` | `3` | Retries per page after a 429, 5xx or refused connection, with backoff honouring `Retry-After`. |
+| `OCR_DEEPSEEK_MAX_RETRIES` | `3` | Retries per page after a 5xx or refused connection, with exponential backoff. |
+| `OCR_MAX_IN_FLIGHT` | `8` | Page requests in flight to one OCR endpoint across every worker (shared through Redis); a 429 halves it for a while. See [Rate limits](/Sources/ocr#rate-limits). |
+| `OCR_RATE_LIMIT_MAX_WAIT` | `300` | Seconds one page request keeps retrying 429s, honouring `Retry-After` and `retry-after-ms`, before its file is set aside. |
+| `OCR_RATE_LIMIT_COOLDOWN` | `60` | Seconds an ingest waits before parsing its rate-limited files again; recognised pages are kept. |
 | `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request. |
 | `OCR_DEEPSEEK_PROMPT` | `Free OCR.` | Instruction sent with each page. |
 | `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
 | `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor for the OCR dropout guard: a multi-page parse whose OCR returns nothing fails loudly instead of indexing an empty document (docling retries once on full-page OCR first); output below the floor but non-empty is indexed with a warning. `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
+| `PARSE_CACHE_ENABLED` | `true` | Keep the text parsed (and OCR'd) from each source file, keyed by its SHA-256 and the parser settings, and reuse it when the same user ingests the same bytes again (another source, a retried or full sync, a chunking change). Only complete parses are kept, never across users; cheap text formats are not cached. |
+| `PARSE_CACHE_TTL_DAYS` | `90` | Days a cached parse is kept after its last use; a daily beat task deletes older ones. |
 
 ## Speech-to-Text Settings
 

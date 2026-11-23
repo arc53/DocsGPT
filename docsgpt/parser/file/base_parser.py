@@ -26,6 +26,16 @@ class DocumentParseError(Exception):
     """
 
 
+class TransientParseError(DocumentParseError):
+    """A parse failed for a reason that may pass on a later try.
+
+    A rate limit, a 5xx from a parsing service, a timeout or a refused
+    connection: the file itself may be fine. ``SimpleDirectoryReader`` lists
+    such files in ``transient_failures``, so an ingest can try them again
+    later instead of treating them as unreadable for good.
+    """
+
+
 class NoTextLayerError(DocumentParseError):
     """A readable document with no text to extract, such as a scanned PDF.
 
