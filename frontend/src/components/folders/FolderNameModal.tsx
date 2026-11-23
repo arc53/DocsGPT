@@ -16,8 +16,6 @@ export type FolderNameModalProps = {
   onOpenChange: (open: boolean) => void;
   /** The page's kind; a folder holds every kind, so it changes nothing. */
   kind?: ItemKind;
-  /** @deprecated Use `kind`. */
-  type?: ItemKind;
   /** `create` a folder inside `parentId`, or `rename` `folder`. */
   mode: 'create' | 'rename';
   /** Where a new folder goes (null: the top level). */
@@ -37,14 +35,13 @@ export default function FolderNameModal({
   open,
   onOpenChange,
   kind,
-  type,
   mode,
   parentId = null,
   folder,
   onSaved,
 }: FolderNameModalProps) {
   const { t } = useTranslation();
-  const actions = useFolderActions(kind ?? type ?? 'agent');
+  const actions = useFolderActions(kind ?? 'agent');
   const initialName = mode === 'rename' ? (folder?.name ?? '') : '';
   const [name, setName] = useState(initialName);
   const [error, setError] = useState<string | null>(null);

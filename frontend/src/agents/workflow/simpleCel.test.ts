@@ -13,7 +13,7 @@ describe('parseSimpleCel', () => {
 
   it('parses a dotted variable path the backend CEL accepts', () => {
     // Regression: Simple mode blocked `audit.high_risk_accounts >= 3` at
-    // Preview ("must specify a variable") while createWorkflow accepted it.
+    // Preview ("must specify a variable") while saving the workflow accepted it.
     expect(parseSimpleCel('audit.high_risk_accounts >= 3')).toEqual({
       variable: 'audit.high_risk_accounts',
       operator: '>=',

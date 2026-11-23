@@ -23,8 +23,6 @@ export type FolderTileProps = {
   folder: Folder;
   /** The page's kind: counted first, the others after "also". */
   kind?: ItemKind;
-  /** @deprecated Use `kind`. */
-  type?: ItemKind;
   onOpen: (folder: Folder) => void;
   /** The folder's ⋯: Rename, Move to folder, Delete (`useFolderMenu`). */
   menuOptions?: MenuOption[];
@@ -109,14 +107,13 @@ function AlsoLinks({
 export default function FolderTile({
   folder,
   kind: kindProp,
-  type,
   onOpen,
   menuOptions = [],
   parentName,
   alsoLinks = true,
 }: FolderTileProps) {
   const { t } = useTranslation();
-  const kind = kindProp ?? type ?? 'agent';
+  const kind = kindProp ?? 'agent';
   const used = kind === 'source' && agentUseCount(folder.used_by) > 0;
   const others = alsoLinks ? folderOtherKinds(folder, kind) : [];
   const count = (
