@@ -6,9 +6,78 @@ interface for external knowledge base connectors.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 
 from docsgpt.parser.schema.base import Document
+
+#: Why a file could not be read: ``transient`` may pass on a later try (rate
+#: limit, 5xx, timeout, refused connection); ``permanent`` follows from the
+#: file itself (unsupported, corrupt, over a size cap) and only changes with it.
+FailureKind = Literal["transient", "permanent"]
+
+
+@dataclass(frozen=True)
+class FileEntry:
+    """One file of a connector selection, as its provider lists it.
+
+    Attributes:
+        id: The provider's id for the file; stable across renames and moves.
+        path: Where the file lands under the download directory (``os.sep``-joined),
+            which is also the ``source`` its chunks carry.
+        version: The provider's version marker (Drive ``modifiedTime``, a
+            SharePoint ``cTag``/``eTag``...); changes when the content does.
+            ``None`` when the provider gave none, which counts as changed on every sync.
+        url: The file's link in the provider, or ``None``.
+    """
+
+    id: str
+    path: str
+    version: Optional[str] = None
+    url: Optional[str] = None
+
+
+@dataclass
+class SelectionListing:
+    """Every file of a selection, listed from metadata without downloading.
+
+    Attributes:
+        entries: The files, one per path.
+        complete: Whether every folder and item could be read. An incomplete
+            listing may leave out files that still exist, so a sync must not
+            treat a missing file as removed.
+    """
+
+    entries: List[FileEntry] = field(default_factory=list)
+    complete: bool = True
+    #: Items or folders that could not be read (what ``complete`` is False for).
+    unread: int = 0
+
+    def deduplicated(self) -> "SelectionListing":
+        """One entry per path and per id, as a download leaves the files.
+
+        A download that writes two files to one path keeps the later one; a
+        file reached twice (picked, and in a picked folder) is kept at its later
+        path, the copy at the earlier path being one a full download also
+        writes but no sync tracks.
+        """
+        by_path: Dict[str, FileEntry] = {}
+        for entry in self.entries:
+            by_path.pop(entry.path, None)
+            by_path[entry.path] = entry
+        by_id: Dict[str, FileEntry] = {}
+        for entry in by_path.values():
+            by_id.pop(entry.id, None)
+            by_id[entry.id] = entry
+        return SelectionListing(entries=list(by_id.values()), complete=self.complete, unread=self.unread)
+
+    def by_id(self) -> Dict[str, FileEntry]:
+        """The entries keyed by file id."""
+        return {entry.id: entry for entry in self.entries}
+
+    def by_path(self) -> Dict[str, FileEntry]:
+        """The entries keyed by path."""
+        return {entry.path: entry for entry in self.entries}
 
 
 class ConnectorAuthError(ValueError):
@@ -210,3 +279,40 @@ class BaseConnectorLoader(ABC):
             A string that changes whenever the selected content changes, or ``None``.
         """
         return None
+
+    def list_selection(self, source_config: Dict[str, Any]) -> Optional[SelectionListing]:
+        """List the selected files from metadata alone, without downloading them.
+
+        A sync diffs this against the files it last indexed and downloads only
+        the added and changed ones. The paths must match where
+        :meth:`download_to_directory` writes each file. Loaders that cannot list
+        return ``None``, and every sync downloads the whole selection.
+
+        Args:
+            source_config: The source's stored selection (``file_ids``, ``folder_ids``, ``recursive``).
+
+        Returns:
+            The listing, or ``None`` when this loader cannot list.
+
+        Raises:
+            ConnectorAuthError: The provider rejected the connection's sign-in.
+        """
+        return None
+
+    def download_files(self, local_dir: str, file_ids: Iterable[str]) -> Dict[str, Any]:
+        """Download only the given files of the last listed selection, each to its listed path.
+
+        Args:
+            local_dir: Directory to write into; nothing is written outside it.
+            file_ids: Ids from :meth:`list_selection`'s entries.
+
+        Returns:
+            ``files_downloaded``, ``files_failed``, ``file_ids`` (path under
+            ``local_dir`` → id), ``file_urls`` (path → link) and ``failures``
+            (id → ``{"kind": "transient" | "permanent", "error": str}``).
+
+        Raises:
+            NotImplementedError: This loader can only download a whole selection.
+            ConnectorAuthError: The provider rejected the connection's sign-in.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot download single files")

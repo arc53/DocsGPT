@@ -171,8 +171,12 @@ def ingest(
     copy_files=None,
     folder_id=None,
     actor_id=None,
+    sync_manifest=None,
 ):
-    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner)."""
+    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner).
+
+    ``sync_manifest`` is the record of the uploaded files the new source starts with.
+    """
     resp = ingest_worker(
         self,
         directory,
@@ -188,6 +192,7 @@ def ingest(
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
         **({"folder_id": folder_id} if folder_id else {}),
+        **({"sync_manifest": sync_manifest} if sync_manifest else {}),
         **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
@@ -592,11 +597,15 @@ def ingest_connector_task(
     connection_id=None,
     actor_id=None,
     folder_id=None,
+    retry_failed=None,
 ):
     """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
 
     ``actor_id`` is the user who asked, when not the owner (a team editor's
     re-ingest or Sync now): the ``source.ingest.*`` events go to them too.
+    This task runs the syncs someone asks for (scheduled ones run
+    ``sync_connector_source``), so a sync retries every file the last one
+    could not read unless ``retry_failed`` says otherwise.
     """
     from docsgpt.worker import ingest_connector
 
@@ -618,6 +627,10 @@ def ingest_connector_task(
         idempotency_key=idempotency_key,
         source_id=source_id,
         actor_id=actor_id,
+        **(
+            {"retry_failed": True if retry_failed is None else bool(retry_failed)}
+            if operation_mode == "sync" else {}
+        ),
         **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
@@ -1028,6 +1041,8 @@ def setup_periodic_tasks(sender, **kwargs):
     # Vectors of ingests that ended without a source, once they are
     # INGEST_ORPHAN_TTL_HOURS old.
     sender.add_periodic_task(timedelta(hours=1), cleanup_orphaned_ingests.s(), name="cleanup-orphaned-ingests")
+    # Stored parses of source files unused for PARSE_CACHE_TTL_DAYS.
+    sender.add_periodic_task(timedelta(hours=24), cleanup_parsed_files.s(), name="cleanup-parsed-files")
     # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
     # digest run on ANALYTICS_QUEUE and are only scheduled while
     # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
@@ -1304,6 +1319,18 @@ def cleanup_content_scores(self):
     with engine.begin() as conn:
         deleted = ContentScoresRepository(conn).purge_unseen_for(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_parsed_files(self):
+    """Delete stored parses of source files unused for ``PARSE_CACHE_TTL_DAYS``, with their storage files."""
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.parser.parse_cache import cleanup_stale_parses
+
+    return cleanup_stale_parses(settings.PARSE_CACHE_TTL_DAYS)
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)

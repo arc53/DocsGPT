@@ -332,7 +332,6 @@
     "exportAgentFailed": "Failed to export agent",
     "filters": {
       "all": "All",
-      "byDocsGPT": "Templates",
       "byMe": "My agents",
       "shared": "Discovered"
     },
@@ -976,11 +975,6 @@
         "description": "Agents other teams shared with this team. Everyone in it can chat with them.",
         "emptyState": "No other team has shared an agent with this team yet."
       },
-      "template": {
-        "description": "Agents provided by DocsGPT",
-        "emptyState": "No template agents found.",
-        "title": "Templates"
-      },
       "user": {
         "description": "Agents created or published by you",
         "emptyState": "You don't have any created agents yet.",
@@ -1002,9 +996,16 @@
     "title": "Agents",
     "tryDifferentSearch": "Try a different search term",
     "typeModal": {
+      "blankAgent": "Blank agent",
+      "blankWorkflow": "Blank workflow",
       "classicDescription": "Create a standard AI agent with a single model, tools, and knowledge sources",
       "classicTitle": "Classic Agent",
+      "describeLabel": "Describe the agent",
+      "describePlaceholder": "An agent on our website that answers shipping questions",
       "description": "Choose the type of agent you want to create",
+      "draftDescription": "Say what it's for and DocsGPT builds it with you, one step at a time.",
+      "newTitle": "New agent",
+      "templatesLabel": "Or start from a template",
       "title": "Create New Agent",
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management",
       "workflowTitle": "Workflow Agent"
@@ -1824,7 +1825,7 @@
         "finish": "Finish",
         "folded": "{{step}}: {{result}}",
         "goTo": "Go to {{field}}",
-        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a template, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
         "missing": {
           "agentType": "an agent type",
           "contextLimit": "a valid context limit",
@@ -1873,6 +1874,7 @@
         "other_step": "a change for another step"
       },
       "fields": {
+        "folders": "Knowledge folders",
         "limits": "Usage limit"
       },
       "formEdited": "You changed {{fields}} in the form.",
@@ -1942,6 +1944,8 @@
     "counts": {
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
+      "folders_one": "{{count}} folder",
+      "folders_other": "{{count}} folders",
       "models_one": "{{count}} model",
       "models_other": "{{count}} models",
       "prompts_one": "{{count}} prompt",
@@ -2102,15 +2106,54 @@
     "startOver": "Start over",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "HR",
+              "it": "IT",
+              "office": "Office and facilities",
+              "policies": "Company policies"
+            },
+            "text": "Which areas does it cover?"
+          }
+        },
         "description": "HR, IT and policy questions from your team",
+        "short": "Internal helpdesk",
         "title": "Internal helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Case files",
+              "contracts": "Contracts",
+              "papers": "Papers",
+              "reports": "Reports"
+            },
+            "text": "What are the documents?"
+          },
+          "users": {
+            "options": {
+              "clients": "Customers or clients",
+              "me": "Just me",
+              "team": "My team"
+            },
+            "text": "Who uses it?"
+          }
+        },
         "description": "Digs through your documents and cites them",
+        "short": "Research assistant",
         "title": "Research assistant"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "What is the company or product called?"
+          }
+        },
         "description": "Answers visitors and hands off when unsure",
+        "short": "Website chat",
         "title": "Website chat for customers"
       }
     },
@@ -2124,6 +2167,23 @@
     "stop": "Stop",
     "stoppedDescription": "You stopped this turn. Nothing in the form changed.",
     "suggestionsLabel": "Ways to start",
+    "templates": {
+      "browse": "Browse all templates",
+      "categories": {
+        "all": "All",
+        "customerSupport": "Customer support",
+        "internal": "Internal",
+        "research": "Research"
+      },
+      "categoriesLabel": "Template categories",
+      "description_one": "{{formatted}} template. Pick one and DocsGPT builds it with you.",
+      "description_other": "{{formatted}} templates. Pick one and DocsGPT builds it with you.",
+      "empty": "No templates match",
+      "search": "Search templates",
+      "showAll": "All templates",
+      "showMore": "Show more",
+      "title": "Templates"
+    },
     "title": "Draft with DocsGPT",
     "topics": {
       "add_one": "Add {{formatted}} topic",
@@ -2584,8 +2644,8 @@
         "failed": "Upload failed",
         "ingestionFailed": "Ingestion failed.",
         "parsing": "Parsing files…",
-        "partialDownload_one": "{{count}} item couldn’t be downloaded, so it was left out. Sync the source to try it again.",
-        "partialDownload_other": "{{count}} items couldn’t be downloaded, so they were left out. Sync the source to try them again.",
+        "partialDownload_one": "{{count}} item couldn’t be read, so it was left out. Sync the source to try it again.",
+        "partialDownload_other": "{{count}} items couldn’t be read, so they were left out. Sync the source to try them again.",
         "preparing": "Preparing upload",
         "tokenLimit": "Over the token limit, please consider uploading a smaller document",
         "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
@@ -3995,8 +4055,6 @@
       "taskModelDescription": "Drafts forms, builds knowledge graphs and checks monitors. Chats use the agent's model.",
       "taskModelFailed": "{{model}} couldn't run your last task: its provider refused the API key. Pick another model, or ask an admin to check the key.",
       "taskModelFailedItem": "· key refused",
-      "taskModelInstanceDefault": "Use instance default ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Use instance default",
       "taskModelLoadError": "Could not load the task model.",
       "taskModelSaveFailed": "Couldn't save the task model. Try again.",
       "taskModelUnavailable": "Your task model can't run any more (it was disabled or removed), so the instance default runs. If the model comes back, it runs again; pick an option here to replace it.",
@@ -4345,6 +4403,8 @@
       "files": "Files",
       "filesByline_one": "{{files}} file · {{tokens}} tokens",
       "filesByline_other": "{{files}} files · {{tokens}} tokens",
+      "filesFailed_one": "{{count}} file couldn’t be indexed in its latest version when this source last synced. If it was indexed before, search may still return its earlier content.",
+      "filesFailed_other": "{{count}} files couldn’t be indexed in their latest version when this source last synced. Files indexed before may still show their earlier content in search.",
       "filesLoadError": "Could not load the files",
       "filterFiles": "Filter files",
       "folderAlt": "Folder",
@@ -4587,6 +4647,7 @@
         },
         "title": "Advanced settings"
       },
+      "retryFailedFiles": "Try again now",
       "searchAlt": "Search",
       "searchChunks": "Search chunks",
       "searchPlaceholder": "Search knowledge…",
@@ -5569,7 +5630,6 @@
       },
       "mismatch": "This agent belongs to another workspace than this chat.",
       "notFound": "You're no longer in this team, so the chat can't continue here.",
-      "onlyYou": "Only you can see this chat",
       "switchTo": "Switch to {{name}}",
       "thisTeam": "this team"
     },
@@ -5585,13 +5645,6 @@
     },
     "folders": {
       "alsoInFolder": "Also in this folder"
-    },
-    "line": {
-      "people_one": "{{count}} person",
-      "people_other": "{{count}} people",
-      "personal": "Personal",
-      "personalScope": "Only you, unless you share an item",
-      "teamScope": "Everyone in the team can use what's here"
     },
     "menu": {
       "moveToPersonal": "Move to Personal…",

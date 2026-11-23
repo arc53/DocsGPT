@@ -196,7 +196,31 @@ Two cases re-embed every file once:
 - **A chunking change.** After you change the chunking settings, the next reingest rebuilds the chunks of every file.
 - **A source ingested before content hashes were stored.** Its first reingest re-embeds every file and stores their hashes. Later ones re-embed only what changed.
 
+### What a sync re-embeds
+
+A sync of a connector source (Google Drive, SharePoint and OneDrive, Confluence) lists the selection without downloading it and compares each file's version with what the last sync indexed. Only new and edited files are downloaded and embedded; a renamed or moved file keeps its chunks, and a file that left the selection loses them. A file that could not be read is retried on its own by the next syncs; see [Google Drive sync](/Sources/Connectors/google-drive#sync).
+
+A sync of a GitHub repository, a crawled site, an S3 bucket or another remote source reads every file again, since those services have no cheaper listing, but embeds only the files whose content changed and deletes the chunks of removed ones.
+
+Both rebuild the whole index once after a chunking change.
+
 To replace all of a source's files at once, for example from a script, send the new set with the `sync` operation of `POST /api/manage_source_files`. Files and ZIP archives are accepted, with the same limits as an upload, and a ZIP keeps its folders. Files that are not in the new set are removed, and the source keeps its ID, so agents that use it keep working.
+
+### Sync only the files that changed
+
+A sync can also upload only what the source lacks. This is how `docsgpt-cli sources upload <folder> --sync` keeps a source in step with a folder, for example from a scheduled job, without sending the whole folder each time.
+
+1. Send the request with the operation `sync_manifest`, a `manifest` file part and no files. The manifest is JSON that lists every file the source should hold, by its path and the SHA-256 of its content:
+
+   ```json
+   {"version": 1, "files": [{"path": "guide/intro.md", "sha256": "9b2e…"}]}
+   ```
+
+   When the source lacks some of that content, the answer has `"status": "needs_files"` and, in `needed`, the paths it does not hold with that content, and nothing has changed. When it lacks none, this request already completes the sync as in step 3: files that are not in the manifest are removed.
+2. Send the manifest again with those files as `file` parts, each named after the SHA-256 of its content instead of its path. One part serves every path with that content. The files can go in several requests: each one stores what it brings and answers with what is still `needed`.
+3. When the source holds every file of the manifest, the files that are not in it are removed and the answer is `"status": "synced"` with a `reingest_task_id`, or `"status": "unchanged"` when nothing differed and the index was already up to date.
+
+A path is relative, uses `/`, and can be in any script; each folder or file name in it is up to 200 bytes. Files are stored as sent: a ZIP archive is not unpacked here. A manifest lists up to `UPLOAD_MAX_ARCHIVE_FILES` files (10,000 by default), and a request carries up to 1,000 parts. While another request is changing the same source's files, the answer is `409` with `"code": "source_files_busy"`: try again shortly.
 
 To build a knowledge graph over a source, see [GraphRAG](/Sources/GraphRAG).
 
@@ -284,7 +308,7 @@ In a chat, an agent or a workflow's AI agent step, you can pick one of your [fol
 A picked folder stays up to date: each answer uses what is in the folder at that moment. A source you file in it later reaches the agent or chat without editing anything, and a source you move out of it stops being used, unless it is also picked on its own. Picked sources and folders count once each, and a source in both is used once.
 
 - **In a chat without an agent**, the folder applies to that conversation. When the only thing picked is one folder, the composer's **Knowledge** button shows the folder's name; with more, it counts each folder and source once.
-- **In the agent builder**, the **Knowledge** field counts each folder once, such as **2 selected**, and a hint under it names the folders, such as **Carriers and Customs are folders: their 9 sources today, and any added to them later.**
+- **In the agent builder**, the **Knowledge** field counts each folder once, such as **2 selected**, and a hint under it names the folders, such as **Carriers and Customs are folders: their 9 sources today, and any added to them later.** [Draft with DocsGPT](/Agents/draft-with-docsgpt#what-it-may-change) can pick folders for the agent too.
 - **In a workflow**, an AI agent step's **Knowledge** picker takes folders the same way. See [AI Agent Node](/Agents/nodes#ai-agent-node).
 
 A folder reads as its owner's filing: the sources its owner filed anywhere in it that its owner can still use. You can pick only your own folders. Adding yours to an agent or workflow someone else owns asks you first, as for a [sponsored resource](/Deploying/Access-Control#resources-an-editor-adds-to-someone-elses-agent): the dialog names the folder and says that sources you file in it later run with your access too. On an agent shared with you as an editor, a teammate's folder shows by name, with whose folder it is, such as **lena@example.com's folder · 5 sources**; you can remove it, but not change what's in it. It gives the agent only sources the agent's owner can use, or sources its folder's owner owns or edits, and it stops, giving the agent nothing, once that teammate can no longer edit the agent. The picker then marks it **Stopped**, and the hint under **Knowledge** says, for example, **Rate cards stopped: it's lena@example.com's folder, and they can no longer edit this agent.** The teammate is named the way **Added by …** names a sponsor, by their email; someone who doesn't know them reads **Rate cards stopped: its owner can no longer edit this agent.** A deleted folder comes off the agents that used it and gives nothing to workflow steps that still name it; a step's picker lists it as **Deleted folder**, **No longer exists. Take it off.**

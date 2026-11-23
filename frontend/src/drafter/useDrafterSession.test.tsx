@@ -92,6 +92,54 @@ describe('useDrafterSession', () => {
     });
   });
 
+  describe('ask', () => {
+    const asked = QUESTIONS.type === 'questions' ? QUESTIONS.questions : [];
+
+    it('opens a round without a turn, and the answer is the first turn', async () => {
+      await act(async () => session.ask('Internal helpdesk', asked));
+      expect(stream.requests).toHaveLength(0);
+      expect(session.streaming).toBe(false);
+      expect(session.items.map((item) => item.kind)).toEqual([
+        'user',
+        'questions',
+      ]);
+      expect(session.userTexts()).toEqual(['Internal helpdesk']);
+      await act(async () =>
+        session.send('Who uses it? → Staff', { answers: { q1: 'Staff' } }),
+      );
+      expect(sent(0)).toEqual([
+        { role: 'user', content: 'Internal helpdesk' },
+        { role: 'assistant', content: JSON.stringify(QUESTIONS) },
+        { role: 'user', content: 'Who uses it? → Staff' },
+      ]);
+      expect(session.items[1]).toMatchObject({
+        kind: 'questions',
+        state: 'answered',
+        answers: { q1: 'Staff' },
+      });
+    });
+
+    it('does nothing once a conversation has begun, or with nothing to ask', async () => {
+      await act(async () => session.ask('Internal helpdesk', []));
+      await act(async () => session.ask('   ', asked));
+      expect(session.items).toEqual([]);
+      stream.scripts = [[{ type: 'message', text: 'Sure.' }, { type: 'end' }]];
+      await act(async () => session.send('Draft it'));
+      const before = session.items.length;
+      await act(async () => session.ask('Internal helpdesk', asked));
+      expect(session.items).toHaveLength(before);
+    });
+
+    it('is forgotten by a reset', async () => {
+      await act(async () => session.ask('Internal helpdesk', asked));
+      await act(async () => session.reset());
+      expect(session.items).toEqual([]);
+      stream.scripts = [[{ type: 'message', text: 'Sure.' }, { type: 'end' }]];
+      await act(async () => session.send('Draft it'));
+      expect(sent(0)).toEqual([{ role: 'user', content: 'Draft it' }]);
+    });
+  });
+
   it("keeps a refusal's limit on its error", async () => {
     stream.scripts = [
       [

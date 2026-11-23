@@ -18,7 +18,7 @@ import json
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Iterable, Optional
 
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -28,6 +28,16 @@ from docsgpt.storage.db.models import conversations_table, conversation_messages
 from docsgpt.storage.db.serialization import PGNativeJSONEncoder
 
 logger = logging.getLogger(__name__)
+
+# A compression summary row an earlier version stored (alias ``m``): marked in
+# its metadata, or, written before the marker, the bare label with nothing
+# else on the row. Mirrors ``compression.types.is_compression_summary_row``.
+_COMPRESSION_SUMMARY_ROW_SQL = (
+    "(COALESCE(m.message_metadata->>'compression_summary', '') = 'true' "
+    "OR (m.prompt IS NOT DISTINCT FROM '[Context Compression Summary]' "
+    "AND COALESCE(m.tool_calls, '[]'::jsonb) = '[]'::jsonb "
+    "AND COALESCE(m.message_metadata, '{}'::jsonb) = '{}'::jsonb))"
+)
 
 
 class MessageUpdateOutcome(str, Enum):
@@ -471,11 +481,13 @@ class ConversationsRepository:
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
                 "      AND m.prompt ILIKE :pattern ESCAPE '\\' "
+                f"      AND NOT {_COMPRESSION_SUMMARY_ROW_SQL} "
                 "    UNION ALL "
                 "    SELECT 'response'::text, m.response, 2 "
                 "    FROM conversation_messages m "
                 "    WHERE m.conversation_id = c.id "
                 "      AND m.response ILIKE :pattern ESCAPE '\\' "
+                f"      AND NOT {_COMPRESSION_SUMMARY_ROW_SQL} "
                 "  ) s "
                 "  ORDER BY prio "
                 "  LIMIT 1 "
@@ -605,6 +617,76 @@ class ConversationsRepository:
         )
         return result.rowcount > 0
 
+    def prune_compression_points(
+        self, conversation_id: str, keep_up_to: int, retired_message_ids: Iterable[str] = ()
+    ) -> int:
+        """Drop compression points that cover a message past position ``keep_up_to``.
+
+        A point covers the rows up to its ``query_index`` and, for a mid-turn
+        point, the tool work of the turn at ``turn_index``; both count rows in
+        order, not stored positions, which a deleted row leaves gaps in. Once
+        those rows are deleted or rewritten, its summary describes messages
+        that are gone. A mid-turn point whose turn's row was deleted goes too.
+
+        Args:
+            conversation_id: Conversation whose points are checked.
+            keep_up_to: Highest position whose messages are still current.
+            retired_message_ids: Ids of messages just deleted.
+
+        Returns:
+            Number of points removed.
+        """
+        if not looks_like_uuid(conversation_id):
+            return 0
+        kept_rows = self._conn.execute(
+            text(
+                "SELECT count(*) FROM conversation_messages "
+                "WHERE conversation_id = CAST(:id AS uuid) AND position <= :pos"
+            ),
+            {"id": conversation_id, "pos": keep_up_to},
+        ).scalar() or 0
+        keep_index = kept_rows - 1
+        retired = {str(m) for m in retired_message_ids}
+
+        def _past(value) -> bool:
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value > keep_index
+
+        return self._drop_compression_points(
+            conversation_id,
+            lambda p: _past(p.get("query_index"))
+            or _past(p.get("turn_index"))
+            or str(p.get("turn_message_id") or "") in retired,
+        )
+
+    def _drop_compression_points(self, conversation_id: str, stale) -> int:
+        """Remove the compression points ``stale`` matches; clear ``is_compressed`` when none remain."""
+        if not looks_like_uuid(conversation_id):
+            return 0
+        row = self._conn.execute(
+            text(
+                "SELECT compression_metadata FROM conversations "
+                "WHERE id = CAST(:id AS uuid) FOR UPDATE"
+            ),
+            {"id": conversation_id},
+        ).fetchone()
+        metadata = row[0] if row is not None else None
+        points = metadata.get("compression_points") if isinstance(metadata, dict) else None
+        if not isinstance(points, list) or not points:
+            return 0
+        kept = [p for p in points if not (isinstance(p, dict) and stale(p))]
+        removed = len(points) - len(kept)
+        if not removed:
+            return 0
+        updated = {**metadata, "compression_points": kept, "is_compressed": bool(kept)}
+        self._conn.execute(
+            text(
+                "UPDATE conversations SET compression_metadata = CAST(:meta AS jsonb), "
+                "updated_at = now() WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": conversation_id, "meta": json.dumps(updated, cls=PGNativeJSONEncoder)},
+        )
+        return removed
+
     def set_compression_flags(
         self,
         conversation_id: str,
@@ -677,6 +759,20 @@ class ConversationsRepository:
         # (NULL comparisons are false), so it is always appended.
         dup_index = point.get("query_index")
         dup_summary = point.get("compressed_summary")
+        # A mid-turn point is stored only while its turn is still being
+        # answered: once an edit or retry deleted or rewrote the row, the
+        # summary holds a turn that was replaced.
+        turn_message_id = point.get("turn_message_id")
+        if turn_message_id is not None and not looks_like_uuid(str(turn_message_id)):
+            turn_message_id = None
+        turn_message_id = None if turn_message_id is None else str(turn_message_id)
+        if turn_message_id is not None:
+            # Lock the conversation first, so the check below reads a snapshot
+            # taken after any truncation holding the lock has committed.
+            self._conn.execute(
+                text("SELECT 1 FROM conversations WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+                {"id": conversation_id},
+            )
         result = self._conn.execute(
             text(
                 """
@@ -714,6 +810,15 @@ class ConversationsRepository:
                     END,
                     updated_at = now()
                 WHERE id = CAST(:id AS uuid)
+                  AND (
+                      CAST(:turn_message_id AS text) IS NULL
+                      OR EXISTS (
+                          SELECT 1 FROM conversation_messages
+                          WHERE id = CAST(:turn_message_id AS uuid)
+                            AND conversation_id = CAST(:id AS uuid)
+                            AND status IN ('pending', 'streaming')
+                      )
+                  )
                 """
             ),
             {
@@ -722,6 +827,7 @@ class ConversationsRepository:
                 "max_points": int(max_points),
                 "dup_index": None if dup_index is None else str(dup_index),
                 "dup_summary": None if dup_summary is None else str(dup_summary),
+                "turn_message_id": turn_message_id,
             },
         )
         return result.rowcount > 0
@@ -1117,14 +1223,38 @@ class ConversationsRepository:
         """
         if not looks_like_uuid(message_id):
             return False
-        result = self._conn.execute(
+        deleted = self._conn.execute(
             text(
                 "DELETE FROM conversation_messages WHERE id = CAST(:id AS uuid) "
-                "AND status IN ('pending', 'streaming')"
+                "AND status IN ('pending', 'streaming') "
+                "RETURNING conversation_id, position"
             ),
             {"id": message_id},
+        ).fetchone()
+        if deleted is None:
+            return False
+        # Points count rows in order, so every row after this one moved down:
+        # a point reaching this row now covers one it never summarized, and a
+        # point made while this turn ran holds its tool work.
+        conversation_id, position = str(deleted[0]), deleted[1]
+        row_index = self._conn.execute(
+            text(
+                "SELECT count(*) FROM conversation_messages "
+                "WHERE conversation_id = CAST(:id AS uuid) AND position < :pos"
+            ),
+            {"id": conversation_id, "pos": position},
+        ).scalar() or 0
+
+        def _reaches(value) -> bool:
+            return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= row_index
+
+        self._drop_compression_points(
+            conversation_id,
+            lambda p: str(p.get("turn_message_id") or "") == message_id
+            or _reaches(p.get("query_index"))
+            or _reaches(p.get("turn_index")),
         )
-        return (result.rowcount or 0) > 0
+        return True
 
     def update_message_by_id(
         self, message_id: str, fields: dict,
@@ -1552,6 +1682,7 @@ class ConversationsRepository:
             ),
             {"conv_id": conversation_id, "pos": keep_up_to},
         )
+        self.prune_compression_points(conversation_id, keep_up_to, self.retired_message_ids)
         return result.rowcount
 
     def was_superseded(self, message_id: str) -> bool:

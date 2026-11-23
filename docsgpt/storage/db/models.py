@@ -500,6 +500,11 @@ sources_table = Table(
     Column("remote_data", JSONB),
     Column("directory_structure", JSONB),
     Column("file_name_map", JSONB),
+    # What a file sync stored: client path -> stored path and content hash,
+    # plus the generation the index was last built from (see
+    # ``docsgpt/api/user/sources/sync_manifest.py``). NULL until a sync runs.
+    Column("sync_manifest", JSONB),
+    Column("remote_files", JSONB),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("legacy_mongo_id", Text),
@@ -651,6 +656,28 @@ Index(
     attachments_table.c.created_at,
     postgresql_where=text("(metadata->'archive'->>'status') = 'processing'"),
 )
+
+# Text parsed from a source file, reused when the same user ingests the same
+# bytes with the same parser settings again (migration 0067). ``content`` is
+# the parser's output (a string or a list of strings), NULL when a large one
+# lives in the storage backend at ``storage_path``.
+parsed_files_table = Table(
+    "parsed_files",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("content_sha256", Text, nullable=False),
+    Column("parser_key", Text, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("last_used_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("page_count", Integer),
+    Column("billed_pages", Integer),
+    Column("content", JSONB),
+    Column("parser_metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("storage_path", Text),
+    UniqueConstraint("user_id", "content_sha256", "parser_key", name="parsed_files_user_content_parser_key"),
+)
+Index("parsed_files_last_used_idx", parsed_files_table.c.last_used_at)
 
 # Identity row, one per logical artifact. The stable ``id`` is the handle passed
 # around (chat/workflow state/message bodies carry only this reference, never

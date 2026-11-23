@@ -65,7 +65,6 @@ const preloadedState: { preference: Preference } = {
     sourceDocsFailed: false,
     modalState: 'INACTIVE',
     paginatedDocuments: null,
-    templateAgents: null,
     agents: null,
     sharedAgents: null,
     selectedAgent: null,

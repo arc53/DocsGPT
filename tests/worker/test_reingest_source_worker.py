@@ -9,8 +9,9 @@ lands on the row for our ephemeral DB.
 
 from __future__ import annotations
 
+import os
 from io import BytesIO
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -463,7 +464,7 @@ class TestReingestDetectsEditedFiles:
         chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
         from docsgpt.vectorstore.vector_creator import VectorCreator
 
-        store = VectorCreator.create_vectorstore()
+        store = VectorCreator.create_vectorstore("faiss", "source")
         real_add = store.add_chunk.side_effect
         store.add_chunk.side_effect = RuntimeError("embedding service down")
         first = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
@@ -512,7 +513,7 @@ class TestReingestDetectsEditedFiles:
         src = _hashed_source(pg_conn, {"a.md": b"alpha"})
         stored_files.update({"a.md": b"alpha, edited"})
         chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
-        store = VectorCreator.create_vectorstore()
+        store = VectorCreator.create_vectorstore("faiss", "source")
         real_get = store.get_chunks.side_effect
         store.get_chunks.side_effect = RuntimeError("vector store down")
 
@@ -522,3 +523,404 @@ class TestReingestDetectsEditedFiles:
 
         assert second["modified_files"] == ["a.md"]
         assert "old-a" not in [c["doc_id"] for c in chunk_store]
+
+
+def _with_manifest(pg_conn, src, generation="g1", indexed=None):
+    SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"sync_manifest": {
+        "version": 1, "generation": generation, "indexed_generation": indexed, "files": {},
+    }})
+
+
+def _manifest(pg_conn, src):
+    return SourcesRepository(pg_conn).get(str(src["id"]), "alice")["sync_manifest"]
+
+
+@pytest.mark.unit
+class TestReingestMarksTheIndexCurrent:
+    """A clean reingest records the ``sync_manifest`` generation it read the files at."""
+
+    def test_no_changes_marks_the_index_current(self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store):
+        stored_files.update({"a.md": b"alpha"})
+        src = _hashed_source(pg_conn, dict(stored_files))
+        _with_manifest(pg_conn, src)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "no_changes"
+        assert _manifest(pg_conn, src)["indexed_generation"] == "g1"
+
+    def test_a_completed_run_marks_the_index_current(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed"
+        manifest = _manifest(pg_conn, src)
+        assert manifest["indexed_generation"] == "g1" and manifest["generation"] == "g1"
+
+    def test_files_changed_during_the_run_keep_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store, monkeypatch,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        real_download = worker._download_source_files_to_dir
+
+        def download_then_sync(*args, **kwargs):
+            complete = real_download(*args, **kwargs)
+            # A sync stores new files while this run is reading the old ones.
+            _with_manifest(pg_conn, src, generation="g2")
+            return complete
+
+        monkeypatch.setattr(worker, "_download_source_files_to_dir", download_then_sync)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed"
+        manifest = _manifest(pg_conn, src)
+        assert manifest["generation"] == "g2" and manifest["indexed_generation"] is None
+
+    def test_a_run_with_a_failed_embedding_keeps_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore("faiss", "source").add_chunk.side_effect = RuntimeError("embedding service down")
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+    def test_a_source_no_sync_touched_gets_no_manifest(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        stored_files.update({"a.md": b"alpha"})
+        src = _hashed_source(pg_conn, dict(stored_files))
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert _manifest(pg_conn, src) is None
+
+
+    def test_a_run_that_could_not_compare_the_files_keeps_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store, monkeypatch,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        monkeypatch.setattr(worker, "_structure_files", MagicMock(side_effect=RuntimeError("bad structure")))
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "no_changes"
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+
+@pytest.mark.unit
+class TestRecordSyncManifest:
+    """``ingest_worker`` stores the upload's record only on a source that has none."""
+
+    RECORD = {"version": 1, "generation": "up", "indexed_generation": "up", "files": {
+        "a.md": {"path": "a.md", "sha256": _sha(b"alpha")},
+    }}
+
+    def test_a_new_source_gets_the_record(self, pg_conn, patch_worker_db):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+
+        worker._record_sync_manifest(str(src["id"]), "alice", self.RECORD)
+
+        assert _manifest(pg_conn, src) == self.RECORD
+
+    def test_an_ingest_run_again_does_not_replace_what_a_sync_recorded(self, pg_conn, patch_worker_db):
+        """A redelivered ingest must not bring back the hashes of files a sync has since replaced."""
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        _with_manifest(pg_conn, src, generation="g2")
+
+        worker._record_sync_manifest(str(src["id"]), "alice", self.RECORD)
+
+        assert _manifest(pg_conn, src)["generation"] == "g2"
+
+
+@pytest.mark.unit
+class TestIncompleteScanChangesNothing:
+    """A stored file that could not be read would look removed: the run stops before the index changes."""
+
+    def test_a_failed_download_fails_the_run_and_keeps_the_chunks(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha", "b.md": b"beta"})
+        stored_files.update({"a.md": b"alpha, edited", "b.md": b"beta"})
+        chunk_store.extend([
+            {"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}},
+            {"doc_id": "old-b", "text": "beta", "metadata": {"source": "b.md"}},
+        ])
+        _with_manifest(pg_conn, src)
+        storage = worker.StorageCreator.get_storage()
+        real = storage.get_file.side_effect
+
+        def get_file(path):
+            if path.endswith("b.md"):
+                raise OSError("storage hiccup")
+            return real(path)
+
+        storage.get_file.side_effect = get_file
+
+        with pytest.raises(RuntimeError, match="Could not read every stored file"):
+            worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert [c["doc_id"] for c in chunk_store] == ["old-a", "old-b"]
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+    def test_a_chunk_that_could_not_be_deleted_is_retried_and_keeps_the_index_stale(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha", "gone.md": b"old"})
+        stored_files.update({"a.md": b"alpha"})
+        chunk_store.extend([
+            {"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}},
+            {"doc_id": "old-gone", "text": "old", "metadata": {"source": "gone.md"}},
+        ])
+        _with_manifest(pg_conn, src)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        store = VectorCreator.create_vectorstore("faiss", "source")
+        real_delete = store.delete_chunk.side_effect
+        store.delete_chunk.side_effect = RuntimeError("vector store down")
+
+        first = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert first["index_current"] is False
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+        store.delete_chunk.side_effect = real_delete
+
+        second = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert second["removed_files"] == ["gone.md"]
+        assert [c["doc_id"] for c in chunk_store] == ["old-a"]
+        assert second["index_current"] is True
+
+
+@pytest.mark.unit
+class TestReingestThatDiesPartWay:
+    """A run killed between changing chunks and saving the structure must not leave hashes the index does not match."""
+
+    def test_structure_with_pending_lists_added_and_edited_files_without_a_hash(self):
+        old = {"a.md": {"type": "t", "size_bytes": 1, "sha256": "h-a"}, "docs": {"b.md": {
+            "type": "t", "size_bytes": 1, "sha256": "h-b",
+        }}}
+        new = {"a.md": {"type": "t", "size_bytes": 2, "sha256": "h-a2"}, "docs": {
+            "b.md": {"type": "t", "size_bytes": 1, "sha256": "h-b"},
+            "new": {"c.md": {"type": "t", "size_bytes": 3, "sha256": "h-c"}},
+        }}
+
+        pending = worker._structure_with_pending(old, new, [os.path.join("docs", "new", "c.md")], ["a.md"])
+
+        assert pending == {
+            "a.md": {"type": "t", "size_bytes": 1},
+            "docs": {"b.md": {"type": "t", "size_bytes": 1, "sha256": "h-b"}, "new": {"c.md": {
+                "type": "t", "size_bytes": 3,
+            }}},
+        }
+        assert old["a.md"]["sha256"] == "h-a" and new["docs"]["new"]["c.md"]["sha256"] == "h-c"
+
+    def test_structure_with_pending_keeps_removed_files_listed_without_a_hash(self):
+        old = {"a.md": {"type": "t", "size_bytes": 1, "sha256": "h-a"}, "gone.md": {
+            "type": "t", "size_bytes": 1, "sha256": "h-gone",
+        }}
+        new = {"a.md": {"type": "t", "size_bytes": 1, "sha256": "h-a"}}
+
+        pending = worker._structure_with_pending(old, new, [], ["gone.md"])
+
+        assert pending["gone.md"] == {"type": "t", "size_bytes": 1}
+        assert pending["a.md"]["sha256"] == "h-a"
+
+    def test_structure_with_pending_keeps_a_removed_file_a_folder_took_the_place_of(self):
+        """``guide`` was a file and is a folder now: the file's entry is the only note of its chunks."""
+        old = {"guide": {"type": "t", "size_bytes": 1, "sha256": "h-g"}, "docs": {"a.md": {
+            "type": "t", "size_bytes": 1, "sha256": "h-a",
+        }}}
+        new = {"guide": {"b.md": {"type": "t", "size_bytes": 2, "sha256": "h-b"}}, "docs": {
+            "type": "t", "size_bytes": 3, "sha256": "h-d",
+        }}
+
+        pending = worker._structure_with_pending(
+            old, new, [os.path.join("guide", "b.md"), "docs"], ["guide", os.path.join("docs", "a.md")],
+        )
+
+        assert pending == {
+            "guide": {"type": "t", "size_bytes": 1},
+            "docs": {"a.md": {"type": "t", "size_bytes": 1}},
+        }
+
+    def test_a_file_seen_missing_by_a_dead_run_is_embedded_again_when_it_is_there(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        """A run that listed the files mid-change saw ``a.md`` missing, deleted its chunks and died."""
+        src = _hashed_source(pg_conn, {"a.md": b"alpha", "b.md": b"beta"})
+        chunk_store.extend([
+            {"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}},
+            {"doc_id": "old-b", "text": "beta", "metadata": {"source": "b.md"}},
+        ])
+        stored_files.update({"b.md": b"beta"})
+        _with_manifest(pg_conn, src)
+        with patch.object(worker, "_apply_display_names_to_structure", side_effect=SystemExit("killed")):
+            with pytest.raises(SystemExit):
+                worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+        assert [c["doc_id"] for c in chunk_store] == ["old-b"]
+        # The file is stored after all, with the content its saved hash named.
+        stored_files.update({"a.md": b"alpha"})
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed" and result["modified_files"] == ["a.md"]
+        assert {c["metadata"]["source"] for c in chunk_store} == {"a.md", "b.md"}
+        assert result["index_current"] is True
+
+    def test_an_edit_reverted_after_a_dead_run_is_embedded_again(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        store = VectorCreator.create_vectorstore("faiss", "source")
+        real_add = store.add_chunk.side_effect
+        # The run deletes a.md's chunks, then the process is killed.
+        store.add_chunk.side_effect = SystemExit("killed")
+        with pytest.raises(SystemExit):
+            worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+        store.add_chunk.side_effect = real_add
+        assert not chunk_store
+        # The file goes back to what the saved hash said.
+        stored_files.update({"a.md": b"alpha"})
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed" and result["modified_files"] == ["a.md"]
+        assert [c["text"] for c in chunk_store if c["metadata"]["source"] == "a.md"]
+        assert result["index_current"] is True
+
+    def test_a_file_added_by_a_dead_run_and_then_removed_leaves_no_chunks(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
+        stored_files.update({"a.md": b"alpha", "b.md": b"beta"})
+        # The run embeds b.md, then dies before saving the final structure.
+        with patch.object(worker, "_apply_display_names_to_structure", side_effect=SystemExit("killed")):
+            with pytest.raises(SystemExit):
+                worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+        assert any(c["metadata"]["source"] == "b.md" for c in chunk_store)
+        del stored_files["b.md"]
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["removed_files"] == ["b.md"]
+        assert {c["metadata"]["source"] for c in chunk_store} == {"a.md"}
+
+
+@pytest.mark.unit
+class TestReingestSaysWhetherTheIndexIsCurrent:
+    def test_true_only_when_the_mark_was_set(self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store):
+        stored_files.update({"a.md": b"alpha"})
+        src = _hashed_source(pg_conn, dict(stored_files))
+
+        assert worker.reingest_source_worker(task_self, str(src["id"]), "alice")["index_current"] is False
+
+        _with_manifest(pg_conn, src)
+        assert worker.reingest_source_worker(task_self, str(src["id"]), "alice")["index_current"] is True
+
+    def test_false_while_the_files_are_being_written(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        stored_files.update({"a.md": b"alpha"})
+        src = _hashed_source(pg_conn, dict(stored_files))
+        SourcesRepository(pg_conn).update(str(src["id"]), "alice", {"sync_manifest": {
+            "version": 1, "generation": "g1", "indexed_generation": None, "writing": True, "files": {},
+        }})
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["index_current"] is False
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+
+    def test_false_when_an_embedding_failed(self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+        _with_manifest(pg_conn, src)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore("faiss", "source").add_chunk.side_effect = RuntimeError("embedding service down")
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["status"] == "completed" and result["index_current"] is False
+
+
+@pytest.mark.unit
+class TestReingestPendingRecord:
+    """Before it changes chunks a run notes the files and un-marks the index; a clean finish clears the note."""
+
+    def _metadata(self, pg_conn, src):
+        return SourcesRepository(pg_conn).get(str(src["id"]), "alice")["metadata"] or {}
+
+    def test_a_clean_run_leaves_no_note(self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store):
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        stored_files.update({"a.md": b"alpha, edited"})
+
+        worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert "reingest_pending" not in self._metadata(pg_conn, src)
+
+    def test_a_run_that_dies_un_marks_the_index_and_leaves_the_note(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        """Also the rechunk case: it starts from an index a sync marked current."""
+        src = _hashed_source(pg_conn, {"a.md": b"alpha"})
+        chunk_store.append({"doc_id": "old-a", "text": "alpha", "metadata": {"source": "a.md"}})
+        stored_files.update({"a.md": b"alpha"})
+        _with_manifest(pg_conn, src, indexed="g1")
+        SourcesRepository(pg_conn).set_metadata_key(str(src["id"]), "alice", "rechunk_pending", True)
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        VectorCreator.create_vectorstore("faiss", "source").add_chunk.side_effect = SystemExit("killed")
+
+        with pytest.raises(SystemExit):
+            worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert not chunk_store
+        assert _manifest(pg_conn, src)["indexed_generation"] is None
+        assert self._metadata(pg_conn, src)["reingest_pending"] == ["a.md"]
+
+    def test_a_file_a_dead_run_added_where_a_file_was_leaves_no_chunks_when_the_file_is_back(
+        self, pg_conn, patch_worker_db, task_self, stored_files, chunk_store,
+    ):
+        """``guide.md`` was a file, became a folder with ``a.md``, and is a file again after a run died in between."""
+        src = _hashed_source(pg_conn, {"guide.md": b"alpha"})
+        child = os.path.join("guide.md", "a.md")
+        chunk_store.extend([
+            {"doc_id": "old-guide", "text": "alpha", "metadata": {"source": "guide.md"}},
+            # What the dead run embedded for the file it added.
+            {"doc_id": "orphan", "text": "child", "metadata": {"source": child}},
+        ])
+        SourcesRepository(pg_conn).set_metadata_key(
+            str(src["id"]), "alice", "reingest_pending", ["guide.md", child],
+        )
+        stored_files.update({"guide.md": b"alpha"})
+        _with_manifest(pg_conn, src)
+
+        result = worker.reingest_source_worker(task_self, str(src["id"]), "alice")
+
+        assert result["removed_files"] == [child] and result["modified_files"] == ["guide.md"]
+        assert {c["metadata"]["source"] for c in chunk_store} == {"guide.md"}
+        assert "orphan" not in [c["doc_id"] for c in chunk_store]
+        assert "reingest_pending" not in self._metadata(pg_conn, src)

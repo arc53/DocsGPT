@@ -1948,11 +1948,13 @@ class UpdateAgent(Resource):
                         )
                     else:
                         value = data[field]
-                        # A workflow agent's description is optional (publishing
-                        # doesn't need one), so it may be cleared.
+                        # A description is needed only to publish a classic
+                        # agent (checked below): a draft or a workflow agent may
+                        # clear it.
                         optional = field == "description" and (
-                            data.get("agent_type") or existing_agent.get("agent_type")
-                        ) == "workflow"
+                            (data.get("agent_type") or existing_agent.get("agent_type")) == "workflow"
+                            or data.get("status", existing_agent.get("status")) != "published"
+                        )
                         if field in ["name", "description", "agent_type"] and not optional:
                             if not value or not str(value).strip():
                                 return _reject(
@@ -2008,7 +2010,15 @@ class UpdateAgent(Resource):
                             final_value = update_fields.get(
                                 req_field, existing_agent.get(req_field)
                             )
-                            if not final_value:
+                            # 0 chunks is a value: it turns retrieval off. A
+                            # draft may hold a blank description, so text is
+                            # judged stripped.
+                            missing = (
+                                final_value in (None, "")
+                                if req_field == "chunks"
+                                else not final_value or not str(final_value).strip()
+                            )
+                            if missing:
                                 missing_published_fields.append(field_label)
                         # Sources are optional: a published agent with no
                         # ``source_id`` and no ``extra_source_ids`` skips

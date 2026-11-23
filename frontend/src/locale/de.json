@@ -311,7 +311,6 @@
     "exportAgentFailed": "Agent konnte nicht exportiert werden",
     "filters": {
       "all": "Alle",
-      "byDocsGPT": "Von DocsGPT",
       "byMe": "Von mir",
       "shared": "Mit mir geteilt"
     },
@@ -955,11 +954,6 @@
         "description": "Agenten, die andere Teams mit diesem Team geteilt haben. Alle im Team können mit ihnen chatten.",
         "emptyState": "Noch hat kein anderes Team einen Agenten mit diesem Team geteilt."
       },
-      "template": {
-        "description": "Von DocsGPT bereitgestellte Agenten",
-        "emptyState": "Keine Vorlagen-Agenten gefunden.",
-        "title": "Von DocsGPT"
-      },
       "user": {
         "description": "Von dir erstellte oder veröffentlichte Agenten",
         "emptyState": "Du hast noch keine Agenten erstellt.",
@@ -981,9 +975,16 @@
     "title": "Agenten",
     "tryDifferentSearch": "Versuche einen anderen Suchbegriff",
     "typeModal": {
+      "blankAgent": "Leerer Agent",
+      "blankWorkflow": "Leerer Workflow",
       "classicDescription": "Erstelle einen Standard-KI-Agenten mit einem Modell, Tools und Wissensquellen",
       "classicTitle": "Klassischer Agent",
+      "describeLabel": "Beschreibe den Agenten",
+      "describePlaceholder": "Ein Agent auf unserer Website, der Fragen zum Versand beantwortet",
       "description": "Wähle die Art des Agenten, den du erstellen möchtest",
+      "draftDescription": "Sag, wofür er da ist, und DocsGPT baut ihn Schritt für Schritt mit dir.",
+      "newTitle": "Neuer Agent",
+      "templatesLabel": "Oder mit einer Vorlage beginnen",
       "title": "Neuen Agenten erstellen",
       "workflowDescription": "Entwirf komplexe mehrstufige Workflows mit verschiedenen Modellen, bedingter Logik und Zustandsverwaltung",
       "workflowTitle": "Workflow-Agent"
@@ -1803,7 +1804,7 @@
         "finish": "Fertigstellen",
         "folded": "{{step}}: {{result}}",
         "goTo": "Zu {{field}}",
-        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle einen Ausgangspunkt oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
+        "intro": "Lass uns diesen Agenten gemeinsam aufbauen, Schritt für Schritt: Grundlagen, Wissen, Prompt und Einstiegsfragen, dann Limits und Sicherheit.\n\nWähle eine Vorlage oder sag mir, was er tun soll und wer ihn nutzen wird. Je mehr du erzählst, desto weniger muss ich fragen.",
         "missing": {
           "agentType": "einen Agententyp",
           "contextLimit": "ein gültiges Kontextlimit",
@@ -1852,6 +1853,7 @@
         "other_step": "eine Änderung für einen anderen Schritt"
       },
       "fields": {
+        "folders": "Wissensordner",
         "limits": "Nutzungslimit"
       },
       "formEdited": "Du hast {{fields}} im Formular geändert.",
@@ -1921,6 +1923,8 @@
     "counts": {
       "agents_one": "{{count}} Agent",
       "agents_other": "{{count}} Agenten",
+      "folders_one": "{{count}} Ordner",
+      "folders_other": "{{count}} Ordner",
       "models_one": "{{count}} Modell",
       "models_other": "{{count}} Modelle",
       "prompts_one": "{{count}} Prompt",
@@ -2081,15 +2085,54 @@
     "startOver": "Neu beginnen",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Personalwesen",
+              "it": "IT",
+              "office": "Büro und Gebäude",
+              "policies": "Unternehmensrichtlinien"
+            },
+            "text": "Welche Bereiche deckt er ab?"
+          }
+        },
         "description": "HR-, IT- und Richtlinienfragen deines Teams",
+        "short": "Interner Helpdesk",
         "title": "Interner Helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Fallakten",
+              "contracts": "Verträge",
+              "papers": "Fachartikel",
+              "reports": "Berichte"
+            },
+            "text": "Um welche Dokumente geht es?"
+          },
+          "users": {
+            "options": {
+              "clients": "Kunden oder Mandanten",
+              "me": "Nur ich",
+              "team": "Mein Team"
+            },
+            "text": "Wer nutzt ihn?"
+          }
+        },
         "description": "Durchsucht deine Dokumente und zitiert sie",
+        "short": "Rechercheassistent",
         "title": "Rechercheassistent"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "Wie heißt das Unternehmen oder Produkt?"
+          }
+        },
         "description": "Beantwortet Besucherfragen, übergibt bei Unsicherheit",
+        "short": "Website-Chat",
         "title": "Website-Chat für Kunden"
       }
     },
@@ -2103,6 +2146,23 @@
     "stop": "Stoppen",
     "stoppedDescription": "Du hast diesen Durchlauf gestoppt. Im Formular hat sich nichts geändert.",
     "suggestionsLabel": "Möglichkeiten zum Einstieg",
+    "templates": {
+      "browse": "Alle Vorlagen durchsuchen",
+      "categories": {
+        "all": "Alle",
+        "customerSupport": "Kundensupport",
+        "internal": "Intern",
+        "research": "Recherche"
+      },
+      "categoriesLabel": "Vorlagenkategorien",
+      "description_one": "{{formatted}} Vorlage. Wähle eine aus, und DocsGPT baut sie mit dir.",
+      "description_other": "{{formatted}} Vorlagen. Wähle eine aus, und DocsGPT baut sie mit dir.",
+      "empty": "Keine passenden Vorlagen",
+      "search": "Vorlagen durchsuchen",
+      "showAll": "Alle Vorlagen",
+      "showMore": "Mehr anzeigen",
+      "title": "Vorlagen"
+    },
     "title": "Mit DocsGPT entwerfen",
     "topics": {
       "add_one": "{{formatted}} Thema hinzufügen",
@@ -2563,8 +2623,8 @@
         "failed": "Upload fehlgeschlagen",
         "ingestionFailed": "Aufnahme fehlgeschlagen.",
         "parsing": "Dateien werden verarbeitet...",
-        "partialDownload_one": "{{count}} Element konnte nicht heruntergeladen werden und wurde ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
-        "partialDownload_other": "{{count}} Elemente konnten nicht heruntergeladen werden und wurden ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
+        "partialDownload_one": "{{count}} Element konnte nicht gelesen werden und wurde ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
+        "partialDownload_other": "{{count}} Elemente konnten nicht gelesen werden und wurden ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
         "preparing": "Upload wird vorbereitet",
         "tokenLimit": "Token-Limit überschritten, bitte lade ein kleineres Dokument hoch",
         "tooManyFiles": "Diese Quelle hat mehr als {{limit}} Dateien, mehr als eine Quelle enthalten kann. Wähle einen kleineren Ordner, Pfad oder eine kleinere Auswahl.",
@@ -3974,8 +4034,6 @@
       "taskModelDescription": "Entwirft Formulare, erstellt Wissensgraphen und prüft Monitore. Chats verwenden das Modell des Agenten.",
       "taskModelFailed": "{{model}} konnte Ihre letzte Aufgabe nicht ausführen: Der Anbieter hat den API-Schlüssel abgelehnt. Wählen Sie ein anderes Modell oder bitten Sie einen Admin, den Schlüssel zu prüfen.",
       "taskModelFailedItem": "· Schlüssel abgelehnt",
-      "taskModelInstanceDefault": "Instanz-Standard verwenden ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Instanz-Standard verwenden",
       "taskModelLoadError": "Das Aufgabenmodell konnte nicht geladen werden.",
       "taskModelSaveFailed": "Das Aufgabenmodell konnte nicht gespeichert werden. Versuchen Sie es erneut.",
       "taskModelUnavailable": "Ihr Aufgabenmodell kann nicht mehr ausgeführt werden (es wurde deaktiviert oder entfernt), daher läuft der Instanz-Standard. Ist das Modell wieder verfügbar, läuft es erneut; wählen Sie hier eine Option, um es zu ersetzen.",
@@ -4324,6 +4382,8 @@
       "files": "Dateien",
       "filesByline_one": "{{files}} Datei · {{tokens}} Tokens",
       "filesByline_other": "{{files}} Dateien · {{tokens}} Tokens",
+      "filesFailed_one": "{{count}} Datei konnte bei der letzten Synchronisierung nicht in ihrer neuesten Version indexiert werden. War sie schon indexiert, kann die Suche noch ihren früheren Inhalt liefern.",
+      "filesFailed_other": "{{count}} Dateien konnten bei der letzten Synchronisierung nicht in ihrer neuesten Version indexiert werden. Waren sie schon indexiert, kann die Suche noch ihren früheren Inhalt liefern.",
       "filesLoadError": "Die Dateien konnten nicht geladen werden",
       "filterFiles": "Dateien filtern",
       "folderAlt": "Ordner",
@@ -4566,6 +4626,7 @@
         },
         "title": "Erweiterte Einstellungen"
       },
+      "retryFailedFiles": "Jetzt erneut versuchen",
       "searchAlt": "Suchen",
       "searchChunks": "Chunks durchsuchen",
       "searchPlaceholder": "Wissen durchsuchen…",
@@ -5548,7 +5609,6 @@
       },
       "mismatch": "Dieser Agent gehört zu einem anderen Arbeitsbereich als dieser Chat.",
       "notFound": "Du bist nicht mehr in diesem Team, daher kann der Chat hier nicht weitergehen.",
-      "onlyYou": "Nur du siehst diesen Chat",
       "switchTo": "Zu {{name}} wechseln",
       "thisTeam": "diesem Team"
     },
@@ -5564,13 +5624,6 @@
     },
     "folders": {
       "alsoInFolder": "Auch in diesem Ordner"
-    },
-    "line": {
-      "people_one": "{{count}} Person",
-      "people_other": "{{count}} Personen",
-      "personal": "Persönlich",
-      "personalScope": "Nur du, außer du teilst ein Element",
-      "teamScope": "Alle im Team können nutzen, was hier liegt"
     },
     "menu": {
       "moveToPersonal": "Nach Persönlich verschieben…",

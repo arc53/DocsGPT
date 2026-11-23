@@ -326,11 +326,8 @@ describe('Tools page in a workspace', () => {
       (b) => b.textContent === text,
     );
 
-  it('in Personal: the line, folders, your tools, then Shared with you', async () => {
+  it('in Personal: folders, your tools, then Shared with you', async () => {
     await render([ownTool, filedTool, sharedTool]);
-    expect(
-      container.querySelector('[data-testid="workspace-line"]'),
-    ).not.toBeNull();
     expect(headings()[0]).toBe('settings.tools.sections.folders1');
     expect(headings()[headings().length - 1]).toBe(
       'workspace.page.sharedWithYou1',

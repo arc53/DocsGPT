@@ -13,6 +13,7 @@ from docsgpt.api.user.folder_knowledge import (
     expand_folders,
     expand_folders_of_holders,
     folder_details,
+    folder_details_and_sources,
     folder_source_ids,
     owned_source_folders,
     parse_folder_refs,
@@ -235,6 +236,31 @@ class TestDetails:
         _email(pg_conn, STRANGER, "stranger@example.com")
         theirs = _folder(pg_conn, "Theirs", owner=STRANGER)
         assert folder_details(pg_conn, [theirs], OWNER) == [{"id": theirs, "name": "Theirs", "source_count": 0}]
+
+    def test_details_and_sources_come_from_one_expansion(self, pg_conn):
+        from sqlalchemy import event
+
+        top = _folder(pg_conn, "Top")
+        child = _folder(pg_conn, "Child", parent=top)
+        a, b = _source(pg_conn, "a"), _source(pg_conn, "b")
+        _file(pg_conn, a, top)
+        _file(pg_conn, b, child)
+        gone = str(uuid.uuid4())
+        statements = []
+
+        def _seen(conn, cursor, statement, *args):
+            statements.append(statement)
+
+        event.listen(pg_conn, "before_cursor_execute", _seen)
+        try:
+            details, sources = folder_details_and_sources(pg_conn, [top, gone], OWNER)
+        finally:
+            event.remove(pg_conn, "before_cursor_execute", _seen)
+        assert details == folder_details(pg_conn, [top, gone], OWNER)
+        assert sources == expand_folders(pg_conn, [top, gone]) == {top: [a, b]}
+        assert sum("WITH RECURSIVE" in s for s in statements) == 1
+        assert sum("FROM folders" in s and "RECURSIVE" not in s for s in statements) == 1
+        assert folder_details_and_sources(pg_conn, [], OWNER) == ([], {})
 
     def test_the_holders_owner_is_named_to_its_reader(self, pg_conn):
         _email(pg_conn, MATE, "mate@example.com")

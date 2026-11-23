@@ -14,6 +14,7 @@ import {
   type AgentProposal,
   type AppliedChange,
   editedSinceFields,
+  fieldsToApply,
   parseAgentProposal,
   planAgentProposal,
   undoneKindOf,
@@ -30,6 +31,11 @@ type AgentProposalsOptions = {
   values: Record<AgentDraftField, unknown>;
   /** Tools a draft can name. */
   toolOptions: ToolSummary[];
+  /**
+   * Whether the form's knowledge picker offers folders; while it doesn't,
+   * a draft's folders are not applied.
+   */
+  foldersOffered: boolean;
   drafted: DraftedFields<AgentDraftField>;
   /** Write one drafted field. */
   writeField: (field: AgentDraftField, value: unknown) => void;
@@ -64,6 +70,7 @@ export function useAgentProposals({
   form,
   values,
   toolOptions,
+  foldersOffered,
   drafted,
   writeField,
   onApplied,
@@ -106,14 +113,15 @@ export function useAgentProposals({
 
   /**
    * Fill the form from a proposal, marking every field it changed. A field
-   * the user changed while the turn ran keeps their value.
+   * the user changed while the turn ran keeps their value; folders stay
+   * off a form whose picker offers none.
    */
   const apply = (raw: unknown) => {
     const proposal = proposalOf(raw);
     if (!proposal) return;
     const key = raw as object;
     const plan = planAgentProposal(
-      proposal.fields,
+      fieldsToApply(proposal.fields, foldersOffered),
       form,
       sentRef.current ?? form,
       toolOptions,

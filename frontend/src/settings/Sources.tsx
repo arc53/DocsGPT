@@ -45,7 +45,7 @@ import PageToolbar from '../components/PageToolbar';
 import RoleMeta, { showsRole } from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
@@ -107,7 +107,6 @@ import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
 import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { captureWorkspace } from '../workspace/requestWorkspace';
 import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
-import WorkspaceLine from '../workspace/WorkspaceLine';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -1477,6 +1476,24 @@ export default function Sources({
             </AlertDescription>
           </Alert>
         ) : null}
+        {documentToView.filesFailed ? (
+          <Alert variant="warning" role="note" className="mb-4">
+            <AlertDescription>
+              <p>
+                {t('settings.sources.filesFailed', {
+                  count: documentToView.filesFailed,
+                })}{' '}
+                {viewCanEdit && canSyncSource(documentToView) ? (
+                  <AlertAction
+                    onClick={() => void actions.syncNow(documentToView)}
+                  >
+                    {t('settings.sources.retryFailedFiles')}
+                  </AlertAction>
+                ) : null}
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {isWikiSource(documentToView) ? (
           <WikiViewer
             docId={documentToView.id || ''}
@@ -1577,7 +1594,6 @@ export default function Sources({
             <p className="text-muted-foreground text-sm leading-6">
               {t('settings.sources.subtitle')}
             </p>
-            <WorkspaceLine kind="knowledge" />
           </div>
         )}
         <PageToolbar

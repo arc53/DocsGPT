@@ -127,6 +127,36 @@ class TestCatalogueByWorkspace:
         assert team_source not in _ids(ws, "sources")
 
 
+
+class TestKnowledgeFoldersByWorkspace:
+    """A team agent reads the team's one folder tree; Personal reads the caller's own."""
+
+    def _folder(self, conn, owner, name, source):
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        folder = str(FoldersRepository(conn).create(owner, name, resource_type="source")["id"])
+        FolderItemsRepository(conn).file(owner, "source", source, folder)
+        return folder
+
+    def _folders(self, conn, user, **kwargs):
+        from docsgpt.drafter.catalog import load_folders
+
+        ws = read_workspace(conn, user, **kwargs)
+        load_folders(conn, user, ws, owner_id=ws.owner_id)
+        return {row["id"]: row for row in ws.folder_rows}
+
+    def test_a_team_lists_the_teams_folders_and_personal_the_callers(self, pg_conn):
+        tid, principal = _team(pg_conn)
+        team_source, _tool, _prompt = _items(pg_conn, principal, "team")
+        own_source, _t, _p = _items(pg_conn, EDITOR, "own")
+        team_folder = self._folder(pg_conn, principal, "Team docs", team_source)
+        own_folder = self._folder(pg_conn, EDITOR, "My docs", own_source)
+        assert self._folders(pg_conn, EDITOR, team_id=tid) == {
+            team_folder: {"id": team_folder, "name": "Team docs", "sources": 1}}
+        assert set(self._folders(pg_conn, EDITOR)) == {own_folder}
+        # Someone outside the team asking for it reads Personal.
+        assert self._folders(pg_conn, STRANGER, team_id=tid) == {}
+
 class TestModelsByWorkspace:
     """The models offered follow the catalogue's workspace: a team item saves only models its owner owns."""
 
