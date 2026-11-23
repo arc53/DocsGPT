@@ -13,7 +13,7 @@ from typing import Any, Optional
 from flask import jsonify, make_response, request
 from flask_restx import Resource
 
-from docsgpt.api.admin.routes import _actor, admin_ns
+from docsgpt.api.admin.routes import _actor, admin_ns, not_a_person, not_a_person_response
 from docsgpt.api.user.authz import admin_required
 from docsgpt.core.settings import settings
 from docsgpt.pricing import is_priced
@@ -321,10 +321,15 @@ class AdminTeamQuotaResource(Resource):
 class AdminUserQuotaResource(Resource):
     @admin_required
     def get(self, user_id):
-        """A user's overrides and the limits and usage they resolve to."""
+        """A user's overrides and the limits and usage they resolve to. 409 for a team or the system."""
+        if not_a_person(user_id):
+            return not_a_person_response()
         with db_readonly() as conn:
-            if UsersRepository(conn).get(user_id) is None:
+            user = UsersRepository(conn).get(user_id)
+            if user is None:
                 return _error("User not found", 404)
+            if not_a_person(user_id, user):
+                return not_a_person_response()
             rows = QuotaPoliciesRepository(conn).list_for_subject("user", user_id)
         statuses = QuotaService.status(user_id, ("all", *REQUEST_BUCKETS))
         return make_response(
@@ -341,10 +346,15 @@ class AdminUserQuotaResource(Resource):
 
     @admin_required
     def put(self, user_id):
-        """Set one user's override, which beats team allowances and the default."""
+        """Set one user's override, which beats team allowances and the default. 409 for a team or the system."""
+        if not_a_person(user_id):
+            return not_a_person_response()
         with db_readonly() as conn:
-            if UsersRepository(conn).get(user_id) is None:
+            user = UsersRepository(conn).get(user_id)
+            if user is None:
                 return _error("User not found", 404)
+            if not_a_person(user_id, user):
+                return not_a_person_response()
         return _put_policy("user", user_id)
 
     @admin_required

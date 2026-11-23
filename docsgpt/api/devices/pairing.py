@@ -436,7 +436,7 @@ def _upsert_remote_device_user_tool(
                 f"{description or ''}".strip()
             ),
             "active": True,
-            # ``tool_executor`` consults ``RemoteDeviceTool.preview_requires_approval``
+            # ``tool_executor`` consults ``RemoteDeviceTool.preview_decision``
             # live for ``remote_device`` calls, so the static snapshot must
             # stay neutral. The tool's own ``execute_action`` still yields
             # the awaiting-approval pause when the live decision says so.

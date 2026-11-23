@@ -1,9 +1,13 @@
 """State builders: rendering as trained, and caps that keep the short field inside the token limit."""
 
+import json
+
 import pytest
 
 from docsgpt.core.settings import settings
 from docsgpt.decisions import states, tokens
+
+from .fakes import byte_tokenizer
 
 
 class WordTokenizer:
@@ -122,3 +126,41 @@ class TestBestWindow:
     )
     def test_cpu_runtimes(self, runtime, cpu):
         assert states.cpu_runtime(runtime) is cpu
+
+
+#: A lone surrogate, as ``json.loads`` makes one from a ``\ud800`` escape (a tool's or a client's JSON).
+LONE = json.loads('"before \\ud800 after"')
+
+
+@pytest.mark.unit
+class TestLoneSurrogates:
+    """The model's tokenizer refuses a string holding a lone surrogate; every count and cap reads it repaired."""
+
+    @pytest.fixture
+    def real_tokens(self, tmp_path):
+        tok = byte_tokenizer(tmp_path)
+        tokens.use(tok)
+        yield tok
+        tokens.reset()
+
+    def test_the_tokenizer_itself_refuses_one(self, tmp_path):
+        with pytest.raises(TypeError):
+            byte_tokenizer(tmp_path).encode(LONE)
+
+    def test_clean_replaces_each_lone_surrogate_and_keeps_everything_else(self):
+        assert tokens.clean(LONE) == "before � after"
+        assert tokens.clean("end \ud83d") == "end �"
+        # A pair split into two code points is one character again; text without one is the same object.
+        assert tokens.clean("😀") == "\U0001f600"
+        text = "plain, accented é and astral \U0001f600"
+        assert tokens.clean(text) is text
+
+    def test_counts_read_the_repaired_text(self, real_tokens):
+        assert tokens.encode(LONE) == real_tokens.encode("before � after")
+        assert tokens.state_tokens(states.text(LONE)) == tokens.state_tokens(states.text("before � after"))
+
+    def test_caps_and_windows_take_one(self, real_tokens, monkeypatch):
+        monkeypatch.setattr(states, "max_state_tokens", lambda: 200)
+        state = states.relevance("q", LONE * 20)
+        assert tokens.state_tokens(state) <= 200 - states.MARGIN and state["passage"]
+        assert states.best_window(LONE * 20, "after", 70) is not None

@@ -21,7 +21,7 @@ import json
 import logging
 import time
 from threading import Lock
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 import redis
 
@@ -252,7 +252,8 @@ def mark_ingest_running(user_id: str, payload: Dict[str, Any]) -> None:
     Args:
         user_id: The source's owner.
         payload: The ``queued`` payload: ``source_id``, a name (``name``,
-            ``job_name`` or ``filename``) and ``operation``.
+            ``job_name`` or ``filename``), ``operation`` and ``team_id`` (the
+            workspace, None or missing for Personal).
     """
     source_id = payload.get("source_id") if isinstance(payload, dict) else None
     if not source_id:
@@ -265,6 +266,49 @@ def mark_ingest_running(user_id: str, payload: Dict[str, Any]) -> None:
             "source_id": str(source_id),
             "name": payload.get("name") or payload.get("job_name") or payload.get("filename"),
             "operation": payload.get("operation"),
+            # Where Now shows it while the source has no row yet.
+            "team_id": payload.get("team_id"),
         },
         ttl_seconds=INGEST_MARKER_TTL_SECONDS,
     )
+
+
+def cancel_stream(message_id: str) -> bool:
+    """Cancel a superseded stream for one hour, across API and worker processes."""
+    client = _stop_redis()
+    if client is None:
+        return False
+    try:
+        client.setex(f"stream_cancel:{message_id}", 3600, "1")
+        return True
+    except Exception:
+        logger.exception("storing stream cancellation failed for %s", message_id)
+        return False
+
+
+def cancel_streams(message_ids: Iterable[str]) -> None:
+    """Cancel each superseded stream; call after the deleting transaction commits."""
+    for message_id in message_ids:
+        cancel_stream(message_id)
+
+
+def stream_cancelled(message_id: str | None) -> bool:
+    """Read a superseded stream's cancellation flag without subscribing."""
+    if not message_id:
+        return False
+    client = _stop_redis()
+    if client is None:
+        return False
+    try:
+        return bool(client.exists(f"stream_cancel:{message_id}"))
+    except Exception:
+        return False
+
+
+def check_stream(message_id: str | None) -> None:
+    """Stop superseded work at the next round or tool boundary."""
+    from docsgpt.core.run_budget import StreamCancelled, check_round
+
+    if stream_cancelled(message_id):
+        raise StreamCancelled()
+    check_round()

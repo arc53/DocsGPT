@@ -1,10 +1,9 @@
 ---
 title: GitHub Connector
+sidebarTitle: 🔗 GitHub
 description: Sync GitHub repositories into Knowledge and give agents GitHub's read-only MCP tools, with a personal access token or a GitHub App sign-in.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-10-26
 ---
-
-import { Callout } from 'nextra/components'
 
 # GitHub Connector
 
@@ -25,13 +24,19 @@ Always available, with no admin setup. Create a [fine-grained personal access to
 
 An admin can register a GitHub App so members can **Sign in with GitHub** and choose repositories when they install the app. Register the app with the redirect URI from **Admin > Connectors** as its callback URL, create a client secret, then set:
 
-```env
+```dotenv
 GITHUB_CLIENT_ID=Iv23li...        # the app's Client ID
 GITHUB_CLIENT_SECRET=your-client-secret
 GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
 ```
 
 Restart the API and the worker. The app's permissions and installation options are listed in [Sign in with GitHub](/Sources/Connectors#sign-in-with-github-a-github-app).
+
+## Rate limits
+
+GitHub allows about 5,000 API requests an hour per GitHub account, and that limit covers every token the account owns. DocsGPT downloads a repository as one archive, so a sync costs a few requests whatever the repository's size. It falls back to one request per file only when the archive is unavailable or larger than `GITHUB_INGEST_MAX_ARCHIVE_BYTES` (512 MiB by default). Repositories added from one connection download one after another.
+
+If GitHub rate-limits the account anyway, the sync fails instead of skipping files. Its error, and the connect screen, show the time the limit resets. Try again after that time.
 
 ## Public repositories
 

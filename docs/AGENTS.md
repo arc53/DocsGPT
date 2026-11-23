@@ -6,62 +6,116 @@ still apply; [README.md](README.md) explains the layout and how to run the site.
 
 ## Every page's frontmatter
 
-Each page under `content/` opens with three fields:
+Each page under `content/` opens with three fields, plus an optional sidebar label:
 
 ```yaml
 ---
 title: GitHub Connector
+sidebarTitle: 🔗 GitHub
 description: One sentence on what the page covers; it becomes the meta description and the llms.txt note.
 lastUpdated: 2026-10-01
 ---
 ```
+
+`sidebarTitle` is the page's label in the sidebar and in `llms.txt`; without it the sidebar shows
+`title`. The sidebar labels open with an emoji, the page titles don't.
 
 ### `lastUpdated`
 
 `lastUpdated` is the date a reader would say the page last changed. It is shown at the
 bottom of the page ("Last updated on …") and becomes the sitemap's `<lastmod>` and the
 page's JSON-LD `dateModified`, so search engines and AI answer engines read it as a
-freshness signal. It is set by hand, never from git.
+freshness signal.
 
-- **Bump it** (to today, `YYYY-MM-DD`) when you change what the page tells the reader:
-  new or changed steps, settings, defaults, behavior, examples, or a section added or
-  removed.
-- **Leave it** for edits a reader would not notice: typos, wording polish, formatting, a
-  link target renamed across many pages.
-- **New pages** get today's date.
-- Two generated pages date themselves, so don't edit their date by hand:
-  `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`
-  keeps the date while the content is unchanged and sets today's date when it changes) and
-  `content/API/reference.mdx` (`python -m docsgpt.api.reference --write` sets today's date when
-  the Swagger snapshot changes).
+- **New pages** get today's date (`YYYY-MM-DD`).
+- **Leave it alone on a page that already exists**, whatever you changed. The "Generated
+  docs" workflow (`../.github/workflows/generated-docs.yml`) runs `scripts/sync-dates.mjs` on
+  `main` after the merge and dates the page with the day its content changed. Only the body
+  counts, and whitespace in it does not: a change to the frontmatter (`title`,
+  `description`) or one that only reflows lines leaves the date alone by itself. Two pull
+  requests that each bumped the same page used to conflict on this one line; `npm run
+  dates:check` now fails a pull request that changes it.
+- **For an edit a reader would not notice** (a typo, wording polish, a link target renamed
+  across many pages), put `[keep-date]` in the pull request title, or in the subject line
+  (the first line) of every commit that changes the page. A commit body does not count. With
+  a squash merge of several commits only the pull request title counts: the squash commit's
+  body lists every commit, so one commit's marker cannot speak for the rest. A rebase merge
+  leaves no pull request title on `main`, so there only the commit subjects count.
 
-`npm run dates:check` fails on a missing, malformed or future date. In CI on a pull
-request it also warns about pages whose content changed while `lastUpdated` did not;
-treat that warning as a question to answer, not something to silence.
+`npm run dates:check` fails on a missing, malformed or future date, and in CI on a pull
+request on an existing page whose date changed. On a pull request it also lists, as a notice
+that never fails, each existing page whose body changed without the marker: the page will be
+dated with the day of the merge. `npm run dates:check -- --base "$(git merge-base HEAD origin/main)"`
+shows the same notices locally (it reads the commit subjects; set `PR_TITLE` to include the
+title).
+
+## Generated files
+
+Don't change these in a pull request; CI fails if you do (`npm run generated:check -- --base origin/main` is the same check). The
+"Generated docs" workflow rebuilds them on `main` after the merge and opens its own pull
+request, which is the only place they change:
+
+- `data/swagger.json` (`python -m docsgpt.api.reference --write`)
+- `data/mcp-presets.json` (`python -m docsgpt.connectors.reference --write`, which also moves
+  `content/Sources/Connectors/index.mdx`'s `lastUpdated` to today when the list changes)
+- `content/Deploying/Settings-Reference.mdx` (`python -m docsgpt.core.settings.reference --write`)
+- `public/llms.txt` (`npm run llms`)
+
+The REST endpoint pages under `/API/endpoints/` are not files at all: `lib/openapi.js` and
+`lib/source.js` build one page per endpoint from `data/swagger.json` during `npm run build`, so
+they follow the snapshot. Their URLs come from the operation ids, so link to the overview,
+`/API/endpoints`, rather than to one endpoint page.
+
+If one shows up in your diff, restore it: `git checkout origin/main -- <file>`. Run a
+command without `--write` (or `npm run llms -- --print`) to preview its output.
 
 ## Before you finish
 
 From `docs/`:
 
 ```bash
-npm run llms           # after adding, moving or removing a page, or changing a description
+npm test               # the docs scripts' own tests
 npm run dates:check    # every page has a valid lastUpdated
 npm run build          # fails on broken MDX
 node scripts/check-links.mjs   # after the build: internal links and #anchors
 ```
 
+- Adding a page: list it in its folder's `meta.js` `pages`, where it belongs in the sidebar (a
+  page left out of `pages` is not shown).
+- Adding a folder: give it a `meta.js` (`export default { title: '🧩 Name', pages: [...] }`, a
+  plain object with no imports; `scripts/generate-llms.mjs` loads it as data) and list the
+  folder in its parent's `pages`. Write sidebars as `meta.js` only, never `meta.json`: the
+  llms.txt generator refuses any other format.
 - Moving or deleting a page: add a permanent redirect from the old URL in
-  `next.config.js`, and update the folder's `_meta.js`.
-- Don't hand-edit generated files: `public/llms.txt`, `data/swagger.json`,
-  `content/Deploying/Settings-Reference.mdx`.
+  `next.config.mjs`, and update the folder's `meta.js`. Never rename a page or a heading
+  someone may link to without that redirect; the URL is the file path, case included.
 - Prose follows the Vale rules in `../.github/styles`; run `vale --minAlertLevel=error docs`
   from the repository root when Vale is installed.
+
+## Writing pages
+
+The site is built with [Fumadocs](https://fumadocs.dev) (Fumadocs MDX, Fumadocs UI) on the
+Next.js App Router. Its APIs may differ from what you remember; check
+[its docs](https://fumadocs.dev/llms.txt) for anything not covered here. Pages use these
+components without importing them (`mdx-components.jsx`):
+
+- `<Callout type="info">` (also `warning`, `error`, `success`, `idea`), with an optional `title`.
+- `<Tabs items={['React', 'HTML']}>` with one `<Tab>` per item, in order. Every tab's text
+  stays in the page's HTML, so search engines and `#anchor` links reach it.
+- `<Steps>` around `### Step` headings, which become numbered steps.
+- `<Cards>` with `<Card title="…" href="/…" />`.
+- A ` ```mermaid ` code block renders as a diagram.
+
+Code blocks need a language Shiki knows (`dotenv`, not `env`); an unknown one fails the build.
+Give a code block a caption with `title="file.yaml"` after the language. Keep headings unique
+in a page where you can: a repeated heading gets `-1`, `-2` added to its anchor. `## Heading
+[#custom-id]` sets an anchor explicitly.
 
 ## Page metadata
 
 `page-meta.js` builds each page's canonical URL, Open Graph and Twitter card, and JSON-LD
 (`TechArticle` and `BreadcrumbList`; `WebSite` on the home page). `app/sitemap.js` serves
-`/sitemap.xml` from the page map, `public/robots.txt` allows every crawler and points at
+`/sitemap.xml` from every page, the REST endpoint pages included, `public/robots.txt` allows every crawler and points at
 the sitemap, and `public/og/default.png` is the share image. They read only the
 frontmatter above, so a page with a good `title`, `description` and an honest
 `lastUpdated` needs nothing else.

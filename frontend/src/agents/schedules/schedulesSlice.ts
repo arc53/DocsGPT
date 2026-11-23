@@ -1,5 +1,6 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+import payerService from '../../api/services/payerService';
 import schedulesService from '../../api/services/schedulesService';
 import {
   sseEventReceived,
@@ -13,12 +14,15 @@ import type {
   ScheduleUpdatePayload,
   UserSchedule,
 } from '../types/schedule';
+import { switchWorkspace } from '../../workspace/workspaceSlice';
 
 /** Runs per request; a shorter page means the log has reached its oldest run. */
 export const RUNS_PAGE_SIZE = 50;
 
 export type SchedulesState = {
   byAgent: Record<string, Schedule[]>;
+  /** Only the latest request for each agent may change its list or error. */
+  loadsByAgent: Record<string, { requestId: string; error: string | null }>;
   /** The caller's schedules across agents (Activity › Schedules); null until loaded. */
   all: UserSchedule[] | null;
   allLoading: boolean;
@@ -32,29 +36,30 @@ export type SchedulesState = {
    */
   allToken: string | null;
   /**
-   * Schedules saved or deleted while that load was out. Its answer was read
-   * before them, so they are applied on top of it.
+   * Schedules saved, changed by an SSE event or deleted while that load was
+   * out. Its answer was read before them, so they are applied on top of it,
+   * saves and events in the order they came.
    */
-  allChangedSinceRequest: { saved: Schedule[]; deleted: string[] };
+  allChangedSinceRequest: {
+    changes: ({ saved: Schedule } | { id: string; patch: Partial<Schedule> })[];
+    deleted: string[];
+  };
   runsBySchedule: Record<string, ScheduleRun[]>;
   /** True once a schedule's oldest run is loaded. */
   runsEndBySchedule: Record<string, boolean>;
-  loading: boolean;
-  error: string | null;
 };
 
 const initialState: SchedulesState = {
   byAgent: {},
+  loadsByAgent: {},
   all: null,
   allLoading: false,
   allError: false,
   allRequestId: null,
   allToken: null,
-  allChangedSinceRequest: { saved: [], deleted: [] },
+  allChangedSinceRequest: { changes: [], deleted: [] },
   runsBySchedule: {},
   runsEndBySchedule: {},
-  loading: false,
-  error: null,
 };
 
 export const loadSchedulesForAgent = createAsyncThunk<
@@ -121,6 +126,19 @@ export const runScheduleNow = createAsyncThunk<
 >('schedules/runNow', async ({ id, token }) => {
   const r = await schedulesService.runNow(id, token);
   return { scheduleId: id, run: r.run };
+});
+
+/**
+ * Makes the caller the payer of a team agent's schedule. A refusal rejects
+ * with the server's code (`max_schedules`, `workspace_role_required`…) on
+ * the error, so the confirm can word it.
+ */
+export const takeOverSchedule = createAsyncThunk<
+  Schedule,
+  { id: string; token: string | null }
+>('schedules/takeOver', async ({ id, token }) => {
+  const r = await payerService.takeOverSchedule(id, token);
+  return r.schedule;
 });
 
 export const loadRunsForSchedule = createAsyncThunk<
@@ -210,7 +228,8 @@ const applyToLists = (state: SchedulesState, next: Schedule): void => {
       next,
     );
   }
-  if (state.allLoading) state.allChangedSinceRequest.saved.push(next);
+  if (state.allLoading)
+    state.allChangedSinceRequest.changes.push({ saved: next });
   upsertInAll(state, next);
 };
 
@@ -226,6 +245,16 @@ const upsertInAll = (state: SchedulesState, next: Schedule): void => {
   else state.all[idx] = { ...state.all[idx], ...next };
 };
 
+/** Changes fields of a schedule in the cross-agent list, if it is listed. */
+const patchInAll = (
+  state: SchedulesState,
+  scheduleId: string,
+  patch: Partial<Schedule>,
+): void => {
+  const idx = state.all?.findIndex((s) => s.id === scheduleId) ?? -1;
+  if (state.all && idx !== -1) state.all[idx] = { ...state.all[idx], ...patch };
+};
+
 /** Changes fields of a schedule wherever it is listed (an SSE update). */
 const patchSchedule = (
   state: SchedulesState,
@@ -239,8 +268,10 @@ const patchSchedule = (
       ...patch,
     });
   }
-  const idx = state.all?.findIndex((s) => s.id === scheduleId) ?? -1;
-  if (state.all && idx !== -1) state.all[idx] = { ...state.all[idx], ...patch };
+  if (state.allLoading) {
+    state.allChangedSinceRequest.changes.push({ id: scheduleId, patch });
+  }
+  patchInAll(state, scheduleId, patch);
 };
 
 const findAgentForSchedule = (
@@ -284,17 +315,28 @@ const schedulesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadSchedulesForAgent.pending, (state) => {
-        state.loading = true;
-        state.error = null;
+      // Another workspace: its schedules load next; an answer to a load sent
+      // before is dropped.
+      .addCase(switchWorkspace, () => ({
+        ...initialState,
+        allRequestId: 'reset',
+      }))
+      .addCase(loadSchedulesForAgent.pending, (state, action) => {
+        state.loadsByAgent[action.meta.arg.agentId] = {
+          requestId: action.meta.requestId,
+          error: null,
+        };
       })
       .addCase(loadSchedulesForAgent.fulfilled, (state, action) => {
+        const load = state.loadsByAgent[action.meta.arg.agentId];
+        if (load?.requestId !== action.meta.requestId) return;
         state.byAgent[action.payload.agentId] = action.payload.schedules;
-        state.loading = false;
+        load.error = null;
       })
       .addCase(loadSchedulesForAgent.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.error.message ?? 'failed to load schedules';
+        const load = state.loadsByAgent[action.meta.arg.agentId];
+        if (load?.requestId !== action.meta.requestId) return;
+        load.error = action.error.message || 'failed to load schedules';
       })
       .addCase(loadAllSchedules.pending, (state, action) => {
         if (action.meta.arg.token !== state.allToken) state.all = null;
@@ -302,17 +344,18 @@ const schedulesSlice = createSlice({
         state.allLoading = true;
         state.allError = false;
         state.allRequestId = action.meta.requestId;
-        state.allChangedSinceRequest = { saved: [], deleted: [] };
+        state.allChangedSinceRequest = { changes: [], deleted: [] };
       })
       .addCase(loadAllSchedules.fulfilled, (state, action) => {
         if (!isLatestAll(state, action.meta.requestId)) return;
-        const { saved, deleted } = state.allChangedSinceRequest;
+        const { changes, deleted } = state.allChangedSinceRequest;
         const gone = new Set(deleted);
         state.all = action.payload.filter((s) => !gone.has(s.id));
-        saved
-          .filter((s) => !gone.has(s.id))
-          .forEach((s) => upsertInAll(state, s));
-        state.allChangedSinceRequest = { saved: [], deleted: [] };
+        changes.forEach((change) => {
+          if (!('saved' in change)) patchInAll(state, change.id, change.patch);
+          else if (!gone.has(change.saved.id)) upsertInAll(state, change.saved);
+        });
+        state.allChangedSinceRequest = { changes: [], deleted: [] };
         state.allLoading = false;
       })
       .addCase(loadAllSchedules.rejected, (state, action) => {
@@ -329,6 +372,10 @@ const schedulesSlice = createSlice({
         applyToLists(state, action.payload);
       })
       .addCase(setSchedulePaused.fulfilled, (state, action) => {
+        applyToLists(state, action.payload);
+      })
+      // The answer carries the new payer and its pause state.
+      .addCase(takeOverSchedule.fulfilled, (state, action) => {
         applyToLists(state, action.payload);
       })
       .addCase(deleteSchedule.fulfilled, (state, action) => {
@@ -371,6 +418,28 @@ const schedulesSlice = createSlice({
           const scheduleId = (payload.schedule_id as string | undefined) || '';
           if (!scheduleId) return;
           switch (envelope.type) {
+            // A run refused for its payer after it was announced as started
+            // is skipped: it didn't run, so the schedule's last run stays.
+            case 'schedule.run.skipped': {
+              const runId = (payload.run_id as string | undefined) || '';
+              if (runId) {
+                upsertRunDelta(
+                  state,
+                  scheduleId,
+                  {
+                    id: runId,
+                    schedule_id: scheduleId,
+                    status: 'skipped',
+                    error_type:
+                      (payload.error_type as ScheduleRun['error_type']) ?? null,
+                    error: (payload.error as string | undefined) ?? null,
+                    finished_at: envelope.ts ?? null,
+                  },
+                  envelope.ts,
+                );
+              }
+              break;
+            }
             case 'schedule.run.completed':
             case 'schedule.run.failed': {
               const runId = (payload.run_id as string | undefined) || '';
@@ -442,6 +511,30 @@ export const selectSchedulesForAgent = (
   state: { schedules: SchedulesState },
   agentId: string,
 ): Schedule[] => state.schedules.byAgent[agentId] ?? NO_SCHEDULES;
+
+export const selectSchedulesLoadError = (
+  state: { schedules: SchedulesState },
+  agentId: string,
+): string | null => state.schedules.loadsByAgent[agentId]?.error ?? null;
+
+/**
+ * A schedule the store has loaded, from its agent's list or the cross-agent
+ * one; undefined while neither has it. When both have it, the newer record
+ * wins: each list reloads on its own, so either can hold a stale status.
+ */
+export const selectScheduleById = (
+  state: { schedules: SchedulesState },
+  id: string | null,
+  agentId?: string | null,
+): Schedule | undefined => {
+  if (!id) return undefined;
+  const own = agentId
+    ? state.schedules.byAgent[agentId]?.find((s) => s.id === id)
+    : undefined;
+  const all = state.schedules.all?.find((s) => s.id === id);
+  if (!own || !all) return own ?? all;
+  return Date.parse(all.updated_at) > Date.parse(own.updated_at) ? all : own;
+};
 
 /** The cross-agent list (null until loaded) and its load state. */
 export const selectAllSchedules = (state: {

@@ -12,9 +12,12 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 import pytest
+from celery.exceptions import Retry
 
+from docsgpt import worker
 from docsgpt.parser.schema.base import Document
 from docsgpt.storage.db.repositories.sources import SourcesRepository
+from docsgpt.vectorstore.index_lock import SourceBusy
 
 
 def _seed_source(pg_conn) -> str:
@@ -295,3 +298,55 @@ class TestReembedWikiPageTask:
 
         assert first == second
         assert len(calls) == 1
+
+
+@pytest.mark.unit
+class TestReembedTakesTurns:
+    def test_reembeds_holding_the_source_index_lock(self, pg_conn, patch_worker_db, task_self, monkeypatch, held_lock):
+        # Two pages re-embedded at once on FAISS each load, change and save
+        # the whole index: the later save drops the other page's chunks.
+        source_id = _seed_source(pg_conn)
+        store = MagicMock(name="vector_store")
+        store.delete_chunks_by_source_path.side_effect = lambda path: held_lock.append("deleting") or 0
+        store.add_chunk.side_effect = lambda *a, **k: held_lock.append("adding")
+        _patch_store(monkeypatch, store)
+        _patch_repo(monkeypatch, {"content": "page body", "title": "T"})
+        _patch_chunker(monkeypatch, [Document(text="c1")])
+
+        worker.reembed_wiki_page_worker(task_self, source_id, "p.md", "h", "alice")
+
+        assert held_lock == [source_id, "deleting", "adding", "released"]
+
+    def test_a_busy_source_retries_the_task_later(self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock):
+        source_id = _seed_source(pg_conn)
+        store = MagicMock(name="vector_store")
+        _patch_store(monkeypatch, store)
+        repo = _patch_repo(monkeypatch, {"content": "page body", "title": "T"})
+        busy_lock()
+        task_self.retry.side_effect = lambda **kwargs: Retry()
+
+        with pytest.raises(Retry):
+            worker.reembed_wiki_page_worker(task_self, source_id, "p.md", "h", "alice")
+
+        assert task_self.retry.call_args.kwargs["countdown"] > 0
+        assert isinstance(task_self.retry.call_args.kwargs["exc"], SourceBusy)
+        store.delete_chunks_by_source_path.assert_not_called()
+        repo.set_embed_status.assert_not_called()
+
+    def test_a_source_busy_past_the_retries_marks_the_page_failed(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, busy_lock,
+    ):
+        source_id = _seed_source(pg_conn)
+        _patch_store(monkeypatch, MagicMock(name="vector_store"))
+        repo = _patch_repo(monkeypatch, {"content": "page body", "title": "T"})
+        busy_lock()
+
+        def exhausted(exc=None, **kwargs):
+            raise exc
+
+        task_self.retry.side_effect = exhausted
+
+        with pytest.raises(SourceBusy):
+            worker.reembed_wiki_page_worker(task_self, source_id, "p.md", "h", "alice")
+
+        repo.set_embed_status.assert_called_once_with(source_id, "p.md", "failed")

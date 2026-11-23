@@ -1,5 +1,6 @@
 import datetime
 import logging
+import time
 from typing import Optional, Dict, Any
 
 from msal import ConfidentialClientApplication
@@ -101,15 +102,27 @@ class SharePointAuth(BaseConnectorAuth):
         tid = id_token_claims.get("tid", "")
         return bool(tid) and tid != self.PERSONAL_ACCOUNT_TENANT_ID
 
+    @staticmethod
+    def _access_token_expiry(result: Dict[str, Any], claims: Dict[str, Any]) -> Optional[int]:
+        """When the access token expires: ``expires_in`` from now, else the id_token's ``exp``.
+
+        The id_token has its own lifetime, so its ``exp`` is only a fallback.
+        """
+        try:
+            return int(time.time()) + int(result["expires_in"])
+        except (KeyError, TypeError, ValueError):
+            return claims.get("exp")
+
     def map_token_response(self, result) -> Dict[str, Any]:
-        claims = result.get("id_token_claims", {})
+        # Fields read from id_token claims stay None without them, so a refresh keeps the stored values.
+        claims = result.get("id_token_claims") or {}
         return {
             "access_token": result.get("access_token"),
             "refresh_token": result.get("refresh_token"),
             "token_uri": claims.get("iss"),
             "scopes": result.get("scope"),
-            "expiry": claims.get("exp"),
-            "allows_shared_content": self._allows_shared_content(claims),
+            "expiry": self._access_token_expiry(result, claims),
+            "allows_shared_content": self._allows_shared_content(claims) if claims else None,
             "user_info": {
                 "name": claims.get("name"),
                 "email": claims.get("preferred_username"),

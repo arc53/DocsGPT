@@ -97,6 +97,7 @@ class PreScreenStage:
             model_id=self._resolve_model(),
             agent_id=self.agent_id,
             model_user_id=self.model_user_id,
+            stateless=True,
         )
         # Tag rows so the screening calls land as a distinct cost source, and
         # stamp the originating request so the rows correlate to it.

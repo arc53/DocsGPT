@@ -536,9 +536,10 @@ class TestConnectorSync:
             r = ConnectorSync().post()
         assert r.status_code == 400
 
-    def test_owner_without_a_connection_returns_400(self, app, pg_conn):
+    def test_owner_without_a_connection_returns_409_connection_missing(self, app, pg_conn):
         # The owner names a connection (or the source has its own); team
         # editors don't send one (their sync uses the owner's connection).
+        # A source with neither had its connection removed: connect again.
         from docsgpt.api.connector.routes import ConnectorSync
         from docsgpt.storage.db.repositories.sources import SourcesRepository
 
@@ -552,7 +553,8 @@ class TestConnectorSync:
             from flask import request
             request.decoded_token = {"sub": user}
             r = ConnectorSync().post()
-        assert r.status_code == 400
+        assert r.status_code == 409
+        assert r.json["code"] == "connection_missing"
 
     def test_returns_404_source_not_found(self, app, pg_conn):
         from docsgpt.api.connector.routes import ConnectorSync
@@ -622,6 +624,41 @@ class TestConnectorSync:
         assert r.status_code == 200
         assert r.json["task_id"] == "task-abc"
 
+
+    def test_refuses_a_wiki(self, app, pg_conn):
+        """A converted wiki doesn't sync: its pages would be replaced."""
+        from docsgpt.api.connector.routes import ConnectorSync
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        user = "u-sync-wiki"
+        src = SourcesRepository(pg_conn).create(
+            "wiki-src", user_id=user,
+            remote_data={"provider": "github", "file_ids": [], "folder_ids": []},
+            config={"kind": "wiki"},
+        )
+        from docsgpt.storage.db.repositories.connector_sessions import (
+            ConnectorSessionsRepository,
+        )
+
+        repo = ConnectorSessionsRepository(pg_conn)
+        session = repo.upsert(user, "github", status="authorized")
+        repo.update(str(session["id"]), {"session_token": "st"})
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.connector.routes.ingest_connector_task.delay",
+        ) as delay, app.test_request_context(
+            "/api/connectors/sync",
+            method="POST",
+            json={"source_id": str(src["id"]), "session_token": "st"},
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            r = ConnectorSync().post()
+        assert r.status_code == 400
+        assert r.json["success"] is False
+        # Named like /api/sync_source's refusal, so the UI words it the same way.
+        assert r.json["code"] == "wiki"
+        assert r.json["error"] == r.json["message"]
+        delay.assert_not_called()
 
 class TestConnectorCallbackStatus:
     def test_returns_html_for_success(self, app):

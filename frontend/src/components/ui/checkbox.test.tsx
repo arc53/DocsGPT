@@ -41,6 +41,25 @@ describe('Checkbox', () => {
     ).toBeNull();
   });
 
+  // Both glyphs are drawn and the indicator's own state hides one, so an
+  // uncontrolled box (defaultChecked, a form reset) shows the right one too.
+  it.each([
+    ['indeterminate', 'lucide-minus'],
+    [true, 'lucide-check'],
+  ] as const)('defaultChecked=%s shows only %s', (value, visible) => {
+    const host = render(<Checkbox defaultChecked={value} aria-label="a" />);
+    const indicator = host.querySelector('[data-slot="checkbox-indicator"]')!;
+    const state = indicator.getAttribute('data-state');
+    const shown = Array.from(host.querySelectorAll('svg')).filter(
+      (svg) =>
+        !(svg.getAttribute('class') ?? '').includes(
+          `group-data-[state=${state}]:hidden`,
+        ),
+    );
+    expect(shown).toHaveLength(1);
+    expect(shown[0].getAttribute('class')).toContain(visible);
+  });
+
   it('takes its id and invalid state from a FormField', () => {
     const host = render(
       <FormField label="Stream output to user" error="Required">

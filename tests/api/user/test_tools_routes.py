@@ -485,6 +485,40 @@ class TestMergeSecretsOnUpdate:
 
 
 # ---------------------------------------------------------------------------
+# Helper: check_token_tool_untouched
+# ---------------------------------------------------------------------------
+@pytest.mark.unit
+class TestCheckTokenToolUntouched:
+    def test_unreadable_action_secrets_refuse_a_token_change(self):
+        from docsgpt.api.pat.tokens import AUTH_METHOD_PAT
+        from docsgpt.api.user.resource_access import AccessDenied
+        from docsgpt.api.user.tools.routes import (
+            API_TOOL_SECRETS_KEY,
+            check_token_tool_untouched,
+        )
+
+        tool_doc = {
+            "name": "api_tool",
+            "config": {API_TOOL_SECRETS_KEY: "v2:deadbeef:not-a-real-envelope"},
+        }
+
+        with pytest.raises(AccessDenied) as err:
+            check_token_tool_untouched(
+                {"auth_method": AUTH_METHOD_PAT}, tool_doc, "user1"
+            )
+
+        assert err.value.status == 403
+
+    def test_no_stored_secrets_pass_a_token_change(self):
+        from docsgpt.api.pat.tokens import AUTH_METHOD_PAT
+        from docsgpt.api.user.tools.routes import check_token_tool_untouched
+
+        check_token_tool_untouched(
+            {"auth_method": AUTH_METHOD_PAT}, {"name": "api_tool", "config": {}}, "user1"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Helper: transform_actions
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
@@ -747,7 +781,10 @@ class TestGetTools:
 # ---------------------------------------------------------------------------
 @pytest.mark.unit
 class TestCreateTool:
-    pass
+    @pytest.fixture(autouse=True)
+    def _workspace_db(self, monkeypatch, pg_conn):
+        """The route reads the workspace and the folder the tool lands in: a throwaway database."""
+        monkeypatch.setattr("docsgpt.api.user.tools.routes.db_readonly", lambda: nullcontext(pg_conn))
 
     def _make_tool_instance(self):
         tool_instance = Mock()

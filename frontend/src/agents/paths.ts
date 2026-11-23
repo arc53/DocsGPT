@@ -17,8 +17,12 @@ export const AGENTS_MANAGE_ROOT = '/agents/manage';
 
 /** URL segment for each list filter. `all` is the root, so it has none. */
 const FILTER_SLUGS: Record<Exclude<AgentFilterTab, 'all'>, string> = {
-  template: 'templates',
   user: 'mine',
+  sharedWithYou: 'shared-with-you',
+  // A team's: what other teams shared with it.
+  teamShared: 'shared-with-team',
+  // The old Team section's address: the list reads it as Shared with you in
+  // Personal and as the team's agents in a team.
   team: 'team',
   // Not `shared`: `/agents/shared/:token` already means "open this public
   // agent", and two different meanings under one word invites mistakes.
@@ -87,6 +91,12 @@ export const agentEditPathFor = (
 export const agentLogsPath = (agentId: string | undefined): string =>
   `${AGENTS_MANAGE_ROOT}/logs/${agentId}`;
 
+export const agentAnalyticsPath = (agentId: string | undefined): string =>
+  `${AGENTS_MANAGE_ROOT}/analytics/${agentId}`;
+
+export const agentInsightsPath = (agentId: string | undefined): string =>
+  `${AGENTS_MANAGE_ROOT}/insights/${agentId}`;
+
 export const agentSchedulesPath = (agentId: string | undefined): string =>
   `${AGENTS_MANAGE_ROOT}/schedules/${agentId}`;
 
@@ -99,10 +109,11 @@ export const agentChatPath = (
 export const sharedAgentPath = (sharedToken: string | undefined): string =>
   `/agents/shared/${sharedToken}`;
 
-export type AgentScopedPage = 'overview' | 'logs' | 'schedules';
+export type AgentScopedPage =
+  'overview' | 'analytics' | 'logs' | 'insights' | 'schedules';
 
 const AGENT_SCOPED_ROUTE = new RegExp(
-  `^${AGENTS_MANAGE_ROOT}/(?:workflow/)?(edit|logs|schedules)/([^/]+)`,
+  `^${AGENTS_MANAGE_ROOT}/(?:workflow/)?(edit|analytics|logs|insights|schedules)/([^/]+)`,
 );
 
 /**

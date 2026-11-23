@@ -535,6 +535,7 @@ class TestDownloadToDirectory:
     def test_string_file_ids_converted_to_list(self, loader):
         loader._download_page = MagicMock(return_value=True)
         loader._download_page_attachments = MagicMock(return_value=0)
+        loader._download_space = MagicMock(return_value=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, "out")
@@ -543,6 +544,7 @@ class TestDownloadToDirectory:
             )
 
         loader._download_page.assert_called_once_with("p1", target)
+        loader._download_space.assert_called_once_with("sp1", target)
         assert result["files_downloaded"] == 1
 
     @pytest.mark.unit
@@ -587,6 +589,102 @@ class TestDownloadToDirectory:
 # ---------------------------------------------------------------------------
 # _download_page
 # ---------------------------------------------------------------------------
+
+
+class TestDownloadFileUrls:
+    BASE = "https://acme.atlassian.net/wiki"
+
+    @staticmethod
+    def _file_resp(content=b"PDF"):
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.iter_content = MagicMock(return_value=[content])
+        return resp
+
+    def _page(self, links):
+        return _mock_response({
+            "id": "p1", "title": "My Page", "body": {"storage": {"value": "<p>x</p>"}}, "_links": links,
+        })
+
+    def _attachments(self, links):
+        return _mock_response({
+            "results": [{
+                "id": "att1", "title": "doc.pdf", "mediaType": "application/pdf",
+                "_links": {"download": "/download/att1", "webui": "/pages/viewpageattachments.action?pageId=p1"},
+            }],
+            "_links": links,
+        })
+
+    @pytest.mark.unit
+    def test_pages_and_attachments_get_their_web_links(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page", "base": self.BASE}),
+            self._attachments({"base": self.BASE}),
+            self._file_resp(),
+        ]
+        with patch("requests.get", side_effect=responses):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {
+            "My Page.html": f"{self.BASE}/spaces/ENG/pages/p1/My+Page",
+            "doc.pdf": f"{self.BASE}/pages/viewpageattachments.action?pageId=p1",
+        }
+
+    @pytest.mark.unit
+    def test_page_without_base_takes_the_sites_from_a_listing(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page"}),
+            self._attachments({"base": self.BASE}),
+            self._file_resp(),
+        ]
+        with patch("requests.get", side_effect=responses):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"]["My Page.html"] == f"{self.BASE}/spaces/ENG/pages/p1/My+Page"
+
+    @pytest.mark.unit
+    def test_site_looked_up_once_when_no_response_names_it(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page"}),
+            _mock_response({"results": [], "_links": {}}),
+            _mock_response({"results": [], "_links": {"base": self.BASE}}),
+        ]
+        with patch("requests.get", side_effect=responses) as get:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {"My Page.html": f"{self.BASE}/spaces/ENG/pages/p1/My+Page"}
+        assert get.call_args_list[-1].args[0].endswith("/spaces")
+
+    @pytest.mark.unit
+    def test_no_links_without_a_site(self, loader):
+        responses = [
+            self._page({"webui": "/spaces/ENG/pages/p1/My+Page"}),
+            _mock_response({"results": [], "_links": {}}),
+            _mock_response({}, status_code=500),
+        ]
+        with patch("requests.get", side_effect=responses):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["files_downloaded"] == 1
+        assert result["file_urls"] == {}
+
+
+    @pytest.mark.unit
+    def test_absolute_links_kept_without_a_site(self, loader):
+        responses = [
+            self._page({"webui": "https://acme.atlassian.net/wiki/spaces/ENG/pages/p1"}),
+            _mock_response({"results": [], "_links": {}}),
+        ]
+        with patch("requests.get", side_effect=responses) as get:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                result = loader.download_to_directory(tmpdir, {"file_ids": ["p1"]})
+
+        assert result["file_urls"] == {"My Page.html": "https://acme.atlassian.net/wiki/spaces/ENG/pages/p1"}
+        assert get.call_count == 2, "no site lookup when every link is absolute"
 
 
 class TestDownloadPage:
@@ -897,3 +995,259 @@ class TestRetryOnAuthFailure:
         assert tokens.called
 
 
+
+
+class TestListSelection:
+    """``list_selection`` reads page and attachment versions without downloading bodies."""
+
+    BASE = "https://api.atlassian.com/ex/confluence/test_cloud/wiki/api/v2"
+
+    def _routes(self):
+        return {
+            f"{self.BASE}/spaces/S/pages": _mock_response({
+                "results": [
+                    {"id": "1", "title": "Intro", "version": {"number": 3}, "_links": {"webui": "/p/1"}},
+                    {"id": "2", "title": "Guide/Setup", "version": {"number": 1}},
+                ],
+                "_links": {"base": "https://acme.atlassian.net/wiki"},
+            }),
+            f"{self.BASE}/pages/1/attachments": _mock_response({"results": [
+                {"id": "a1", "title": "spec.pdf", "mediaType": "application/pdf", "version": {"number": 2},
+                 "_links": {"download": "/download/a1"}},
+                {"id": "a2", "title": "x.bin", "mediaType": "application/octet-stream",
+                 "_links": {"download": "/download/a2"}},
+            ]}),
+            f"{self.BASE}/pages/2/attachments": _mock_response({"results": []}),
+        }
+
+    def _get(self, routes, calls, params=None):
+        def get(url, **kwargs):
+            calls.append(url)
+            if params is not None:
+                params.append(kwargs.get("params") or {})
+            return routes.get(url) or _mock_response({}, 404)
+
+        return get
+
+    @pytest.mark.unit
+    def test_lists_pages_and_attachments_with_versions(self, loader):
+        calls, params = [], []
+        with patch(
+            "docsgpt.parser.connectors.confluence.loader.requests.get",
+            side_effect=self._get(self._routes(), calls, params),
+        ):
+            listing = loader.list_selection({"folder_ids": ["S"]})
+        assert listing.complete
+        assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
+            ("attachment:a1", "spec.pdf", "2", None),
+            ("page:1", "Intro.html", "3", "https://acme.atlassian.net/wiki/p/1"),
+            ("page:2", "Guide_Setup.html", "1", None),
+        ]
+        # Listing never asks for page bodies, in the URL or the parameters.
+        assert not any("body-format" in str(c) for c in calls)
+        assert not any("body-format" in p for p in params)
+
+    @pytest.mark.unit
+    def test_incomplete_when_attachments_cannot_be_listed(self, loader):
+        routes = self._routes()
+        routes[f"{self.BASE}/pages/2/attachments"] = _mock_response({}, 500)
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=self._get(routes, [])):
+            listing = loader.list_selection({"folder_ids": ["S"]})
+        assert not listing.complete
+
+    @pytest.mark.unit
+    def test_download_files_fetches_only_the_given_ids(self, loader, tmp_path):
+        routes = self._routes()
+        attachment = MagicMock(status_code=200)
+        attachment.iter_content.return_value = [b"PDF"]
+        routes["https://api.atlassian.com/ex/confluence/test_cloud/wiki/download/a1"] = attachment
+        calls = []
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=self._get(routes, calls)):
+            loader.list_selection({"folder_ids": ["S"]})
+            calls.clear()
+            result = loader.download_files(str(tmp_path), ["attachment:a1"])
+        assert calls == ["https://api.atlassian.com/ex/confluence/test_cloud/wiki/download/a1"]
+        assert (tmp_path / "spec.pdf").read_bytes() == b"PDF"
+        assert result["file_ids"] == {"spec.pdf": "attachment:a1"}
+
+
+class TestDownloadFilesSafety:
+    BASE = TestListSelection.BASE
+
+    def _listed(self, loader):
+        routes = TestListSelection()._routes()
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   side_effect=TestListSelection()._get(routes, [])):
+            loader.list_selection({"folder_ids": ["S"]})
+
+    @pytest.mark.unit
+    def test_a_page_renamed_since_the_listing_lands_at_its_listed_path(self, loader, tmp_path):
+        self._listed(loader)
+        page = _mock_response({"id": "1", "title": "Renamed", "body": {"storage": {"value": "<p>hi</p>"}}})
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", return_value=page):
+            result = loader.download_files(str(tmp_path), ["page:1"])
+        assert (tmp_path / "Intro.html").read_text() == "<p>hi</p>"
+        assert not (tmp_path / "Renamed.html").exists()
+        assert result["file_ids"] == {"Intro.html": "page:1"}
+
+    @pytest.mark.unit
+    def test_a_rejected_token_is_refreshed_once_then_raises(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        self._listed(loader)
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new"})
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_files(str(tmp_path), ["attachment:a1"])
+        loader._refresh_rejected_token.assert_called_once()
+
+    @pytest.mark.unit
+    def test_a_refreshed_token_carries_on(self, loader, tmp_path):
+        self._listed(loader)
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new"})
+        ok = MagicMock(status_code=200)
+        ok.iter_content.return_value = [b"PDF"]
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   side_effect=[_mock_response({}, 401), ok]):
+            result = loader.download_files(str(tmp_path), ["attachment:a1"])
+        assert result["failures"] == {} and loader.access_token == "new"
+
+
+class TestForbiddenItem:
+    @pytest.mark.unit
+    def test_a_403_fails_that_file_alone(self, loader, tmp_path):
+        TestDownloadFilesSafety()._listed(loader)
+        loader._refresh_rejected_token = MagicMock()
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 403)):
+            result = loader.download_files(str(tmp_path), ["attachment:a1"])
+        assert result["failures"]["attachment:a1"]["kind"] == "transient"
+        loader._refresh_rejected_token.assert_not_called()
+
+
+class TestForbiddenListing:
+    @pytest.mark.unit
+    def test_a_forbidden_page_is_left_out_not_fatal(self, loader):
+        routes = TestListSelection()._routes()
+        routes[f"{TestListSelection.BASE}/pages/2/attachments"] = _mock_response({}, 403)
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   side_effect=TestListSelection()._get(routes, [])):
+            listing = loader.list_selection({"folder_ids": ["S"]})
+        assert not listing.complete and listing.unread == 1
+        assert "page:1" in listing.by_id()
+
+
+class TestListingAuth:
+    @pytest.mark.unit
+    def test_a_token_still_refused_after_the_refresh_is_an_auth_error(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        loader._refresh_rejected_token = MagicMock(return_value={"access_token": "new"})
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"file_ids": ["1"]})
+        loader._refresh_rejected_token.assert_called_once()
+
+    @pytest.mark.unit
+    def test_a_refresh_that_fails_is_an_auth_error(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        loader._refresh_rejected_token = MagicMock(side_effect=RuntimeError("revoked"))
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get",
+                   return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"file_ids": ["1"]})
+
+
+class TestListSelectionEdges:
+    """The listing's other paths: picked pages, paged spaces, and what it can't read."""
+
+    BASE = TestListSelection.BASE
+
+    def _run(self, loader, routes, config, errors=None):
+        errors = errors or {}
+
+        def get(url, **kwargs):
+            if url in errors:
+                raise errors[url]
+            cursor = (kwargs.get("params") or {}).get("cursor")
+            return routes.get((url, cursor)) or routes.get(url) or _mock_response({}, 404)
+
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", side_effect=get):
+            return loader.list_selection(config)
+
+    @pytest.mark.unit
+    def test_picked_pages_given_as_one_id_and_a_paged_space(self, loader):
+        routes = {
+            f"{self.BASE}/pages/7": _mock_response({"id": "7", "title": "Seven", "version": {"number": 2},
+                                                    "_links": {"webui": "https://acme/p/7"}}),
+            f"{self.BASE}/pages/7/attachments": _mock_response({"results": [
+                {"id": "x", "title": "x.pdf", "mediaType": "application/pdf",
+                 "_links": {"download": "/d/x", "webui": "https://acme/a/x"}},
+            ]}),
+            (f"{self.BASE}/spaces/S/pages", None): _mock_response({
+                "results": [{"id": "8", "title": "Eight"}],
+                "_links": {"next": "/wiki/api/v2/spaces/S/pages?cursor=c2"},
+            }),
+            (f"{self.BASE}/spaces/S/pages", "c2"): _mock_response({"results": [{"id": "9", "title": "Nine"}]}),
+            f"{self.BASE}/pages/8/attachments": _mock_response({"results": []}),
+            f"{self.BASE}/pages/9/attachments": _mock_response({"results": []}),
+        }
+        listing = self._run(loader, routes, {"file_ids": "7", "folder_ids": "S"})
+        assert listing.complete
+        assert sorted(e.id for e in listing.entries) == ["attachment:x", "page:7", "page:8", "page:9"]
+        assert listing.by_id()["attachment:x"].url == "https://acme/a/x"
+
+    @pytest.mark.unit
+    def test_what_it_cannot_read_is_counted_and_the_rest_listed(self, loader):
+        routes = {
+            f"{self.BASE}/pages/gone": _mock_response({}, 404),
+            f"{self.BASE}/pages/broken": _mock_response({}, 500),
+            f"{self.BASE}/spaces/bad/pages": _mock_response({}, 500),
+            f"{self.BASE}/pages/ok": _mock_response({"id": "ok", "title": "Ok"}),
+        }
+        errors = {
+            f"{self.BASE}/pages/flaky": requests.exceptions.ConnectionError("reset"),
+            f"{self.BASE}/spaces/down/pages": requests.exceptions.ConnectionError("reset"),
+            f"{self.BASE}/pages/ok/attachments": requests.exceptions.ConnectionError("reset"),
+        }
+        listing = self._run(
+            loader, routes, {"file_ids": ["gone", "broken", "flaky", "ok"], "folder_ids": ["bad", "down"]}, errors,
+        )
+        # broken, flaky, ok's attachments, bad and down; a missing page is simply not there.
+        assert listing.unread == 5 and not listing.complete
+        assert [e.id for e in listing.entries] == ["page:ok"]
+
+    @pytest.mark.unit
+    def test_relative_links_take_the_sites_address(self, loader):
+        routes = {
+            f"{self.BASE}/pages/1": _mock_response({"id": "1", "title": "One", "_links": {"webui": "/spaces/S/1"}}),
+            f"{self.BASE}/pages/1/attachments": _mock_response({"results": []}),
+            f"{self.BASE}/spaces": _mock_response({"_links": {"base": "https://acme.atlassian.net/wiki"}}),
+        }
+        listing = self._run(loader, routes, {"file_ids": ["1"]})
+        assert listing.by_id()["page:1"].url == "https://acme.atlassian.net/wiki/spaces/S/1"
+
+
+class TestDownloadFilesEdges:
+    @pytest.mark.unit
+    def test_an_unlisted_id_and_a_path_outside_the_directory_fail_alone(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import FileEntry
+
+        loader._listed = {"page:evil": FileEntry(id="page:evil", path="../escape.html")}
+        result = loader.download_files(str(tmp_path), ["page:evil", "page:unknown"])
+        assert result["failures"]["page:evil"]["kind"] == "permanent"
+        assert result["failures"]["page:unknown"]["kind"] == "transient"
+        assert not (tmp_path.parent / "escape.html").exists()
+
+    @pytest.mark.unit
+    def test_a_refresh_that_fails_is_an_auth_error(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError, FileEntry
+
+        loader._listed = {"page:1": FileEntry(id="page:1", path="One.html")}
+        loader._refresh_rejected_token = MagicMock(side_effect=RuntimeError("revoked"))
+        with patch("docsgpt.parser.connectors.confluence.loader.requests.get", return_value=_mock_response({}, 401)):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_files(str(tmp_path), ["page:1"])

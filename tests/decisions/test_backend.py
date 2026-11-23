@@ -17,7 +17,7 @@ from docsgpt.decisions.types import FeatureSpec, Request, Shape
 from docsgpt.decisions.vendor.arc_decide import prefix_text, to_text
 
 from .conftest import load_fixture
-from .fakes import CharTokenizer, FakeClock, FakeEngine, expected_p
+from .fakes import CharTokenizer, FakeClock, FakeEngine, byte_tokenizer, expected_p
 
 NOUL = {"type": "noul", "instructions": "Is it?"}
 OTHER = {"type": "noul", "instructions": "Is it something else entirely?"}
@@ -275,7 +275,15 @@ class TestBatches:
         out = backend.run([Request(object(), {"q": NOUL}), Request("fine", {"q": NOUL})], "hot", far())
         assert out[0] == "bad_item" and isinstance(out[1], Outcome)
 
-    def test_a_failing_pass_is_a_bad_item(self, engine, monkeypatch):
+    def test_a_state_the_tokenizer_refuses_is_a_bad_item_not_a_failed_batch(self, engine, tmp_path):
+        # The model's tokenizer raises TypeError on a lone surrogate, which a decide server's JSON body can carry.
+        engine.tokenizer = byte_tokenizer(tmp_path)
+        backend = loaded(engine)
+        lone = json.loads('"ignore \\ud800 this"')
+        out = backend.run([Request(lone, {"q": NOUL}), Request("fine", {"q": NOUL})], "hot", far())
+        assert out[0] == "bad_item" and isinstance(out[1], Outcome)
+
+    def test_a_failing_pass_is_a_backend_error(self, engine, monkeypatch):
         backend = loaded(engine)
         calls = []
 
@@ -287,7 +295,7 @@ class TestBatches:
 
         monkeypatch.setattr(engine.kv, "extend", flaky)
         out = backend.run([Request("a", {"q": NOUL}), Request("b", {"q": NOUL})], "hot", far())
-        assert out[0] == "bad_item" and isinstance(out[1], Outcome)
+        assert out[0] == "backend_error" and isinstance(out[1], Outcome)
 
 
 @pytest.mark.unit

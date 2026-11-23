@@ -17,6 +17,8 @@ export type AnswerSource = {
   text: string;
   source?: string;
   link?: string;
+  // A synced file's link in the service it came from (Google Drive...).
+  url?: string;
   filename?: string;
   source_id?: string;
   chunk_key?: string;
@@ -59,8 +61,10 @@ export const useChatCompanion = () => useContext(ChatCompanionContext);
 
 /** The source's web address, when it is one a browser can open. */
 export function sourceHref(source: AnswerSource): string | null {
+  const isWeb = (value?: string) => !!value && /^https?:\/\//i.test(value);
+  if (isWeb(source.url)) return source.url!;
   const value = source.source ?? source.link ?? '';
-  return /^https?:\/\//i.test(value) ? value : null;
+  return isWeb(value) ? value : null;
 }
 
 /**

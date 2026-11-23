@@ -9,6 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '../ui/breadcrumb';
+import { useSourceFolderTrail } from './folderTrail';
 
 export type Crumb = { label: string; onSelect?: () => void };
 
@@ -16,28 +17,41 @@ export type Crumb = { label: string; onSelect?: () => void };
  * The header of every source view (files, chunks, wiki, graph): the crumbs
  * (Sources, the source, its folders, the open file and chunk), the source
  * kind's badge, and actions (Test retrieval, the kind's primary action) on
- * the right; the byline (the source's counts and a one-sentence explainer)
+ * the right with the source's ⋯ (`menu`) always last; the byline (the source's counts and a one-sentence explainer)
  * goes under the row. Up one level is a crumb, as on the Tools and Teams
  * detail pages (DetailBreadcrumb), never a back arrow. The crumbs stay on one
- * line: parents truncate, and the last crumb is the current one.
+ * line: parents truncate, and the last crumb is the current one. A source
+ * opened inside a Knowledge folder puts that folder's trail after the root
+ * (`SourceFolderTrail`).
  */
 export default function PathHeader({
   root,
+  parents,
   segments = [],
   badge,
   byline,
   actions,
+  menu,
 }: {
   /** The first crumb: Sources, or the source when a host draws Sources. */
   root: Crumb;
+  /**
+   * The crumbs between the root and the segments: the Knowledge folder the
+   * source was opened in, from `SourceFolderTrail` unless given. An embedded
+   * tree, whose root is the source itself, passes none.
+   */
+  parents?: Crumb[];
   segments?: Crumb[];
   /** The source kind (a neutral Badge), after the crumbs. */
   badge?: ReactNode;
   /** Muted meta line under the row. */
   byline?: ReactNode;
   actions?: ReactNode;
+  /** The source's ⋯ (an ActionMenu, size `toolbar`), after the actions. */
+  menu?: ReactNode;
 }) {
-  const crumbs = [root, ...segments];
+  const folderTrail = useSourceFolderTrail();
+  const crumbs = [root, ...(parents ?? folderTrail), ...segments];
 
   // A crumb step replaces the focused button (it becomes the current crumb,
   // or goes), which would drop focus to <body>. Once the trail changes,
@@ -100,9 +114,10 @@ export default function PathHeader({
           </Breadcrumb>
           {badge ? <span className="flex shrink-0">{badge}</span> : null}
         </div>
-        {actions ? (
+        {actions || menu ? (
           <div className="flex w-full flex-row flex-nowrap items-center justify-end gap-2 sm:w-auto">
             {actions}
+            {menu}
           </div>
         ) : null}
       </div>

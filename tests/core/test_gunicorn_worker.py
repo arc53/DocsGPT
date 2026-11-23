@@ -29,6 +29,12 @@ def test_worker_bounds_graceful_shutdown():
 
 
 @pytest.mark.unit
+def test_worker_leaves_forwarded_headers_to_the_app():
+    """uvicorn's own loopback-only trust would run before TRUSTED_PROXIES and override it."""
+    assert BoundedDrainUvicornWorker.CONFIG_KWARGS["proxy_headers"] is False
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 async def test_server_shutdown_raises_flag():
     from uvicorn.config import Config

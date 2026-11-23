@@ -1,7 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { FormField } from './form-field';
 import { Input, inputVariants } from './input';
+import { Textarea } from './textarea';
 
 describe('Input variants', () => {
   it('keeps the 38px form-row rectangular field by default', () => {
@@ -141,5 +143,50 @@ describe('Input pill and disabled state', () => {
     expect(classes).toContain('disabled:cursor-not-allowed');
     // pointer-events-none would hide the cursor behind the field.
     expect(classes).not.toContain('disabled:pointer-events-none');
+  });
+});
+
+describe('Input and Textarea required', () => {
+  // No <form> wraps most fields, so a native `required` only brings the
+  // browser's "Please fill in this field" tooltip. The star and
+  // aria-required say it instead, the way FormField does. A FormField hands
+  // every control an aria-required key, even when it is undefined; the
+  // control's own `required` must still win.
+  it.each([
+    ['a labelled input', () => <Input label="Name" required />, 'input'],
+    ['a bare input', () => <Input required />, 'input'],
+    [
+      'an input inside a FormField that is not required',
+      () => (
+        <FormField label="Name">
+          <Input required />
+        </FormField>
+      ),
+      'input',
+    ],
+    ['a textarea', () => <Textarea required />, 'textarea'],
+    [
+      'a textarea inside a FormField that is not required',
+      () => (
+        <FormField label="Notes">
+          <Textarea required />
+        </FormField>
+      ),
+      'textarea',
+    ],
+  ])('marks %s aria-required, not native required', (_, field, tag) => {
+    const html = renderToStaticMarkup(field());
+    const control = new RegExp(`<${tag}[^>]*>`).exec(html)![0];
+    expect(control).toContain('aria-required="true"');
+    expect(control).not.toMatch(/\srequired=""/);
+  });
+
+  it('stars a required labelled field and leaves an optional one unmarked', () => {
+    expect(renderToStaticMarkup(<Input label="Name" required />)).toContain(
+      '>*<',
+    );
+    const optional = renderToStaticMarkup(<Input label="Name" />);
+    expect(optional).not.toContain('aria-required');
+    expect(optional).not.toContain('>*<');
   });
 });

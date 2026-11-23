@@ -166,10 +166,6 @@ def approval_page_url(token: str) -> str:
     return f"{app_base_url()}/approve/{token}"
 
 
-def approval_api_url(token: str) -> str:
-    return f"{api_base_url()}/api/approvals/{token}"
-
-
 def reachability(url: str) -> Tuple[bool, Optional[str]]:
     """Whether a link looks reachable from the internet, and why not.
 

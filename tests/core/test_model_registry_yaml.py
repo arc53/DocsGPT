@@ -198,6 +198,31 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["openai"] | EXPECTED_IDS["docsgpt"]
 
+    def test_structured_output_is_on_unless_a_model_turns_it_off(self) -> None:
+        """A model without the flag supports structured output; an explicit false still wins."""
+        s = _make_settings(GROQ_API_KEY="gsk-test", LLM_PROVIDER="groq")
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+        caps = {m.id: m.capabilities.supports_structured_output for m in reg.get_all_models()}
+        assert caps["docsgpt-local"] is True
+        assert caps["openai/gpt-oss-120b"] is True
+        assert caps["llama-3.3-70b-versatile"] is False
+
+    def test_a_model_and_catalog_without_the_flag_support_structured_output(self, tmp_path) -> None:
+        """Neither the model nor the catalog defaults naming the flag resolves to True."""
+        (tmp_path / "bare.yaml").write_text(
+            "provider: openai_compatible\n"
+            "display_provider: bare\n"
+            "base_url: http://localhost:9999/v1\n"
+            "api_key_env: BARE_KEY\n"
+            "models:\n"
+            "  - id: bare-model\n"
+            "    display_name: Bare\n"
+        )
+        catalogs = load_model_yamls([tmp_path])
+        model = next(m for c in catalogs for m in c.models if m.id == "bare-model")
+        assert model.capabilities.supports_structured_output is True
+
     def test_openai_base_url_replaces_catalog_with_dynamic(self):
         s = _make_settings(
             OPENAI_BASE_URL="http://localhost:11434/v1",
@@ -328,3 +353,35 @@ class TestUserIdForwardCompat:
         assert len(reg.get_all_models(user_id="alice")) > 0
         assert len(reg.get_enabled_models(user_id="alice")) > 0
         assert reg.model_exists("gpt-5.5", user_id="alice") is True
+
+
+@pytest.mark.unit
+class TestSendReasoningContent:
+    """``send_reasoning_content``: whether stored thoughts go back as ``reasoning_content``."""
+
+    def test_defaults_to_sending_it(self, tmp_path) -> None:
+        (tmp_path / "bare.yaml").write_text(
+            "provider: openai_compatible\napi_key_env: BARE_KEY\nbase_url: https://example.test/v1\n"
+            "models:\n  - id: bare-model\n"
+        )
+        (catalog,) = load_model_yamls([tmp_path])
+        assert catalog.models[0].capabilities.send_reasoning_content is True
+
+    def test_a_model_overrides_the_catalog_default(self, tmp_path) -> None:
+        (tmp_path / "mixed.yaml").write_text(
+            "provider: openai_compatible\napi_key_env: MIXED_KEY\nbase_url: https://example.test/v1\n"
+            "defaults:\n  send_reasoning_content: false\n"
+            "models:\n  - id: refuses\n  - id: accepts\n    send_reasoning_content: true\n"
+        )
+        (catalog,) = load_model_yamls([tmp_path])
+        caps = {m.id: m.capabilities.send_reasoning_content for m in catalog.models}
+        assert caps == {"refuses": False, "accepts": True}
+
+    def test_the_mistral_example_turns_it_off(self, tmp_path) -> None:
+        # Mistral refuses an assistant message carrying reasoning_content, so
+        # a copy of the example must work as it stands.
+        example = BUILTIN_MODELS_DIR / "examples" / "mistral.yaml.example"
+        (tmp_path / "mistral.yaml").write_text(example.read_text())
+        (catalog,) = load_model_yamls([tmp_path])
+        assert catalog.models
+        assert all(m.capabilities.send_reasoning_content is False for m in catalog.models)

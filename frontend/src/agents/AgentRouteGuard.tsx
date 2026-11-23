@@ -10,13 +10,34 @@ import {
   selectSharedAgents,
   selectToken,
 } from '../preferences/preferenceSlice';
+import { useFollowPending } from '../conversation/followWorkspace';
+import type { WorkspaceItemFields } from '../workspace/itemOrigin';
+import useFollowItemWorkspace, {
+  type ItemWorkspace,
+} from '../workspace/useFollowItemWorkspace';
 import { canAgent } from './agentAccess';
-import { agentsListPath } from './paths';
+import { GuardedAgentContext } from './hooks/useAgent';
+import { AgentNoticeContext } from './OwnerInactiveNotice';
+import { agentEditPath, agentsListPath, isWorkflowAgent } from './paths';
 import type { Agent } from './types';
 
+/** Takes the app to an agent's workspace (an agent opened by its link). */
+function FollowWorkspace({ workspace }: { workspace: ItemWorkspace }) {
+  useFollowItemWorkspace(workspace);
+  return null;
+}
+
 type AgentRouteGuardProps = {
-  /** The action the page needs (`view`, `view_logs`, `manage_schedules`). */
+  /**
+   * The action the page needs (`view`, `view_logs`, `view_analytics`,
+   * `manage_schedules`), as `canAgent` checks it.
+   */
   action: string;
+  /**
+   * The classic edit page: a workflow agent goes on to the workflow editor
+   * instead, since the classic form would save it back as a classic agent.
+   */
+  classicEditor?: boolean;
   children: ReactNode;
 };
 
@@ -28,13 +49,22 @@ type AgentRouteGuardProps = {
  * renders until it knows (a loading ring stands in), so a viewer never sees
  * a flash of the edit form.
  * A caller who may not open the page, or an agent that does not load, goes
- * back to the agent list.
+ * back to the agent list. A record it fetched goes on to the page
+ * (`useAgent`), which then doesn't read it again.
+ * On the classic edit page a workflow agent opens in the workflow editor
+ * (an old `/agents/edit/<id>` link, a typed URL, or a link built before the
+ * agent's type was known).
+ * An agent opened by its link from another workspace takes the app there
+ * first (the loading ring stays meanwhile); the page then loads again in
+ * that workspace. The agent it read is given to the pages' notices.
  *
  * @param action The agent action the wrapped page needs.
+ * @param classicEditor Whether the page is the classic edit form.
  * @param children The page.
  */
 export default function AgentRouteGuard({
   action,
+  classicEditor = false,
   children,
 }: AgentRouteGuardProps) {
   const { agentId } = useParams();
@@ -72,14 +102,41 @@ export default function AgentRouteGuard({
     };
   }, [agentId, needsFetch, token]);
 
+  // Agents in the store are the current workspace's; only one read by its
+  // id can live elsewhere.
+  const fetchedWorkspace =
+    !stored && fetched && fetched.id === agentId && fetched.agent
+      ? (fetched.agent as WorkspaceItemFields).workspace
+      : null;
+  const following = useFollowPending(fetchedWorkspace);
+
   if (!agentId) return <>{children}</>;
 
   let agent: Agent | null | undefined = stored;
   if (!agent) {
-    if (fetched?.id !== agentId) return <LoadingState fill="parent" />;
+    if (fetched?.id !== agentId || following)
+      return (
+        <>
+          {fetchedWorkspace ? (
+            <FollowWorkspace workspace={fetchedWorkspace} />
+          ) : null}
+          <LoadingState fill="parent" />
+        </>
+      );
     agent = fetched.agent;
   }
   if (!agent || !canAgent(agent, action))
     return <Navigate to={agentsListPath()} replace />;
-  return <>{children}</>;
+  if (classicEditor && isWorkflowAgent(agent))
+    return <Navigate to={agentEditPath(agentId, true)} replace />;
+  return (
+    // The full record it read, even once the list lands meanwhile.
+    <GuardedAgentContext.Provider
+      value={fetched?.id === agentId ? fetched.agent : null}
+    >
+      <AgentNoticeContext.Provider value={agent}>
+        {children}
+      </AgentNoticeContext.Provider>
+    </GuardedAgentContext.Provider>
+  );
 }

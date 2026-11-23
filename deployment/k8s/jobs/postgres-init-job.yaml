@@ -30,7 +30,7 @@ spec:
       initContainers:
       # Refuse to start while docsgpt-secrets is not filled in.
       - name: check-secrets
-        image: arc53/docsgpt:1.0.0
+        image: arc53/docsgpt:1.1.0
         envFrom:
         - secretRef:
             name: docsgpt-secrets
@@ -89,7 +89,7 @@ spec:
             done
       containers:
       - name: postgres-init
-        image: arc53/docsgpt:1.0.0
+        image: arc53/docsgpt:1.1.0
         # The `docsgpt migrate` command. The image has no `docsgpt` console script.
         command: ["python", "-m", "docsgpt", "migrate", "--no-create"]
         envFrom:

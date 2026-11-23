@@ -1,0 +1,10 @@
+key: mcp:clickup
+rank: 70
+name: ClickUp
+description: Search, read and update ClickUp tasks, docs and lists, and add comments.
+icon: clickup
+category: projects
+mcp_url: https://mcp.clickup.com/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server

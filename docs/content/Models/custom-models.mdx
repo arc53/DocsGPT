@@ -1,14 +1,13 @@
 ---
 title: Custom Models
-description: Add your own OpenAI-compatible model in Settings → Custom Models - the fields, Test connection, where the model appears, how its API key is stored, why only public endpoints are allowed, and the /api/user/models endpoints.
-lastUpdated: 2026-09-30
+sidebarTitle: 🧩 Custom Models
+description: Add your own OpenAI-compatible model in Settings → Custom Models - the fields, Test connection, where the model appears, a team's own models and Copy to a team, how its API key is stored, why only public endpoints are allowed, and the /api/user/models endpoints.
+lastUpdated: 2026-10-30
 ---
-
-import { Callout } from 'nextra/components'
 
 # Custom Models
 
-**Settings → Custom Models** lets any signed-in user add a model from an OpenAI-compatible endpoint (Mistral, Together, a hosted vLLM, and so on) with their own API key. The model is private to that user: it appears in their model pickers next to the models the operator configured, and nobody else sees it.
+**Settings → Custom Models** lets any signed-in user add a model from an OpenAI-compatible endpoint (Mistral, Together, a hosted vLLM, and so on) with their own API key. In Personal, the model is private to that user: it appears in their model pickers next to the models the operator configured, and nobody else sees it, except a team editor of one of their workflows (see below). In a team workspace, the page holds the team's own models, which a team Admin adds for everyone in the team; see [Team models](#team-models).
 
 Operators who want a model available to everyone configure it on the server instead, with a [cloud provider key](/Models/cloud-providers), `OPENAI_BASE_URL`, or a model YAML in [`MODELS_CONFIG_DIR`](/Deploying/DocsGPT-Settings#adding-custom-models-models_config_dir).
 
@@ -38,19 +37,43 @@ Operators who want a model available to everyone configure it on the server inst
 
 4. Click **Test connection**, then **Save**.
 
-**Test connection** sends a tiny request (`hi`, with a 1-token limit, or 16 for the Responses protocol) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key.
+**Test connection** sends a tiny request (`hi`, with a 1-token limit, or 16 for the Responses protocol) to the endpoint with the values currently in the form, before anything is saved, and shows **Connection successful.** or the provider's error. It times out after 5 seconds and doesn't follow redirects. When you edit a saved model, leave **API key** blank to test (and keep) the stored key. If you change the base URL to another host (a different scheme, host or port), enter the key again: the stored key is only sent to the host it was saved for, so the test and the save are refused without it.
 
 ## Where the model appears
 
 Enabled custom models are listed next to the operator's models in:
 
 - the model picker when you start a chat without an agent,
-- the model selector in the agent builder and in workflow **AI Agent** nodes, where they are grouped under **My Models**,
+- the model selector in the agent builder and in workflow **AI Agent** nodes, where they are grouped under **My Models** (in a team, the team's models under **Team models**),
 - the model lists in a source's settings (the GraphRAG extraction model, for example).
 
 An agent that uses your custom model keeps using it for everyone who can run the agent: team members you share it with and [agent API key](/API/agent-keys) callers. Their requests go to your endpoint with your key. If you delete the model, or its key can no longer be decrypted, the agent falls back to the instance's default model.
 
-To edit or delete a model, open the menu on its card in **Settings → Custom Models**. A model disabled through the API (`"enabled": false`) shows a **Disabled** badge and is hidden from the pickers.
+The same goes for a workflow **AI Agent** node set to your custom model: whoever runs the workflow agent, the node calls your endpoint with your key, and the usage counts toward the agent. A model set on a node is looked up in the workflow owner's account, so:
+
+- If you delete the model, or its key can no longer be decrypted, the nodes set to it fail with *Model '…' is not available* until you pick another model for them. They don't fall back to the default model. Disabling the model only hides it from the pickers; the nodes keep using it.
+- A team editor of your workflow picks a node's model from your custom models, listed under **Owner's Models** in place of their own. The list their browser gets carries each model's name, provider, context window and whether it supports structured output, not its endpoint, key or other settings. The picker shows the name and provider. The context window feeds the workflow's context-limit note, and the structured-output flag the node's **Advanced settings** warning when the picked model can't return structured output. An editor's [access token](/API/personal-access-tokens#scopes) gets this list only with `models:read`. A node set to one of their own custom models can't run, because you don't have that model, so the save is refused.
+- A node without a model of its own runs on the agent's model, looked up as for the agent itself.
+
+To edit, disable or delete a model, open the **⋯** menu on its card in **Settings → Custom Models**. **Disable** hides the model from the pickers and gives its card a **Disabled** badge; **Enable** brings it back. **Delete** asks you to confirm and names the agents and workflows that use the model, so you know what falls back to the default model (or, for a workflow node, stops) as described above.
+
+## Team models
+
+In a [team workspace](/Using/team-workspaces#team-custom-models), **Settings → Custom Models** lists the team's models, under "These models belong to the team. Your own models are in Personal." A team model works like your own, with these differences:
+
+- **Who adds it.** Only the team's Admins and Owner add, edit, test, enable or disable, and delete the team's models. Each card says who added it.
+- **Who sees it.** Every member sees the team's models, but only Admins and the Owner see a model's base URL. Nobody sees its key.
+- **Who uses it.** Every member can pick it in a team chat, and Editors and up set it on the team's agents and workflows. A team chat offers the instance's models and the team's, never your own; a team's agents and workflows run only on the team's custom models, and your personal agents never on a team's.
+- **Who pays.** Whoever starts a run pays from their own allowance, as for any model. The provider bills the team's key.
+- **When the person who added it leaves**, nothing pauses: the model keeps running on the key they entered. An Admin can replace the key.
+
+While a team has custom models, it can't be deleted. For moving agents that use a custom model, importing one into a team, and sharing a team agent that runs on one, see [Team custom models](/Using/team-workspaces#team-custom-models).
+
+### Copy a model to a team
+
+To bring one of your own models into a team without typing its key again, open the **⋯** menu on its card in Personal and choose **Copy to a team**. The item appears only when you're an Admin or the Owner of a team. Pick the team, if you have several, and choose **Copy**: the team gets its own copy of the model with your API key, and your model stays as it is.
+
+The copy belongs to the team and names you as the person who added it. From then on, every member's use of it spends that key. If the team already has the model, the copy is refused ("The team already has this model."). If your model's key can't be read any more, replace the key first.
 
 ## Public endpoints only
 
@@ -60,7 +83,7 @@ So a model running on the same machine or your LAN (a local Ollama, LM Studio or
 
 ## How the API key is stored
 
-The API key is encrypted with `ENCRYPTION_SECRET_KEY` and a per-user salt before it is written to the database, and the API never returns it. Set your own `ENCRYPTION_SECRET_KEY` before users add models; with the public default the keys are only as safe as that default (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
+The API key is encrypted with `ENCRYPTION_SECRET_KEY` and a salt for its owner (the user, or the team for a team's model) before it is written to the database, and the API never returns it. Set your own `ENCRYPTION_SECRET_KEY` before users add models; with the public default the keys are only as safe as that default (see [Secrets to set before going live](/Deploying/DocsGPT-Settings#secrets-to-set-before-going-live)).
 
 When the operator rotates the key, `docsgpt connectors reencrypt` rewrites custom-model keys along with connections and tool secrets. A model whose key neither the current nor the previous key opens is left out of the pickers until you edit it and enter the API key again.
 
@@ -70,12 +93,14 @@ The same operations are available over the API. With a [personal access token](/
 
 | Method and path | Does |
 | --- | --- |
-| `GET /api/models` | Lists every model available to the caller, including their custom models (`"source": "user"`). A token with `chat:run` can call it too. |
-| `GET /api/user/models` | Lists the caller's custom models. |
-| `POST /api/user/models` | Adds a model. |
-| `GET`, `PATCH`, `DELETE /api/user/models/<id>` | Reads, updates or deletes one model. In a `PATCH`, a missing or empty `api_key` keeps the stored key. |
+| `GET /api/models` | Lists every model available to the caller, including their custom models (`"source": "user"`). In a team workspace, it lists the team's enabled models instead (`"source": "team"`, without `base_url`) and never the caller's own. A token with `chat:run` can call it too. |
+| `GET /api/user/models` | Lists the caller's custom models. With `owner=team`, lists the models of the team the workspace header names. |
+| `POST /api/user/models` | Adds a model. With `"owner": "team"`, adds it for the team the workspace header names (Admins and the Owner). |
+| `GET`, `PATCH`, `DELETE /api/user/models/<id>` | Reads, updates or deletes one model. In a `PATCH`, a missing or empty `api_key` keeps the stored key, unless `base_url` moves to another host (scheme, host or port): then `api_key` is required, and the update is refused with `400` `api_key_required_for_new_host`. |
 | `POST /api/user/models/test` | Tests unsaved values (`base_url`, `api_key`, `upstream_model_id`, optional `capabilities`). |
-| `POST /api/user/models/<id>/test` | Tests a saved model; any of `base_url`, `api_key` and `upstream_model_id` in the body override the stored values. |
+| `POST /api/user/models/<id>/test` | Tests a saved model; any of `base_url`, `api_key` and `upstream_model_id` in the body override the stored values. A `base_url` on another host needs `api_key` too (`400`, `code: api_key_required_for_new_host`). |
+| `GET /api/user/models/<id>/usage` | The agents and workflows of the model's owner that use it: `{"usage": {"agents": [{id, name}], "workflows": [{id, name}]}}`. |
+| `POST /api/user/models/<id>/copy` | Copies one of your own models to a team you're an Admin of: `{"team_id": "..."}`. Answers `201` with the team's new model, or `409` `model_already_in_team` when the team has it. |
 
 ```bash
 curl -X POST https://your-docsgpt/api/user/models \
@@ -96,8 +121,10 @@ curl -X POST https://your-docsgpt/api/user/models \
   }'
 ```
 
+A team model's id routes go by the model's own team, whatever the workspace header says: a member reads it, and only the team's Admins and Owner change, test or delete it (`403` `model_admin_required`); anyone outside the team gets `404`. Every model carries `owner` (`personal` or `team`), `team_id`, `created_by` and `allowed_actions`, and `base_url` only for those who may change it. A token reads the team's models with `models:read`, but can't add, change, test, copy or delete them: those answer `403` `not_available_to_tokens`. Deleting a team model returns the agents and workflows that used it under `usage`.
+
 The response is the saved model without its key. Its `id` is what an agent's `default_model_id` stores. The test endpoints answer `200` with `{"ok": true}` or `{"ok": false, "error": "..."}`, and `400` when the base URL is refused, the capabilities are invalid, or a saved model's stored key can't be decrypted.
 
 <Callout type="info">
-There is no setting that turns Custom Models off: every signed-in user can add models.
+There is no setting that turns Custom Models off: every signed-in user can add models of their own, and every team Admin can add models for the team.
 </Callout>

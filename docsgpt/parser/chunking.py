@@ -29,6 +29,7 @@ class Chunker:
         max_tokens: int = 2000,
         min_tokens: int = 150,
         duplicate_headers: bool = False,
+        chunk_overlap: int = 0,
     ):
         self.chunking_strategy = chunking_strategy
         # A budget below 1 would ask for a chunk per token; the strategy
@@ -36,6 +37,7 @@ class Chunker:
         self.max_tokens = max(1, int(max_tokens))
         self.min_tokens = min_tokens
         self.duplicate_headers = duplicate_headers
+        self.chunk_overlap = chunk_overlap
         # Counted in the embedding model's tokenizer, not cl100k: ``max_tokens``
         # is compared against a limit the embedding server enforces in its own
         # units, so counting in any other unit is a guess.
@@ -93,19 +95,29 @@ class Chunker:
             )
             duplicate_headers = False
 
-        if duplicate_headers:
-            body_pieces = split_to_token_limit(
-                self.counter,
-                body,
+        try:
+            if duplicate_headers:
+                body_pieces = split_to_token_limit(self.counter, body, with_header_budget)
+            else:
+                body_pieces = split_to_token_limit(
+                    self.counter,
+                    body,
+                    self.max_tokens,
+                    first_max_tokens=with_header_budget,
+                )
+        except ValueError:
+            # The header leaves fewer tokens than a single body character needs
+            # (an emoji is up to four). As when the header fills the budget, it
+            # goes back to being ordinary text.
+            logger.warning(
+                "Header of %s leaves %d token(s), too few for a body character; "
+                "treating it as body text.",
+                doc.doc_id,
                 with_header_budget,
             )
-        else:
-            body_pieces = split_to_token_limit(
-                self.counter,
-                body,
-                self.max_tokens,
-                first_max_tokens=with_header_budget,
-            )
+            body = f"{header}{body}"
+            header = ""
+            body_pieces = split_to_token_limit(self.counter, body, self.max_tokens)
 
         if not body_pieces and header:
             # Nothing but a header: the loop below only ever emits the header
@@ -113,10 +125,20 @@ class Chunker:
             # from the index entirely.
             body_pieces = [""]
 
-        split_docs = []
+        chunk_texts: List[str] = []
         for part_index, piece in enumerate(body_pieces):
             include_header = bool(header) and (duplicate_headers or part_index == 0)
             chunk_text = f"{header}{piece}" if include_header else piece
+            if include_header and self.counter.count(chunk_text) > self.max_tokens:
+                # Tokens merge differently across the header/body seam (cl100k
+                # counts " . \r\n" + "\n\n\n" as 4, not 3), so a joined chunk can
+                # land a token or two over budget: cut it again.
+                chunk_texts.extend(split_to_token_limit(self.counter, chunk_text, self.max_tokens))
+            else:
+                chunk_texts.append(chunk_text)
+
+        split_docs = []
+        for part_index, chunk_text in enumerate(chunk_texts):
             split_docs.append(
                 Document(
                     text=chunk_text,

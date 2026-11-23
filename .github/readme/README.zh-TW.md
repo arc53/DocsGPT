@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 298ec2a0297af9fb740062f8d13afbfa967fdb7f by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 96e6e4a0d2ff45c1cffe0df1eec4338c5222fab9 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -11,6 +11,7 @@
   <a href="https://github.com/arc53/DocsGPT"><img src="https://img.shields.io/github/stars/arc53/docsgpt?style=social" alt="GitHub 星號數"></a>
   <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE"><img src="https://img.shields.io/github/license/arc53/docsgpt" alt="MIT 授權條款"></a>
   <a href="https://www.bestpractices.dev/projects/9907"><img src="https://www.bestpractices.dev/projects/9907/badge" alt="OpenSSF 最佳實務"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/arc53/DocsGPT"><img src="https://api.scorecard.dev/projects/github.com/arc53/DocsGPT/badge" alt="OpenSSF Scorecard"></a>
   <a href="https://discord.gg/vN7YFfdMpj"><img src="https://img.shields.io/discord/1070046503302877216" alt="Discord"></a>
   <a href="https://x.com/docsgptai"><img src="https://img.shields.io/twitter/follow/docsgptai" alt="在 X 上追蹤"></a>
 </p>
@@ -48,7 +49,6 @@
   </a>
 </p>
 
-> 🎃 **Hacktoberfest 2026**：整個 10 月，只要有實質貢獻就送 T 恤。請參閱 [HACKTOBERFEST.md](../../HACKTOBERFEST.md)。
 
 <p align="center">
   <sub>支援單位</sub><br>
@@ -183,7 +183,7 @@ docsgpt down       # 停止（資料與設定會保留）
 - **後端**：Python、Flask 與 flask-restx，運行於 Starlette ASGI 應用程式（uvicorn/gunicorn）之後；Celery 搭配 RedBeat，以及 Pydantic settings。
 - **資料**：PostgreSQL（SQLAlchemy、Alembic）、Redis，以及用於向量的 FAISS、pgvector、Elasticsearch、Qdrant、Milvus 或 MongoDB。
 - **前端**：React、Vite、Redux Toolkit、Tailwind CSS 與 React Flow。
-- **文件**：使用 Nextra 的 Next.js。
+- **文件**：使用 Fumadocs 的 Next.js。
 
 專案結構：
 
@@ -199,5 +199,6 @@ docsgpt down       # 停止（資料與設定會保留）
 ## 授權條款
 
 DocsGPT 採用 [MIT 授權條款](../../LICENSE)。
+
 
 

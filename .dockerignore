@@ -1,14 +1,15 @@
-# Build context for docsgpt/Dockerfile is the repository root, so the image can
-# carry the `application` import alias next to the `docsgpt` package. Allow only
-# what the image needs; everything else (docs, tests, venvs) stays out.
+# Build context for docsgpt/Dockerfile is the repository root, so the `ui`
+# stage can build the web UI. Allow only what the image needs; everything else
+# (docs, tests, venvs, a checkout's application/ data) stays out.
 *
 !docsgpt/
-# Only the alias file: an upgraded checkout may still hold gitignored
-# application/{inputs,indexes,vectors,.env} from the old layout.
-!application/__init__.py
 # The web UI's source and the script that builds it (the `ui` stage).
 !frontend/
 !scripts/build_frontend.sh
+# The ClusterFuzzLite image (.clusterfuzzlite/Dockerfile) builds from the root
+# as well and needs its harnesses; the docsgpt image never copies these.
+!.clusterfuzzlite/
+!tests/fuzz/
 
 # Inside the package: caches, local runtime data and secrets never ship.
 **/__pycache__/

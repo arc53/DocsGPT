@@ -51,6 +51,7 @@ describe('dispatchSSEEvent', () => {
   it.each([
     'schedule.run.completed',
     'schedule.run.failed',
+    'schedule.run.skipped',
     'schedule.autopaused',
     'schedule.message.appended',
     'tool.approval.cleared',

@@ -3,34 +3,68 @@
 import json
 import math
 import uuid
-from typing import Optional
+from typing import Any, Callable, NamedTuple, Optional
+from urllib.parse import urlparse
 
-from flask import current_app, jsonify, make_response, redirect, request
+from flask import Response, current_app, jsonify, make_response, redirect, request
 from flask_restx import fields, Namespace, Resource
 from pydantic import ValidationError
 
 from docsgpt.agents.tools.path_utils import validate_tool_path
 from docsgpt.api import api
 from docsgpt.api.audit import record_event
-from docsgpt.api.pat.rules import filter_listing
+from docsgpt.api.pat.rules import filter_listing, used_by_agent_allowlist
 from docsgpt.api.user.tasks import (
     convert_source_to_wiki,
     extract_graph,
+    ingest_connector_task,
     reembed_wiki_page,
     reingest_source_task,
     sync_source,
 )
 from docsgpt.api.user.resource_access import (
     AccessDenied,
+    created_by_payload,
+    creator_payloads,
     delete_settings,
     payload_for,
     settings_many,
+    workspace_allowed_actions,
 )
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import (
+    SOURCE_BUSY,
+    SYNC_FREQUENCIES,
+    denied_response,
+    edit_lock,
+    load_source,
+)
+from docsgpt.api.user.sources.upload import (
+    _claim_task_or_get_cached,
+    _read_idempotency_key,
+    _release_claim,
+    _requested_folder,
+    connection_paused,
+    connector_personal_only,
+    creation_workspace,
+    reingest_idempotency_key,
+    request_workspace,
+)
+from docsgpt.api.user.received_shares import in_request_workspace, received_into
+from docsgpt.api.user.resource_usage import (
+    attach_used_by,
+    deletable_ids_of,
+    deletable_row_ids,
+    empty_usage,
+    is_in_use,
+    used_by_many,
+)
+from docsgpt.api.user.folders.service import SourceFiling, file_new_source, folder_error, subtree_ids
 from docsgpt.api.user.team_sharing import visible_with_access
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.parser.remote.remote_creator import normalize_remote_data
+from docsgpt.parser.remote.website_tree import config_from_legacy, count_pages
 from docsgpt.storage.db.repositories.ingest_chunk_progress import (
     IngestChunkProgressRepository,
 )
@@ -46,7 +80,10 @@ from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig, validation_message
 from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
+from docsgpt.vectorstore.index_lock import SourceBusy
 from docsgpt.vectorstore.vector_creator import VectorCreator
+from docsgpt.workspaces.context import Workspace, WorkspaceError
+from docsgpt.workspaces.principal import is_principal_id
 
 
 WIKI_INDEX_PATH = "/index.md"
@@ -60,19 +97,9 @@ sources_ns = Namespace(
 )
 
 
-def _get_provider_from_remote_data(remote_data):
-    if not remote_data:
-        return None
-    if isinstance(remote_data, dict):
-        return remote_data.get("provider")
-    if isinstance(remote_data, str):
-        try:
-            remote_data_obj = json.loads(remote_data)
-        except Exception:
-            return None
-        if isinstance(remote_data_obj, dict):
-            return remote_data_obj.get("provider")
-    return None
+def _get_provider_from_remote_data(remote_data) -> Optional[str]:
+    """The connector provider a source's ``remote_data`` names, or None."""
+    return connector_selection({"remote_data": remote_data}).get("provider")
 
 
 def _connection_id(row: dict) -> str | None:
@@ -81,7 +108,247 @@ def _connection_id(row: dict) -> str | None:
     return str(value) if value else None
 
 
-def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -> dict:
+def _is_wiki(doc: dict) -> bool:
+    """Whether a source row is a wiki (a sync would replace its pages)."""
+    return SourceConfig.parse(doc.get("config")).kind == "wiki"
+
+
+_WIKI_NO_SYNC = "A wiki is edited in place and doesn't sync."
+
+
+def _sync_refusal(text: str, code: str, status: int = 400) -> Response:
+    """A refused sync request: ``error_response`` with the text under ``message`` too, which older callers read."""
+    return error_response(text, status, message=text, code=code)
+
+
+def _wiki_store_refusal():
+    """The 400 when the vector store can't re-embed single wiki pages (Elasticsearch), or ``None``.
+
+    A wiki page's edit re-embeds just that page; a store that can't list and
+    delete single chunks would keep the old chunks, so search would answer
+    from the page as it was. Refused before anything is written.
+
+    Returns:
+        Optional[Response]: The refusal (code ``wiki_unsupported``), or ``None``.
+    """
+    if VectorCreator.supports_chunk_edits(settings.VECTOR_STORE):
+        return None
+    return _sync_refusal(
+        f"Wikis need a vector store that can change single pages; the {settings.VECTOR_STORE} store can't.",
+        "wiki_unsupported",
+    )
+
+
+def _with_scheme(url: str) -> str:
+    """``url``, with ``https://`` in front when it was written without a scheme, so its host can be read.
+
+    Older Website sources may store an address as the user typed it
+    (``docs.x.io/a``), which ``urlparse`` reads as a path with no host.
+    """
+    return url if "://" in url else f"https://{url}"
+
+
+def _website_summary(row: dict) -> Optional[dict]:
+    """Where a web source comes from, for its Knowledge card.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        ``{"hosts": [...], "pages": n}`` for a Website source (or one made by
+        the url, crawler or sitemap loaders), else ``None``. Hosts come from
+        the source's entries, without ``www.``; pages are its tree's leaves.
+        A wiki (a web source converted to one) is edited in place, so it gets
+        ``None``; so does a row whose stored config can't be read, rather
+        than failing the whole listing.
+    """
+    try:
+        if _is_wiki(row):
+            return None
+        config = config_from_legacy(row.get("type"), row.get("remote_data"))
+        if config is None:
+            return None
+        hosts: list[str] = []
+        for entry in config["entries"]:
+            host = (urlparse(_with_scheme(entry["url"])).hostname or "").removeprefix("www.")
+            if host and host not in hosts:
+                hosts.append(host)
+        structure = row.get("directory_structure")
+        pages = count_pages(structure) if isinstance(structure, dict) else 0
+        return {"hosts": hosts, "pages": pages}
+    except Exception as err:  # noqa: BLE001 - one bad row must not fail the listing
+        current_app.logger.warning(f"Website summary of source {row.get('id')} unavailable: {err}")
+        return None
+
+
+def _file_count(row: dict) -> Optional[int]:
+    """How many files a source's tree holds (a synced source's card says it); ``None`` for a flat source."""
+    structure = row.get("directory_structure")
+    return count_pages(structure) if isinstance(structure, dict) and structure else None
+
+
+def _team_connection_of(conn, doc: dict) -> Optional[dict]:
+    """The connection a team's source reads through, when it names one.
+
+    Args:
+        conn: Open connection.
+        doc: The source row.
+
+    Returns:
+        The ``connector_sessions`` row for a team's source that names a connection; None for a person's
+        source or one that names none (or one since deleted).
+    """
+    from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+    owner = doc.get("user_id")
+    connection_id = _connection_id(doc)
+    if not connection_id or not is_principal_id(owner):
+        return None
+    return ConnectorSessionsRepository(conn).get(connection_id)
+
+
+def team_connection_sync_refusal(conn, doc: dict, owner: str, actor: str) -> Optional[Response]:
+    """Why ``actor`` may not sync a team's source through the team's connection now, or None.
+
+    Editors and up sync a team's connection's sources (and pay for it), but
+    not while its account is paused: the person who connected it was
+    deactivated, left the team or lost the Admin role. A team's source naming
+    any other connection is refused as one that reads through a personal account.
+
+    Args:
+        conn: Open connection.
+        doc: The source row.
+        owner: Its owner.
+        actor: The caller.
+
+    Returns:
+        None when the sync may run (or the source reads through no team connection); else the
+        ``authorize_connection`` refusal, 403 ``connector_personal_only``, or 409 ``connection_paused``.
+    """
+    from docsgpt.connectors import service as connector_service
+    from docsgpt.connectors.team import ConnectionDenied, authorize_connection
+
+    if not is_principal_id(owner):
+        return None
+    row = _team_connection_of(conn, doc)
+    if row is None:
+        return None
+    if str(row.get("user_id")) != str(owner):
+        return connector_personal_only()
+    try:
+        authorize_connection(conn, row["id"], actor, "sync")
+    except ConnectionDenied as err:
+        return err.response()
+    try:
+        connector_service.ensure_account_usable(conn, row)
+    except connector_service.ConnectionUnavailable as err:
+        return connection_paused(err)
+    return None
+
+
+def connection_sync_pauses(conn, rows: list, owner_id: str) -> dict:
+    """Why each listed team source reading through its team's connection won't sync, by source id.
+
+    Derived on every read: an account pause (the person who connected it is
+    deactivated, left the team or lost the Admin role, or nobody is recorded)
+    holds for every source of the connection; out of allowance only for those
+    that sync on a schedule, since a person's Sync now is paid by them. Only
+    the workspace's own sources are given one: why a team's account is paused,
+    and which connection, stay in that team when it shares a source.
+
+    Args:
+        conn: Open connection.
+        rows: The listed ``sources`` rows.
+        owner_id: Who owns the workspace's own sources: the caller, or the team's principal.
+
+    Returns:
+        ``{source_id: {reason, until, left_team, connection_id}}`` for the paused ones.
+    """
+    from docsgpt.quotas.pause import PayerChecks, connection_pause
+
+    checks = PayerChecks()
+    connections: dict = {}
+    paused: dict = {}
+    for row in rows:
+        connection_id = _connection_id(row)
+        if not connection_id or not is_principal_id(row.get("user_id")) or str(row.get("user_id")) != owner_id:
+            continue
+        if connection_id not in connections:
+            connections[connection_id] = _team_connection_of(conn, row)
+        connection = connections[connection_id]
+        if connection is None or str(connection.get("user_id")) != str(row.get("user_id")):
+            continue
+        scheduled = (row.get("sync_frequency") or "never") != "never"
+        pause = connection_pause(conn, connection, checks=checks, allowance=scheduled)
+        if pause is not None:
+            paused[str(row["id"])] = {
+                "reason": pause.reason,
+                "until": pause.until.isoformat() if pause.until else None,
+                "left_team": pause.left_team,
+                "connection_id": connection_id,
+            }
+    return paused
+
+
+def _files_failed(row: dict) -> int:
+    """How many files a connector source's last sync could not read (``remote_data.failed_files``).
+
+    They are left out of its index; its next sync retries them.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        The count; 0 for a source with none, or no record of them.
+    """
+    remote_data = row.get("remote_data")
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except ValueError:
+            return 0
+    if not isinstance(remote_data, dict):
+        return 0
+    count = remote_data.get("files_failed")
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        return count
+    failed = remote_data.get("failed_files")
+    return len(failed) if isinstance(failed, list) else 0
+
+
+def _sync_paused(row: dict) -> Optional[dict]:
+    """Why a source's scheduled sync is skipped, from ``metadata.sync_paused``: ``{reason, since}``, or None.
+
+    The sync worker sets the flag on a team source when nobody may pay for
+    its scheduled sync and clears it once someone can. Only those two keys
+    leave the server; a flag of an unexpected shape still reads as paused.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        ``{"reason": str | None, "since": str | None}`` while the flag is set, else None.
+    """
+    metadata = row.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except ValueError:
+            return None
+    if not isinstance(metadata, dict) or metadata.get("sync_paused") is None:
+        return None
+    flag = metadata["sync_paused"]
+    flag = flag if isinstance(flag, dict) else {}
+    return {"reason": flag.get("reason"), "since": flag.get("since")}
+
+
+def _with_access(
+    entry: dict,
+    access: Optional[str],
+    switches: Optional[dict],
+    workspace: Optional[Workspace] = None,
+    received: Optional[dict] = None,
+) -> dict:
     """Add ``access`` + ``allowed_actions`` to a listed source row.
 
     The source's behaviour ``config`` is cut down to its ``kind`` when the
@@ -91,19 +358,112 @@ def _with_access(entry: dict, access: Optional[str], switches: Optional[dict]) -
 
     Args:
         entry: The row as the list endpoint builds it.
-        access: ``owner`` / ``editor`` / ``viewer``.
-        switches: The source's owner switches (``settings_many`` output).
+        access: ``owner`` / ``editor`` / ``viewer`` (a personal row).
+        switches: The source's owner switches (``settings_many`` output; a personal row).
+        workspace: The team workspace a team row is listed in; its role decides, switches don't apply.
+        received: For a source another team shares with that workspace, its access payload
+            (``received_into``); it decides instead of the role, and the row is filed in no tree here.
 
     Returns:
         dict: ``entry`` with the access payload merged in.
     """
-    payload = payload_for("source", access, switches)
+    if received is not None:
+        payload = received
+        entry.update({"folder_id": None, "folder_path": []})
+    elif workspace is not None and workspace.is_team:
+        payload = payload_for(
+            "source", None, None, team_id=workspace.team_id, team_role=workspace.role,
+            policy=workspace.outside_policy,
+        )
+    else:
+        payload = payload_for("source", access, switches)
     if "view_config" not in payload["allowed_actions"]:
         config = entry.get("config")
         if config is not None:
             entry["config"] = {"kind": (config or {}).get("kind", "classic")}
     entry.update(payload)
     return entry
+
+
+#: The ``kind`` filter of the paginated listing; ``all`` first.
+SOURCE_KINDS = ("all", "files", "websites", "synced", "wikis", "shared")
+
+#: The ``usage`` filter of the paginated listing.
+USAGE_FILTERS = ("all", "in_use", "unused")
+
+#: The ``origin`` filter of the paginated listing: the workspace owner's sources, others shared ones, or both.
+ORIGIN_FILTERS = ("all", "own", "shared")
+
+def source_kind(row: dict) -> str:
+    """Which of the content kinds a source is: ``wikis``, ``websites``, ``synced`` or ``files``.
+
+    Mirrors the frontend (``settings/sourceKinds.ts``) so the counts the
+    listing returns match the filter the UI draws. The four kinds partition
+    the sources; a source matching more than one takes the first that fits:
+
+    1. ``wikis``: ``config.kind`` is ``wiki`` or the type is ``wiki``
+       (``isWikiSource``). A wiki never syncs, whatever schedule it kept.
+    2. ``websites``: a Website source, or one made by the url, crawler or
+       sitemap loaders (the rows that carry a ``website`` summary). A
+       website on a schedule stays a website.
+    3. ``synced``: content from a connection or a schedule
+       (``isSyncedSource``): a ``connection_id``, a ``connector*`` type, or a
+       ``sync_frequency`` other than ``never``.
+    4. ``files``: everything else: uploads, a graph source, a remote loader
+       that never syncs.
+
+    ``shared`` is not one of them: it cuts across the four (a team's file is
+    both ``files`` and ``shared``), see :func:`matches_kind`.
+
+    Args:
+        row: A ``sources`` row; only ``type``, ``config``, ``remote_data``,
+            ``sync_frequency`` and ``connection_id`` are read.
+
+    Returns:
+        str: The kind.
+    """
+    try:
+        is_wiki = _is_wiki(row)
+    except Exception:  # noqa: BLE001 - an unreadable config is not a wiki
+        is_wiki = False
+    if is_wiki or row.get("type") == "wiki":
+        return "wikis"
+    try:
+        is_website = config_from_legacy(row.get("type"), row.get("remote_data")) is not None
+    except Exception:  # noqa: BLE001 - as in _website_summary, a bad row is not a website
+        is_website = False
+    if is_website:
+        return "websites"
+    frequency = row.get("sync_frequency")
+    if row.get("connection_id") or str(row.get("type") or "").startswith("connector") or (
+        frequency and frequency != "never"
+    ):
+        return "synced"
+    return "files"
+
+
+def matches_kind(kind: str, content_kind: str, shared: bool) -> bool:
+    """Whether a source passes the listing's ``kind`` filter.
+
+    Args:
+        kind: The filter, one of :data:`SOURCE_KINDS`.
+        content_kind: The source's :func:`source_kind`.
+        shared: Whether a team shares the source with the caller (they don't own it).
+
+    Returns:
+        bool: True for ``all``; for ``shared``, the team's sources of any
+        kind; otherwise the sources of that content kind, own and shared.
+    """
+    if kind == "all":
+        return True
+    if kind == "shared":
+        return shared
+    return content_kind == kind
+
+
+def matches_usage(usage: str, in_use: bool) -> bool:
+    """Whether a source passes the listing's ``usage`` filter (``all``, ``in_use`` or ``unused``)."""
+    return usage == "all" or (usage == "in_use") == in_use
 
 
 @sources_ns.route("/sources")
@@ -121,15 +481,35 @@ class CombinedJson(Resource):
 
         try:
             with db_readonly() as conn:
+                try:
+                    workspace = request_workspace(user, conn)
+                except WorkspaceError as err:
+                    return err.response()
                 repo = SourcesRepository(conn)
-                indexes = repo.list_for_user(user)
-                owned_ids = {str(i["id"]) for i in indexes}
-                # Sources shared with the caller's teams — surfaced here so they
-                # are attachable to the member's own agents (direct sharing).
-                team_shared = visible_with_access(conn, user, "source")
-                shared_ids = [sid for sid in team_shared if sid not in owned_ids]
-                shared_sources = repo.list_by_ids(shared_ids)
-                switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
+                if workspace.is_team:
+                    # The team's own sources, each with the caller's team role, then those other teams share
+                    # with it; no grants count.
+                    team_shared: dict = {}
+                    received = received_into(conn, workspace, "source")
+                    rows = repo.list_for_user(workspace.owner_id, received_ids=list(received))
+                    indexes = [r for r in rows if str(r.get("user_id")) == workspace.owner_id]
+                    shared_sources = [r for r in rows if str(r.get("user_id")) != workspace.owner_id]
+                    switches: dict = {}
+                else:
+                    received = {}
+                    # Sources shared with the caller's teams — surfaced here so they
+                    # are attachable to the member's own agents (direct sharing).
+                    # One query for both, so the team's rows carry ``ingest_status`` too.
+                    team_shared = visible_with_access(conn, user, "source")
+                    rows = repo.list_for_user(user, extra_ids=list(team_shared))
+                    indexes = [r for r in rows if str(r.get("user_id")) == str(user)]
+                    owned_ids = {str(i["id"]) for i in indexes}
+                    shared_sources = [r for r in rows if str(r["id"]) not in owned_ids]
+                    shared_ids = [str(r["id"]) for r in shared_sources]
+                    switches = settings_many(conn, "source", [*owned_ids, *shared_ids])
+                filing = SourceFiling(conn, workspace.owner_id)
+                creators = creator_payloads(conn, user, [*indexes, *shared_sources])
+                sync_pauses = connection_sync_pauses(conn, [*indexes, *shared_sources], workspace.owner_id)
             # list_for_user sorts by created_at DESC; legacy shape sorted by
             # "date" DESC. Both are monotonic on creation so the ordering is
             # equivalent for dev; re-sort defensively.
@@ -157,12 +537,27 @@ class CombinedJson(Resource):
                     "config": SourceConfig.parse(index.get("config")).model_dump(),
                     "ownership": ownership,
                     "team_access": team_access,
-                    "connectionId": _connection_id(index),
+                    # Which account a source syncs from stays with the workspace that owns it.
+                    "connectionId": _connection_id(index) if ownership == "user" else None,
+                    # As in the paginated listing: citation links fall back
+                    # to this list, and a website source opens as one.
+                    "website": _website_summary(index),
+                    "files": _file_count(index),
+                    # As in the paginated listing (SourcesRepository.list_for_user).
+                    "ingestStatus": index.get("ingest_status"),
+                    "sync_paused": sync_pauses.get(str(index["id"])) or _sync_paused(index),
+                    # Files the last sync could not read; the next sync retries them.
+                    "filesFailed": _files_failed(index),
+                    # The caller's own filing: folder_id and its path, top-level folder first.
+                    **filing.fields(index["id"]),
+                    "created_by": created_by_payload(index, creators),
                 }
                 return _with_access(
                     entry,
                     "owner" if ownership == "user" else team_access,
                     switches.get(str(index["id"])),
+                    workspace,
+                    received.get(str(index["id"]).lower()) if ownership != "user" else None,
                 )
 
             for index in indexes:
@@ -172,18 +567,63 @@ class CombinedJson(Resource):
                     _source_entry(
                         index,
                         ownership="team",
-                        team_access=team_shared.get(str(index["id"])),
+                        team_access=team_shared.get(str(index["id"])) or ("viewer" if received else None),
                     )
+                )
+            data = filter_listing(request, "sources", data)
+            with db_readonly() as conn:
+                attach_used_by(
+                    conn, user, "source", data,
+                    deletable_ids=deletable_ids_of(data), agent_allowlist=used_by_agent_allowlist(request),
                 )
         except Exception as err:
             current_app.logger.error(f"Error retrieving sources: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        return make_response(jsonify(filter_listing(request, "sources", data)), 200)
+        return make_response(jsonify(data), 200)
 
 
 @sources_ns.route("/sources/paginated")
 class PaginatedSources(Resource):
-    @api.doc(description="Get document with pagination, sorting and filtering")
+    @api.doc(
+        description=(
+            "Get sources with pagination, sorting and filtering. Each row carries ``used_by`` "
+            "(the agents using it) and the caller's filing (``folder_id``, ``folder_path`` "
+            "[{id, name}] from the top-level folder down) and ``sync_paused`` ({reason, since} while a team "
+            "source's scheduled sync is skipped for want of a payer; {reason, until, left_team, connection_id} "
+            "while the team connection it reads through is paused; else null), and ``filesFailed`` (how many "
+            "files a connector source's last sync could not read; its next sync retries them). ``kind_counts`` "
+            "counts every "
+            "kind with the "
+            "search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search "
+            "and kind filters applied. Both follow ``origin``; ``origin_counts`` counts own/shared with the "
+            "search, kind and usage filters applied. With ``folder``, the counts and ``subtree_total`` cover "
+            "the folder's whole subtree, while ``total``/``totalPages`` describe the listed rows."
+        ),
+        params={
+            "page": "Page number, from 1",
+            "rows": "Rows per page",
+            "sort": "date (default), name, tokens, type, created_at or updated_at",
+            "order": "asc or desc (default)",
+            "search": "Substring of the name, case-insensitive",
+            "kind": (
+                "all (default), files, websites, synced, wikis, or shared (sources a team shares "
+                "with the caller, of any kind)"
+            ),
+            "usage": "all (default), in_use (some agent uses it) or unused",
+            "origin": (
+                "all (default), own (the workspace's own sources) or shared (in Personal, sources a team shares "
+                "with the caller; in a team, sources other teams share with it)"
+            ),
+            "folder": (
+                "root, or one of the caller's source folders: counts cover that folder and every folder "
+                "under it (root: everything). Omitted: no folder scoping"
+            ),
+            "direct": (
+                "true lists only the sources filed directly in ``folder`` (root: the unfiled ones); "
+                "false (default) lists its whole subtree"
+            ),
+        },
+    )
     def get(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -194,18 +634,107 @@ class PaginatedSources(Resource):
         page = max(1, int(request.args.get("page", 1)))
         rows_per_page = max(1, int(request.args.get("rows", 10)))
         search_term = request.args.get("search", "").strip() or None
+        kind = request.args.get("kind", "all").strip() or "all"
+        usage = request.args.get("usage", "all").strip() or "all"
+        origin = request.args.get("origin", "all").strip() or "all"
+        if kind not in SOURCE_KINDS or usage not in USAGE_FILTERS or origin not in ORIGIN_FILTERS:
+            return error_response(
+                f"kind must be one of {', '.join(SOURCE_KINDS)}; usage one of {', '.join(USAGE_FILTERS)}; "
+                f"origin one of {', '.join(ORIGIN_FILTERS)}",
+                400,
+                code="invalid_filter",
+            )
+        folder_param = (request.args.get("folder") or "").strip() or None
+        direct_raw = (request.args.get("direct") or "false").strip().lower()
+        if direct_raw not in ("true", "false"):
+            return error_response("direct must be true or false", 400, code="invalid_filter")
+        direct = direct_raw == "true"
 
         try:
             with db_readonly() as conn:
+                try:
+                    workspace = request_workspace(user, conn)
+                except WorkspaceError as err:
+                    return err.response()
+                # Whose rows are listed: the caller's in Personal, the team's principal's in a team.
+                scope_owner = workspace.owner_id
                 repo = SourcesRepository(conn)
-                # Include sources shared with the caller's teams so the settings
-                # list matches the /api/sources dropdown. Unioned into the query
-                # by id so count/sort/search/pagination stay correct.
-                team_shared = visible_with_access(conn, user, "source")
-                extra_ids = list(team_shared.keys())
-                total_documents = repo.count_for_user(
-                    user, search_term=search_term, extra_ids=extra_ids,
+                if workspace.is_team:
+                    # A team's own sources, and those other teams share with it: no grant brings anything
+                    # into a team list.
+                    team_shared: dict = {}
+                    received = received_into(conn, workspace, "source")
+                    extra_ids = []
+                else:
+                    # Include sources shared with the caller's teams so the settings
+                    # list matches the /api/sources dropdown. Unioned into the query
+                    # by id so count/sort/search/pagination stay correct.
+                    team_shared = visible_with_access(conn, user, "source")
+                    received = {}
+                    extra_ids = list(team_shared.keys())
+                received_ids = list(received)
+                # Kind and usage are judged in Python over every row the search
+                # matches (light columns only); the window is then read in SQL,
+                # narrowed to the ids that pass, so sorting and paging stay there.
+                filing = SourceFiling(conn, scope_owner)
+                # ``subtree``: the folders whose sources count (None: every source).
+                subtree: Optional[set] = None
+                if folder_param and folder_param != "root":
+                    folder_key = folder_param.lower()
+                    if folder_key not in filing.paths:
+                        return folder_error(404, "folder_not_found", "Folder not found")
+                    subtree = subtree_ids(filing.folders, folder_key)
+                facets = repo.list_facets_for_user(
+                    scope_owner, search_term=search_term, extra_ids=extra_ids, received_ids=received_ids
                 )
+                if subtree is not None:
+                    facets = [row for row in facets if filing.folder_of(row["id"]) in subtree]
+                ids = [str(row["id"]) for row in facets]
+                if workspace.is_team:
+                    actions = workspace_allowed_actions("source", workspace.role, policy=workspace.outside_policy)
+                    # Never a source another team shares: the team may not delete it.
+                    deletable = [i for i in ids if i.lower() not in received] if "delete" in actions else []
+                else:
+                    deletable = deletable_row_ids(conn, user, "source", facets, team_shared)
+                used_by = used_by_many(
+                    conn, user, "source", ids,
+                    deletable_ids=deletable,
+                    agent_allowlist=used_by_agent_allowlist(request),
+                )
+                kind_counts = dict.fromkeys(SOURCE_KINDS, 0)
+                usage_counts = dict.fromkeys(USAGE_FILTERS, 0)
+                origin_counts = {"own": 0, "shared": 0}
+                matching: list[str] = []
+                subtree_total = 0
+                for row in facets:
+                    sid = str(row["id"])
+                    content_kind = source_kind(row)
+                    shared = str(row.get("user_id")) != str(scope_owner)
+                    in_use = is_in_use(used_by.get(sid))
+                    kind_ok = matches_kind(kind, content_kind, shared)
+                    usage_ok = matches_usage(usage, in_use)
+                    if kind_ok and usage_ok:
+                        origin_counts["shared" if shared else "own"] += 1
+                    # The other counts and the rows describe the chosen origin only.
+                    if origin != "all" and shared != (origin == "shared"):
+                        continue
+                    if usage_ok:
+                        for name in SOURCE_KINDS:
+                            kind_counts[name] += matches_kind(name, content_kind, shared)
+                    if kind_ok:
+                        for name in USAGE_FILTERS:
+                            usage_counts[name] += matches_usage(name, in_use)
+                    if kind_ok and usage_ok:
+                        subtree_total += 1
+                        if direct and folder_param:
+                            # Directly in the folder; at the root, not in any folder.
+                            target = None if folder_param == "root" else folder_param.lower()
+                            if filing.folder_of(sid) != target:
+                                continue
+                        matching.append(sid)
+                scoped = subtree is not None or (folder_param == "root" and direct)
+                filtered = kind != "all" or usage != "all" or origin != "all" or scoped
+                total_documents = len(matching)
                 # Prior in-Python implementation returned ``totalPages = 1``
                 # for empty result sets (``max(1, ceil(0/rows))``); we
                 # preserve that contract so the frontend pager stays stable.
@@ -213,24 +742,28 @@ class PaginatedSources(Resource):
                 effective_page = min(page, total_pages)
                 offset = (effective_page - 1) * rows_per_page
                 window = repo.list_for_user(
-                    user,
+                    scope_owner,
                     limit=rows_per_page,
                     offset=offset,
                     search_term=search_term,
                     sort_field=sort_field,
                     sort_order=sort_order,
                     extra_ids=extra_ids,
+                    only_ids=matching if filtered else None,
+                    received_ids=received_ids,
                 )
                 switches = settings_many(
                     conn, "source", [str(doc["id"]) for doc in window]
                 )
+                creators = creator_payloads(conn, user, window)
+                sync_pauses = connection_sync_pauses(conn, window, workspace.owner_id)
 
             paginated_docs = []
             for doc in window:
                 provider = _get_provider_from_remote_data(doc.get("remote_data"))
                 # Owner vs team-shared: a row in the window is the caller's own
                 # when its user_id matches; otherwise it arrived via extra_ids.
-                owned = str(doc.get("user_id")) == str(user)
+                owned = str(doc.get("user_id")) == str(scope_owner)
                 entry = {
                     "id": str(doc["id"]),
                     "name": doc.get("name", ""),
@@ -253,15 +786,28 @@ class PaginatedSources(Resource):
                     "ingestStatus": doc.get("ingest_status"),
                     "ownership": "user" if owned else "team",
                     "team_access": (
-                        None if owned else team_shared.get(str(doc["id"]))
+                        None if owned else team_shared.get(str(doc["id"])) or ("viewer" if received else None)
                     ),
-                    "connectionId": _connection_id(doc),
+                    # Which account a source syncs from stays with the workspace that owns it.
+                    "connectionId": _connection_id(doc) if owned else None,
+                    "website": _website_summary(doc),
+                    "files": _file_count(doc),
+                    # A team source's sync skipped for want of a payer: its team connection's
+                    # pause, derived now, else the scheduler's flag.
+                    "sync_paused": sync_pauses.get(str(doc["id"])) or _sync_paused(doc),
+                    # Files the last sync could not read; the next sync retries them.
+                    "filesFailed": _files_failed(doc),
+                    "used_by": used_by.get(str(doc["id"])) or empty_usage(),
+                    **filing.fields(doc["id"]),
+                    "created_by": created_by_payload(doc, creators),
                 }
                 paginated_docs.append(
                     _with_access(
                         entry,
                         "owner" if owned else team_shared.get(str(doc["id"])),
                         switches.get(str(doc["id"])),
+                        workspace,
+                        None if owned else received.get(str(doc["id"]).lower()),
                     )
                 )
             response = {
@@ -269,7 +815,13 @@ class PaginatedSources(Resource):
                 "totalPages": total_pages,
                 "currentPage": effective_page,
                 "paginated": paginated_docs,
+                "kind_counts": kind_counts,
+                "usage_counts": usage_counts,
+                "origin_counts": origin_counts,
+                "workspace": workspace.payload(),
             }
+            if folder_param:
+                response["subtree_total"] = subtree_total
             return make_response(jsonify(response), 200)
         except Exception as err:
             current_app.logger.error(
@@ -278,14 +830,46 @@ class PaginatedSources(Resource):
             return make_response(jsonify({"success": False}), 400)
 
 
-def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
-    """Delete a source's index, stored files and row. Returns whether it worked.
+def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None, raise_busy: bool = False) -> bool:
+    """Delete a source's index, stored files and row, holding its index lock. Returns whether it worked.
+
+    A sync or a Website page change loads the index and saves the whole of
+    it under the source's index lock; a delete made meanwhile would see its
+    index saved again afterwards, and kept in storage for good. So the delete
+    waits a few seconds for such a job, and the row goes before the lock is
+    released, so a job queued meanwhile finds no source.
 
     Args:
         owner: The source's owner; the row is deleted as them.
         doc: The source row, already authorised for the caller.
         actor: Who asked for the delete (a team editor, say), when not the
             owner. Recorded on the audit event.
+        raise_busy: Raise ``SourceBusy`` when another job holds the source
+            past the wait, instead of returning False.
+
+    Raises:
+        SourceBusy: With ``raise_busy``, when another job holds the source; nothing was deleted.
+    """
+    try:
+        with edit_lock(str(doc["id"])):
+            return _delete_source_unlocked(owner, doc, actor=actor)
+    except SourceBusy:
+        if raise_busy:
+            raise
+        current_app.logger.warning(f"Source {doc['id']} is busy; it was not deleted")
+        return False
+
+
+def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool:
+    """``delete_source``'s work, run holding the source's index lock.
+
+    Args:
+        owner: The source's owner.
+        doc: The source row.
+        actor: Who asked for the delete, when not the owner.
+
+    Returns:
+        Whether it worked.
     """
     actor = actor or owner
     storage = StorageCreator.get_storage()
@@ -347,7 +931,10 @@ def delete_source(owner: str, doc: dict, *, actor: Optional[str] = None) -> bool
 @sources_ns.route("/delete_old")
 class DeleteOldIndexes(Resource):
     @api.doc(
-        description="Deletes old indexes and associated files",
+        description=(
+            "Deletes a source: its index, stored files and row. 409 (code source_busy) while a sync or "
+            "page change on the source runs; nothing is deleted."
+        ),
         params={"source_id": "The source ID to delete"},
     )
     def get(self):
@@ -370,7 +957,11 @@ class DeleteOldIndexes(Resource):
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
             return make_response(jsonify({"success": False}), 400)
-        if not delete_source(ra.owner_id, doc, actor=user):
+        try:
+            deleted = delete_source(ra.owner_id, doc, actor=user, raise_busy=True)
+        except SourceBusy:
+            return _sync_refusal(SOURCE_BUSY, "source_busy", 409)
+        if not deleted:
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True}), 200)
 
@@ -382,6 +973,32 @@ class RedirectToSources(Resource):
     )
     def get(self):
         return redirect("/api/sources", code=301)
+
+
+def _team_connection_manage_refusal(conn, doc: dict, user: str) -> Optional[Response]:
+    """The refusal when ``user`` may not change how a team's connection source syncs (Admins only), or None.
+
+    Its schedule spends the allowance of the person who connected the
+    account, so it is managed with the connection, not edited with the source.
+
+    Args:
+        conn: Open connection.
+        doc: The source row.
+        user: The caller.
+
+    Returns:
+        None for any other source, or an Admin; else the ``authorize_connection`` refusal.
+    """
+    from docsgpt.connectors.team import ConnectionDenied, authorize_connection
+
+    row = _team_connection_of(conn, doc)
+    if row is None or str(row.get("user_id")) != str(doc.get("user_id")):
+        return None
+    try:
+        authorize_connection(conn, row["id"], user, "manage")
+    except ConnectionDenied as err:
+        return err.response()
+    return None
 
 
 @sources_ns.route("/manage_sync")
@@ -412,14 +1029,17 @@ class ManageSync(Resource):
         source_id = data["source_id"]
         sync_frequency = data["sync_frequency"]
 
-        if sync_frequency not in ["never", "daily", "weekly", "monthly"]:
-            return make_response(
-                jsonify({"success": False, "message": "Invalid frequency"}), 400
-            )
+        if sync_frequency not in SYNC_FREQUENCIES:
+            return _sync_refusal("Invalid frequency", "bad_sync_frequency")
         try:
             with db_session() as conn:
                 # Owner or team editor; the write lands as the owner.
                 doc, ra = load_source(conn, source_id, user, "edit")
+                if sync_frequency != "never" and _is_wiki(doc):
+                    return _sync_refusal(_WIKI_NO_SYNC, "wiki")
+                refusal = _team_connection_manage_refusal(conn, doc, user)
+                if refusal is not None:
+                    return refusal
                 SourcesRepository(conn).update(
                     str(doc["id"]), ra.owner_id, {"sync_frequency": sync_frequency}
                 )
@@ -460,30 +1080,23 @@ class SyncSource(Resource):
         try:
             with db_readonly() as conn:
                 doc, ra = load_source(conn, source_id, user, "edit")
+                refusal = team_connection_sync_refusal(conn, doc, ra.owner_id, user)
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:
             current_app.logger.error(f"Error looking up source: {err}", exc_info=True)
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID"}), 400
-            )
+            return _sync_refusal("Invalid source ID", "invalid_source")
         owner = ra.owner_id
+        if _is_wiki(doc):
+            return _sync_refusal(_WIKI_NO_SYNC, "wiki")
+        if refusal is not None:
+            return refusal
         source_type = doc.get("type", "")
         if source_type and source_type.startswith("connector"):
-            return make_response(
-                jsonify(
-                    {
-                        "success": False,
-                        "message": "Connector sources must be synced via /api/connectors/sync",
-                    }
-                ),
-                400,
-            )
+            return _sync_refusal("Connector sources must be synced via /api/connectors/sync", "connector_source")
         source_data = normalize_remote_data(source_type, doc.get("remote_data"))
         if not source_data:
-            return make_response(
-                jsonify({"success": False, "message": "Source is not syncable"}), 400
-            )
+            return _sync_refusal("Source is not syncable", "not_syncable")
         try:
             task = sync_source.delay(
                 source_data=source_data,
@@ -495,6 +1108,8 @@ class SyncSource(Resource):
                 doc_id=str(doc["id"]),
                 # S3 and GitHub sources made from a connection read with its keys.
                 connection_id=str(doc["connection_id"]) if doc.get("connection_id") else None,
+                # The sync runs as the owner; its events also reach the caller.
+                actor_id=user,
             )
         except Exception as err:
             current_app.logger.error(
@@ -503,6 +1118,168 @@ class SyncSource(Resource):
             )
             return make_response(jsonify({"success": False}), 400)
         return make_response(jsonify({"success": True, "task_id": task.id}), 200)
+
+
+_RECONNECT_TO_SYNC = "The owner needs to reconnect this source's account before it can be synced."
+_CONNECTION_REMOVED = "This source's account connection was removed; connect the account again to sync it."
+_CONNECTION_REMOVED_EDITOR = (
+    "This source's account connection was removed; the owner needs to connect the account again to sync it."
+)
+
+
+def connector_selection(doc: dict) -> dict:
+    """A connector source's stored selection (``remote_data``: provider, file and folder ids) as a dict.
+
+    Args:
+        doc: The source row.
+
+    Returns:
+        The selection; ``{}`` when it isn't a JSON object.
+    """
+    remote_data = doc.get("remote_data")
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except ValueError:
+            return {}
+    return remote_data if isinstance(remote_data, dict) else {}
+
+
+def connector_sync_kwargs(doc: dict, owner: str, actor: str, selection: dict, connection_id: str) -> dict:
+    """The ``ingest_connector_task`` kwargs that sync a connector source with ``connection_id``.
+
+    Args:
+        doc: The source row.
+        owner: Its owner; the sync runs as them.
+        actor: The caller, who also receives the sync's events (a team editor isn't the owner).
+        selection: ``connector_selection(doc)``, naming its provider.
+        connection_id: The connection the sync reads with.
+
+    Returns:
+        The task's kwargs.
+    """
+    return {
+        "job_name": doc.get("name"),
+        "user": owner,
+        "source_type": selection["provider"],
+        "connection_id": connection_id,
+        "file_ids": selection.get("file_ids", []),
+        "folder_ids": selection.get("folder_ids", []),
+        "recursive": selection.get("recursive", True),
+        "retriever": doc.get("retriever") or "classic",
+        "operation_mode": "sync",
+        "doc_id": str(doc["id"]),
+        "sync_frequency": doc.get("sync_frequency") or "never",
+        "actor_id": actor,
+    }
+
+
+def owner_connector_sync(conn, doc: dict, owner: str, actor: str) -> dict | Response:
+    """A sync of a connector source with its own connection, queued without a browser naming one.
+
+    A team editor's Sync now and a Reingest run as the owner, with the
+    account the source names. A source that names none (its connection was
+    removed) is refused: another of the owner's accounts would read the
+    selection, and the sync would re-link the source to it. A team's source
+    syncs through the team's connection for its Editors and up, and bills the
+    caller (``actor``), while the account isn't paused.
+
+    Args:
+        conn: Open database connection.
+        doc: The source row, whose selection names its provider.
+        owner: Its owner.
+        actor: The caller; the refusal's wording depends on whether it is the owner.
+
+    Returns:
+        ``connector_sync_kwargs``, or a 409: ``connection_missing``, or
+        ``reconnect_needed`` when the owner must sign the connection in again,
+        or ``connection_paused`` for a team's account that can't be used now;
+        or a team connection refusal (``team_connection_sync_refusal``).
+    """
+    from docsgpt.connectors import service as connector_service
+
+    connection_id = _connection_id(doc)
+    if not connection_id:
+        text = _CONNECTION_REMOVED if actor == owner else _CONNECTION_REMOVED_EDITOR
+        return _sync_refusal(text, "connection_missing", 409)
+    refusal = team_connection_sync_refusal(conn, doc, owner, actor)
+    if refusal is not None:
+        return refusal
+    selection = connector_selection(doc)
+    session = connector_service.owner_sync_connection(conn, owner, selection["provider"], connection_id)
+    if session is None:
+        return _sync_refusal(_RECONNECT_TO_SYNC, "reconnect_needed", 409)
+    return connector_sync_kwargs(doc, owner, actor, selection, str(session["id"]))
+
+
+class _Rebuild(NamedTuple):
+    """How a source with no stored files is rebuilt: the task it queues, and a call that queues it.
+
+    ``queue(task_id, idempotency_key)`` queues the task under ``task_id``
+    (``None`` lets Celery pick one) and returns it. The key reaches a task
+    that guards on one (a connector sync); ``sync_source`` takes none, so a
+    repeated request is answered by the route's claim on it instead.
+    """
+
+    task_name: str
+    queue: Callable[[Optional[str], str], Any]
+
+
+def _remote_rebuild(doc: dict, owner: str, actor: str) -> Optional[_Rebuild] | Response:
+    """How a source with no stored files is rebuilt instead of re-ingested: a sync of its stored config.
+
+    Reingest re-reads the files a source keeps in storage; a Website,
+    crawler or connector source keeps none, so its settings (a chunking
+    change, say) take effect when its content is fetched again. The sync
+    publishes ``source.ingest.*`` events (``operation: "sync"``) carrying its
+    own ``task_id``, which the route returns as the reingest's.
+
+    Args:
+        doc: The source row, already authorised for the caller.
+        owner: Its owner; the sync runs as them.
+        actor: The caller, who also receives the sync's events (a team editor isn't the owner).
+
+    Returns:
+        The sync to queue (``_Rebuild``); a refusal (a connector source
+        whose connection was removed, 409 ``connection_missing``, or whose
+        owner must reconnect, 409 ``reconnect_needed``; a team's source whose
+        team account is paused, 409 ``connection_paused``); or ``None`` when the
+        source has nothing to sync, so the reingest task runs and reports that.
+    """
+    source_id = str(doc["id"])
+    source_type = doc.get("type") or ""
+    if source_type.startswith("connector"):
+        if not connector_selection(doc).get("provider"):
+            return None
+        with db_readonly() as conn:
+            connector_kwargs = owner_connector_sync(conn, doc, owner, actor)
+        if isinstance(connector_kwargs, Response):
+            return connector_kwargs
+        return _Rebuild(
+            "ingest_connector_task",
+            lambda task_id, key: ingest_connector_task.apply_async(
+                kwargs={**connector_kwargs, "idempotency_key": key}, task_id=task_id,
+            ),
+        )
+    source_data = normalize_remote_data(source_type, doc.get("remote_data"))
+    if not source_data:
+        return None
+    with db_readonly() as conn:
+        refusal = team_connection_sync_refusal(conn, doc, owner, actor)
+    if refusal is not None:
+        return refusal
+    sync_kwargs = {
+        "source_data": source_data,
+        "job_name": doc.get("name", ""),
+        "user": owner,
+        "loader": source_type,
+        "sync_frequency": doc.get("sync_frequency") or "never",
+        "retriever": doc.get("retriever") or "classic",
+        "doc_id": source_id,
+        "connection_id": _connection_id(doc),
+        "actor_id": actor,
+    }
+    return _Rebuild("sync_source", lambda task_id, _key: sync_source.apply_async(kwargs=sync_kwargs, task_id=task_id))
 
 
 @sources_ns.route("/sources/reingest")
@@ -515,7 +1292,16 @@ class ReingestSource(Resource):
     @api.expect(reingest_source_model)
     @api.doc(
         description="Re-run ingestion for a source — e.g. to recover a "
-        "stalled embed flagged by the reconciler."
+        "stalled embed flagged by the reconciler, or to apply a chunking "
+        "change. A source with no stored files (Website, crawler, connector) "
+        "is synced from its stored config instead; either way the answer is "
+        "``{success, task_id}`` and the task's source.ingest events carry that "
+        "task_id. A connector source can be refused with a 409: code "
+        "connection_missing when its connection was removed, reconnect_needed "
+        "when the owner must sign it in again, connection_paused (with paused_for) when a team's account it "
+        "reads through is paused. Honours an Idempotency-Key "
+        "header: a repeat with the same key runs nothing new, and a rebuild's "
+        "repeat answers with the first request's task_id."
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -527,6 +1313,9 @@ class ReingestSource(Resource):
         if missing_fields:
             return missing_fields
         source_id = data["source_id"]
+        client_key, key_error = _read_idempotency_key()
+        if key_error is not None:
+            return key_error
         # Run the reingest AS the owner: ``user`` when they own the source,
         # the real owner when ``user`` holds a team ``editor`` grant (reingest
         # is an editor-allowed write). Vector partitions are keyed by source_id
@@ -540,16 +1329,40 @@ class ReingestSource(Resource):
             current_app.logger.error(
                 f"Error looking up source: {err}", exc_info=True
             )
-            return make_response(
-                jsonify({"success": False, "message": "Invalid source ID"}), 400
-            )
+            return _sync_refusal("Invalid source ID", "invalid_source")
         owner = ra.owner_id
         resolved_source_id = str(doc["id"])
+        # A wiki's pages are edited in place: neither a sync nor re-reading
+        # the files it was converted from may replace them.
+        if _is_wiki(doc):
+            return _sync_refusal("A wiki is edited in place and can't be re-ingested.", "wiki")
+        rebuild = None
+        if not doc.get("file_path"):
+            # Nothing stored to read back: a Website, crawler or connector
+            # source is rebuilt by syncing it with its stored config.
+            rebuild = _remote_rebuild(doc, owner, user)
+            if isinstance(rebuild, Response):
+                return rebuild
+        # One key per request (or per client Idempotency-Key): a key per
+        # source would replay the last completed reingest for 24h.
+        idempotency_key = reingest_idempotency_key(owner, resolved_source_id, client_key)
+        rebuild_task_id = None
+        if rebuild is not None and client_key:
+            # A client's repeat is answered with the first request's task,
+            # not a second sync: claimed here, before anything is queued.
+            rebuild_task_id, cached = _claim_task_or_get_cached(idempotency_key, rebuild.task_name)
+            if cached is not None:
+                return make_response(jsonify({"success": True, "task_id": cached["task_id"]}), 200)
         # Drop the stale chunk-progress row so the sources list stops
-        # deriving a 'failed' status; reingest never rewrites it itself.
+        # deriving a 'failed' status; reingest never rewrites it itself. A
+        # rebuild goes through the embed loop, so an unfinished checkpoint is
+        # reopened instead: the rebuild resumes it when the content chunks
+        # the same way, and starts over otherwise.
         try:
             with db_session() as conn:
-                IngestChunkProgressRepository(conn).delete(resolved_source_id)
+                progress = IngestChunkProgressRepository(conn)
+                if rebuild is None or not progress.reopen(resolved_source_id):
+                    progress.delete(resolved_source_id)
         except Exception as err:
             current_app.logger.warning(
                 f"Could not clear ingest progress for {resolved_source_id}: "
@@ -557,17 +1370,23 @@ class ReingestSource(Resource):
                 exc_info=True,
             )
         try:
-            # Scoped key so repeated clicks collapse onto one reingest.
-            task = reingest_source_task.delay(
-                source_id=resolved_source_id,
-                user=owner,
-                idempotency_key=f"reingest-source:{owner}:{resolved_source_id}",
-            )
+            if rebuild is not None:
+                task = rebuild.queue(rebuild_task_id, idempotency_key)
+            else:
+                task = reingest_source_task.delay(
+                    source_id=resolved_source_id,
+                    user=owner,
+                    idempotency_key=idempotency_key,
+                    actor_id=user,
+                )
         except Exception as err:
             current_app.logger.error(
                 f"Error starting reingest for source {source_id}: {err}",
                 exc_info=True,
             )
+            if rebuild_task_id is not None:
+                # Nothing was queued: a retry with the same key runs.
+                _release_claim(idempotency_key)
             return make_response(jsonify({"success": False}), 400)
         try:
             with db_session() as conn:
@@ -725,6 +1544,10 @@ class SourceConfigResource(Resource):
                 repo.update(
                     str(doc["id"]), owner, {"config": new_config.model_dump()}
                 )
+                if requires_reingest and doc.get("file_path"):
+                    # A reingest of stored files re-embeds only edited ones;
+                    # this makes the next one re-chunk them all.
+                    repo.set_metadata_key(str(doc["id"]), owner, "rechunk_pending", True)
         except AccessDenied as err:
             return denied_response(err)
         except Exception as err:
@@ -744,6 +1567,42 @@ class SourceConfigResource(Resource):
             ),
             200,
         )
+
+
+@sources_ns.route("/sources/<string:source_id>/workspace")
+class SourceWorkspace(Resource):
+    @api.doc(
+        description=(
+            "The workspace a source lives in (``{kind, team_id}``), so a link to it "
+            "opened from another workspace can go there first. A source another team "
+            "shares with the caller's team lives in that receiving team. 404 when the "
+            "caller cannot see the source."
+        )
+    )
+    def get(self, source_id: str) -> Response:
+        """Return where a source the caller can read lives.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            Response: ``{"success", "workspace"}``, or 404 for a source the
+            caller can't read (missing, someone else's, or a team they left).
+        """
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        try:
+            with db_readonly() as conn:
+                _, ra = load_source(conn, source_id, decoded_token.get("sub"), "use")
+                # A source another team shares lives in the receiving team (the request's, when several are).
+                ra = in_request_workspace(conn, ra, decoded_token.get("sub"))
+        except AccessDenied as err:
+            return denied_response(err)
+        except Exception as err:
+            current_app.logger.error(f"Error resolving source workspace: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "workspace": ra.payload()["workspace"]}), 200)
 
 
 @sources_ns.route("/sources/defaults")
@@ -833,6 +1692,9 @@ class CreateWikiSource(Resource):
             "initial_content": fields.String(
                 description="Optional markdown seed for /index.md"
             ),
+            "folder_id": fields.String(
+                description="One of the caller's source folders (the team's in a team) to file the wiki in"
+            ),
         },
     )
 
@@ -847,6 +1709,9 @@ class CreateWikiSource(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         data = request.get_json(silent=True) or {}
         missing_fields = check_required_fields(data, ["name"])
         if missing_fields:
@@ -857,6 +1722,15 @@ class CreateWikiSource(Resource):
                 jsonify({"success": False, "message": "Name is required"}), 400
             )
         initial_content = data.get("initial_content")
+        # In a team the wiki is the team's, and names who created it.
+        workspace, workspace_refusal = creation_workspace(user)
+        if workspace_refusal is not None:
+            return workspace_refusal
+        owner = workspace.owner_id
+        # Filed like an upload: a folder of the new wiki's owner's tree.
+        folder_id, folder_refusal = _requested_folder(user, data.get("folder_id"), owner)
+        if folder_refusal is not None:
+            return folder_refusal
         source_id = str(uuid.uuid4())
         try:
             with db_session() as conn:
@@ -864,7 +1738,8 @@ class CreateWikiSource(Resource):
                 repo.create(
                     name,
                     source_id=source_id,
-                    user_id=user,
+                    user_id=owner,
+                    created_by=user,
                     type="wiki",
                     # Same config as a converted wiki: browsed through the
                     # tool (``agentic_tool``), not pre-fetched, starting from
@@ -887,7 +1762,8 @@ class CreateWikiSource(Resource):
                         updated_by=user,
                         updated_via="human",
                     )
-                    rebuild_wiki_directory_structure(conn, source_id, user)
+                    rebuild_wiki_directory_structure(conn, source_id, owner)
+                file_new_source(conn, owner, source_id, folder_id)
                 record_event(
                     conn,
                     "source.created",
@@ -895,6 +1771,7 @@ class CreateWikiSource(Resource):
                     source_id=source_id,
                     name=name,
                     type="wiki",
+                    **({"owner": owner} if owner != user else {}),
                 )
         except Exception as err:
             current_app.logger.error(
@@ -907,7 +1784,7 @@ class CreateWikiSource(Resource):
                     source_id,
                     WIKI_INDEX_PATH,
                     _content_hash(initial_content),
-                    user=user,
+                    user=owner,
                     idempotency_key=(
                         f"reembed-wiki:{source_id}:{WIKI_INDEX_PATH}:"
                         f"{_content_hash(initial_content)}"
@@ -1009,6 +1886,9 @@ class WikiPage(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         data = request.get_json(silent=True) or {}
         missing_fields = check_required_fields(data, ["path", "content"])
         if missing_fields:
@@ -1174,10 +2054,14 @@ def _source_is_blank(doc):
 
 
 def _enable_wiki_inline(conn, doc, owner):
-    """Flip a blank source to wiki mode + agentic exposure with no task."""
+    """Flip a blank source to wiki mode + agentic exposure with no task.
+
+    The schedule goes too: a sync would replace the wiki's pages.
+    """
     cfg = SourceConfig.parse(doc.get("config"))
     SourcesRepository(conn).update(
-        str(doc["id"]), owner, {"config": cfg.wiki_enabled()}
+        str(doc["id"]), owner,
+        {"config": cfg.wiki_enabled(), "sync_frequency": "never"},
     )
 
 
@@ -1193,6 +2077,9 @@ class ConvertSourceToWiki(Resource):
         if not decoded_token:
             return make_response(jsonify({"success": False}), 401)
         user = decoded_token.get("sub")
+        refusal = _wiki_store_refusal()
+        if refusal:
+            return refusal
         try:
             with db_session() as conn:
                 # Owner or team editor; writes and re-embeds run as the owner.
@@ -1261,6 +2148,8 @@ class ConvertSourceToWiki(Resource):
             task = convert_source_to_wiki.delay(
                 source_id=resolved_source_id,
                 user=owner,
+                # The pages name the person who asked, never a team's principal.
+                actor_id=user,
                 idempotency_key=f"convert-wiki:{resolved_source_id}",
             )
         except Exception as err:
@@ -1343,6 +2232,8 @@ class EnableSourceGraphRAG(Resource):
                 idempotency_key=graph_extraction_key(
                     resolved_source_id, _source_updated_at(updated)
                 ),
+                # The extraction's model calls bill whoever turned it on, never a team.
+                actor_id=user,
             )
         except Exception as err:
             current_app.logger.error(

@@ -15,7 +15,7 @@ describe('PageToolbar', () => {
     );
     expect(html).toContain('text-muted-foreground mb-5 text-sm leading-6');
     expect(html).toContain(
-      'mb-6 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between',
+      'mb-6 flex flex-col items-start gap-3 @2xl:flex-row @2xl:items-center @2xl:justify-between',
     );
     expect(html).toContain('w-full max-w-md');
     expect(html).toContain('data-slot="separator"');
@@ -39,7 +39,7 @@ describe('PageToolbar', () => {
     const html = renderToStaticMarkup(
       <PageToolbar intro="x" action={<button type="button">Add</button>} />,
     );
-    expect(html).toContain('<div class="w-full shrink-0 sm:w-auto">');
+    expect(html).toContain('<div class="w-full shrink-0 @2xl:w-auto">');
   });
 
   it('renders notices between the row and the rule', () => {

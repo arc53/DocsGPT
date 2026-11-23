@@ -1,28 +1,29 @@
 name: Upstream Sync
 
-permissions:
-  contents: write
-
 on:
   schedule:
     - cron: "0 0 * * *" # every hour
   workflow_dispatch:
+
+permissions: {}
 
 jobs:
   sync_latest_from_upstream:
     name: Sync latest commits from upstream repo
     runs-on: ubuntu-latest
     if: ${{ github.event.repository.fork }}
+    permissions:
+      contents: write
 
     steps:
       # Step 1: run a standard checkout action
-      - name: Checkout target repo
-        uses: actions/checkout@v4
+      - name: Checkout target repo # zizmor: ignore[artipacked] the sync action pushes with the checkout credentials; runs on forks only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Step 2: run the sync action
       - name: Sync upstream changes
         id: sync
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
+        uses: aormsby/Fork-Sync-With-Upstream-action@83d78e8c4bf524e79b091cf257deba4dee9e60df # v3.4.3
         with:
           # set your upstream repo and branch
           upstream_sync_repo: arc53/DocsGPT

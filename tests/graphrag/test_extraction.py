@@ -14,7 +14,9 @@ import uuid
 import pytest
 
 import docsgpt.graphrag.extraction as extraction_module
+from docsgpt.core import model_utils
 from docsgpt.graphrag.store import GraphStore
+from docsgpt.llm.llm_creator import LLMCreator
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.vectorstore import pgconn
 
@@ -33,6 +35,12 @@ def _close_pools():
         except Exception:
             pass
         pgconn._POOLS.pop(dsn, None)
+
+
+@pytest.fixture(autouse=True)
+def _task_model(monkeypatch):
+    """A build with no model configured runs on the owner's task model; never read it from a database here."""
+    monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "task-model")
 
 
 def _ephemeral_dsn(info) -> str:
@@ -156,7 +164,7 @@ def _install_stub_llm(monkeypatch, llm):
         return llm
 
     monkeypatch.setattr(
-        extraction_module.LLMCreator, "create_llm", staticmethod(_create)
+        LLMCreator, "create_llm", staticmethod(_create)
     )
     return captured
 
@@ -640,7 +648,7 @@ class TestExtractionTokenUsage:
             built.append(llm)
             return llm
 
-        monkeypatch.setattr(extraction_module.LLMCreator, "create_llm", staticmethod(_create))
+        monkeypatch.setattr(LLMCreator, "create_llm", staticmethod(_create))
         monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 4)
         store = MagicMock(name="GraphStore")
         store.pending_chunks.return_value = [f"c{i}" for i in range(8)]
@@ -661,6 +669,77 @@ class TestExtractionTokenUsage:
         assert len(used) > 1, "calls did not run concurrently"
         assert all(len(llm.threads) == 1 for llm in used)
 
+    def test_each_chunk_is_a_prompt_of_its_own(self, monkeypatch, stub_embedding):
+        """One instance serves every chunk on its thread. Chained through
+        ``previous_response_id``, chunk N was billed for chunks 1..N-1 and
+        their outputs, so prompts grew with the source."""
+        import types
+        from unittest.mock import MagicMock
+
+        from docsgpt.core.model_settings import ModelCapabilities
+        from docsgpt.core.settings import settings
+        from docsgpt.llm.openai import OpenAILLM
+
+        def _passthrough(func):
+            def wrapper(self_llm, model, messages, stream, tools=None, **kwargs):
+                return func(self_llm, model, messages, stream, tools, **kwargs)
+
+            return wrapper
+
+        monkeypatch.setattr("docsgpt.llm.base.gen_cache", _passthrough)
+        monkeypatch.setattr("docsgpt.llm.base.gen_token_usage", _passthrough)
+        monkeypatch.setattr("docsgpt.llm.openai.OpenAI", MagicMock())
+        monkeypatch.setattr(
+            "docsgpt.llm.openai.StorageCreator", types.SimpleNamespace(get_storage=lambda: None)
+        )
+        monkeypatch.setattr("docsgpt.llm.openai.settings.OPENAI_RESPONSES_STORE", True)
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1)
+        payload = _extraction_json(entities=[{"name": "Ada", "type": "person", "description": "d"}], relationships=[])
+        replies = iter(
+            types.SimpleNamespace(
+                id=f"resp_{i}",
+                output=[types.SimpleNamespace(type="message", content=[types.SimpleNamespace(type="output_text", text=payload)])],
+            )
+            for i in range(10)
+        )
+        create = MagicMock(side_effect=lambda **params: next(replies))
+        built = []
+
+        def _create(*args, stateless=False, **kwargs):
+            llm = OpenAILLM(api_key="k", model_id=kwargs.get("model_id"))
+            llm.capabilities = ModelCapabilities(api_flavor="responses")
+            llm.client.responses.create = create
+            llm.stateless = stateless
+            built.append(llm)
+            return llm
+
+        monkeypatch.setattr(LLMCreator, "create_llm", staticmethod(_create))
+        store = MagicMock(name="GraphStore")
+        store.pending_chunks.return_value = ["c1", "c2", "c3"]
+        store.apply_chunk.return_value = (1, 0)
+        store.count_nodes.return_value = 1
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", lambda *a, **k: store)
+        texts = ["Ada wrote notes.", "Babbage built engines.", "Lovelace met Babbage."]
+
+        summary = extract_graph_for_source(
+            str(uuid.uuid4()),
+            user="owner-1",
+            chunks=[_chunk(f"c{i + 1}", text) for i, text in enumerate(texts)],
+            config=SourceConfig(),
+            request_id="req-1",
+        )
+
+        assert summary["chunks_processed"] == 3
+        assert len(built) == 1, "the calling thread reuses one instance"
+        sent = [call.kwargs for call in create.call_args_list]
+        assert len(sent) == 3
+        for params, own in zip(sent, texts):
+            assert "previous_response_id" not in params
+            assert params["store"] is False
+            prompt = json.dumps(params["input"])
+            assert own in prompt
+            assert not any(other in prompt for other in texts if other != own)
+
 
 @pytest.mark.unit
 class TestModelResolution:
@@ -668,31 +747,83 @@ class TestModelResolution:
         monkeypatch.setattr(
             extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "setting-model"
         )
-        monkeypatch.setattr(extraction_module.settings, "LLM_NAME", "instance-model")
+        monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "task-model")
         config = SourceConfig.model_validate(
             {"graph": {"extraction_model": "override-model"}}
         )
         assert (
-            extraction_module._resolve_extraction_model(config) == "override-model"
+            extraction_module._resolve_extraction_model(config, "owner")
+            == "override-model"
         )
 
-    def test_setting_then_instance_default(self, monkeypatch):
+    def test_setting_then_the_owners_task_model(self, monkeypatch):
         monkeypatch.setattr(
             extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "setting-model"
         )
-        monkeypatch.setattr(extraction_module.settings, "LLM_NAME", "instance-model")
+        seen = []
+
+        def task_model(user):
+            seen.append(user)
+            return f"task-model-of-{user}"
+
+        monkeypatch.setattr(extraction_module, "get_task_model_id", task_model)
         assert (
-            extraction_module._resolve_extraction_model(SourceConfig())
+            extraction_module._resolve_extraction_model(SourceConfig(), "owner")
             == "setting-model"
         )
+        assert seen == []
 
         monkeypatch.setattr(
             extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", None
         )
         assert (
-            extraction_module._resolve_extraction_model(SourceConfig())
-            == "instance-model"
+            extraction_module._resolve_extraction_model(SourceConfig(), "owner")
+            == "task-model-of-owner"
         )
+
+    def test_never_falls_back_to_the_raw_llm_name(self, monkeypatch):
+        """``LLM_NAME`` may be a comma-separated list or unset; the task model is a registry id."""
+        monkeypatch.setattr(
+            extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", None
+        )
+        monkeypatch.setattr(extraction_module.settings, "LLM_NAME", "model-a,model-b")
+        monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: "model-a")
+        assert extraction_module._resolve_extraction_model(SourceConfig(), None) == "model-a"
+
+    @staticmethod
+    def _catalog(monkeypatch, models):
+        """A registry holding ``models`` ({id: enabled}); any other id is unknown to it."""
+        from types import SimpleNamespace
+
+        registry = SimpleNamespace(
+            get_model=lambda model_id, user_id=None: (
+                SimpleNamespace(id=model_id, enabled=models[model_id]) if model_id in models else None
+            )
+        )
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+
+    def test_no_model_that_can_run_fails_clearly(self, monkeypatch):
+        """With no usable task model the call must not go to ``LLM_PROVIDER`` with no model (a disabled default)."""
+        from docsgpt.llm.llm_creator import ModelNotAvailableError
+
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", None)
+        monkeypatch.setattr(extraction_module, "get_task_model_id", lambda user: None)
+        with pytest.raises(ModelNotAvailableError, match="no extraction model can run"):
+            extraction_module._resolve_extraction_model(SourceConfig(), "owner")
+
+    def test_a_disabled_override_or_setting_is_skipped(self, monkeypatch):
+        self._catalog(monkeypatch, {"off-model": False, "on-model": True})
+        config = SourceConfig.model_validate({"graph": {"extraction_model": "off-model"}})
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "off-model")
+        assert extraction_module._resolve_extraction_model(config, "owner") == "task-model"
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "on-model")
+        assert extraction_module._resolve_extraction_model(config, "owner") == "on-model"
+
+    def test_a_model_the_registry_does_not_know_is_kept(self, monkeypatch):
+        """It goes to ``LLM_PROVIDER`` as before: the registry can't say it is disabled."""
+        self._catalog(monkeypatch, {})
+        monkeypatch.setattr(extraction_module.settings, "GRAPHRAG_EXTRACTION_MODEL", "raw-upstream-id")
+        assert extraction_module._resolve_extraction_model(SourceConfig(), "owner") == "raw-upstream-id"
 
     def test_max_chunks_resolution(self, monkeypatch):
         monkeypatch.setattr(
@@ -726,17 +857,17 @@ class TestExtractionProviderResolution:
             return llm or _StubLLM([])
 
         monkeypatch.setattr(
-            extraction_module.LLMCreator, "create_llm", staticmethod(_create)
+            LLMCreator, "create_llm", staticmethod(_create)
         )
         return captured
 
     def test_provider_comes_from_the_model_registry(self, monkeypatch):
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", lambda *a, **k: "openai"
+            model_utils, "get_provider_from_model_id", lambda *a, **k: "openai"
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "sk-openai"
+            model_utils, "get_api_key_for_provider", lambda provider: "sk-openai"
         )
         captured = self._capture_create_llm(monkeypatch)
 
@@ -756,10 +887,10 @@ class TestExtractionProviderResolution:
             return "anthropic"
 
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", _resolve
+            model_utils, "get_provider_from_model_id", _resolve
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "k"
+            model_utils, "get_api_key_for_provider", lambda provider: "k"
         )
         self._capture_create_llm(monkeypatch)
 
@@ -770,10 +901,10 @@ class TestExtractionProviderResolution:
     def test_unknown_model_falls_back_to_the_configured_provider(self, monkeypatch):
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", lambda *a, **k: None
+            model_utils, "get_provider_from_model_id", lambda *a, **k: None
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "fallback-key"
+            model_utils, "get_api_key_for_provider", lambda provider: "fallback-key"
         )
         captured = self._capture_create_llm(monkeypatch)
 
@@ -786,12 +917,12 @@ class TestExtractionProviderResolution:
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "openai")
         calls = []
         monkeypatch.setattr(
-            extraction_module,
+            model_utils,
             "get_provider_from_model_id",
             lambda *a, **k: calls.append(a) or "anthropic",
         )
         monkeypatch.setattr(
-            extraction_module, "get_api_key_for_provider", lambda provider: "k"
+            model_utils, "get_api_key_for_provider", lambda provider: "k"
         )
         captured = self._capture_create_llm(monkeypatch)
 
@@ -805,7 +936,7 @@ class TestExtractionProviderResolution:
         monkeypatch.setattr(extraction_module.settings, "LLM_PROVIDER", "docsgpt")
         monkeypatch.setattr(extraction_module.settings, "API_KEY", "generic-key")
         monkeypatch.setattr(
-            extraction_module, "get_provider_from_model_id", lambda *a, **k: "anthropic"
+            model_utils, "get_provider_from_model_id", lambda *a, **k: "anthropic"
         )
         keyed_for = {}
 
@@ -813,7 +944,7 @@ class TestExtractionProviderResolution:
             keyed_for["provider"] = provider
             return "sk-anthropic"
 
-        monkeypatch.setattr(extraction_module, "get_api_key_for_provider", _key)
+        monkeypatch.setattr(model_utils, "get_api_key_for_provider", _key)
         captured = self._capture_create_llm(monkeypatch)
 
         extraction_module._build_extraction_llm("claude-x", "owner-1", "req-1")
@@ -1162,3 +1293,115 @@ class TestEmbeddingsResolution:
 
         assert calls == [((), {})]
         assert summary["chunks_processed"] == 0
+
+
+class _ProgressGraphStore:
+    """A graph store holding only the ``graph_ingest_progress`` checkpoint, in memory."""
+
+    progress: dict = {}
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def pending_chunks(self, source_id, all_ids):
+        return [c for c in all_ids if self.progress.get(c) not in ("done", "deleted")]
+
+    def apply_chunk(self, source_id, chunk_id, entities, relationships, name_embeddings, **checkpoint):
+        self.progress[chunk_id] = "done"
+        return len(entities), 0
+
+    def mark_chunk(self, source_id, chunk_id, status, **checkpoint):
+        self.progress[chunk_id] = status
+
+    def set_node_degrees(self, source_id):
+        pass
+
+    def count_nodes(self, source_id, strict=False):
+        return 0
+
+
+class _EchoLLM:
+    """Answers every chunk with one entity, recording which chunk texts were billed."""
+
+    model_id = "stub-model"
+    _token_usage_source = None
+    _request_id = None
+
+    def __init__(self):
+        self.calls = []
+
+    def gen(self, model=None, messages=None, **kwargs):
+        text = messages[-1]["content"].removeprefix("<chunk>\n").removesuffix("\n</chunk>")
+        self.calls.append(text)
+        return _extraction_json([{"name": "E " + text, "type": "t", "description": "d"}], [])
+
+
+@pytest.mark.unit
+class TestAPageChangeExtractsOnlyItsChunks:
+    """A page change extracts its new chunks, within the source's chunk cap, and nothing else.
+
+    The full build stops at the cap and leaves the rest pending. A page change
+    must not bill that backlog (or chunks that failed) on every add, and the
+    cap counts the chunks the source already has extracted.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, monkeypatch, stub_embedding):
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "GRAPHRAG_EXTRACTION_WORKERS", 1)
+        monkeypatch.setattr("docsgpt.graphrag.store.GraphStore", _ProgressGraphStore)
+        _ProgressGraphStore.progress = {}
+
+    def _run(self, monkeypatch, chunks, cap, chunk_ids=None):
+        llm = _EchoLLM()
+        _install_stub_llm(monkeypatch, llm)
+        config = SourceConfig.model_validate({"graph": {"max_chunks": cap}})
+        summary = extract_graph_for_source("s", "u", chunks, config=config, chunk_ids=chunk_ids)
+        return llm.calls, summary
+
+    def test_only_the_new_chunks_are_extracted(self, monkeypatch):
+        chunks = [_chunk(f"c{i}", f"old {i}") for i in range(4)]
+        self._run(monkeypatch, chunks, cap=3)
+        _ProgressGraphStore.progress["c1"] = "failed"
+        chunks.append(_chunk("c4", "NEW PAGE"))
+
+        calls, summary = self._run(monkeypatch, chunks, cap=10, chunk_ids=["c4"])
+
+        # Neither the over-cap backlog (c3) nor the failed chunk (c1) is billed.
+        assert calls == ["NEW PAGE"]
+        assert summary["chunks_processed"] == 1
+
+    def test_a_source_at_its_cap_extracts_nothing_more(self, monkeypatch):
+        chunks = [_chunk(f"c{i}", f"old {i}") for i in range(4)]
+        self._run(monkeypatch, chunks, cap=2)
+        chunks.append(_chunk("c4", "NEW PAGE"))
+
+        calls, summary = self._run(monkeypatch, chunks, cap=2, chunk_ids=["c4"])
+
+        assert calls == []
+        assert summary["skipped_over_cap"] == 1
+
+    def test_a_refreshed_page_frees_the_cap_its_old_chunks_held(self, monkeypatch):
+        chunks = [_chunk(f"c{i}", f"old {i}") for i in range(3)]
+        self._run(monkeypatch, chunks, cap=2)
+        # c0 was refreshed: its chunk is gone from the store, c5 and c6 replace it.
+        chunks = [chunks[1], chunks[2], _chunk("c5", "NEW c0"), _chunk("c6", "NEW c0 two")]
+
+        calls, _summary = self._run(monkeypatch, chunks, cap=2, chunk_ids=["c5", "c6"])
+
+        # One extracted chunk (c1) is left, so one more fits under the cap of two.
+        assert calls == ["NEW c0"]
+
+    def test_a_redelivered_build_spends_only_what_is_left_of_the_cap(self, monkeypatch):
+        # A build killed part-way is redelivered: the chunks it extracted count
+        # toward the cap, so the source never holds more than the cap.
+        chunks = [_chunk(f"c{i}", f"text {i}") for i in range(6)]
+        _ProgressGraphStore.progress.update({"c0": "done", "c1": "done"})
+
+        calls, summary = self._run(monkeypatch, chunks, cap=3)
+
+        assert calls == ["text 2"]
+        assert summary["chunks_processed"] == 1
+        assert summary["skipped_over_cap"] == 3
+        assert sorted(c for c, s in _ProgressGraphStore.progress.items() if s == "done") == ["c0", "c1", "c2"]

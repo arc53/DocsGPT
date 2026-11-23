@@ -1,0 +1,60 @@
+/*
+ * The docs use the DocsGPT app's colour tokens (frontend/src/index.css; see
+ * frontend/DESIGN.md), mapped onto Fumadocs' --color-fd-* variables, so the
+ * docs, the app and the landing read as one product. Change a value in the app
+ * first, then here. The brand wordmark in the header keeps the landing's
+ * colours (brand.css).
+ */
+
+@theme {
+  --color-fd-background: #ffffff; /* --background */
+  --color-fd-foreground: #171717; /* --foreground */
+  --color-fd-card: #fbfbfb; /* --sidebar: Fumadocs draws its sidebar and cards with card */
+  --color-fd-card-foreground: #171717;
+  --color-fd-popover: #ffffff; /* --popover (= --card) */
+  --color-fd-popover-foreground: #171717;
+  --color-fd-muted: #f6f6f6; /* --muted */
+  --color-fd-muted-foreground: #6b6b6b; /* --muted-foreground, 4.93:1 on muted */
+  --color-fd-accent: #ececec; /* --accent: hover and selected fills */
+  --color-fd-accent-foreground: #171717;
+  --color-fd-primary: #7d54d1; /* --primary, the brand purple */
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: #7d54d11a; /* --secondary: primary at 10% */
+  --color-fd-secondary-foreground: #7d54d1;
+  --color-fd-border: #d9d9d9; /* --border */
+  --color-fd-ring: #7d54d1; /* --ring */
+}
+
+@theme static {
+  --color-fd-info: #2563eb; /* --info */
+  --color-fd-warning: #ca8a04; /* --warning */
+  --color-fd-error: #ef4444; /* --destructive */
+  --color-fd-success: #079455; /* --success */
+  --color-fd-idea: #7d54d1; /* no app token: the brand purple */
+}
+
+.dark {
+  --color-fd-background: #222327;
+  --color-fd-foreground: #fafafa;
+  --color-fd-card: #161616; /* --sidebar */
+  --color-fd-card-foreground: #fafafa;
+  --color-fd-popover: #2b2c31; /* --card */
+  --color-fd-popover-foreground: #fafafa;
+  --color-fd-muted: #35363b;
+  --color-fd-muted-foreground: #a1a1a1;
+  --color-fd-accent: #3e3f45;
+  --color-fd-accent-foreground: #fafafa;
+  /* Fumadocs draws links and the current sidebar item in primary, so dark uses
+     the app's dark link colour (--link = --secondary-foreground). */
+  --color-fd-primary: #b89cf8;
+  --color-fd-primary-foreground: #171717;
+  --color-fd-secondary: #976af326; /* --secondary */
+  --color-fd-secondary-foreground: #b89cf8;
+  --color-fd-border: #44454c;
+  --color-fd-ring: #976af3;
+  --color-fd-info: #60a5fa;
+  --color-fd-warning: #fbbf24;
+  --color-fd-error: #dc2626;
+  --color-fd-success: #4ade80;
+  --color-fd-idea: #b89cf8;
+}

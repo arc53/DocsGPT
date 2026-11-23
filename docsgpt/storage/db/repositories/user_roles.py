@@ -13,8 +13,7 @@ from typing import Optional
 from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import row_to_dict
-
-VALID_SOURCES = ("manual", "oidc_group")
+from docsgpt.workspaces.principal import is_principal_id
 
 
 class UserRolesRepository:
@@ -40,6 +39,8 @@ class UserRolesRepository:
         """Return one row per user holding ``admin``, with earliest grant + sources.
 
         Each row carries the user's stored ``email`` (None when none is on file).
+        Grants held by a row that is not a person (a team principal,
+        ``__system__``) are left out: they can never sign in to use them.
         """
         result = self._conn.execute(
             text(
@@ -50,7 +51,7 @@ class UserRolesRepository:
                        u.email
                 FROM user_roles r
                 LEFT JOIN users u ON u.user_id = r.user_id
-                WHERE r.role = 'admin'
+                WHERE r.role = 'admin' AND COALESCE(u.kind, 'user') = 'user'
                 GROUP BY r.user_id, u.email
                 ORDER BY min(r.granted_at)
                 """
@@ -82,7 +83,13 @@ class UserRolesRepository:
         """Idempotently grant ``role`` to ``user_id`` from ``source``.
 
         Returns True when a new row was inserted, False when it already existed.
+
+        Raises:
+            ValueError: ``user_id`` is a team principal; callers refuse it first
+                (409 ``not_a_person``), this is the backstop.
         """
+        if is_principal_id(user_id):
+            raise ValueError("a team principal cannot hold a role")
         result = self._conn.execute(
             text(
                 """

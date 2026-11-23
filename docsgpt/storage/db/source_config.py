@@ -133,15 +133,15 @@ class RerankerConfig(BaseModel):
 class GraphConfig(BaseModel):
     """Ingest-time GraphRAG extraction knobs (pgvector-only).
 
-    ``extraction_model`` None reuses the instance default model
-    (``LLM_PROVIDER``/``LLM_NAME``); ``max_chunks`` None falls back to the
-    ``GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`` setting. ``gleanings`` is off by
-    default (cost control).
+    ``extraction_model`` None uses ``GRAPHRAG_EXTRACTION_MODEL``, else the
+    source owner's task model (``get_task_model_id``); ``max_chunks`` None
+    falls back to the ``GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`` setting.
+    ``gleanings`` is off by default (cost control).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    extraction_model: Optional[str] = None  # None → instance default model
+    extraction_model: Optional[str] = None  # None → GRAPHRAG_EXTRACTION_MODEL, else the owner's task model
     max_chunks: Optional[int] = None  # None → GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION
     gleanings: int = 0  # extra extraction passes per chunk
 
@@ -166,8 +166,9 @@ class ChunkingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     strategy: str = "classic_chunk"  # ChunkerCreator key
-    max_tokens: int = 1250  # matches docsgpt/worker.py MAX_TOKENS
-    min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
+    max_tokens: int = 1250
+    min_tokens: int = 150
+    chunk_overlap: int = 0  # Token overlap across adjacent chunks
     duplicate_headers: bool = False
 
     @field_validator("max_tokens")
@@ -178,6 +179,24 @@ class ChunkingConfig(BaseModel):
             raise ValueError("must be >= 1")
         if value > MAX_CHUNK_TOKENS:
             raise ValueError(f"must be <= {MAX_CHUNK_TOKENS}")
+        return value
+
+    @field_validator("chunk_overlap")
+    @classmethod
+    def _non_negative_chunk_overlap(cls, value: int) -> int:
+        """Validate that chunk_overlap is non-negative.
+
+        Args:
+            value: Number of overlapping tokens between chunks.
+
+        Returns:
+            The validated non-negative chunk_overlap value.
+
+        Raises:
+            ValueError: If value is negative.
+        """
+        if value < 0:
+            raise ValueError("chunk_overlap must be >= 0")
         return value
 
 
@@ -212,6 +231,7 @@ class RetrievalConfig(BaseModel):
     chunks: int = 6  # final top-k
     score_threshold: Optional[float] = None  # pgvector/mongo/qdrant/milvus honor it; others ignore
     rephrase_query: bool = True  # toggle ClassicRAG._rephrase_query side-call
+    show_links: bool = True  # synced sources: citations and the agent get each file's link in its service
     reranker: Optional[dict] = None  # None = relevance off; else RerankerConfig dict
     prescreen: Optional[dict] = None  # None = off; else PreScreenConfig dict (D12)
     graph: GraphRetrievalConfig = GraphRetrievalConfig()  # graphrag retriever only

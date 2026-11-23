@@ -7,7 +7,7 @@ import jwt
 from flask import Flask, Response, jsonify, redirect, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from docsgpt.auth import handle_auth
+from docsgpt.auth import handle_auth, principal_refusal
 
 from docsgpt.core import log_context
 from docsgpt.core.paths import env_file
@@ -17,6 +17,7 @@ setup_logging()
 
 from docsgpt.api import api  # noqa: E402
 from docsgpt.api.admin import admin_ns  # noqa: E402
+from docsgpt.api.agent_origins import enforce_agent_origin  # noqa: E402
 from docsgpt.api.answer import answer  # noqa: E402
 from docsgpt.api.devices import devices_bp  # noqa: E402
 from docsgpt.api.internal.routes import internal  # noqa: E402
@@ -135,12 +136,6 @@ if admin_ns not in api.namespaces:
     api.add_namespace(admin_ns)
 if pat_ns not in api.namespaces:
     api.add_namespace(pat_ns)
-app.config.update(
-    UPLOAD_FOLDER="inputs",
-    CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
-    CELERY_RESULT_BACKEND=settings.CELERY_RESULT_BACKEND,
-    MONGO_URI=settings.MONGO_URI,
-)
 celery.config_from_object("docsgpt.celeryconfig")
 api.init_app(app)
 
@@ -275,6 +270,15 @@ def get_config():
         # Whether the model may score text for prompt injection
         # (DECISION_INJECTION_ENABLED, with the model available).
         "decision_injection_enabled": bool(settings.DECISION_INJECTION_ENABLED and decision_available),
+        # Whether the model may label stored conversations for analytics
+        # (DECISION_ANALYTICS_ENABLED, with the model available).
+        "decision_analytics_enabled": bool(settings.DECISION_ANALYTICS_ENABLED and decision_available),
+        # The agent editor's limits for the two kinds of topic.
+        "analytics_max_topics": int(settings.ANALYTICS_MAX_TOPICS),
+        "analytics_max_overlapping_topics": int(settings.ANALYTICS_MAX_OVERLAPPING_TOPICS),
+        # The Website source form's page limit: its default and the cap.
+        "web_default_pages": int(settings.WEB_DEFAULT_PAGES),
+        "web_max_pages": int(settings.WEB_MAX_PAGES),
     }
     if settings.AUTH_TYPE == "oidc":
         response["oidc"] = {
@@ -395,6 +399,10 @@ def authenticate_request():
         request.decoded_token = None
         return None
     decoded_token = handle_auth(request)
+    # Checked again here, whatever the decoder: nobody acts as a team principal.
+    refusal = principal_refusal(decoded_token)
+    if refusal is not None:
+        return jsonify(refusal), 401
     if not decoded_token:
         request.decoded_token = None
     elif "error" in decoded_token:
@@ -446,12 +454,18 @@ def _bind_user_id_to_log_context():
     return None
 
 
+# Registered after the auth and size-limit hooks: a refused key's warning
+# carries the request's log context, and an oversized upload is rejected
+# before its form is parsed for the key.
+app.before_request(enforce_agent_origin)
+
+
 @app.after_request
 def after_request(response: Response) -> Response:
     """Add CORS headers for the pure Flask development entrypoint."""
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = (
-        "Content-Type, Authorization, Idempotency-Key"
+        "Content-Type, Authorization, Idempotency-Key, X-DocsGPT-Workspace"
     )
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response

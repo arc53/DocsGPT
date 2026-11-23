@@ -6,12 +6,20 @@ the caller's ``Authorization: Bearer <key>`` header via
 ``docsgpt.services.search_service.search``. These tests exercise
 the tool directly by patching ``get_http_headers`` and ``search``; the
 full HTTP-layer plumbing (mount, lifespan, session handshake) is
-covered by ``tests/test_asgi.py``.
+covered by ``tests/test_asgi.py``. The key's allowed-origins check has
+its own tests in ``tests/api/test_agent_origins.py`` and lets every
+request through here.
 """
 
 from unittest.mock import patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _origin_allowed():
+    with patch("docsgpt.mcp_server.origin_refusal", return_value=None):
+        yield
 
 
 @pytest.mark.unit

@@ -107,6 +107,34 @@ describe('saveWikiPage', () => {
     expect(outcome).toEqual({ status: 'forbidden' });
   });
 
+  it.each([400, 409])(
+    "reports a store that can't change wiki pages (%i) without reloading",
+    async (status) => {
+      const updateWikiPage = vi.fn().mockResolvedValue(
+        jsonResponse(status, {
+          success: false,
+          code: 'wiki_unsupported',
+          message:
+            "Wikis need a vector store that can change single pages; the elasticsearch store can't.",
+        }),
+      );
+      const getWikiPage = vi.fn();
+      const service = { updateWikiPage, getWikiPage };
+
+      const outcome = await saveWikiPage(
+        service,
+        'src-1',
+        '/a.md',
+        'x',
+        1,
+        'tok',
+      );
+
+      expect(getWikiPage).not.toHaveBeenCalled();
+      expect(outcome).toEqual({ status: 'unsupported' });
+    },
+  );
+
   it('reports a generic error on other failures', async () => {
     const updateWikiPage = vi.fn().mockResolvedValue(jsonResponse(400, {}));
     const getWikiPage = vi.fn();

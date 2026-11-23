@@ -318,15 +318,21 @@ class TestDeepseekEngine:
         with patch("requests.post", return_value=response):
             assert engine.ocr_image(Image.new("RGB", (8, 8))) == "ab"
 
-    def test_network_failure_is_a_parse_error_with_hint(self):
+    def test_network_failure_is_a_parse_error_with_hint(self, monkeypatch, settings):
         import requests
 
+        sleeps = []
+        monkeypatch.setattr(op, "_sleep", sleeps.append)
+        monkeypatch.setattr(settings, "OCR_DEEPSEEK_MAX_RETRIES", 2)
         engine = op.DeepseekOcrEngine(url="http://x", model="deepseek-ocr:3b", timeout=1)
         with (
-            patch("requests.post", side_effect=requests.ConnectionError("refused")),
+            patch("requests.post", side_effect=requests.ConnectionError("refused")) as post,
             pytest.raises(DocumentParseError, match="OCR_DEEPSEEK_URL"),
         ):
             engine.ocr_image(Image.new("RGB", (8, 8)))
+        # A refused connection is retried with backoff before it fails.
+        assert post.call_count == 3
+        assert len(sleeps) == 2
 
     def test_malformed_body_is_a_parse_error(self):
         engine = op.DeepseekOcrEngine(url="http://x", model="m", timeout=1)
@@ -760,7 +766,9 @@ class TestAnydocMixedDocuments:
 
         assert "Digital text page" in content
         assert "skipping that page" in caplog.text
-        assert parser.get_file_metadata(mixed_pdf) == {}
+        # The text pages are kept, and the page left out is counted, so the
+        # partial text is never taken (by the parse cache) for the whole file.
+        assert parser.get_file_metadata(mixed_pdf) == {"ocr_pages_failed": 1}
 
     def test_all_text_document_never_probes_ocr(self, tmp_path):
         pytest.importorskip("anydoc")

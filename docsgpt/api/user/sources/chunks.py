@@ -2,6 +2,7 @@
 
 import math
 import re
+from typing import Any, Dict, List, Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
@@ -9,7 +10,8 @@ from flask_restx import fields, Namespace, Resource
 from docsgpt.api import api
 from docsgpt.api.user.base import get_vector_store
 from docsgpt.api.user.resource_access import AccessDenied
-from docsgpt.api.user.sources.access import denied_response, load_source
+from docsgpt.api.user.sources.access import SOURCE_BUSY, denied_response, edit_lock, load_source
+from docsgpt.api.user.utils import error_response
 from docsgpt.core.settings import settings
 from docsgpt.guardrails import injection_scoring
 from docsgpt.guardrails.checks.model_injection import FLAG_THRESHOLD, THRESHOLD
@@ -17,7 +19,8 @@ from docsgpt.storage.db.repositories.sources import AllowlistFull, SourcesReposi
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 from docsgpt.utils import check_required_fields, num_tokens_from_string
-from docsgpt.vectorstore.base import InvalidChunkMetadataError
+from docsgpt.vectorstore.base import InvalidChunkMetadataError, ParentClearError
+from docsgpt.vectorstore.index_lock import SourceBusy
 
 sources_chunks_ns = Namespace(
     "sources", description="Source document management operations", path="/api"
@@ -26,6 +29,8 @@ sources_chunks_ns = Namespace(
 #: Chunk texts one source's owner may mark safe from prompt-injection screening.
 INJECTION_REVIEW_MAX = 1000
 _CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
+
+_BUSY_NOTE = " 409 (code source_busy) while a sync or page change on the source runs."
 
 
 def _resolve_source(doc_id: str, user: str, action: str = "use") -> dict:
@@ -55,10 +60,8 @@ def _remap_graph_chunk(doc: dict, old_chunk_id: str, new_chunk_id: str) -> None:
     """Move a graphrag source's links from an edited chunk's old id to its new one.
 
     Only needed when the store's ``update_chunk`` fell back to re-adding the
-    chunk under a new id (stores that update in place keep the id). Without
-    this the graph keeps pointing at the deleted row: the entity loses the
-    chunk and retrieval stops returning it. A failure is logged, not raised,
-    because the edit itself has already been saved.
+    chunk under a new id (stores that update in place keep the id). A failure
+    propagates so the caller can report incomplete graph maintenance.
 
     Args:
         doc: The resolved source row.
@@ -69,15 +72,12 @@ def _remap_graph_chunk(doc: dict, old_chunk_id: str, new_chunk_id: str) -> None:
 
     if SourceConfig.parse(doc.get("config")).kind != "graphrag":
         return
-    try:
-        from docsgpt.graphrag.store import GraphStore
+    from docsgpt.graphrag.store import GraphStore
 
-        GraphStore().remap_chunk(str(doc["id"]), old_chunk_id, new_chunk_id)
-    except Exception as e:
-        current_app.logger.error(
-            f"Failed to remap graph links from chunk {old_chunk_id} to {new_chunk_id}: {e}",
-            exc_info=True,
-        )
+    graph_store = GraphStore()
+    source_id = str(doc["id"])
+    graph_store.record_pending_chunk_remaps(source_id, {old_chunk_id: new_chunk_id})
+    graph_store.apply_pending_chunk_remaps(source_id)
 
 
 def _has_usable_token_count(metadata: dict) -> bool:
@@ -419,7 +419,7 @@ class AddChunk(Resource):
         )
     )
     @api.doc(
-        description="Adds a new chunk to the document",
+        description="Adds a new chunk to the document." + _BUSY_NOTE,
     )
     def post(self):
         decoded_token = request.decoded_token
@@ -445,12 +445,15 @@ class AddChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            store = get_vector_store(str(doc["id"]))
-            chunk_id = store.add_chunk(text, metadata)
+            with edit_lock(str(doc["id"])):
+                store = get_vector_store(str(doc["id"]))
+                chunk_id = store.add_chunk(text, metadata)
             return make_response(
                 jsonify({"message": "Chunk added successfully", "chunk_id": chunk_id}),
                 201,
             )
+        except SourceBusy:
+            return error_response(SOURCE_BUSY, 409, code="source_busy")
         except Exception as e:
             current_app.logger.error(f"Error adding chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -459,7 +462,7 @@ class AddChunk(Resource):
 @sources_chunks_ns.route("/delete_chunk")
 class DeleteChunk(Resource):
     @api.doc(
-        description="Deletes a specific chunk from the document.",
+        description="Deletes a specific chunk from the document." + _BUSY_NOTE,
         params={"id": "The document ID", "chunk_id": "The ID of the chunk to delete"},
     )
     def delete(self):
@@ -478,8 +481,39 @@ class DeleteChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            store = get_vector_store(str(doc["id"]))
-            deleted = store.delete_chunk(chunk_id)
+            with edit_lock(str(doc["id"])):
+                remapped_ids = _resume_pending_graph_remaps(doc)
+                chunk_id = _resolve_remapped_id(chunk_id, remapped_ids)
+                store = get_vector_store(str(doc["id"]))
+                # Only a chunk this source lists is deleted, as an update
+                # checks: a store whose delete isn't scoped to the source
+                # would otherwise remove another source's chunk by its id.
+                if SourceConfig.parse(doc.get("config")).kind == "graphrag":
+                    # A lenient get_chunks() can turn a read failure into an
+                    # empty list. On GraphRAG that would look like a stale
+                    # vector id and tombstone still-live graph links.
+                    scan_chunks = getattr(store, "_scan_chunks", None)
+                    chunks = scan_chunks() if callable(scan_chunks) else store.get_chunks() or []
+                else:
+                    chunks = store.get_chunks() or []
+                target = next((c for c in chunks if c.get("doc_id") == chunk_id), None)
+                if target is not None:
+                    # Clear siblings before deleting the source of their parent
+                    # window. If clearing fails, the original chunk still
+                    # exists and the parent remains valid wherever it remains.
+                    _drop_sibling_parent_text(store, chunks, target, doc)
+                    deleted = store.delete_chunk(chunk_id)
+                    # Vector deletion is the commit point: a failed delete must
+                    # leave GraphRAG's links and tombstone untouched. If graph
+                    # cleanup fails after this point, a retry sees no vector
+                    # row and retries the idempotent graph cleanup below.
+                    if deleted:
+                        _delete_graph_chunk(doc, chunk_id)
+                else:
+                    deleted = False
+                    # Recover graph cleanup if the vector delete succeeded but
+                    # GraphStore.delete_chunks failed on the previous request.
+                    _delete_graph_chunk(doc, chunk_id)
             if deleted:
                 return make_response(
                     jsonify({"message": "Chunk deleted successfully"}), 200
@@ -489,6 +523,8 @@ class DeleteChunk(Resource):
                     jsonify({"message": "Chunk not found or could not be deleted"}),
                     404,
                 )
+        except SourceBusy:
+            return error_response(SOURCE_BUSY, 409, code="source_busy")
         except Exception as e:
             current_app.logger.error(f"Error deleting chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
@@ -515,7 +551,7 @@ class UpdateChunk(Resource):
         )
     )
     @api.doc(
-        description="Updates an existing chunk in the document.",
+        description="Updates an existing chunk in the document." + _BUSY_NOTE,
     )
     def put(self):
         decoded_token = request.decoded_token
@@ -545,50 +581,159 @@ class UpdateChunk(Resource):
             current_app.logger.error(f"Error resolving source: {e}", exc_info=True)
             return make_response(jsonify({"error": "Invalid doc_id"}), 400)
         try:
-            store = get_vector_store(str(doc["id"]))
-
-            chunks = store.get_chunks()
-            existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
-            if not existing_chunk:
-                return make_response(jsonify({"error": "Chunk not found"}), 404)
-            new_text = text if text is not None else existing_chunk["text"]
-
-            if metadata is not None:
-                new_metadata = existing_chunk["metadata"].copy()
-                new_metadata.update(metadata)
-            else:
-                new_metadata = existing_chunk["metadata"].copy()
-            if text is not None:
-                new_metadata["token_count"] = num_tokens_from_string(new_text)
-            try:
-                # In place where the store supports it (same id, same list
-                # position); the base fallback re-adds under a new id.
-                new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
-                if new_chunk_id != chunk_id:
-                    _remap_graph_chunk(doc, chunk_id, new_chunk_id)
-                return make_response(
-                    jsonify(
-                        {
-                            "message": "Chunk updated successfully",
-                            "chunk_id": new_chunk_id,
-                            "original_chunk_id": chunk_id,
-                        }
-                    ),
-                    200,
-                )
-            except InvalidChunkMetadataError as meta_error:
-                current_app.logger.warning(
-                    f"Rejected metadata for chunk {chunk_id}: {meta_error}"
-                )
-                return make_response(jsonify({"error": "Invalid metadata"}), 400)
-            except Exception as add_error:
-                current_app.logger.error(f"Failed to update chunk {chunk_id}: {add_error}")
-                return make_response(
-                    jsonify({"error": "Failed to update chunk - addition failed"}), 500
-                )
+            with edit_lock(str(doc["id"])):
+                return _update_chunk(doc, chunk_id, text, metadata)
+        except SourceBusy:
+            return error_response(SOURCE_BUSY, 409, code="source_busy")
         except Exception as e:
             current_app.logger.error(f"Error updating chunk: {e}", exc_info=True)
             return make_response(jsonify({"success": False}), 500)
+
+
+def _update_chunk(doc: dict, chunk_id: str, text: Optional[str], metadata: Optional[dict]):
+    """Change one chunk's text and metadata; the caller holds the source's index lock.
+
+    Args:
+        doc: The source row.
+        chunk_id: The chunk.
+        text: Its new text, or ``None`` to keep it.
+        metadata: Fields merged into its metadata, or ``None``.
+
+    Returns:
+        Response: 200 with the chunk's (possibly new) id, 404 when it is
+        gone, 400 for metadata the store refuses, 500 when the store fails.
+    """
+    original_chunk_id = chunk_id
+    pending_remaps = _resume_pending_graph_remaps(doc)
+    chunk_id = _resolve_remapped_id(chunk_id, pending_remaps)
+    store = get_vector_store(str(doc["id"]))
+
+    chunks = store.get_chunks()
+    existing_chunk = next((c for c in chunks if c["doc_id"] == chunk_id), None)
+    if not existing_chunk:
+        return make_response(jsonify({"error": "Chunk not found"}), 404)
+    new_text = text if text is not None else existing_chunk["text"]
+
+    if metadata is not None:
+        new_metadata = existing_chunk["metadata"].copy()
+        new_metadata.update(metadata)
+    else:
+        new_metadata = existing_chunk["metadata"].copy()
+    text_changed = text is not None and text != existing_chunk.get("text")
+    if text is not None:
+        new_metadata["token_count"] = num_tokens_from_string(new_text)
+    if text_changed:
+        # Invalidate the original parent group even if this edit also changes
+        # or removes parent_text in the supplied metadata.
+        parent_text = (existing_chunk.get("metadata") or {}).get("parent_text")
+        new_metadata.pop("parent_text", None)
+    else:
+        parent_text = None
+    try:
+        # In place where the store supports it (same id, same list
+        # position); the base fallback re-adds under a new id.
+        if parent_text:
+            # Invalidate siblings first. If a sibling update fails, leave the
+            # edited chunk unchanged so no stale parent can expose removed text.
+            _drop_sibling_parent_text(store, chunks, existing_chunk, doc, exclude_id=chunk_id)
+        new_chunk_id = store.update_chunk(chunk_id, new_text, new_metadata)
+        if new_chunk_id != chunk_id:
+            _remap_graph_chunk(doc, chunk_id, new_chunk_id)
+        return make_response(
+            jsonify(
+                {
+                    "message": "Chunk updated successfully",
+                    "chunk_id": new_chunk_id,
+                    "original_chunk_id": original_chunk_id,
+                }
+            ),
+            200,
+        )
+    except InvalidChunkMetadataError as meta_error:
+        current_app.logger.warning(
+            f"Rejected metadata for chunk {chunk_id}: {meta_error}"
+        )
+        return make_response(jsonify({"error": "Invalid metadata"}), 400)
+    except ParentClearError as clear_error:
+        if isinstance(clear_error.__cause__, InvalidChunkMetadataError):
+            current_app.logger.warning("Rejected sibling metadata: %s", clear_error.__cause__)
+            return make_response(jsonify({"error": "Invalid metadata"}), 400)
+        current_app.logger.error("Failed to clear sibling parent metadata: %s", clear_error)
+        return make_response(jsonify({"error": "Failed to invalidate sibling parent metadata"}), 500)
+    except Exception as add_error:
+        current_app.logger.error(f"Failed to update chunk {chunk_id}: {add_error}")
+        return make_response(
+            jsonify({"error": "Failed to update chunk - addition failed"}), 500
+        )
+
+
+def _drop_sibling_parent_text(
+    store: Any,
+    chunks: List[Dict],
+    changed_chunk: Dict,
+    doc: Dict,
+    exclude_id: Optional[str] = None,
+) -> None:
+    """Clear a stale parent window from siblings after its child changes or disappears."""
+    metadata = changed_chunk.get("metadata") or {}
+    parent = metadata.get("parent_text")
+    if not isinstance(parent, str) or not parent:
+        return
+    changed_id = str(exclude_id or changed_chunk.get("doc_id"))
+    sibling_ids = [
+        str(chunk.get("doc_id"))
+        for chunk in chunks
+        if chunk.get("doc_id")
+        and str(chunk.get("doc_id")) != changed_id
+        and (chunk.get("metadata") or {}).get("parent_text") == parent
+    ]
+    try:
+        remaps = store.clear_parent_text(sibling_ids)
+    except ParentClearError as err:
+        _apply_graph_remaps(doc, err.remapped_ids)
+        raise
+    _apply_graph_remaps(doc, remaps)
+
+
+def _apply_graph_remaps(doc: Dict, remaps: List[tuple]) -> None:
+    """Apply every completed vector ID change before reporting remap failures."""
+    errors = []
+    for old_id, new_id in remaps:
+        if new_id == old_id:
+            continue
+        try:
+            _remap_graph_chunk(doc, old_id, new_id)
+        except Exception as err:
+            errors.append(err)
+    if errors:
+        raise RuntimeError(f"Failed to remap {len(errors)} GraphRAG chunk link(s)") from errors[0]
+
+
+def _resume_pending_graph_remaps(doc: Dict) -> Dict[str, str]:
+    """Finish durable GraphRAG ID remaps before a chunk route reads vector rows."""
+    if SourceConfig.parse(doc.get("config")).kind != "graphrag":
+        return {}
+    from docsgpt.graphrag.store import GraphStore
+
+    return GraphStore().apply_pending_chunk_remaps(str(doc["id"]))
+
+
+def _resolve_remapped_id(chunk_id: str, remaps: Dict[str, str]) -> str:
+    """Resolve an old request ID through completed pending remaps."""
+    seen = set()
+    while chunk_id in remaps and chunk_id not in seen:
+        seen.add(chunk_id)
+        chunk_id = remaps[chunk_id]
+    return chunk_id
+
+
+def _delete_graph_chunk(doc: Dict, chunk_id: str) -> None:
+    """Remove graph references before deleting a GraphRAG vector chunk."""
+    if SourceConfig.parse(doc.get("config")).kind != "graphrag":
+        return
+    from docsgpt.graphrag.store import GraphStore
+
+    GraphStore().delete_chunks(str(doc["id"]), [str(chunk_id)])
 
 
 @sources_chunks_ns.route("/sources/<string:source_id>/injection_review")

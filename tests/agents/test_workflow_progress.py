@@ -44,6 +44,9 @@ class TestLinearStepCount:
     def test_counts_the_steps_after_start(self):
         assert _LINEAR.linear_step_count() == 3
 
+    def test_leaves_out_the_end_node_when_asked(self):
+        assert _LINEAR.linear_step_count(count_end=False) == 2
+
     def test_a_condition_on_the_path_has_no_count(self):
         graph = _graph(
             [

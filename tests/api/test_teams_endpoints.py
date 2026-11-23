@@ -47,6 +47,9 @@ def _auth(sub="u1", roles=("user",), team_role=None):
         patch("docsgpt.app.resolve_roles", return_value=list(roles)),
         patch("docsgpt.api.user.team_authz.db_readonly", lambda: _cm(Mock())),
         patch("docsgpt.api.user.team_authz.TeamMembersRepository", return_value=members),
+        # The agent's team items are read from the database; these mocked shares use none
+        # (tests/api/user/teams/test_team_outside_routes.py covers the refusal).
+        patch("docsgpt.api.user.teams.routes._team_items_refusal", return_value=None),
     ]
 
 
@@ -171,7 +174,7 @@ class TestTeamAccessControl:
         finally:
             _stop(patches)
         assert resp.status_code == 200
-        members_repo.set_manual_role.assert_called_once()
+        members_repo.change_membership.assert_called_once()
 
     def test_add_member_by_email_resolves_to_sub(self, client):
         members_repo = Mock()
@@ -197,7 +200,7 @@ class TestTeamAccessControl:
         finally:
             _stop(patches)
         assert resp.status_code == 200
-        args, kwargs = members_repo.set_manual_role.call_args
+        args, kwargs = members_repo.change_membership.call_args
         assert "resolved-sub" in args  # resolved sub used, not the email
 
     def test_add_member_email_not_found(self, client):
@@ -411,6 +414,7 @@ class TestTeamNotifications:
 
     def test_add_member_notifies_new_member(self, client):
         members_repo = Mock()
+        members_repo.role_for.return_value = None  # not a member yet
         teams_repo = Mock()
         teams_repo.get.return_value = {"id": "team-1", "name": "Acme"}
         publish = Mock()
@@ -441,7 +445,8 @@ class TestTeamNotifications:
         assert args[0] == "carol"
         assert args[1] == "team.member_added"
         assert args[2]["team_name"] == "Acme"
-        assert args[2]["role"] == "team_member"
+        assert args[2]["role"] == "viewer"
+        assert args[2]["member_role"] == "team_member"
         assert args[2]["added_by"] == "alice"
 
     def test_add_member_skips_self(self, client):
@@ -584,14 +589,17 @@ class TestListMembersParams:
 
     def _get(self, client, query="", team_role="team_member"):
         members_repo = Mock()
-        members_repo.list_members.return_value = [{"user_id": "bob"}]
+        members_repo.list_members.return_value = [{"user_id": "bob", "role": "team_editor"}]
         members_repo.count_members.return_value = 7
+        teams_repo = Mock()
+        teams_repo.get.return_value = {"id": "team-1", "owner_id": "alice"}
         patches = _auth(sub="bob", team_role=team_role) + [
             patch("docsgpt.api.user.teams.routes.db_readonly", lambda: _cm(Mock())),
             patch(
                 "docsgpt.api.user.teams.routes.TeamMembersRepository",
                 return_value=members_repo,
             ),
+            patch("docsgpt.api.user.teams.routes.TeamsRepository", return_value=teams_repo),
         ]
         _apply(patches)
         try:
@@ -604,7 +612,12 @@ class TestListMembersParams:
         resp, repo = self._get(client)
         assert resp.status_code == 200
         body = resp.get_json()
-        assert body == {"success": True, "members": [{"user_id": "bob"}], "total": 7}
+        # ``role`` keeps today's names for the current UI; ``team_role`` is the workspace role.
+        assert body == {
+            "success": True,
+            "members": [{"user_id": "bob", "role": "team_member", "team_role": "editor"}],
+            "total": 7,
+        }
         repo.list_members.assert_called_once_with("team-1", q=None, limit=None, offset=0)
         repo.count_members.assert_called_once_with("team-1", q=None)
 

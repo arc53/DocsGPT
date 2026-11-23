@@ -5,7 +5,7 @@ through langchain, so these exercise the real client in ``:memory:`` mode
 rather than asserting against mocks.
 """
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -72,8 +72,37 @@ def populated(store):
     return store
 
 
+@pytest.fixture
+def other(populated):
+    """Source src-B on ``populated``'s in-memory backend: one collection, two sources."""
+    from docsgpt.vectorstore.qdrant import QdrantStore
+
+    with patch(
+        "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
+        return_value=_FakeEmbeddings(),
+    ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
+        _settings(mock_settings)
+        store_b = QdrantStore(source_id="src-B", embeddings_key="k")
+    store_b._client = populated._client
+    return store_b
+
+
 @pytest.mark.unit
 class TestQdrantStore:
+    def test_clears_parent_metadata_without_embedding(self, store):
+        ids = store.add_texts(
+            ["first child", "second child"],
+            [{"parent_text": "parent"}, {"parent_text": "parent"}],
+        )
+        embed = Mock(wraps=store._embeddings.embed_documents)
+        store._embeddings.embed_documents = embed
+
+        updated = store.clear_parent_text(ids)
+
+        assert updated == [(chunk_id, chunk_id) for chunk_id in ids]
+        assert all("parent_text" not in chunk["metadata"] for chunk in store.get_chunks())
+        embed.assert_not_called()
+
     def test_source_id_strips_index_prefix(self, store):
         assert store._source_id == "src-A"
 
@@ -141,17 +170,7 @@ class TestQdrantStore:
         assert populated.delete_chunks_by_source_path("db.txt") == 1
         assert len(populated.get_chunks()) == 2
 
-    def test_delete_index_removes_only_this_source(self, populated):
-        from docsgpt.vectorstore.qdrant import QdrantStore
-
-        with patch(
-            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=_FakeEmbeddings(),
-        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
-            _settings(mock_settings)
-            other = QdrantStore(source_id="src-B", embeddings_key="k")
-        # Share the in-memory backend so both sources live in one collection.
-        other._client = populated._client
+    def test_delete_index_removes_only_this_source(self, populated, other):
         other.add_texts(["Another source entirely."], [{"source": "other.txt"}])
 
         populated.delete_index()
@@ -161,6 +180,42 @@ class TestQdrantStore:
 
     def test_save_local_is_noop(self, store):
         assert store.save_local() is None
+
+
+@pytest.fixture
+def two_sources(populated, other):
+    """``populated`` (src-A) plus src-B in the same collection."""
+    [b_id] = other.add_texts(["Source B's private database notes."], [{"source": "b.txt"}])
+    return populated, other, b_id
+
+
+@pytest.mark.unit
+class TestQdrantChunkMutationsStayInTheirSource:
+    """A chunk id names a point in a collection shared by every source; a store may only change its own."""
+
+    def test_delete_chunk_of_another_source_is_refused(self, two_sources):
+        store_a, store_b, b_id = two_sources
+
+        assert store_a.delete_chunk(b_id) is False
+        assert [c["doc_id"] for c in store_b.get_chunks()] == [b_id]
+
+    def test_delete_chunk_of_a_missing_id_is_false(self, populated):
+        assert populated.delete_chunk("00000000-0000-0000-0000-000000000000") is False
+
+    def test_delete_chunks_counts_only_this_sources(self, two_sources):
+        store_a, store_b, b_id = two_sources
+        own = store_a.get_chunks()[0]["doc_id"]
+
+        assert store_a.delete_chunks([own, b_id]) == 1
+        assert own not in [c["doc_id"] for c in store_a.get_chunks()]
+        assert [c["doc_id"] for c in store_b.get_chunks()] == [b_id]
+
+    def test_update_chunk_of_another_source_is_refused(self, two_sources):
+        store_a, store_b, b_id = two_sources
+
+        with pytest.raises(KeyError):
+            store_a.update_chunk(b_id, "PWNED", {})
+        assert [c["text"] for c in store_b.get_chunks()] == ["Source B's private database notes."]
 
 
 @pytest.mark.unit
@@ -250,16 +305,7 @@ class TestQdrantUpdateChunk:
             populated.update_chunk(str(uuid.uuid4()), "text", {})
         assert len(populated.get_chunks()) == 3
 
-    def test_other_sources_point_is_refused(self, populated):
-        from docsgpt.vectorstore.qdrant import QdrantStore
-
-        with patch(
-            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=_FakeEmbeddings(),
-        ), patch("docsgpt.vectorstore.qdrant.settings") as mock_settings:
-            _settings(mock_settings)
-            other = QdrantStore(source_id="src-B", embeddings_key="k")
-        other._client = populated._client
+    def test_other_sources_point_is_refused(self, populated, other):
         target = populated.get_chunks()[0]["doc_id"]
 
         with pytest.raises(KeyError):

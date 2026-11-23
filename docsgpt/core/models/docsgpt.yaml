@@ -5,6 +5,7 @@ models:
     display_name: DocsGPT Model
     description: Local model
     supports_tools: true
+    supports_structured_output: true
     attachments: [image]
     context_window: 1048576
     input_cost_per_million: 0.15

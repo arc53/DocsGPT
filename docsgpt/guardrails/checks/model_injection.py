@@ -44,7 +44,7 @@ from docsgpt.decisions.features import (
     STAGE_TIMEOUT_S,
 )
 from docsgpt.decisions.latency import GUARD
-from docsgpt.decisions.types import BACKEND_REASONS, ModelInfo, Shape
+from docsgpt.decisions.types import ModelInfo, Shape
 from docsgpt.guardrails import injection_scoring as scoring
 from docsgpt.guardrails.base import GuardrailCheck, ScanContext, stage_time_left
 from docsgpt.guardrails.injection_scoring import WINDOW_OVERLAP, WINDOW_TOKENS, InjectionScore
@@ -227,9 +227,10 @@ class ModelInjectionCheck(GuardrailCheck):
         for j, i in enumerate(pending):
             scores[i], reasons[i], totals[i] = result[j], result.reasons[j], result.totals[j]
         # What the deadline or the live limit left unscored is scored in the
-        # background, so the next turn that uses it reads the cache.
-        later = [texts[i] for i in pending
-                 if reasons[i] not in (None, "bad_item") and (scores[i] is None or scores[i].p < flag_threshold)]
+        # background, so the next turn that uses it reads the cache; a text the
+        # model failed on would only fail there again.
+        later = [texts[i] for i in pending if reasons[i] is not None and reasons[i] not in scoring.ITEM_FAILURES
+                 and (scores[i] is None or scores[i].p < flag_threshold)]
         queued = scoring.enqueue_lazy(later)
         why_not = None
         for i, outcome in enumerate(outcomes):
@@ -294,7 +295,7 @@ def _judge(score: Optional[InjectionScore], reason: Optional[str], total: Option
 
 def _status(reason: Optional[str]) -> str:
     """The decision-record status of a scan left unevaluated for ``reason``."""
-    if reason in BACKEND_REASONS:
+    if reason in scoring.DOWN:
         return "unavailable"
     if reason == "timeout":
         return "timeout"

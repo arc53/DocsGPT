@@ -292,10 +292,10 @@ def _telegram_tool(connection_id, *, user="alice", mode="owner"):
     }
 
 
-def _run_send(executor, tool, arguments):
+def _run_send(executor, tool, arguments, action="telegram_send_message"):
     with patch("docsgpt.agents.tool_executor.ToolActionParser") as parser, \
             patch("docsgpt.agents.tool_executor.ToolManager") as manager:
-        parser.return_value.parse_args.return_value = ("t1", "telegram_send_message", arguments)
+        parser.return_value.parse_args.return_value = ("t1", action, arguments)
         gen = executor.execute({"t1": tool}, _call(), "OpenAILLM")
         while True:
             try:
@@ -331,18 +331,82 @@ class TestTelegramDefaultChat:
         params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
         assert "chat_id" in params["telegram_send_message"]["properties"]
 
+    @pytest.mark.fresh_db
     def test_the_default_chat_wins_over_what_the_model_sends(self, pg_conn):
         cid = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
         with _service_db(pg_conn):
             call = _run_send(_executor(), _telegram_tool(cid), {"text": "hi", "chat_id": "666"})
         assert call.kwargs == {"text": "hi", "chat_id": "-1001"}
 
+    @pytest.mark.fresh_db
     def test_each_member_uses_their_own_chat(self, pg_conn):
         owner = _connection(pg_conn, secrets={"credentials": {"token": "t", "chat_id": "-1001"}})
         _connection(pg_conn, user="bob", secrets={"credentials": {"token": "b", "chat_id": "-2002"}})
         with _service_db(pg_conn):
             call = _run_send(_executor(user="bob"), _telegram_tool(owner, mode="member"), {"text": "hi"})
         assert call.kwargs == {"text": "hi", "chat_id": "-2002"}
+
+
+def _ntfy_tool(connection_id, *, user="alice", mode="owner"):
+    from docsgpt.agents.tools.ntfy import NtfyTool
+    from docsgpt.connectors.service import _transform_actions
+
+    return {
+        **_tool(connection_id, user=user, name="ntfy", mode=mode),
+        "actions": _transform_actions(NtfyTool({}).get_actions_metadata()),
+    }
+
+
+_NTFY_SELF_HOSTED = {"token": "t", "server_url": "https://ntfy.example.com"}
+
+
+class TestNtfyServer:
+    """The ntfy token goes only to the server the connection names, never to one the model picks."""
+
+    def test_the_connection_offers_a_server_field(self):
+        from docsgpt.connectors import catalog
+
+        fields = {f.key: f for f in catalog.get_definition("ntfy").credential_fields}
+        server = fields["server_url"]
+        assert server.secret is False and server.required is False
+        assert server.parameter == "server_url"
+        assert server.hint
+
+    def test_the_model_is_not_asked_for_a_server_the_connection_sets(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": _NTFY_SELF_HOSTED})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _ntfy_tool(cid)})
+        by_name = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert "server_url" not in by_name["ntfy_send_message"]["properties"]
+
+    @pytest.mark.fresh_db
+    def test_the_connections_server_wins_over_what_the_model_sends(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": _NTFY_SELF_HOSTED})
+        sent = {"message": "hi", "topic": "alerts", "server_url": "https://attacker.example"}
+        with _service_db(pg_conn):
+            call = _run_send(_executor(), _ntfy_tool(cid), sent, action="ntfy_send_message")
+        assert call.kwargs == {"message": "hi", "topic": "alerts", "server_url": "https://ntfy.example.com"}
+
+    def test_the_tool_gets_the_server_with_the_token(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": _NTFY_SELF_HOSTED})
+        with _service_db(pg_conn), patch("docsgpt.agents.tool_executor.ToolManager") as manager:
+            _executor()._get_or_load_tool(_ntfy_tool(cid), "t1", "ntfy_send_message")
+        config = manager.return_value.load_tool.call_args.kwargs["tool_config"]
+        assert config["token"] == "t" and config["server_url"] == "https://ntfy.example.com"
+
+    def test_without_a_server_the_model_still_names_one(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": {"token": "t"}})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _ntfy_tool(cid)})
+        params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert "server_url" in params["ntfy_send_message"]["properties"]
+
+    def test_without_a_server_the_model_may_leave_it_out(self, pg_conn):
+        cid = _connection(pg_conn, provider="ntfy", secrets={"credentials": {"token": "t"}})
+        with _service_db(pg_conn):
+            functions = _executor().prepare_tools_for_llm({"t1": _ntfy_tool(cid)})
+        params = {f["function"]["name"]: f["function"]["parameters"] for f in functions}
+        assert params["ntfy_send_message"]["required"] == ["message", "topic"]
 
 
 class TestAccountsTellApartForTheModel:
@@ -553,6 +617,75 @@ class TestScheduledSync:
         flag.assert_called_once()
         assert flag.call_args.args[0] == "c-1"
 
+    def test_a_connections_fetch_holds_its_lock(self, pg_conn):
+        """Two ingests from one connection fetch one after the other, not at once."""
+        from docsgpt import worker
+
+        events = []
+
+        @contextmanager
+        def fake_lock(connection_id):
+            events.append(("locked", connection_id))
+            try:
+                yield
+            finally:
+                events.append(("released", connection_id))
+
+        def fetch(_input):
+            events.append(("fetch",))
+            raise RuntimeError("stop after the fetch")
+
+        loader = MagicMock()
+        loader.load_data.side_effect = fetch
+        task = MagicMock()
+        task.request.retries = 1
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials", return_value={"url": "acme/r", "access_token": "t"},
+        ), patch.object(worker, "publish_user_event"), patch.object(worker, "connection_fetch_lock", fake_lock):
+            with pytest.raises(RuntimeError, match="stop after the fetch"):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        assert events == [("locked", "c-1"), ("fetch",), ("released", "c-1")]
+
+    def test_the_credentials_are_read_again_after_the_lock_wait(self, pg_conn):
+        """A connection removed while its ingest waited for the lock is not fetched with old credentials."""
+        from docsgpt import worker
+        from docsgpt.connectors.service import ConnectionUnavailable
+
+        loader = MagicMock()
+        task = MagicMock()
+        task.request.retries = 1
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials",
+            side_effect=[{"url": "acme/r", "access_token": "t"}, None],
+        ), patch.object(worker, "publish_user_event"):
+            with pytest.raises(ConnectionUnavailable):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        loader.load_data.assert_not_called()
+
+    def test_a_rate_limit_fails_with_the_reset_time(self, pg_conn):
+        import datetime
+
+        from docsgpt import worker
+        from docsgpt.parser.remote.github_loader import GitHubRateLimited
+
+        loader = MagicMock()
+        loader.load_data.side_effect = GitHubRateLimited(
+            datetime.datetime(2099, 1, 1, 12, 55, tzinfo=datetime.timezone.utc),
+        )
+        task = MagicMock()
+        task.request.retries = 0
+        with patch.object(worker.RemoteCreator, "create_loader", return_value=loader), patch.object(
+            worker, "_with_connection_credentials", return_value={"url": "acme/r", "access_token": "t"},
+        ), patch.object(worker, "_publish_source_event") as publish, patch(
+            "docsgpt.connectors.service.mark_reconnect_needed",
+        ) as flag:
+            with pytest.raises(GitHubRateLimited):
+                worker.remote_worker(task, "acme/r", "repo", "alice", "github", connection_id="c-1")
+        failed = [c for c in publish.call_args_list if c.args[2] == "source.ingest.failed"]
+        assert failed and "12:55 UTC" in failed[0].args[3]["error"]
+        # A rate limit is not a revoked token.
+        flag.assert_not_called()
+
     def test_sync_runs_as_the_connection_without_a_browser(self, pg_conn):
         from docsgpt import worker
 
@@ -578,6 +711,27 @@ class TestScheduledSync:
         assert kwargs["operation_mode"] == "sync"
         assert kwargs["folder_ids"] == ["f"] and kwargs["recursive"] is False
         assert "session_token" not in kwargs
+
+    @pytest.mark.parametrize("reason", ["busy", "gone", "wiki"])
+    def test_a_skipped_sync_is_reported_as_skipped(self, pg_conn, reason):
+        from docsgpt import worker
+
+        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth",
+                          secrets={"token_info": {"access_token": "a"}})
+        source = pg_conn.execute(text(
+            "INSERT INTO sources (user_id, name, type, sync_frequency, connection_id, remote_data) "
+            "VALUES ('alice', 'Drive', 'connector:file', 'daily', CAST(:c AS uuid), "
+            "'{\"provider\": \"google_drive\"}') RETURNING id"
+        ), {"c": cid}).scalar()
+
+        @contextmanager
+        def _yield():
+            yield pg_conn
+
+        skipped = {"status": "skipped", "reason": reason}
+        with patch.object(worker, "db_readonly", _yield), patch.object(worker, "ingest_connector", return_value=skipped):
+            result = worker.sync_connector_source(MagicMock(), str(source))
+        assert result["status"] == "skipped" and result["reason"] == reason
 
 
 @pytest.mark.parametrize("secret_key", ["token_info", "tokens", "client_info", "encrypted_credentials",
@@ -640,20 +794,17 @@ class TestMcpServerMismatch:
     def test_save_keeps_previous_connection_only_for_the_same_server(self, pg_conn):
         from docsgpt.api.user.tools.mcp import _previous_connection
 
-        @contextmanager
-        def _yield():
-            yield pg_conn
-
         cid = _connection(pg_conn, provider="custom_mcp", server_url="https://old.example.com")
         existing = {"connection_id": cid}
         same = {"server_url": "https://old.example.com/mcp", "auth_type": "bearer"}
-        with patch("docsgpt.api.user.tools.mcp.db_readonly", _yield):
-            assert _previous_connection(existing, same, "alice") == cid
-            assert _previous_connection(existing, {**same, "server_url": "https://new.example.com/mcp"}, "alice") is None
-            assert _previous_connection(None, same, "alice") is None
-            # Someone else's connection, or one that signs in another way, is not kept.
-            assert _previous_connection(existing, same, "bob") is None
-            assert _previous_connection(existing, {**same, "auth_type": "oauth"}, "alice") is None
+        assert _previous_connection(pg_conn, existing, same, "alice") == cid
+        assert _previous_connection(
+            pg_conn, existing, {**same, "server_url": "https://new.example.com/mcp"}, "alice",
+        ) is None
+        assert _previous_connection(pg_conn, None, same, "alice") is None
+        # Someone else's connection, or one that signs in another way, is not kept.
+        assert _previous_connection(pg_conn, existing, same, "bob") is None
+        assert _previous_connection(pg_conn, existing, {**same, "auth_type": "oauth"}, "alice") is None
 
 
 class TestExternalApiCallers:

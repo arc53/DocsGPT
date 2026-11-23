@@ -106,6 +106,42 @@ describe('buildRunAtUtc', () => {
     );
   });
 
+  it('uses the new offset after spring-forward in New York', () => {
+    expect(buildRunAtUtc('2027-03-14', '03:30', 'America/New_York')).toBe(
+      '2027-03-14T07:30:00.000Z',
+    );
+  });
+
+  it('uses the old offset before spring-forward in Berlin', () => {
+    expect(buildRunAtUtc('2027-03-28', '01:30', 'Europe/Berlin')).toBe(
+      '2027-03-28T00:30:00.000Z',
+    );
+  });
+
+  it('rolls a nonexistent spring-forward time to the next valid hour', () => {
+    expect(buildRunAtUtc('2027-03-14', '02:30', 'America/New_York')).toBe(
+      '2027-03-14T07:30:00.000Z',
+    );
+  });
+
+  it('rolls a nonexistent spring-forward time forward in Berlin too', () => {
+    expect(buildRunAtUtc('2027-03-28', '02:30', 'Europe/Berlin')).toBe(
+      '2027-03-28T01:30:00.000Z',
+    );
+  });
+
+  it('keeps the earlier occurrence of a repeated fall-back time', () => {
+    expect(buildRunAtUtc('2027-11-07', '01:30', 'America/New_York')).toBe(
+      '2027-11-07T05:30:00.000Z',
+    );
+  });
+
+  it('keeps the later Berlin occurrence of a repeated fall-back time', () => {
+    expect(buildRunAtUtc('2027-10-31', '02:30', 'Europe/Berlin')).toBe(
+      '2027-10-31T01:30:00.000Z',
+    );
+  });
+
   it('America/Los_Angeles 09:00 in summer (PDT, UTC-7) → 16:00Z', () => {
     expect(buildRunAtUtc('2026-07-04', '09:00', 'America/Los_Angeles')).toBe(
       '2026-07-04T16:00:00.000Z',

@@ -1,3 +1,5 @@
+import type { ItemOrigin, SharedFrom } from '../workspace/itemOrigin';
+
 /**
  * Access to a team-shared resource (agent, source, tool, prompt).
  *
@@ -6,11 +8,22 @@
  * `allowed_actions` (`docsgpt/api/user/resource_access.py`). The UI only asks
  * `can(item, action)`; it never re-derives the rules from the role.
  */
-export type Access = 'owner' | 'editor' | 'viewer';
+export type Access = 'owner' | 'admin' | 'editor' | 'viewer';
 
 export type AccessFields = {
+  /** `admin` only on a team item, for the team's Owner and Admins. */
   access?: Access | null;
   allowed_actions?: string[];
+  /** Where the item lives. */
+  workspace?: { kind: 'personal' | 'team'; team_id?: string | null } | null;
+  /** How it reached this list (see `ItemOrigin`): the caller's, the team's, shared, or an agent's public link. */
+  origin?: ItemOrigin | null;
+  /** `team_shared` items: the team that owns and shared it. */
+  shared_from?: SharedFrom | null;
+  /** Who added it; on a personal item, its owner. */
+  created_by?: { user_id?: string | null; label?: string | null } | null;
+  /** The caller's role in the item's team (team items). */
+  team_role?: 'owner' | 'admin' | 'editor' | 'viewer' | null;
   /** Legacy fields, still sent: `team` marks a resource shared with you. */
   ownership?: 'user' | 'team';
   team_access?: 'viewer' | 'editor' | null;
@@ -32,7 +45,8 @@ export function isOwner(item: AccessFields): boolean {
  * `allowed_actions` (an API older than this frontend). Mirrors the defaults
  * of `ACTIONS` in `docsgpt/api/user/resource_access.py`; action names don't
  * collide across resource types, so one table covers all four. Owner-only
- * actions (share, delete, move, settings) are never in it.
+ * actions (share, delete, move, settings) are never in it, nor
+ * `manage_access_details`, which an agent's owner must switch on for editors.
  */
 const VIEWER_DEFAULTS = [
   'use',
@@ -41,19 +55,27 @@ const VIEWER_DEFAULTS = [
   'view_config',
   'duplicate',
 ];
+const EDITOR_DEFAULTS = [
+  ...VIEWER_DEFAULTS,
+  'view',
+  'edit',
+  'publish',
+  'edit_policy',
+  'view_logs',
+  'manage_schedules',
+  'export',
+  'edit_credentials',
+];
 const ROLE_DEFAULTS: Record<Exclude<Access, 'owner'>, ReadonlySet<string>> = {
   viewer: new Set(VIEWER_DEFAULTS),
-  editor: new Set([
-    ...VIEWER_DEFAULTS,
-    'view',
-    'edit',
-    'publish',
-    'edit_policy',
-    'view_logs',
-    'manage_schedules',
-    'export',
+  editor: new Set(EDITOR_DEFAULTS),
+  // A team item's Admin also deletes it, moves it out and manages it.
+  admin: new Set([
+    ...EDITOR_DEFAULTS,
     'manage_access_details',
-    'edit_credentials',
+    'delete',
+    'move_out',
+    'reconnect',
   ]),
 };
 
@@ -73,4 +95,57 @@ export function can(
   if (item.allowed_actions) return item.allowed_actions.includes(action);
   const role = roleOf(item);
   return role === 'owner' || ROLE_DEFAULTS[role].has(action);
+}
+
+// Team roles from weakest to strongest, to compare against a minimum.
+const TEAM_ROLE_RANK = ['viewer', 'editor', 'admin', 'owner'];
+
+/**
+ * Whether the caller may publish an agent or workflow. One read from the
+ * server answers with its own access fields; a new one, or one saved in this
+ * session, carries none and lands in the current workspace. There, as the
+ * server rules, publishing a team's agent is an Admin's, or an Editor's too
+ * when the team's outside policy is "Editors too"; a locked team keeps it
+ * with its Admins (the agent goes live for members, without a key).
+ *
+ * Args:
+ *   item: The agent, with its access fields when it has them.
+ *   workspaceRole: The caller's role in the current workspace (`owner` in
+ *     Personal); null without a workspace, which reads as Personal.
+ *   outsidePolicy: The current team's outside policy; null in Personal or
+ *     when the team's row doesn't say, which reads as Admins only.
+ *
+ * Returns:
+ *   True when the server would let the caller publish it.
+ */
+export function canPublish(
+  item: AccessFields | null | undefined,
+  workspaceRole: string | null | undefined,
+  outsidePolicy?: string | null,
+): boolean {
+  if (!item) return false;
+  if (item.allowed_actions || item.access || item.ownership)
+    return can(item, 'publish');
+  if (!workspaceRole) return true;
+  const minimum = outsidePolicy === 'editors' ? 'editor' : 'admin';
+  return (
+    TEAM_ROLE_RANK.indexOf(workspaceRole) >= TEAM_ROLE_RANK.indexOf(minimum)
+  );
+}
+
+/**
+ * Whether the item's ⋯ offers Share. A personal item follows `share`; a
+ * team's item offers it to every member, read-only for most, since the
+ * dialog then says where its access comes from rather than changing it.
+ *
+ * Args:
+ *   item: The item, with its access and workspace fields.
+ *
+ * Returns:
+ *   True when Share belongs in the item's menu.
+ */
+export function canOpenShare(item: AccessFields | null | undefined): boolean {
+  if (!item) return false;
+  if (item.origin === 'team' || item.workspace?.kind === 'team') return true;
+  return can(item, 'share');
 }

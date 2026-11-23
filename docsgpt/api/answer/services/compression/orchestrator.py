@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from docsgpt.api.answer.services.compression.service import CompressionService
 from docsgpt.api.answer.services.compression.threshold_checker import (
     CompressionThresholdChecker,
+    uses_responses_api,
 )
+from docsgpt.api.answer.services.compression.token_counter import TokenCounter
 from docsgpt.api.answer.services.compression.types import (
     CompressionResult,
     is_compression_summary_row,
@@ -56,6 +58,8 @@ class CompressionOrchestrator:
         decoded_token: Dict[str, Any],
         current_query_tokens: int = 500,
         model_user_id: Optional[str] = None,
+        context_window_limit: Optional[int] = None,
+        history_token_limit: Optional[int] = None,
     ) -> CompressionResult:
         """
         Check if compression is needed and perform it if so.
@@ -70,6 +74,11 @@ class CompressionOrchestrator:
             current_query_tokens: Estimated tokens for current query
             model_user_id: BYOM-resolution scope (model owner); defaults
                 to ``user_id`` for built-in / caller-owned models.
+            context_window_limit: The agent's context limit, which lowers
+                the window the threshold is a share of.
+            history_token_limit: The agent's history limit. Recent messages
+                past it are summarized too, keeping the newest half of it
+                word for word.
 
         Returns:
             CompressionResult with summary and recent queries
@@ -89,12 +98,21 @@ class CompressionOrchestrator:
             # Use model-owner scope so per-user BYOM context windows
             # (e.g. 8k) compute the threshold against the right limit.
             registry_user_id = model_user_id or user_id
-            if not self.threshold_checker.should_compress(
+            window_full = self.threshold_checker.should_compress(
                 conversation,
                 model_id,
                 current_query_tokens,
                 user_id=registry_user_id,
-            ):
+                context_window_limit=context_window_limit,
+            )
+            history_full = (
+                bool(history_token_limit)
+                and not window_full
+                and self.threshold_checker.history_over_limit(
+                    conversation, model_id, history_token_limit, user_id=registry_user_id
+                )
+            )
+            if not (window_full or history_full):
                 compression_meta = conversation.get("compression_metadata") or {}
                 points = compression_meta.get("compression_points") or []
                 usable_point = latest_usable_compression_point(points)
@@ -119,7 +137,9 @@ class CompressionOrchestrator:
                 queries = conversation.get("queries", [])
                 return CompressionResult.success_no_compression(queries)
 
-            # Perform compression
+            # Perform compression. A full window summarizes everything; the
+            # history limit keeps the newest half of it word for word, so the
+            # next turn still sees the latest exchange.
             return self._perform_compression(
                 conversation_id,
                 conversation,
@@ -127,6 +147,7 @@ class CompressionOrchestrator:
                 decoded_token,
                 user_id=user_id,
                 model_user_id=model_user_id,
+                keep_recent_tokens=history_token_limit // 2 if history_full else None,
             )
 
         except Exception as e:
@@ -150,6 +171,10 @@ class CompressionOrchestrator:
         user_id: Optional[str] = None,
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
+        keep_recent_tokens: Optional[int] = None,
+        turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
+        persist_point: bool = True,
     ) -> CompressionResult:
         """
         Perform the actual compression operation.
@@ -161,6 +186,13 @@ class CompressionOrchestrator:
             decoded_token: User token
             user_id: Caller's id (for conversation reload after compression)
             model_user_id: BYOM-resolution scope (model owner)
+            keep_recent_tokens: Leave the newest queries that fit in this many
+                tokens out of the summary; None summarizes up to the latest.
+            turn_index: The in-flight turn a mid-turn point summarizes the
+                tool work of.
+            turn_message_id: That turn's row id.
+            persist_point: Store the point; False keeps it for the caller's
+                turn only.
 
         Returns:
             CompressionResult
@@ -192,6 +224,7 @@ class CompressionOrchestrator:
                 model_id=compression_model,
                 agent_id=conversation.get("agent_id"),
                 model_user_id=registry_user_id,
+                stateless=True,
             )
             # Side-channel LLM tag — distinguishes compression rows
             # from primary stream rows for cost-attribution dashboards.
@@ -243,6 +276,16 @@ class CompressionOrchestrator:
                     summary, recent, last_compression_at=usable_point.get("timestamp")
                 )
 
+            if keep_recent_tokens:
+                # Measured like the history trigger, reasoning included on
+                # the Responses API, or the kept turns trip it again next turn.
+                compress_up_to = self._last_query_to_summarize(
+                    conversation.get("queries", []),
+                    start_index,
+                    keep_recent_tokens,
+                    include_reasoning=uses_responses_api(model_id, registry_user_id),
+                )
+
             if usable_point:
                 covered = usable_point.get("query_index")
                 on_top = (
@@ -258,31 +301,45 @@ class CompressionOrchestrator:
                 f"{queries_count}{on_top}"
             )
 
-            # Perform compression and save to DB
-            metadata = compression_service.compress_and_save(
-                conversation_id,
-                conversation,
-                compress_up_to,
-                start_index=start_index,
-                persist_query_index=persist_query_index,
-            )
+            if persist_point:
+                metadata = compression_service.compress_and_save(
+                    conversation_id,
+                    conversation,
+                    compress_up_to,
+                    start_index=start_index,
+                    persist_query_index=persist_query_index,
+                    turn_index=turn_index,
+                    turn_message_id=turn_message_id,
+                )
+            else:
+                # For this turn only: nothing is stored.
+                metadata = compression_service.compress_conversation(
+                    conversation, compress_up_to, start_index=start_index
+                )
 
             logger.info(
                 f"Compression successful - ratio: {metadata.compression_ratio:.1f}x, "
                 f"saved {metadata.original_token_count - metadata.compressed_token_count} tokens"
             )
 
-            # Reload under caller (conversation is owned by caller).
-            reload_user_id = caller_user_id
-            if reload_user_id is None and isinstance(decoded_token, dict):
-                reload_user_id = decoded_token.get("sub")
-            conversation = self.conversation_service.get_conversation(
-                conversation_id, user_id=reload_user_id
-            )
-
-            # Get compressed context
-            compressed_summary, recent_queries = (
-                compression_service.get_compressed_context(conversation)
+            # The context this turn goes on with is the summary just made over
+            # the conversation passed in, whether or not the point was stored
+            # (an edit may have replaced the turn meanwhile and refused it).
+            compressed_summary, recent_queries = compression_service.get_compressed_context(
+                {
+                    **conversation,
+                    "compression_metadata": {
+                        "is_compressed": True,
+                        "compression_points": [
+                            {
+                                "query_index": compress_up_to,
+                                "compressed_summary": getattr(metadata, "compressed_summary", None),
+                                "compressed_token_count": getattr(metadata, "compressed_token_count", None),
+                                "original_token_count": getattr(metadata, "original_token_count", None),
+                            }
+                        ],
+                    },
+                }
             )
 
             return CompressionResult.success_with_compression(
@@ -293,6 +350,43 @@ class CompressionOrchestrator:
             logger.error(f"Error performing compression: {str(e)}", exc_info=True)
             return CompressionResult.failure(str(e))
 
+    @staticmethod
+    def _last_query_to_summarize(
+        queries: list, start_index: int, keep_tokens: int, include_reasoning: bool = False
+    ) -> int:
+        """Index of the last query to summarize so the newest within ``keep_tokens`` stay word for word.
+
+        Summary rows take no room: they are not replayed. When nothing would be
+        left to summarize, everything is.
+
+        Args:
+            queries: The conversation's queries, summary rows included.
+            start_index: First query after the previous compression point.
+            keep_tokens: Room for the queries kept word for word.
+            include_reasoning: Also count the Responses reasoning each kept
+                query replays, as the history limit does.
+
+        Returns:
+            The index to pass to ``compress_and_save``.
+        """
+        last = len(queries) - 1
+        boundary = last
+        kept = 0
+        for index in range(last, start_index - 1, -1):
+            if is_compression_summary_row(queries[index]):
+                continue
+            kept += TokenCounter.count_query_tokens(
+                [queries[index]], include_reasoning=include_reasoning
+            )
+            if kept > keep_tokens:
+                break
+            boundary = index - 1
+        if not any(
+            not is_compression_summary_row(q) for q in queries[start_index : boundary + 1]
+        ):
+            return last
+        return boundary
+
     def compress_mid_execution(
         self,
         conversation_id: str,
@@ -302,6 +396,9 @@ class CompressionOrchestrator:
         current_conversation: Optional[Dict[str, Any]] = None,
         model_user_id: Optional[str] = None,
         persist_query_index: Optional[int] = None,
+        turn_index: Optional[int] = None,
+        turn_message_id: Optional[str] = None,
+        persist_point: bool = True,
     ) -> CompressionResult:
         """
         Perform compression during tool execution.
@@ -316,6 +413,12 @@ class CompressionOrchestrator:
                 shared-agent dispatch this is the agent owner; defaults
                 to ``user_id`` so built-in / caller-owned models are
                 unaffected.
+            persist_query_index: Last settled row the point covers.
+            turn_index: Position of the in-flight turn whose tool work the
+                summary holds.
+            turn_message_id: That turn's row id.
+            persist_point: Store the point; False keeps it for the caller's
+                turn only.
 
         Returns:
             CompressionResult
@@ -344,6 +447,9 @@ class CompressionOrchestrator:
                 user_id=user_id,
                 model_user_id=model_user_id,
                 persist_query_index=persist_query_index,
+                turn_index=turn_index,
+                turn_message_id=turn_message_id,
+                persist_point=persist_point,
             )
 
         except Exception as e:

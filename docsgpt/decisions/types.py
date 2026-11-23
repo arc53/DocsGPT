@@ -8,11 +8,13 @@ from typing import Any, Callable, Literal, Optional
 Lane = Literal["hot", "background"]
 
 #: Per-item reasons that come from the backend rather than from the item; a batch whose items all failed for
-#: one of these is ``unavailable``.
+#: one of these is ``unavailable``. ``backend_error`` is the backend failing on an item it was given: the runtime
+#: raised, the server refused it (HTTP 4xx) or answered something that is not an answer to the questions asked.
+#: ``bad_item`` is left for the item's own fault: a state that does not render, or one a server calls bad.
 BACKEND_REASONS = frozenset(
     {
         "off", "loading", "queue_full", "no_decider", "memory", "download", "offline", "wrong_model", "load_failed",
-        "circuit_open", "transport", "auth",
+        "circuit_open", "transport", "auth", "backend_error",
     }
 )
 
@@ -141,7 +143,7 @@ class BatchResult(list):
     Attributes:
         reasons: ``None`` for an answered item, else ``bad_item``, ``timeout`` or a backend reason (``off``,
             ``loading``, ``queue_full``, ``no_decider``, ``memory``, ``download``, ``offline``, ``wrong_model``,
-            ``load_failed``, and in API mode ``circuit_open``, ``transport`` and ``auth``).
+            ``load_failed``, ``backend_error``, and in API mode ``circuit_open``, ``transport`` and ``auth``).
         status: ``ok`` (all answered), ``partial``, ``timeout`` (nothing answered in time) or ``unavailable``
             (nothing answered, for a backend reason: stop, do not retry item by item).
     """

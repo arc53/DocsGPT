@@ -150,8 +150,9 @@ class TestEnsureVectorSchemaDimensionCheck:
         conn = MagicMock()
         stub = MagicMock()
         del stub.dimension
+        stub.embed_query.return_value = []  # the width probe answers nothing either
         with patch("psycopg.connect", return_value=conn), patch(
-            "docsgpt.vectorstore.base.get_embeddings", return_value=stub
+            "docsgpt.vectorstore.base.build_local_embeddings", return_value=stub
         ), patch(
             "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"
         ) as vector_schema, patch(
@@ -165,7 +166,7 @@ class TestEnsureVectorSchemaDimensionCheck:
     def test_skips_the_check_when_the_model_cannot_be_loaded(self, vector_settings):
         conn = MagicMock()
         with patch("psycopg.connect", return_value=conn), patch(
-            "docsgpt.vectorstore.base.get_embeddings",
+            "docsgpt.vectorstore.base.build_local_embeddings",
             side_effect=RuntimeError("no model"),
         ), patch(
             "docsgpt.vectorstore.pgvector.PGVectorStore.create_schema"

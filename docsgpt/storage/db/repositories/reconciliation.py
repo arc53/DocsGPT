@@ -191,6 +191,13 @@ class ReconciliationRepository:
                        tca.attempted_at, tca.updated_at
                 FROM tool_call_attempts tca
                 WHERE tca.status = 'executed'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_messages cm
+                      WHERE cm.id = tca.message_id
+                        AND cm.status IN ('pending', 'streaming')
+                        AND (cm.message_metadata->>'last_heartbeat_at')::timestamptz
+                            > now() - interval '2 minutes'
+                  )
                   AND tca.updated_at < now() - make_interval(mins => :age)
                   AND NOT EXISTS (
                       SELECT 1
@@ -231,7 +238,8 @@ class ReconciliationRepository:
             text(
                 """
                 SELECT icp.source_id, icp.total_chunks, icp.embedded_chunks,
-                       icp.last_index, icp.last_updated,
+                       icp.last_index, icp.last_updated, icp.attempt_id,
+                       icp.dispatch, icp.resume_attempts,
                        s.user_id, s.name AS source_name
                 FROM ingest_chunk_progress icp
                 LEFT JOIN sources s ON s.id = icp.source_id
@@ -251,11 +259,37 @@ class ReconciliationRepository:
         """Escalate a stalled checkpoint to terminal ``status='stalled'``.
 
         Drops the row out of the sweep so the reconciler alerts once;
-        ``init_progress`` flips it back to ``'active'`` on reingest.
+        ``init_progress`` flips it back to ``'active'`` on reingest. The
+        stored ``dispatch`` goes too: the ingest is not queued again.
         """
         result = self._conn.execute(
             text(
-                "UPDATE ingest_chunk_progress SET status = 'stalled' "
+                "UPDATE ingest_chunk_progress SET status = 'stalled', dispatch = NULL "
+                "WHERE source_id = CAST(:sid AS uuid)"
+            ),
+            {"sid": str(source_id)},
+        )
+        return result.rowcount > 0
+
+    def mark_ingest_resumed(self, source_id: str, *, restart: bool = False) -> bool:
+        """Count a resume of a stalled ingest and restart its stale window.
+
+        Bumping ``last_updated`` keeps the sweep off the row until the queued
+        task has had the full window to start embedding.
+
+        Args:
+            source_id: The ingest's source.
+            restart: Also reset the checkpoint, for a store whose partial
+                index died with the task (FAISS).
+
+        Returns:
+            ``True`` when the row was updated.
+        """
+        reset = ", last_index = -1, embedded_chunks = 0" if restart else ""
+        result = self._conn.execute(
+            text(
+                "UPDATE ingest_chunk_progress "
+                f"SET resume_attempts = resume_attempts + 1, last_updated = now(){reset} "
                 "WHERE source_id = CAST(:sid AS uuid)"
             ),
             {"sid": str(source_id)},

@@ -15,14 +15,9 @@ import { SectionHeader } from '../components/ui/section-header';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import PageToolbar from '../components/PageToolbar';
 import { useDarkTheme } from '../hooks';
-import {
-  selectPrompt,
-  selectPrompts,
-  setModalStateDeleteConv,
-  setPrompt,
-  setPrompts,
-} from '../preferences/preferenceSlice';
-import Prompts from './Prompts';
+import { setModalStateDeleteConv } from '../preferences/preferenceSlice';
+import { selectCurrentWorkspace } from '../workspace/workspaceSlice';
+import TaskModelSection from './TaskModelSection';
 
 export default function General() {
   const {
@@ -44,12 +39,17 @@ export default function General() {
     { label: '繁體中文（臺灣）', value: 'zh-TW' },
     { label: 'Русский', value: 'ru' },
   ];
-  const prompts = useSelector(selectPrompts);
   const [isDarkTheme, toggleTheme] = useDarkTheme();
   const [selectedTheme, setSelectedTheme] = React.useState(
     isDarkTheme ? 'Dark' : 'Light',
   );
   const dispatch = useDispatch();
+  // Delete all clears the chats of the workspace the app is in.
+  const workspace = useSelector(selectCurrentWorkspace);
+  const workspaceName =
+    workspace.kind === 'team'
+      ? workspace.name || t('workspace.chat.thisTeam')
+      : t('workspace.switcher.personal');
   const themeId = React.useId();
   const languageId = React.useId();
   const locale = localStorage.getItem('docsgpt-locale');
@@ -61,7 +61,6 @@ export default function General() {
     languageOptions.find((option) => option.value === locale) ??
       languageOptions[0],
   );
-  const selectedPrompt = useSelector(selectPrompt);
 
   React.useEffect(() => {
     if (!selectedLanguage?.value) return;
@@ -137,20 +136,7 @@ export default function General() {
             </SettingRow>
           </SettingRows>
         </section>
-        <section className="flex flex-col gap-4">
-          <SectionHeader title={t('settings.general.sections.chat')} />
-          <SettingRows>
-            <Prompts
-              prompts={prompts}
-              selectedPrompt={selectedPrompt}
-              description={t('settings.general.promptDescription')}
-              onSelectPrompt={(name, id, type) =>
-                dispatch(setPrompt({ name: name, id: id, type: type }))
-              }
-              setPrompts={(newPrompts) => dispatch(setPrompts(newPrompts))}
-            />
-          </SettingRows>
-        </section>
+        <TaskModelSection />
         <Card
           tone="destructive"
           padding="lg"
@@ -159,7 +145,10 @@ export default function General() {
           <SectionHeader
             tone="destructive"
             title={t('settings.general.sections.dangerZone')}
-            description={t('settings.general.deleteAllDescription')}
+            description={t('settings.general.deleteAllInWorkspace', {
+              name: workspaceName,
+              interpolation: { escapeValue: false },
+            })}
             className="min-w-0 flex-1"
           />
           <Button

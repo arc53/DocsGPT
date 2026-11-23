@@ -26,6 +26,7 @@ import {
 import AgentPageToolbar, { LastUsedMeta } from '../components/AgentPageToolbar';
 import SectionShell from '../../navigation/SectionShell';
 import { ACTIVITY_SCHEDULES_PATH } from '../../activity/paths';
+import { isPausedFor } from '../../payer/types';
 import type {
   Schedule,
   ScheduleCreatePayload,
@@ -36,12 +37,14 @@ import RunDetailDrawer from './RunDetailDrawer';
 import ScheduleFormModal from './ScheduleFormModal';
 import ScheduleRow from './ScheduleRow';
 import useScheduleAgentContext from './useScheduleAgentContext';
+import useScheduleTakeOver from './useScheduleTakeOver';
 import {
   createSchedule,
   deleteSchedule,
   loadSchedulesForAgent,
   runScheduleNow,
   selectSchedulesForAgent,
+  selectSchedulesLoadError,
   setSchedulePaused,
   updateSchedule,
 } from './schedulesSlice';
@@ -76,6 +79,10 @@ export default function SchedulesView() {
   const schedules = useSelector((state: RootState) =>
     selectSchedulesForAgent(state, agentId ?? ''),
   );
+  const takeOver = useScheduleTakeOver();
+  const loadError = useSelector((state: RootState) =>
+    selectSchedulesLoadError(state, agentId ?? ''),
+  );
   // undefined while loading, null when the stats request failed.
   const [stats, setStats] = useState<ScheduleStats | null | undefined>(
     undefined,
@@ -103,6 +110,10 @@ export default function SchedulesView() {
     if (!agentId) return;
     dispatch(loadSchedulesForAgent({ agentId, token }));
   }, [dispatch, agentId, token]);
+
+  const retryLoad = () => {
+    if (agentId) dispatch(loadSchedulesForAgent({ agentId, token }));
+  };
 
   const recurring = useMemo(
     () => schedules.filter((s) => s.trigger_type === 'recurring'),
@@ -160,10 +171,18 @@ export default function SchedulesView() {
     // A refused save rejects to the modal, which keeps it open and shows why.
   };
 
-  const activeCount = schedules.filter((s) => s.status === 'active').length;
-  const pausedCount = schedules.filter((s) => s.status === 'paused').length;
-  const nextRunAt = schedules
-    .filter((s) => s.status === 'active' && s.next_run_at)
+  // A schedule paused for its payer reads Paused on its row: its runs are
+  // skipped, so it neither counts as active nor gives the next run.
+  const running = schedules.filter(
+    (s) => s.status === 'active' && !isPausedFor(s.paused_for),
+  );
+  const activeCount = running.length;
+  const pausedCount = schedules.filter(
+    (s) =>
+      s.status === 'paused' || (s.status === 'active' && !running.includes(s)),
+  ).length;
+  const nextRunAt = running
+    .filter((s) => s.next_run_at)
     .map((s) => s.next_run_at as string)
     .sort()[0];
   // A next run in the past means the scheduler hasn't picked it up yet.
@@ -231,6 +250,7 @@ export default function SchedulesView() {
               }
               onDelete={requestDelete}
               onSelectRun={(run) => setActiveRun(run)}
+              {...takeOver.rowProps}
             />
           </li>
         ))}
@@ -308,24 +328,36 @@ export default function SchedulesView() {
                 }
               />
             </div>
-            <Tabs defaultValue="recurring">
-              <TabsList>
-                <TabsTrigger value="recurring">
-                  {t('agents.schedules.recurring')}
-                  <Badge variant="neutral">{recurring.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="once">
-                  {t('agents.schedules.oneTime')}
-                  <Badge variant="neutral">{oneTime.length}</Badge>
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="recurring" className="mt-4">
-                {renderList(recurring, 'agents.schedules.noRecurring')}
-              </TabsContent>
-              <TabsContent value="once" className="mt-4">
-                {renderList(oneTime, 'agents.schedules.noOneTime')}
-              </TabsContent>
-            </Tabs>
+            {loadError && (
+              <EmptyState
+                tone="destructive"
+                size="sm"
+                illustration="none"
+                title={t('agents.schedules.loadFailed')}
+                onRetry={retryLoad}
+              />
+            )}
+            {(!loadError || schedules.length > 0) && (
+              <Tabs defaultValue="recurring">
+                <TabsList>
+                  <TabsTrigger value="recurring">
+                    {t('agents.schedules.recurring')}
+                    <Badge variant="neutral">{recurring.length}</Badge>
+                  </TabsTrigger>
+                  <TabsTrigger value="once">
+                    {t('agents.schedules.oneTime')}
+                    <Badge variant="neutral">{oneTime.length}</Badge>
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="recurring" className="mt-4">
+                  {renderList(recurring, 'agents.schedules.noRecurring')}
+                </TabsContent>
+                <TabsContent value="once" className="mt-4">
+                  {renderList(oneTime, 'agents.schedules.noOneTime')}
+                </TabsContent>
+              </Tabs>
+            )}
+            {takeOver.takeOverModal}
             <RunDetailDrawer
               run={activeRun}
               onClose={() => setActiveRun(null)}

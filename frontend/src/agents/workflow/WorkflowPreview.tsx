@@ -1,16 +1,9 @@
 import {
-  Bot,
   ChevronDown,
   Circle,
   CircleCheck,
   CircleX,
-  CodeXml,
-  Database,
-  Flag,
-  GitBranch,
   type LucideIcon,
-  Play,
-  StickyNote,
   Workflow,
 } from 'lucide-react';
 import {
@@ -43,16 +36,25 @@ import {
 } from '@/components/ui/message-scroller';
 import { cn } from '@/lib/utils';
 
+import userService from '../../api/services/userService';
 import MessageInput from '../../components/MessageInput';
+import { getSendReadiness } from '../../components/message-input/armedSend';
 import { ChatCompanionContext } from '../../conversation/chatCompanion';
 import ConversationBubble from '../../conversation/ConversationBubble';
 import { Query } from '../../conversation/conversationModels';
+import AgentStarters from '../../hero/AgentStarters';
+import { selectToken } from '../../preferences/preferenceSlice';
 import { AppDispatch } from '../../store';
-import { selectSendableAttachments } from '../../upload/uploadSlice';
+import {
+  selectAttachments,
+  selectSendableAttachments,
+} from '../../upload/uploadSlice';
 import { usePreviewArtifacts } from '../components/AgentPreviewSheet';
-import { WorkflowEdge, WorkflowNode } from '../types/workflow';
+import { RetryConfig, WorkflowEdge, WorkflowNode } from '../types/workflow';
+import { NODE_COLORS, NODE_ICONS } from './nodeVisuals';
 import {
   addQuery,
+  clearQueryRun,
   fetchWorkflowPreviewAnswer,
   handleWorkflowPreviewAbort,
   previewSendBlockReason,
@@ -69,6 +71,7 @@ import {
 interface WorkflowData {
   name: string;
   description?: string;
+  retry_defaults?: RetryConfig | null;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 }
@@ -78,29 +81,9 @@ interface WorkflowPreviewProps {
   // Saved workflow id (when the draft has been persisted); enables run-artifact
   // listing by persisting a ``workflow_runs`` row for the preview run.
   workflowId?: string | null;
+  /** The agent's starters as the builder has them, offered on an empty chat. */
+  starters?: string[] | null;
 }
-
-// Components, not elements: the step list draws them at 12px, the minimap
-// rows at 14px.
-const NODE_ICONS: Record<string, LucideIcon> = {
-  start: Play,
-  agent: Bot,
-  end: Flag,
-  note: StickyNote,
-  state: Database,
-  condition: GitBranch,
-  code: CodeXml,
-};
-
-const NODE_COLORS: Record<string, string> = {
-  start: 'text-success',
-  agent: 'text-primary',
-  end: 'text-destructive',
-  note: 'text-warning',
-  state: 'text-info',
-  condition: 'text-warning',
-  code: 'text-info',
-};
 
 /**
  * A step row under an answer, like Reasoning in chat (AnswerFlow): a ghost
@@ -156,23 +139,71 @@ function StepDisclosure({
   );
 }
 
+/** A summarized step's full values, fetched from the run's saved steps. */
+type FullStepValues = { output: unknown; stateDelta: Record<string, unknown> };
+type FullStepLoad = 'loading' | 'pending' | 'failed';
+
 export function ExecutionDetails({
   steps,
   nodes,
   isOpen,
   onToggle,
   stepRefs,
+  workflowRunId,
+  runSaved = true,
 }: {
   steps: WorkflowExecutionStep[];
   nodes: WorkflowNode[];
   isOpen: boolean;
   onToggle: () => void;
   stepRefs?: React.RefObject<Map<string, HTMLDivElement>>;
+  /** The saved run, when there is one; a summarized step loads its full values from it. */
+  workflowRunId?: string;
+  /** False for an unsaved draft: its steps are not stored, so nothing can be loaded. */
+  runSaved?: boolean;
 }) {
   const { t } = useTranslation();
+  const token = useSelector(selectToken);
+  const [fullValues, setFullValues] = useState<Record<number, FullStepValues>>(
+    {},
+  );
+  const [fullLoad, setFullLoad] = useState<Record<number, FullStepLoad>>({});
   const completedSteps = steps.filter(
     (s) => s.status === 'completed' || s.status === 'failed',
   );
+
+  // The stream left a large step's values out; the run's saved steps keep them.
+  const loadFullStep = async (stepIndex: number) => {
+    if (!workflowRunId) return;
+    setFullLoad((prev) => ({ ...prev, [stepIndex]: 'loading' }));
+    try {
+      const response = await userService.getWorkflowRunStep(
+        workflowRunId,
+        stepIndex,
+        token,
+      );
+      if (response.status === 409) {
+        setFullLoad((prev) => ({ ...prev, [stepIndex]: 'pending' }));
+        return;
+      }
+      if (!response.ok) throw new Error(String(response.status));
+      const body = await response.json();
+      setFullValues((prev) => ({
+        ...prev,
+        [stepIndex]: {
+          output: body.step?.output,
+          stateDelta: body.step?.state_delta ?? {},
+        },
+      }));
+      setFullLoad((prev) => {
+        const next = { ...prev };
+        delete next[stepIndex];
+        return next;
+      });
+    } catch {
+      setFullLoad((prev) => ({ ...prev, [stepIndex]: 'failed' }));
+    }
+  };
 
   if (completedSteps.length === 0) return null;
 
@@ -199,21 +230,47 @@ export function ExecutionDetails({
           const displayName =
             node?.title || node?.data?.title || step.nodeTitle;
           const StepIcon = NODE_ICONS[step.nodeType] || Circle;
-          const stateVars = step.stateDelta
-            ? Object.entries(step.stateDelta).filter(
+          const full =
+            step.stepIndex !== undefined
+              ? fullValues[step.stepIndex]
+              : undefined;
+          const load =
+            step.stepIndex !== undefined ? fullLoad[step.stepIndex] : undefined;
+          // A summarized step streamed a preview and key names, an omitted one
+          // nothing; either can load its full values from the saved run.
+          const partial = !full && (step.summarized || step.outputOmitted);
+          const canLoadFull =
+            partial &&
+            runSaved &&
+            Boolean(workflowRunId) &&
+            step.stepIndex !== undefined;
+          const stepOutput = full
+            ? full.output
+            : step.outputTruncated
+              ? `${step.outputPreview ?? ''}…`
+              : step.output;
+          const stepDelta = full ? full.stateDelta : step.stateDelta;
+          const stateVars: [string, unknown][] = stepDelta
+            ? Object.entries(stepDelta).filter(
                 ([key]) => !['query', 'chat_history'].includes(key),
               )
             : [];
+          const keyOnlyVars =
+            !full && !stepDelta
+              ? (step.stateKeysChanged ?? []).filter(
+                  (key) => !['query', 'chat_history'].includes(key),
+                )
+              : [];
 
           const truncateText = (text: string, maxLength: number) => {
             if (text.length <= maxLength) return text;
             return text.slice(0, maxLength) + '...';
           };
           const hasOutput =
-            step.output !== undefined &&
-            step.output !== null &&
-            formatValue(step.output) !== '';
-          const formattedOutput = hasOutput ? formatValue(step.output) : '';
+            stepOutput !== undefined &&
+            stepOutput !== null &&
+            formatValue(stepOutput) !== '';
+          const formattedOutput = hasOutput ? formatValue(stepOutput) : '';
 
           // A step is a place you read inside: a subtle panel on the
           // drawer's background, with its output in a filled well.
@@ -252,17 +309,47 @@ export function ExecutionDetails({
                   )}
                 </div>
               </div>
+              {step.attempts && step.attempts > 1 && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.attempts', {
+                    count: step.attempts,
+                  })}
+                </p>
+              )}
+              {step.items && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.loopItems', {
+                    done: step.items.done,
+                    total: step.items.total,
+                  })}
+                  {step.items.failed > 0 &&
+                    ` · ${t('agents.workflow.preview.loopItemsFailed', {
+                      count: step.items.failed,
+                    })}`}
+                </p>
+              )}
               {hasOutput && (
-                <Card variant="filled" padding="sm">
+                <Card
+                  variant="filled"
+                  padding="sm"
+                  className={cn(full && 'max-h-80 overflow-y-auto')}
+                >
                   <p className="wrap-break-word whitespace-pre-wrap">
                     <span className="text-muted-foreground font-medium">
                       {t('agents.workflow.preview.outputLabel')}{' '}
                     </span>
                     <span className="text-foreground">
-                      {truncateText(formattedOutput, 300)}
+                      {full
+                        ? formattedOutput
+                        : truncateText(formattedOutput, 300)}
                     </span>
                   </p>
                 </Card>
+              )}
+              {step.outputOmitted && !full && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.outputNotStreamed')}
+                </p>
               )}
               {step.error && (
                 <Alert variant="destructive" role="status">
@@ -289,6 +376,42 @@ export function ExecutionDetails({
                       </span>
                     </Badge>
                   ))}
+                </div>
+              )}
+              {keyOnlyVars.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {keyOnlyVars.map((key) => (
+                    <Badge key={key} variant="neutral" className="font-mono">
+                      <span className="max-w-[200px] truncate">{key}</span>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              {partial && !runSaved && (
+                <p className="text-muted-foreground text-xs">
+                  {t('agents.workflow.preview.fullOutputUnsaved')}
+                </p>
+              )}
+              {canLoadFull && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={load === 'loading'}
+                    onClick={() => loadFullStep(step.stepIndex as number)}
+                  >
+                    {t('agents.workflow.preview.showFullOutput')}
+                  </Button>
+                  {load === 'pending' && (
+                    <span className="text-muted-foreground text-xs">
+                      {t('agents.workflow.preview.fullOutputPending')}
+                    </span>
+                  )}
+                  {load === 'failed' && (
+                    <span className="text-destructive text-xs">
+                      {t('agents.workflow.preview.fullOutputFailed')}
+                    </span>
+                  )}
                 </div>
               )}
             </Card>
@@ -318,6 +441,22 @@ export function WorkflowMiniMap({
   };
 
   const getNodeSubtitle = (node: WorkflowNode) => {
+    const step = executionSteps.find((s) => s.nodeId === node.id);
+    if (step?.status === 'running' && step.attempt) {
+      return step.maxAttempts
+        ? t('agents.workflow.preview.retryingOf', {
+            attempt: step.attempt,
+            total: step.maxAttempts,
+          })
+        : t('agents.workflow.preview.retrying', { attempt: step.attempt });
+    }
+    const items = step?.items;
+    if (node.type === 'loop' && items) {
+      return t('agents.workflow.preview.loopItems', {
+        done: items.done,
+        total: items.total,
+      });
+    }
     if (node.type === 'agent' && node.data?.model_id) {
       return node.data.model_id;
     }
@@ -441,6 +580,7 @@ export function WorkflowMiniMap({
 export default function WorkflowPreview({
   workflowData,
   workflowId,
+  starters,
 }: WorkflowPreviewProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
@@ -451,6 +591,10 @@ export default function WorkflowPreview({
   const activeNodeId = useSelector(selectActiveNodeId);
   const sendableAttachments = useSelector(selectSendableAttachments);
   const hasCompletedAttachment = sendableAttachments.length > 0;
+  const attachments = useSelector(selectAttachments);
+  // A starter that must wait for pending attachments is parked here;
+  // MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
   const [sendBlockedMessage, setSendBlockedMessage] = useState<string | null>(
@@ -535,9 +679,18 @@ export default function WorkflowPreview({
       // attachment-only run is allowed to proceed with an empty question.
       if (trimmedQuestion === '' && !hasCompletedAttachment) return;
 
+      if (isRetry) {
+        dispatch(clearQueryRun({ index: index ?? queries.length - 1 }));
+      }
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // A starter bypasses MessageInput's submit gate: with files still
+        // uploading/parsing, sending now would leave them behind. Route the
+        // question into the composer, where the armed-send banner takes over
+        // (and the draft block above still applies when it flushes).
+        setQueuedQuestion(trimmedQuestion);
       } else {
         if (!isRetry) {
           const newQuery: Query = { prompt: trimmedQuestion };
@@ -546,7 +699,14 @@ export default function WorkflowPreview({
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer, hasCompletedAttachment, workflowId],
+    [
+      dispatch,
+      handleFetchAnswer,
+      hasCompletedAttachment,
+      workflowId,
+      queries,
+      attachments,
+    ],
   );
 
   // Clear the block message once it no longer applies (the workflow was saved,
@@ -630,13 +790,21 @@ export default function WorkflowPreview({
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-h-0 flex-1">
             {queries.length === 0 ? (
-              <div className="flex h-full items-center justify-center px-4">
-                <EmptyState
-                  size="sm"
-                  illustration="none"
-                  title={t('agents.workflow.preview.emptyTitle')}
+              // The starters sit down by the composer, as in the agent preview.
+              <section className="flex h-full flex-col px-4">
+                <div className="flex grow items-center justify-center">
+                  <EmptyState
+                    size="sm"
+                    illustration="none"
+                    title={t('agents.workflow.preview.emptyTitle')}
+                  />
+                </div>
+                <AgentStarters
+                  className="mb-3"
+                  starters={starters}
+                  onAsk={(question) => handleQuestionSubmission(question)}
                 />
-              </div>
+              </section>
             ) : (
               <ChatCompanionContext.Provider value={artifactCompanion}>
                 <MessageScrollerProvider autoScroll>
@@ -688,6 +856,10 @@ export default function WorkflowPreview({
                                   {/* Execution Details */}
                                   {querySteps.length > 0 && (
                                     <ExecutionDetails
+                                      workflowRunId={query.workflowRunId}
+                                      runSaved={
+                                        query.workflowRunSaved !== false
+                                      }
                                       steps={querySteps}
                                       nodes={workflowData.nodes}
                                       isOpen={isOpen}
@@ -759,6 +931,8 @@ export default function WorkflowPreview({
             )}
             <MessageInput
               onSubmit={(text) => handleQuestionSubmission(text)}
+              queuedQuestion={queuedQuestion}
+              onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
               loading={status === 'loading'}
               showSourceButton={false}
               showToolButton={false}

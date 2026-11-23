@@ -62,15 +62,19 @@ def _normalise_last_event_id(raw: Optional[str]) -> Optional[int]:
 
 
 def _user_owns_message(message_id: str, user_id: str) -> bool:
-    """Return True iff ``message_id`` belongs to ``user_id``."""
+    """Return True iff ``message_id`` belongs to ``user_id``, in a chat whose team (if any) they are still in."""
+    from docsgpt.storage.db.repositories.conversations import team_visible_sql
+
     try:
         with db_readonly() as conn:
             row = conn.execute(
                 text(
-                    """
-                    SELECT 1 FROM conversation_messages
-                    WHERE id = CAST(:id AS uuid)
-                      AND user_id = :u
+                    f"""
+                    SELECT 1 FROM conversation_messages m
+                    JOIN conversations c ON c.id = m.conversation_id
+                    WHERE m.id = CAST(:id AS uuid)
+                      AND m.user_id = :u
+                      AND {team_visible_sql('c', 'u')}
                     LIMIT 1
                     """
                 ),

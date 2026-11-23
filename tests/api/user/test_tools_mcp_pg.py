@@ -36,6 +36,35 @@ def _patch_db(conn):
         yield
 
 
+class TestNoAuthConnection:
+    @pytest.mark.parametrize("status", ["disconnected", "reconnect_needed"])
+    def test_no_auth_save_reconnects_the_existing_account(self, pg_conn, status):
+        from docsgpt.api.user.tools.mcp import _mcp_connection
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        repo = ConnectorSessionsRepository(pg_conn)
+        row = repo.create(
+            "u-excalidraw", "custom_mcp", connector_key="custom_mcp", auth_kind="none",
+            display_name="Excalidraw", account_label="mcp.excalidraw.com",
+            server_url="https://mcp.excalidraw.com",
+        )
+        cid = str(row["id"])
+        repo.update(cid, {"status": status, "last_error": "Disconnected"})
+        revision = repo.get(cid)
+        saved = _mcp_connection(
+            pg_conn,
+            "u-excalidraw",
+            {"server_url": "https://mcp.excalidraw.com/mcp"},
+            "none",
+            {},
+            "Excalidraw",
+            revision,
+        )
+        assert saved == cid
+        assert repo.get(cid)["status"] == "connected"
+        assert repo.get(cid)["last_error"] is None
+
+
 class TestSanitizeMcpTransport:
     def test_defaults_to_auto(self):
         from docsgpt.api.user.tools.mcp import _sanitize_mcp_transport
@@ -185,7 +214,7 @@ class TestTestMCPServerConfig:
         assert "private" in response.json["error"]
         assert response.json["message"] == response.json["error"]
 
-    def test_connection_success(self, app):
+    def test_connection_success(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -194,7 +223,7 @@ class TestTestMCPServerConfig:
             "tools_count": 3, "tools": ["a", "b", "c"],
         }
 
-        with patch(
+        with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=fake_tool,
         ), app.test_request_context(
@@ -214,7 +243,7 @@ class TestTestMCPServerConfig:
         assert response.json["success"] is True
         assert response.json["tools_count"] == 3
 
-    def test_connection_failure_returns_200_with_failure_message(self, app):
+    def test_connection_failure_returns_200_with_failure_message(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -222,7 +251,7 @@ class TestTestMCPServerConfig:
             "success": False, "message": "Cannot reach server",
         }
 
-        with patch(
+        with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=fake_tool,
         ), app.test_request_context(
@@ -240,7 +269,7 @@ class TestTestMCPServerConfig:
         assert response.status_code == 200
         assert response.json["success"] is False
 
-    def test_oauth_required_returns_200(self, app):
+    def test_oauth_required_returns_200(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -252,7 +281,7 @@ class TestTestMCPServerConfig:
             "message": "OAuth required",
         }
 
-        with patch(
+        with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=fake_tool,
         ), app.test_request_context(
@@ -358,13 +387,15 @@ class TestMCPServerSave:
         assert response.status_code == 400
         assert response.json["error"].startswith("Invalid server URL: ")
 
-    def test_oauth_missing_task_id_returns_400(self, app):
+    def test_oauth_missing_task_id_returns_400(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import MCPServerSave
 
         # No OAuth task and no stored sign-in that works.
         unauthorized = MagicMock()
         unauthorized.discover_tools.side_effect = RuntimeError("401")
-        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=unauthorized), app.test_request_context(
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=unauthorized
+        ), app.test_request_context(
             "/api/mcp_server/save", method="POST",
             json={
                 "displayName": "Srv",
@@ -481,6 +512,165 @@ class TestMCPServerSave:
         assert response.status_code == 200
         team = repo.get_any(str(existing["id"]), user)["actions"][0]["parameters"]["properties"]["team"]
         assert team["filled_by_llm"] is False and team["value"] == "ENG"
+
+    @pytest.mark.fresh_db
+    def test_failed_tool_save_does_not_reconnect_no_auth_connection(self, app, pg_engine):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        user = "u-mcp-atomic-save"
+        with pg_engine.begin() as conn:
+            repo = ConnectorSessionsRepository(conn)
+            connection = repo.create(
+                user,
+                "custom_mcp",
+                connector_key="custom_mcp",
+                auth_kind="none",
+                display_name="Excalidraw",
+                account_label="mcp.excalidraw.com",
+                server_url="https://mcp.excalidraw.com",
+            )
+            connection_id = str(connection["id"])
+            repo.update(connection_id, {"status": "disconnected", "last_error": "Disconnected"})
+
+        fake_tool = MagicMock()
+        fake_tool.get_actions_metadata.return_value = [{"name": "read_me"}]
+        with patch(
+            "docsgpt.storage.db.session.get_engine", return_value=pg_engine,
+        ), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), patch(
+            "docsgpt.api.user.tools.mcp.UserToolsRepository.create", side_effect=RuntimeError("save failed"),
+        ), app.test_request_context(
+            "/api/mcp_server/save",
+            method="POST",
+            json={
+                "displayName": "Excalidraw",
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://mcp.excalidraw.com/mcp",
+                    "auth_type": "none",
+                },
+            },
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+
+        assert response.status_code == 500
+        with pg_engine.connect() as conn:
+            saved = ConnectorSessionsRepository(conn).get(connection_id)
+        assert saved["status"] == "disconnected"
+        assert saved["last_error"] == "Disconnected"
+
+    @pytest.mark.fresh_db
+    def test_a_no_auth_save_reconnects_a_disconnected_connection(self, app, pg_engine):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        user = "u-mcp-reconnect-save"
+        with pg_engine.begin() as conn:
+            repo = ConnectorSessionsRepository(conn)
+            connection = repo.create(
+                user,
+                "custom_mcp",
+                connector_key="custom_mcp",
+                auth_kind="none",
+                display_name="Excalidraw",
+                account_label="mcp.excalidraw.com",
+                server_url="https://mcp.excalidraw.com",
+            )
+            connection_id = str(connection["id"])
+            repo.update(connection_id, {"status": "disconnected", "last_error": "Disconnected"})
+
+        fake_tool = MagicMock()
+        fake_tool.get_actions_metadata.return_value = [{"name": "read_me"}]
+        with patch(
+            "docsgpt.storage.db.session.get_engine", return_value=pg_engine,
+        ), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/save",
+            method="POST",
+            json={
+                "displayName": "Excalidraw",
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://mcp.excalidraw.com/mcp",
+                    "auth_type": "none",
+                },
+            },
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+
+        assert response.status_code == 200
+        with pg_engine.connect() as conn:
+            saved = ConnectorSessionsRepository(conn).get(connection_id)
+        assert saved["status"] == "connected"
+        assert saved["last_error"] is None
+
+    @pytest.mark.fresh_db
+    def test_disconnect_during_discovery_is_not_overwritten(self, app, pg_engine):
+        from docsgpt.api.user.tools.mcp import MCPServerSave
+        from docsgpt.connectors import service
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+        from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
+
+        user = "u-mcp-disconnect-race"
+        with pg_engine.begin() as conn:
+            repo = ConnectorSessionsRepository(conn)
+            connection = repo.create(
+                user,
+                "custom_mcp",
+                connector_key="custom_mcp",
+                auth_kind="none",
+                display_name="Excalidraw",
+                account_label="mcp.excalidraw.com",
+                server_url="https://mcp.excalidraw.com",
+            )
+            connection_id = str(connection["id"])
+            repo.update(connection_id, {"status": "reconnect_needed", "last_error": "Retry"})
+
+        def disconnect_during_discovery() -> None:
+            with pg_engine.begin() as conn:
+                repo = ConnectorSessionsRepository(conn)
+                service.disconnect(conn, repo.get(connection_id))
+
+        fake_tool = MagicMock()
+        fake_tool.discover_tools.side_effect = disconnect_during_discovery
+        fake_tool.get_actions_metadata.return_value = [{"name": "read_me"}]
+        with patch(
+            "docsgpt.storage.db.session.get_engine", return_value=pg_engine,
+        ), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=fake_tool,
+        ), app.test_request_context(
+            "/api/mcp_server/save",
+            method="POST",
+            json={
+                "displayName": "Excalidraw",
+                "config": {
+                    "transport_type": "http",
+                    "server_url": "https://mcp.excalidraw.com/mcp",
+                    "auth_type": "none",
+                },
+            },
+        ):
+            from flask import request
+
+            request.decoded_token = {"sub": user}
+            response = MCPServerSave().post()
+
+        assert response.status_code == 200
+        with pg_engine.connect() as conn:
+            saved = ConnectorSessionsRepository(conn).get(connection_id)
+            tool = UserToolsRepository(conn).get(response.get_json()["id"], user)
+        assert saved["status"] == "disconnected"
+        # The tool still points at the connection it was saved against.
+        assert str(tool["connection_id"]) == connection_id
 
 
 class TestSignInServerWithoutAConnection:
@@ -668,13 +858,13 @@ class TestMCPOAuthCancel:
 
         assert response.status_code == 401
 
-    def test_the_test_route_records_who_started_the_sign_in(self, app):
+    def test_the_test_route_records_who_started_the_sign_in(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         mock_mcp_tool = MagicMock()
         mock_mcp_tool.test_connection.return_value = {"requires_oauth": True, "task_id": "task-1"}
         manager = MagicMock()
-        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=mock_mcp_tool), \
+        with _patch_db(pg_conn), patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=mock_mcp_tool), \
                 patch("docsgpt.api.user.tools.mcp.get_redis_instance", return_value=MagicMock()), \
                 patch("docsgpt.api.user.tools.mcp.MCPOAuthManager", return_value=manager):
             with app.test_request_context(

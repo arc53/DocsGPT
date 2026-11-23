@@ -6,7 +6,7 @@ rather than asserting against mocks.
 """
 
 import os
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -38,8 +38,7 @@ class _FakeEmbeddings:
         return [self._vector(d) for d in documents]
 
 
-@pytest.fixture
-def store(tmp_path):
+def _milvus_store(tmp_path, source_id):
     from docsgpt.vectorstore.milvus import MilvusStore
 
     with patch(
@@ -48,9 +47,15 @@ def store(tmp_path):
     ), patch("docsgpt.vectorstore.milvus.settings") as mock_settings:
         mock_settings.EMBEDDINGS_NAME = "test_model"
         mock_settings.MILVUS_COLLECTION_NAME = "test_collection"
+        # A file under tmp_path: Milvus Lite treats any URI as a local file and writes beside it.
         mock_settings.MILVUS_URI = str(tmp_path / "milvus.db")
         mock_settings.MILVUS_TOKEN = ""
-        yield MilvusStore(source_id="src-A", embeddings_key="k")
+        return MilvusStore(source_id=source_id, embeddings_key="k")
+
+
+@pytest.fixture
+def store(tmp_path):
+    return _milvus_store(tmp_path, "src-A")
 
 
 @pytest.fixture
@@ -64,8 +69,30 @@ def populated(store):
     return store
 
 
+@pytest.fixture
+def other(populated, tmp_path):
+    """Source src-B on ``populated``'s open Milvus Lite handle: one collection, two sources."""
+    store_b = _milvus_store(tmp_path, "src-B")
+    store_b._client = populated._client
+    return store_b
+
+
 @pytest.mark.unit
 class TestMilvusStore:
+    def test_clears_parent_metadata_without_embedding(self, store):
+        ids = store.add_texts(
+            ["first child", "second child"],
+            [{"parent_text": "parent"}, {"parent_text": "parent"}],
+        )
+        embed = Mock(wraps=store._embeddings.embed_documents)
+        store._embeddings.embed_documents = embed
+
+        updated = store.clear_parent_text(ids)
+
+        assert updated == [(chunk_id, chunk_id) for chunk_id in ids]
+        assert all("parent_text" not in chunk["metadata"] for chunk in store.get_chunks())
+        embed.assert_not_called()
+
     def test_source_id_stored(self, store):
         assert store._source_id == "src-A"
 
@@ -113,23 +140,14 @@ class TestMilvusStore:
         assert populated.delete_chunks_by_source_path("db.txt") == 1
         assert len(populated.get_chunks()) == 2
 
-    def test_delete_index_removes_only_this_source(self, populated):
-        from docsgpt.vectorstore.milvus import MilvusStore
+    def test_a_chunk_of_another_source_is_not_deleted(self, populated, other):
+        [b_id] = other.add_texts(["Source B's notes."], [{"source": "b.txt"}])
 
-        with patch(
-            "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
-            return_value=_FakeEmbeddings(),
-        ), patch("docsgpt.vectorstore.milvus.settings") as mock_settings:
-            mock_settings.EMBEDDINGS_NAME = "test_model"
-            mock_settings.MILVUS_COLLECTION_NAME = "test_collection"
-            mock_settings.MILVUS_URI = ":memory:"
-            mock_settings.MILVUS_TOKEN = ""
-            other = MilvusStore.__new__(MilvusStore)
-        # Share the open Milvus Lite handle: one file, two logical sources.
-        other._client = populated._client
-        other._collection = populated._collection
-        other._source_id = "src-B"
-        other._embeddings = _FakeEmbeddings()
+        assert populated.delete_chunk(b_id) is False
+        assert populated.delete_chunks([b_id]) == 0
+        assert [c["doc_id"] for c in other.get_chunks()] == [b_id]
+
+    def test_delete_index_removes_only_this_source(self, populated, other):
         other.add_texts(["Another source entirely."], [{"source": "other.txt"}])
 
         populated.delete_index()

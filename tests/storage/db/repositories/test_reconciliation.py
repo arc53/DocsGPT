@@ -334,6 +334,22 @@ class TestFindAndLockExecutedToolCalls:
         rows = repo.find_and_lock_executed_tool_calls()
         assert all(r["call_id"] != "e-3" for r in rows)
 
+    def test_excludes_a_call_of_a_tool_only_turn_that_still_heartbeats(self, pg_conn):
+        """A turn that has only run tools is still ``pending`` while its route heartbeats."""
+        msg = _seed_message(pg_conn, status="pending", age_minutes=20)
+        pg_conn.execute(
+            text(
+                "UPDATE conversation_messages SET message_metadata = jsonb_build_object("
+                "'last_heartbeat_at', to_jsonb(clock_timestamp())) WHERE id = CAST(:id AS uuid)"
+            ),
+            {"id": msg["id"]},
+        )
+        _seed_tool_call(
+            pg_conn, call_id="e-5", status="executed", age_minutes=16, message_id=msg["id"],
+        )
+        rows = ReconciliationRepository(pg_conn).find_and_lock_executed_tool_calls()
+        assert all(r["call_id"] != "e-5" for r in rows)
+
     def test_excludes_a_call_whose_turn_is_paused_for_approval(self, pg_conn):
         """A turn waiting on an approval confirms its calls only when it resumes and finalizes."""
         msg = _seed_message(pg_conn, age_minutes=20)
@@ -635,3 +651,17 @@ class TestMarkIdempotencyPendingFailed:
             {"k": "done-2"},
         ).fetchone()
         assert row[0] == "completed"
+
+
+class TestExecutedToolLiveness:
+    def test_fresh_parent_is_skipped_then_stale_parent_is_failed(self, pg_conn):
+        msg = _seed_message(pg_conn, status="streaming", age_minutes=20)
+        _seed_tool_call(pg_conn, call_id="alive", status="executed", age_minutes=20, message_id=msg["id"])
+        repo = ReconciliationRepository(pg_conn)
+        ConversationsRepository(pg_conn).heartbeat_message(msg["id"])
+        assert repo.find_and_lock_executed_tool_calls() == []
+        pg_conn.execute(text(
+            "UPDATE conversation_messages SET message_metadata = jsonb_build_object("
+            "'last_heartbeat_at', now() - interval '3 minutes') WHERE id = CAST(:id AS uuid)"
+        ), {"id": msg["id"]})
+        assert [r["call_id"] for r in repo.find_and_lock_executed_tool_calls()] == ["alive"]

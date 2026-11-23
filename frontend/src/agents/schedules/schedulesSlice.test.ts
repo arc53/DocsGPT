@@ -14,13 +14,16 @@ import reducer, {
   applyEvent,
   deleteSchedule,
   loadAllSchedules,
+  loadSchedulesForAgent,
   selectAllSchedules,
   setSchedulePaused,
   loadRunsForSchedule,
   RUNS_PAGE_SIZE,
   selectRunsEnd,
   selectRunsForSchedule,
+  selectScheduleById,
   selectSchedulesForAgent,
+  selectSchedulesLoadError,
   type SchedulesState,
 } from './schedulesSlice';
 
@@ -70,6 +73,129 @@ const seedWithSchedule = (): SchedulesState => {
   };
 };
 
+describe('agent schedule load isolation', () => {
+  const a = { agentId: 'agent-1', token: null };
+  const b = { agentId: 'agent-2', token: null };
+
+  it('keeps a late failure on A from showing an error on B', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(state, loadSchedulesForAgent.pending('b', b));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: b.agentId, schedules: [] },
+        'b',
+        b,
+      ),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('access denied'), 'a', a),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, b.agentId),
+    ).toBeNull();
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'access denied',
+    );
+    expect(selectSchedulesForAgent({ schedules: state }, b.agentId)).toEqual(
+      [],
+    );
+  });
+
+  it('ignores an older failure after the same agent retries successfully', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('old', a));
+    state = reducer(state, loadSchedulesForAgent.pending('new', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [sampleSchedule()] },
+        'new',
+        a,
+      ),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('old failure'), 'old', a),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, a.agentId),
+    ).toBeNull();
+    expect(
+      selectSchedulesForAgent({ schedules: state }, a.agentId),
+    ).toHaveLength(1);
+  });
+
+  it('ignores an older success after the latest request fails', () => {
+    let state = reducer(
+      seedWithSchedule(),
+      loadSchedulesForAgent.pending('old', a),
+    );
+    state = reducer(state, loadSchedulesForAgent.pending('new', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('new failure'), 'new', a),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [] },
+        'old',
+        a,
+      ),
+    );
+
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'new failure',
+    );
+    expect(
+      selectSchedulesForAgent({ schedules: state }, a.agentId),
+    ).toHaveLength(1);
+  });
+
+  it('does not clear another agent error when a different agent starts loading', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('access denied'), 'a', a),
+    );
+    state = reducer(state, loadSchedulesForAgent.pending('b', b));
+
+    expect(selectSchedulesLoadError({ schedules: state }, a.agentId)).toBe(
+      'access denied',
+    );
+    expect(
+      selectSchedulesLoadError({ schedules: state }, b.agentId),
+    ).toBeNull();
+  });
+
+  it('ignores responses from before a reset', () => {
+    let state = reducer(seedState(), loadSchedulesForAgent.pending('a', a));
+    state = reducer(state, resetSchedules());
+    state = reducer(
+      state,
+      loadSchedulesForAgent.rejected(new Error('old account'), 'a', a),
+    );
+    state = reducer(
+      state,
+      loadSchedulesForAgent.fulfilled(
+        { agentId: a.agentId, schedules: [sampleSchedule()] },
+        'a',
+        a,
+      ),
+    );
+
+    expect(
+      selectSchedulesLoadError({ schedules: state }, a.agentId),
+    ).toBeNull();
+    expect(selectSchedulesForAgent({ schedules: state }, a.agentId)).toEqual(
+      [],
+    );
+  });
+});
+
 describe('schedulesSlice SSE event handling', () => {
   it('schedule.run.completed upserts run + bumps last_run_at', () => {
     let state = seedWithSchedule();
@@ -108,6 +234,28 @@ describe('schedulesSlice SSE event handling', () => {
     expect(runs[0].status).toBe('failed');
     expect(runs[0].error_type).toBe('agent_error');
     expect(runs[0].error).toBe('LLM exploded');
+  });
+
+  it('schedule.run.skipped marks the run as skipped with its pause reason', () => {
+    let state = seedWithSchedule();
+    const envelope: SSEEvent = {
+      id: 'evt-skip',
+      ts: '2026-05-19T12:07:00Z',
+      type: 'schedule.run.skipped',
+      payload: {
+        run_id: 'run-1',
+        schedule_id: 'sched-1',
+        status: 'skipped',
+        error_type: 'payer_out_of_allowance',
+        error: 'payer_out_of_allowance',
+      },
+    };
+    state = reducer(state, sseEventReceived(envelope));
+    const runs = selectRunsForSchedule({ schedules: state }, 'sched-1');
+    expect(runs[0].status).toBe('skipped');
+    expect(runs[0].error_type).toBe('payer_out_of_allowance');
+    // A skipped run didn't run, so the schedule's last run stays.
+    expect(state.byAgent['agent-1'][0].last_run_at).toBeUndefined();
   });
 
   it('schedule.autopaused flips the schedule status to paused', () => {
@@ -291,6 +439,45 @@ describe('selectSchedulesForAgent', () => {
   });
 });
 
+describe('selectScheduleById', () => {
+  const withBoth = (own: Schedule, all: Schedule) => {
+    const base = reducer(undefined, { type: '@@init' });
+    return {
+      schedules: {
+        ...base,
+        byAgent: { 'agent-1': [own] },
+        all: [all],
+      },
+    };
+  };
+
+  it('returns the cross-agent record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({ status: 'active' }),
+      sampleSchedule({
+        status: 'completed',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'completed',
+    );
+  });
+
+  it('returns the agent-list record when it is newer', () => {
+    const state = withBoth(
+      sampleSchedule({
+        status: 'paused',
+        updated_at: '2026-05-20T12:00:00Z',
+      }),
+      sampleSchedule({ status: 'active' }),
+    );
+    expect(selectScheduleById(state, 'sched-1', 'agent-1')?.status).toBe(
+      'paused',
+    );
+  });
+});
+
 describe('loadRunsForSchedule paging', () => {
   const wrap = (schedules: SchedulesState) => ({ schedules });
   const fulfilled = (
@@ -438,6 +625,50 @@ describe('schedulesSlice cross-agent list', () => {
       );
       state = reducer(state, answer());
       expect(state.all?.map((s) => s.id)).toEqual(['sched-new', 'sched-1']);
+    });
+
+    const completed = sseEventReceived({
+      id: 'evt-10',
+      type: 'schedule.completed',
+      payload: { schedule_id: 'sched-1' },
+    } as SSEEvent);
+
+    it('keeps a status event that arrived meanwhile', () => {
+      let state = reducer(loading(), completed);
+      state = reducer(
+        state,
+        loadAllSchedules.fulfilled(
+          // Read before the schedule completed, after the agent list loaded.
+          [sampleSchedule({ updated_at: '2026-05-20T12:00:00Z' })],
+          'load',
+          { token: null },
+        ),
+      );
+      expect(state.all?.[0].status).toBe('completed');
+      expect(
+        selectScheduleById({ schedules: state }, 'sched-1', 'agent-1')?.status,
+      ).toBe('completed');
+    });
+
+    it('replays saves and events in the order they came', () => {
+      let state = reducer(
+        loading(),
+        sseEventReceived({
+          id: 'evt-11',
+          type: 'schedule.autopaused',
+          payload: { schedule_id: 'sched-1' },
+        } as SSEEvent),
+      );
+      state = reducer(
+        state,
+        setSchedulePaused.fulfilled(sampleSchedule(), 'r', {
+          id: 'sched-1',
+          action: 'resume',
+          token: null,
+        }),
+      );
+      state = reducer(state, answer());
+      expect(state.all?.[0].status).toBe('active');
     });
 
     it('keeps a schedule deleted meanwhile deleted', () => {

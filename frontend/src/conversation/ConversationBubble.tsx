@@ -42,7 +42,6 @@ import SpeakButton from '../components/TextToSpeechButton';
 import ToolIcon from '../components/ToolIcon';
 import { useOutsideAlerter } from '../hooks';
 import {
-  selectChunks,
   selectSelectedDocs,
   selectToken,
   selectTtsAvailable,
@@ -61,16 +60,24 @@ import {
   orderArtifactCards,
   type OpenArtifactRequest,
 } from './artifactCards';
-import { deriveArtifactChips } from './artifactChips';
+import { deriveArtifactChips, type JobArtifact } from './artifactChips';
 import {
   type AnswerSource,
   sourceHref,
   useChatCompanion,
 } from './chatCompanion';
-import { FEEDBACK, MESSAGE_TYPE, ResearchState } from './conversationModels';
+import {
+  FEEDBACK,
+  MESSAGE_TYPE,
+  ResearchState,
+  WorkflowProgress,
+} from './conversationModels';
 import ResearchProgress from './ResearchProgress';
+import WorkflowRunProgress from './WorkflowRunProgress';
 import SourcesPanel from './SourcesPanel';
 import ToolCallCard from './ToolCallCard';
+import QuestionBlock from './QuestionBlock';
+import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
 import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
@@ -93,6 +100,8 @@ const ConversationBubble = forwardRef<
     /** Set when this answer came from a workflow agent run; renders the
      * run's produced artifacts as click-through chips/previews. */
     workflowRunId?: string;
+    /** A workflow agent's steps; shown above the answer while they run. */
+    workflow?: WorkflowProgress;
     research?: ResearchState;
     retryBtn?: React.ReactElement;
     /**
@@ -100,7 +109,10 @@ const ConversationBubble = forwardRef<
      * ``message`` as curated text for the user rather than a raw exception.
      */
     errorCode?: string;
-    /** An action offered under a failed turn's error (Add to Knowledge). */
+    /**
+     * A fix for a failed turn's error (Add to Knowledge): inline content, put
+     * at the end of the message's paragraph.
+     */
     errorAction?: React.ReactNode;
     questionNumber?: number;
     isStreaming?: boolean;
@@ -116,14 +128,23 @@ const ConversationBubble = forwardRef<
      * The chip RAIL still uses this turn's artifacts only.
      */
     conversationArtifacts?: ReturnType<typeof deriveArtifactChips>;
+    /** Files of the background jobs this answer reports; shown in its rail. */
+    jobArtifacts?: JobArtifact[];
     onOpenArtifact?: (artifact: OpenArtifactRequest) => void;
     onToolAction?: (
       callId: string,
       decision: 'approved' | 'denied',
       comment?: string,
     ) => void;
+    /**
+     * Resumes a turn paused on clarifying questions (`ask_user`) with the
+     * answers or Just answer; without it the questions can't be answered.
+     */
+    onQuestionAction?: (callId: string, action: QuestionAction) => void;
     /** Active agent id; refreshes the Schedules tab from SchedulerToolCallCard. */
     agentId?: string;
+    /** The saved message behind this answer, for an MCP App view to read its result back. */
+    messageId?: string;
   }
 >(function ConversationBubble(
   {
@@ -137,6 +158,7 @@ const ConversationBubble = forwardRef<
     toolCalls,
     segments,
     workflowRunId,
+    workflow,
     research,
     retryBtn,
     errorCode,
@@ -146,15 +168,17 @@ const ConversationBubble = forwardRef<
     handleUpdatedQuestionSubmission,
     filesAttached,
     conversationArtifacts,
+    jobArtifacts,
     onOpenArtifact,
     onToolAction,
+    onQuestionAction,
     agentId,
+    messageId,
   },
   ref,
 ) {
   const { t } = useTranslation();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
-  const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const ttsAvailable = useSelector(selectTtsAvailable);
   const [isEditClicked, setIsEditClicked] = useState(false);
@@ -182,7 +206,7 @@ const ConversationBubble = forwardRef<
   const editableQueryRef = useRef<HTMLDivElement>(null);
   const [isQuestionCollapsed, setIsQuestionCollapsed] = useState(true);
 
-  const completedArtifacts = deriveArtifactChips(toolCalls);
+  const completedArtifacts = deriveArtifactChips(toolCalls, jobArtifacts);
   // Only a view that can open an artifact lists the run's (a shared chat
   // can't, and its reader may not own the run).
   const runArtifacts = useRunArtifacts(
@@ -193,10 +217,10 @@ const ConversationBubble = forwardRef<
   const artifactCards = useMemo(
     () =>
       orderArtifactCards([
-        ...cardsFromToolCalls(toolCalls),
+        ...cardsFromToolCalls(toolCalls, jobArtifacts),
         ...runArtifacts.items,
       ]),
-    [toolCalls, runArtifacts.items],
+    [toolCalls, jobArtifacts, runArtifacts.items],
   );
   // Names this answer's artifact list in the side panel.
   const artifactListKey = useId();
@@ -229,6 +253,7 @@ const ConversationBubble = forwardRef<
     !message &&
     !thought &&
     !research &&
+    !workflow?.steps.length &&
     !toolCalls?.length &&
     !segments?.length &&
     !sources?.length &&
@@ -521,6 +546,13 @@ const ConversationBubble = forwardRef<
               </div>
             )}
         {research && <ResearchProgress research={research} />}
+        {workflow && (
+          <WorkflowRunProgress
+            workflow={workflow}
+            isStreaming={isStreaming}
+            hasAnswerText={Boolean(message)}
+          />
+        )}
         {type === 'ERROR' ? (
           message && (
             // On the answer's ml-6 text column. Without a code the backend's
@@ -539,15 +571,19 @@ const ConversationBubble = forwardRef<
                     : t('conversation.failedTitle')}
                 </AlertTitle>
                 <AlertDescription>
-                  <p
+                  {/* A div, not a <p>: the fix's busy spinner is a block
+                      element. leading-relaxed is what a <p> here gets. */}
+                  <div
                     className={cn(
-                      'wrap-break-word whitespace-pre-wrap',
+                      'leading-relaxed wrap-break-word whitespace-pre-wrap',
                       !errorCode && 'font-mono text-xs',
                     )}
                   >
                     {message}
-                  </p>
-                  {errorAction}
+                    {/* A fix (Add to Knowledge) is a link at the end of
+                        the message, in the Alert's colour. */}
+                    {errorAction && <> {errorAction}</>}
+                  </div>
                 </AlertDescription>
               </Alert>
             </div>
@@ -564,9 +600,17 @@ const ConversationBubble = forwardRef<
             sourceCount={showSources ? (sources?.length ?? 0) : 0}
             onOpenSource={openSources}
             agentId={agentId}
+            messageId={messageId}
             // A research run already narrates itself above; the status line
             // would be a second live indicator away from the point of action.
-            suppressStatusLine={Boolean(research)}
+            suppressStatusLine={
+              Boolean(research) ||
+              // The step progress above says what is happening until the
+              // answer starts.
+              (Boolean(isStreaming) &&
+                !message &&
+                Boolean(workflow?.steps.length))
+            }
             artifacts={conversationArtifacts ?? completedArtifacts}
             // The chip rail below renders from this turn's artifacts alone, so
             // a bare-filename link has to resolve against the same set or the
@@ -592,6 +636,13 @@ const ConversationBubble = forwardRef<
                   )}
                 </div>
               </div>
+            )}
+            renderQuestion={(toolCall: ToolCallsType) => (
+              <QuestionBlock
+                call={toolCall}
+                onAction={onQuestionAction}
+                disabled={isStreaming}
+              />
             )}
             renderWikiWrite={(toolCall: ToolCallsType, isLive: boolean) => (
               <WikiWriteToolCallCard toolCall={toolCall} isLive={isLive} />
@@ -629,7 +680,9 @@ const ConversationBubble = forwardRef<
             className="mr-5 ml-6"
           />
         )}
-        {message && (
+        {/* Not drawn while streaming: an empty row's margins made the end of
+            the stream shrink the turn, which jolts the chat scroll. */}
+        {message && (type === 'ERROR' || !isStreaming) && (
           // ml-4 plus each button's own p-2 puts the first glyph on the answer's
           // ml-6 text column.
           <div className="my-2 ml-4 flex flex-wrap justify-start gap-2">

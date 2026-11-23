@@ -7,9 +7,11 @@ import { formatCount } from '@/utils/dateTimeUtils';
 
 type ToggleSize = 'xs' | 'sm';
 
+type ToggleFill = boolean | 'grow';
+
 const ToggleGroupContext = React.createContext<{
   size: ToggleSize;
-  fill: boolean;
+  fill: ToggleFill;
 }>({ size: 'sm', fill: false });
 
 /** The track's padding per size: sm 32px items in a 38px track, xs 28px in 36px. */
@@ -26,14 +28,17 @@ const trackPadding: Record<ToggleSize, string> = {
  * with `field` controls in forms and page toolbars; `xs` (36px) is for dense
  * panels. The track hugs its items (scrolling sideways, never wrapping, when
  * they outgrow the row) unless `fill` is set, which spans the row with even
- * items: use it when the group is the only control on its row.
+ * items: use it when the group is the only control on its row. `fill="grow"`
+ * spans it too but keeps each label whole, scrolling sideways like the hugging
+ * track once the items outgrow the row: a picker's kind track.
  * Radix makes a `type="single"` group a radiogroup with one Tab stop and
  * arrow keys. A single group sends "" when the on item is clicked again;
  * ignore it in `onValueChange` to keep one value selected.
  *
  * Args:
  *   size: Item and track height, `sm` (default) or `xs`.
- *   fill: Span the row (`w-full`) and share it evenly between the items.
+ *   fill: Span the row (`w-full`) and share it evenly between the items;
+ *     `grow` never squeezes an item below its label.
  */
 function ToggleGroup({
   className,
@@ -42,7 +47,7 @@ function ToggleGroup({
   ...props
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Root> & {
   size?: ToggleSize;
-  fill?: boolean;
+  fill?: ToggleFill;
 }) {
   const context = React.useMemo(() => ({ size, fill }), [size, fill]);
   return (
@@ -52,7 +57,12 @@ function ToggleGroup({
         className={cn(
           'bg-muted flex flex-nowrap items-center gap-1 rounded-full',
           trackPadding[size],
-          fill ? 'w-full' : 'no-scrollbar w-fit max-w-full overflow-x-auto',
+          fill === true
+            ? 'w-full'
+            : cn(
+                'no-scrollbar overflow-x-auto',
+                fill ? 'w-full' : 'w-fit max-w-full',
+              ),
           className,
         )}
         {...props}
@@ -84,7 +94,8 @@ function ToggleGroupItem({
       className={cn(
         buttonVariants({ variant: 'ghost-muted', size, shape: 'pill' }),
         'data-[state=on]:border-muted-foreground data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:dark:bg-input/30 data-[state=on]:dark:hover:bg-input/50 border border-transparent data-[state=on]:shadow-xs',
-        fill && 'min-w-0 flex-1 px-1',
+        fill === true && 'min-w-0 flex-1 px-1',
+        fill === 'grow' && 'flex-1',
         className,
       )}
       {...props}

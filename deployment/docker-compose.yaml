@@ -68,9 +68,8 @@ services:
     ports:
       - "${DOCSGPT_BIND:-127.0.0.1}:7091:7091"
     volumes:
-      # Host data stays under application/ (the old package directory) for this
-      # release so an upgraded checkout keeps its indexes; it moves with the
-      # packaging work, together with an upgrade note.
+      # Host data stays under application/ (the old package directory) so an
+      # upgraded checkout keeps its indexes, inputs and vectors where they are.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors
@@ -95,10 +94,13 @@ services:
     # the read_document await never resolves; without `embeddings` every search
     # fails after EMBEDDINGS_DELEGATE_TIMEOUT, because EMBEDDINGS_DELEGATE_TO_WORKER
     # is on by default. Without `ingest` no upload, sync or remote ingest ever runs.
-    # For heavy/OCR parsing run a separate worker with `-Q parsing`; to keep query
-    # latency off the ingest pool, another with `-Q embeddings`; to keep long
-    # ingests from holding the slots beat tasks need, another with `-Q ingest`.
-    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest
+    # `analytics` carries the conversation-analytics sweep (idle unless
+    # DECISION_ANALYTICS_ENABLED); on a 1-CPU host, see "The analytics queue" in
+    # docs/content/Deploying/Background-Jobs.mdx first. For heavy/OCR parsing run a
+    # separate worker with `-Q parsing`; to keep query latency off the ingest pool,
+    # another with `-Q embeddings`; to keep long ingests from holding the slots beat
+    # tasks need, another with `-Q ingest`.
+    command: celery -A docsgpt.app.celery worker -l INFO -B -Q docsgpt,parsing,embeddings,ingest,analytics
     env_file:
       - ../.env
     environment:
@@ -109,9 +111,8 @@ services:
       - CACHE_REDIS_URL=redis://redis:6379/2
       - POSTGRES_URI=postgresql://docsgpt:docsgpt@postgres:5432/docsgpt
     volumes:
-      # Host data stays under application/ (the old package directory) for this
-      # release so an upgraded checkout keeps its indexes; it moves with the
-      # packaging work, together with an upgrade note.
+      # Host data stays under application/ (the old package directory) so an
+      # upgraded checkout keeps its indexes, inputs and vectors where they are.
       - ../application/indexes:/app/indexes
       - ../application/inputs:/app/inputs
       - ../application/vectors:/app/vectors

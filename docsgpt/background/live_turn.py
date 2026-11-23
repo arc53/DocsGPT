@@ -68,6 +68,7 @@ class LiveTurn:
         self._describer = ArtifactDescriber(self.user_id, self.conversation_id)
         self._journal = BatchedJournalWriter(message_id)
         self._sequence = -1
+        self._partial: Dict[str, Any] = {"answer": "", "thought": "", "sources": [], "tool_calls": []}
         self._held = ""
         self._released = False
         self._stop = threading.Event()
@@ -119,6 +120,12 @@ class LiveTurn:
         """Journal one event the agent yielded, as the chat stream would send it."""
         if self._closed:
             return
+        for field in ("answer", "thought"):
+            if field in event:
+                self._partial[field] += str(event[field])
+        for field in ("sources", "tool_calls"):
+            if field in event:
+                self._partial[field] = event[field]
         if "answer" in event:
             self._answer(str(event["answer"]))
             return
@@ -132,6 +139,10 @@ class LiveTurn:
             self._emit({"type": "source", "source": [_short_source(s) for s in event["sources"] or []]})
         elif "tool_calls" in event:
             self._emit({"type": "tool_calls", "tool_calls": self._describer.tool_calls(event["tool_calls"])})
+
+    def partial_outcome(self) -> Dict[str, Any]:
+        """Return streamed progress if the runner exits before returning an outcome."""
+        return dict(self._partial)
 
     def stopped(self) -> bool:
         """Whether the user pressed Stop on this turn."""
@@ -171,7 +182,11 @@ class LiveTurn:
         if outcome.get("model_id"):
             fields["model_id"] = outcome["model_id"]
         terminal: Dict[str, Any] = {"type": "end"}
-        if stopped and not answer.strip():
+        if outcome.get("error_type") == "TimeLimit":
+            fields["status"] = "failed"
+            fields["metadata"].update({"error": "Stopped: time limit.", "error_code": "time_limit"})
+            terminal = {"type": "error", "error": "Stopped: time limit.", "code": "time_limit"}
+        elif stopped and not answer.strip():
             fields["status"] = "failed"
             fields["response"] = TERMINATED_RESPONSE_PLACEHOLDER
             fields["metadata"].update(
@@ -184,9 +199,12 @@ class LiveTurn:
                 terminal["artifacts"] = artifacts
         try:
             with db_session() as conn:
-                result = ConversationsRepository(conn).update_message_by_id(
+                repo = ConversationsRepository(conn)
+                result = repo.update_message_by_id(
                     self.message_id, strip_null_bytes(fields), only_if_non_terminal=True
                 )
+                if result is MessageUpdateOutcome.UPDATED:
+                    repo.confirm_executed_tool_calls(self.message_id)
         except Exception:
             logger.exception("continuation %s: saving its message failed", self.message_id)
             result = MessageUpdateOutcome.INVALID

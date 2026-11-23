@@ -14,7 +14,7 @@ import tiktoken
 from flask import jsonify, make_response
 from werkzeug.utils import secure_filename
 
-from docsgpt.core.model_utils import get_token_limit
+from docsgpt.core.model_utils import cap_context_window, get_token_limit
 
 from docsgpt.core.settings import settings
 
@@ -202,18 +202,38 @@ def num_tokens_from_object_or_list(thing):
         return 0
 
 
-def count_tokens_docs(docs):
-    docs_content = ""
-    for doc in docs:
-        docs_content += doc.page_content
-    tokens = num_tokens_from_string(docs_content)
-    return tokens
+def count_tokens_docs(docs: List) -> int:
+    """Count the cl100k tokens of a list of documents, one document at a time.
+
+    Args:
+        docs: Documents with a ``page_content`` string.
+
+    Returns:
+        The summed token count.
+    """
+    # Function-local: docsgpt.parser.tokenization imports this module.
+    from docsgpt.parser.tokenization import count_tokens_windowed
+
+    return sum(count_tokens_windowed(doc.page_content) for doc in docs)
 
 
 def calculate_doc_token_budget(
-    model_id: str = "gpt-4o", user_id: str | None = None
+    model_id: str = "gpt-4o",
+    user_id: str | None = None,
+    context_window_limit: int | None = None,
 ) -> int:
-    total_context = get_token_limit(model_id, user_id=user_id)
+    """Tokens retrieved documents may take: the window less the reserved tokens.
+
+    Args:
+        model_id: The model the request runs on.
+        user_id: BYOM-resolution scope.
+        context_window_limit: The agent's context limit, which lowers the
+            window when set.
+
+    Returns:
+        The budget in tokens, at least 1,000.
+    """
+    total_context = cap_context_window(get_token_limit(model_id, user_id=user_id), context_window_limit)
     reserved = sum(settings.RESERVED_TOKENS.values())
     doc_budget = total_context - reserved
     return max(doc_budget, 1000)

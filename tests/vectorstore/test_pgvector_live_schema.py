@@ -182,6 +182,22 @@ class TestBootHookCreatesTheSchema:
             assert _regclass(postgresql, table) is not None
 
 
+class TestNulBytesAreDropped:
+    def test_writes_with_nul_in_text_and_metadata_are_stored(self, live_dsn, stub_embeddings):
+        ensure_vector_schema()
+        store = _store(live_dsn)
+
+        [added] = store.add_texts(["al\x00pha"], [{"title": "T\x00itle", "source": "a.txt"}])
+        chunk = store.add_chunk("be\x00ta", {"title": "\x00"})
+        store.update_chunk(chunk, "ga\x00mma", {"tags": ["x\x00"]})
+
+        chunks = {c["doc_id"]: c for c in store.get_chunks()}
+        assert chunks[added]["text"] == "alpha"
+        assert chunks[added]["metadata"]["title"] == "Title"
+        assert chunks[chunk]["text"] == "gamma"
+        assert chunks[chunk]["metadata"]["tags"] == ["x"]
+
+
 class TestStoreRoundTrip:
     def test_construction_is_free_and_writes_then_reads_survive(
         self, live_dsn, stub_embeddings

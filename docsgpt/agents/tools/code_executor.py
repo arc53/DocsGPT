@@ -31,11 +31,11 @@ from docsgpt.agents.tools.code_executor_hints import (
     error_signature,
     exception_of,
     fix_hints,
+    script_exception,
 )
 from docsgpt.core.settings import settings
 from docsgpt.llm.tool_images import image_ref
 from docsgpt.sandbox.artifacts_capture import (
-    MAX_CAPTURED_FILES,
     QuotaExceeded,
     capture_artifacts,
     persist_artifact,
@@ -189,6 +189,8 @@ class CodeExecutorTool(Tool):
         self._native_queue: List[Dict[str, Any]] = []
         # Files the last run produced that were over the sandbox's file cap (not saved).
         self._too_large: List[Dict[str, Any]] = []
+        # The exception the last run's own code raised (``job_script_error``).
+        self._script_error: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Tool ABC
@@ -421,6 +423,7 @@ class CodeExecutorTool(Tool):
         self._last_artifact_id = None
         self._last_artifacts = []
         self._native_queue = []
+        self._script_error = None
         return self._run_code(**kwargs)
 
     def _run_code(self, **kwargs: Any) -> Dict[str, Any]:
@@ -555,6 +558,7 @@ class CodeExecutorTool(Tool):
         # so partial outputs aren't lost; capture never masks the run status.
         artifacts: List[Dict[str, Any]] = []
         self._too_large = []
+        self._script_error = script_exception(result)
         if run.should_capture and not result.runtime_invalidated:
             try:
                 artifacts = self._capture_artifacts(files, run.session_id, run.pre_signatures, run.outputs)
@@ -606,6 +610,10 @@ class CodeExecutorTool(Tool):
         if not isinstance(payload, dict):
             return payload
         return {key: value for key, value in payload.items() if key not in ("environment", "session")}
+
+    def job_script_error(self) -> Optional[str]:
+        """The exception the last run's own code raised, kept on its background job; None otherwise."""
+        return self._script_error
 
     # ------------------------------------------------------------------
     # Detached runs (background jobs)
@@ -843,10 +851,6 @@ class CodeExecutorTool(Tool):
             )
         except AttachmentBridgeError as exc:
             return {"error": f"failed to load {raw} into the sandbox: {exc}"}
-
-    # Cap the per-run capture work so a workspace full of pre-existing files
-    # can't turn one exec into an unbounded read+persist sweep.
-    _MAX_CAPTURED_FILES = MAX_CAPTURED_FILES
 
     def _snapshot_signatures(self, manager: Any, session_id: str) -> Dict[str, Tuple[int, Optional[str]]]:
         """Map each non-input workspace file to a (size, sha256) signature for change detection."""

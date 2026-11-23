@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
 import conversationService from '../api/services/conversationService';
+import { TEAM_ERROR_KEYS } from '../api/services/teamsService';
 import CopyButton from '../components/CopyButton';
+import { Alert, AlertDescription } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { FormField } from '../components/ui/form-field';
 import { Modal } from '../components/ui/modal';
@@ -18,7 +20,6 @@ import { SettingRow } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { Doc } from '../models/misc';
 import {
-  selectChunks,
   selectPrompt,
   selectSelectedDocs,
   selectSourceDocs,
@@ -41,13 +42,14 @@ export const ShareConversationModal = ({
 
   const [identifier, setIdentifier] = useState<null | string>(null);
   const [status, setStatus] = useState<StatusType>('idle');
+  // The server's reason for a refused link (someone else's source, say).
+  const [error, setError] = useState<string | null>(null);
   const [allowPrompt, setAllowPrompt] = useState<boolean>(false);
   const promptSwitchId = useId();
 
   const sourceDocs = useSelector(selectSourceDocs);
   const preSelectedDoc = useSelector(selectSelectedDocs);
   const selectedPrompt = useSelector(selectPrompt);
-  const selectedChunk = useSelector(selectChunks);
 
   // Only ingested sources (rows with an id) can be shared.
   const extractDocPaths = (docs: Doc[]) =>
@@ -66,20 +68,20 @@ export const ShareConversationModal = ({
     setAllowPrompt(!allowPrompt);
     setStatus('idle');
     setIdentifier(null);
+    setError(null);
   };
 
   const shareCoversationPublicly: (isPromptable: boolean) => void = (
     isPromptable = false,
   ) => {
     setStatus('loading');
+    setError(null);
     const payload: {
       conversation_id: string;
-      chunks?: string;
       prompt_id?: string;
       source?: string;
     } = { conversation_id: conversationId };
     if (isPromptable) {
-      payload.chunks = selectedChunk;
       payload.prompt_id = selectedPrompt.id;
       sourcePath && (payload.source = sourcePath.value);
     }
@@ -92,7 +94,14 @@ export const ShareConversationModal = ({
         if (data.success && data.identifier) {
           setIdentifier(data.identifier);
           setStatus('fetched');
-        } else setStatus('failed');
+        } else {
+          // A locked team's chats stay in; the app says so in its own words.
+          if (data?.error === 'team_locked')
+            setError(t(TEAM_ERROR_KEYS.team_locked));
+          else if (typeof data?.message === 'string' && data.message.trim())
+            setError(data.message);
+          setStatus('failed');
+        }
       })
       .catch((err) => setStatus('failed'));
   };
@@ -131,6 +140,11 @@ export const ShareConversationModal = ({
       }
     >
       <div className="flex flex-col gap-2">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
         <SettingRow
           label={t('modals.shareConv.option')}
           htmlFor={promptSwitchId}

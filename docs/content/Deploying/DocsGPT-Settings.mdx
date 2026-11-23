@@ -1,10 +1,9 @@
 ---
 title: App Configuration
-description: Configure your DocsGPT application by understanding the basic settings.
-lastUpdated: 2026-10-11
+sidebarTitle: ⚙️ App Configuration
+description: "Configure DocsGPT through .env: LLM provider and keys, custom models, upload limits, document parsing, speech-to-text, authentication and production secrets."
+lastUpdated: 2026-11-11
 ---
-
-import { Callout } from 'nextra/components'
 
 # App Configuration
 
@@ -147,6 +146,7 @@ base_url: https://api.mistral.ai/v1
 defaults:
   supports_tools: true
   context_window: 128000
+  send_reasoning_content: false
 models:
   - id: mistral-large-latest
     display_name: Mistral Large
@@ -155,7 +155,8 @@ models:
 ```
 
 After restart, those models appear in `/api/models` and are selectable
-in the UI. A working template lives at
+in the UI. `send_reasoning_content: false` is for Mistral: it refuses a
+request that sends a stored thought back as `reasoning_content`. A working template lives at
 `docsgpt/core/models/examples/mistral.yaml.example`.
 
 **What you can do:**
@@ -197,6 +198,27 @@ directory), the app logs a `WARNING` at boot and continues with just
 the built-in catalog — it does **not** fail to start. If a YAML
 declares an unknown provider name or has a schema error, the app
 **does** fail to start, with the offending file path in the message.
+
+### Capping a model's output
+
+A model, or a provider's `defaults:` block, can set `max_output_tokens` (a
+positive integer) to bound how many tokens one call may generate:
+
+```yaml
+models:
+  - id: my-reasoning-model
+    max_output_tokens: 32768
+```
+
+DocsGPT sends it in each provider's own parameter: `max_completion_tokens`
+on Chat Completions, `max_output_tokens` on the Responses API and Gemini,
+and `max_tokens` on Anthropic. A request that asks for a lower limit keeps
+it; one that asks for more is lowered to the cap. On Anthropic the cap only
+lowers the 4096-token default DocsGPT sends. Reasoning models count their
+reasoning against this limit on most providers. A streamed call that reaches
+the cap before it starts its answer hands off to the fallback model, or fails
+with a "no answer" error when there is none; a streamed call that has started
+its answer keeps what it wrote. Without the field, requests are unchanged.
 
 ## Document Upload Limits
 
@@ -247,11 +269,16 @@ for the engines and flows.
 | `OCR_DEEPSEEK_MODEL` | preset | Model name at that endpoint; overrides the preset's. |
 | `OCR_DEEPSEEK_API_KEY` | unset | Bearer token. Required by `novita` (falls back to `NOVITA_API_KEY`) and `deepinfra`. |
 | `OCR_DEEPSEEK_CONCURRENCY` | preset | Page requests in flight per file: 4 for `vllm`, `novita`, `deepinfra`; 1 for `ollama`, `custom`. |
-| `OCR_DEEPSEEK_MAX_RETRIES` | `3` | Retries per page after a 429, 5xx or refused connection, with backoff honouring `Retry-After`. |
+| `OCR_DEEPSEEK_MAX_RETRIES` | `3` | Retries per page after a 5xx or refused connection, with exponential backoff. |
+| `OCR_MAX_IN_FLIGHT` | `8` | Page requests in flight to one OCR endpoint across every worker (shared through Redis); a 429 halves it for a while. See [Rate limits](/Sources/ocr#rate-limits). |
+| `OCR_RATE_LIMIT_MAX_WAIT` | `300` | Seconds one page request keeps retrying 429s, honouring `Retry-After` and `retry-after-ms`, before its file is set aside. |
+| `OCR_RATE_LIMIT_COOLDOWN` | `60` | Seconds an ingest waits before parsing its rate-limited files again; recognised pages are kept. |
 | `OCR_DEEPSEEK_TIMEOUT` | `300` | Seconds allowed per page request. |
 | `OCR_DEEPSEEK_PROMPT` | `Free OCR.` | Instruction sent with each page. |
 | `OCR_RENDER_DPI` | `200` | Native backend: resolution at which pages without a text layer are rendered before OCR (clamped to 72-600). |
 | `OCR_MIN_CHARS_PER_PAGE` | `20` | Chars-per-page floor for the OCR dropout guard: a multi-page parse whose OCR returns nothing fails loudly instead of indexing an empty document (docling retries once on full-page OCR first); output below the floor but non-empty is indexed with a warning. `0` disables. Alias: `DOCLING_OCR_MIN_CHARS_PER_PAGE`. |
+| `PARSE_CACHE_ENABLED` | `true` | Keep the text parsed (and OCR'd) from each source file, keyed by its SHA-256 and the parser settings, and reuse it when the same user ingests the same bytes again (another source, a retried or full sync, a chunking change). Only complete parses are kept, never across users; cheap text formats are not cached. |
+| `PARSE_CACHE_TTL_DAYS` | `90` | Days a cached parse is kept after its last use; a daily beat task deletes older ones. |
 
 ## Speech-to-Text Settings
 
@@ -273,7 +300,7 @@ The settings below control speech-to-text behaviour for both voice input and aud
 
 ### Example: OpenAI Speech-to-Text
 
-```env
+```dotenv
 STT_PROVIDER=openai
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 OPENAI_STT_MODEL=gpt-4o-mini-transcribe
@@ -287,7 +314,7 @@ If you already use `API_KEY` for OpenAI, DocsGPT can reuse that key for transcri
 
 ### Example: Local `faster_whisper`
 
-```env
+```dotenv
 STT_PROVIDER=faster_whisper
 STT_LANGUAGE=en
 STT_ENABLE_TIMESTAMPS=true
@@ -319,7 +346,7 @@ The database password is separate: `docsgpt up` generates `POSTGRES_PASSWORD`, a
 | `JWT_SECRET_KEY` | Signs login tokens in every `AUTH_TYPE`, and agent-avatar URLs in every mode. Same value on every API and worker process. | With `DEPLOYMENT_TYPE=production` (or `cloud`), startup fails. Otherwise the API generates `.jwt_secret_key` in the data home, which suits one local process only: separate containers each generate their own key, and a recreated container gets a new one, which signs everyone out and, under `session_jwt`, loses sight of their data. |
 | `ENCRYPTION_SECRET_KEY` | Seals stored credentials: connector tokens, MCP credentials, tool secrets and custom-model API keys. | It falls back to a public default, and DocsGPT logs a warning at startup. With any `AUTH_TYPE` set, it refuses to create connections on the Connectors page (OAuth sign-ins and connector keys); tool secrets, MCP server credentials and custom-model keys are still stored, sealed with the public key. |
 
-```env
+```dotenv
 INTERNAL_KEY=<openssl rand -hex 32>
 JWT_SECRET_KEY=<openssl rand -hex 32>
 ENCRYPTION_SECRET_KEY=<openssl rand -hex 32>
@@ -327,7 +354,7 @@ ENCRYPTION_SECRET_KEY=<openssl rand -hex 32>
 DEPLOYMENT_TYPE=production
 ```
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value. `docsgpt up` on Docker adds one only to a fresh install. The setup scripts add one when there is no `.env` yet, and `docsgpt up --native` adds one on its first run; both also set `ENCRYPTION_SECRET_KEY_PREVIOUS` to the public default, since a kept Docker volume or the database it points at may already hold credentials sealed with it. Reseal them with `docsgpt connectors reencrypt`, then remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
 </Callout>
 
@@ -362,7 +389,7 @@ While the previous key is set, DocsGPT reads every stored credential with either
 
 Add the following to your `.env` file:
 
-```env
+```dotenv
 # Signing key: set it whenever more than one process or container runs
 JWT_SECRET_KEY=<long-random-value>
 
@@ -448,7 +475,7 @@ By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 
 
 ### AWS S3
 
-```env
+```dotenv
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
 S3_ACCESS_KEY_ID=your-access-key-id
@@ -460,7 +487,7 @@ S3_REGION=us-east-1
 
 Set `S3_ENDPOINT_URL` and usually `S3_PATH_STYLE=true`:
 
-```env
+```dotenv
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
 S3_ACCESS_KEY_ID=your-access-key-id
@@ -487,7 +514,7 @@ DocsGPT stores user data — conversations, agents, prompts, sources, attachment
 
 Example:
 
-```env
+```dotenv
 POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
 # Append ?sslmode=require for managed providers that enforce SSL.
 ```
@@ -509,7 +536,7 @@ need no manual migration step. See
 for the recommended production flow (`AUTO_CREATE_DB`, `AUTO_MIGRATE`
 and `AUTO_VECTOR_SCHEMA` set to `false`, migrations gated by CI/CD).
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   `MONGO_URI` is **opt-in**. It is only consulted when you select the
   MongoDB Atlas vector-store backend (`VECTOR_STORE=mongodb`) or when
   running the one-shot `scripts/db/backfill.py` migration from a legacy
@@ -527,7 +554,7 @@ These control how sources are retrieved and whether the advanced RAG features ar
 | --- | --- | --- |
 | `PER_SOURCE_RETRIEVAL_ENABLED` | `true` | Master switch for per-source retrieval config. When `false`, all sources fall back to the classic retriever regardless of their stored config. |
 | `GRAPHRAG_ENABLED` | `false` | Enable [GraphRAG](/Sources/GraphRAG). Requires `VECTOR_STORE=pgvector`. |
-| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction. Unset falls back to `LLM_NAME` (on its registry provider, else `LLM_PROVIDER`). |
+| `GRAPHRAG_EXTRACTION_MODEL` | unset | Model used for ingest-time graph extraction when the source sets none. Unset uses the source owner's [task model](/Using/web-app#task-model). |
 | `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION` | `2000` | Hard cap on chunks extracted per source (cost control). `0` extracts nothing. |
 | `GRAPHRAG_EXTRACTION_WORKERS` | `8` | Concurrent extraction calls during ingest (1–32). Model calls run in parallel while graph writes stay serial; `1` is fully serial. |
 
@@ -562,6 +589,7 @@ See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full mode
 | --- | --- | --- |
 | `OIDC_ADMIN_GROUPS` | unset | Comma-separated IdP groups granted the global `admin` role (OIDC only). |
 | `LOCAL_MODE_ADMIN` | `false` | Grants admin in no-auth mode (`AUTH_TYPE=None`) only. **Never enable on a networked deployment.** |
+| `TEAM_CHAT_EXPORT_ENABLED` | `false` | Lets a team's owner and admins export every chat of their team workspace as one file. Personal chats are never included. See [Export the team's chats](/Using/team-workspaces#export-the-teams-chats). |
 
 ## LLM Provider Settings
 
@@ -575,13 +603,14 @@ See [Access Control, Roles & Teams](/Deploying/Access-Control) for the full mode
 | `OPENAI_PROMPT_CACHE_RETENTION` | unset | Value for `prompt_cache_retention` on Responses API calls, for example `24h`, where the provider offers extended prompt-cache retention. |
 | `V1_SESSION_TTL_SECONDS` | `86400` | Redis correlation lifetime, in seconds, for OpenAI-compatible client sessions. Raw external session IDs are hashed and never stored. |
 | `TITLE_MODEL_ID` | unset | Optional model ID used for asynchronous first-party conversation titles. When unset, the answer model is used. Hidden API conversations never invoke title generation. |
+| `TASK_MODEL_ID` | unset | Built-in model ID for DocsGPT's own tasks (drafting forms, GraphRAG extraction, monitor judging) when neither the user nor an admin picked a [task model](/Using/web-app#task-model). A model an admin sets under **Admin → Defaults** wins over it. When unset, or not an enabled built-in model (logged as a warning once per value), the default model is used. A disabled default model is never used: with no model that can run, [Draft with DocsGPT](/Agents/draft-with-docsgpt) is hidden. Chats use the agent's model. |
 
 ## LLM Response Cache
 
 DocsGPT keeps LLM answers in Redis (`CACHE_REDIS_URL`) and replays a cached answer when an identical request comes in: same model, same messages, same generation parameters. This holds at any temperature, so an identical request gets the identical answer while the entry lives.
 
 - **What is cached**: the text of calls made without tools. Ordinary chat passes the [default chat tools](/Tools/basics#default-chat-tools), so it mostly bypasses the cache; tool-less agents, models without tool support, and helper calls such as query rephrasing, compression and guardrail checks are cached.
-- **Never cached**: calls that pass tools, calls chained to provider-side state (`previous_response_id`), and streams that produced no text.
+- **Never cached**: calls that pass tools, calls chained to provider-side state (`previous_response_id`), streams that produced no text, and [Draft with DocsGPT](/Agents/draft-with-docsgpt)'s model calls, even on a model without tool support, so its **Try again** asks the model again.
 - **How long**: `LLM_CACHE_TTL` seconds (default `1800`, 30 minutes), then Redis drops the entry.
 - **Privacy**: cached entries hold answer text in Redis for that long, so protect Redis like the database.
 

@@ -8,7 +8,9 @@ from docsgpt.tracing.retrieval import (
     start_source_search_span,
 )
 from docsgpt.llm.llm_creator import LLMCreator
-from docsgpt.retriever.base import BaseRetriever
+from docsgpt.retriever.base import (
+    BaseRetriever, SearchOutcome, budget_text, expand_to_parent, parent_dedupe_key,
+)
 from docsgpt.retriever.fanout import fetch_per_source, max_parallel_sources
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.utils import num_tokens_from_string
@@ -86,6 +88,7 @@ class ClassicRAG(BaseRetriever):
             model_id=self.model_id,
             agent_id=self.agent_id,
             model_user_id=self.model_user_id,
+            stateless=True,
         )
         # Query-rephrase LLM is a side channel — tag it so its rows
         # land as ``source='rag_condense'`` in cost-attribution, and stamp
@@ -347,9 +350,13 @@ class ClassicRAG(BaseRetriever):
                 f"ClassicRAG._get_data: Skipping retrieval - chunks={self.chunks}, "
                 f"vectorstores_count={len(self.vectorstores) if self.vectorstores else 0}"
             )
+            self.last_outcome = SearchOutcome()
             return []
 
         all_docs = []
+        # Tracks parent windows already added so sibling children produced by the
+        # parent_child chunking strategy don't repeat the same passage N times.
+        seen_parents: set = set()
         # The Dispatcher inflates ``chunks`` to a prescreen source's candidate_k
         # so the fetch is large enough for the screening stage. That inflated
         # number must not become the top-k of the *other* sources in the group,
@@ -376,6 +383,14 @@ class ClassicRAG(BaseRetriever):
             for plan in plans:
                 plan["candidate_k"] = max(plan["src_k"], share)
         results = self._fetch_all(plans) if plans else []
+        # A source whose plan, store, query embedding or search failed (each
+        # already logged) contributes nothing, exactly like one that matched
+        # nothing; recorded so the answer can tell the two apart.
+        planned = {plan["id"] for plan in plans}
+        failed = [vs_id for vs_id in self.vectorstores if vs_id and vs_id not in planned]
+        failed += [plan["id"] for plan, result in zip(plans, results) if result is None]
+        # Every searched source's labels in one lookup, not one per source.
+        self._connector_labels.prefetch([plan["id"] for plan, result in zip(plans, results) if result is not None])
 
         for plan, result in zip(plans, results):
             if result is None:
@@ -410,18 +425,39 @@ class ClassicRAG(BaseRetriever):
                         page_content = doc.get("text", doc.get("page_content", ""))
                         metadata = doc.get("metadata", {})
 
-                    labels = labels_from_metadata(metadata, page_content, vectorstore_id)
+                    # Parent-child expansion: substitute the larger parent window
+                    # for the narrow child chunk that was embedded, so the LLM
+                    # receives richer context.  For every other chunking strategy
+                    # expand_to_parent is a no-op (no "parent_text" key → returns
+                    # page_content unchanged).
+                    effective_text = expand_to_parent(metadata, page_content)
 
-                    doc_text_with_header = f"{labels['filename']}\n{page_content}"
-                    doc_tokens = num_tokens_from_string(doc_text_with_header)
+                    # Deduplication: sibling children of the same parent window
+                    # all expand to identical text.  Keep only the first (highest-
+                    # ranked) one and skip the rest to avoid sending the same
+                    # passage multiple times.
+                    parent_key = parent_dedupe_key(metadata, page_content, vectorstore_id)
+                    if parent_key is not None and parent_key in seen_parents:
+                        continue
+
+                    labels = labels_from_metadata(metadata, page_content, vectorstore_id)
+                    attribution = self._connector_labels.for_source(vectorstore_id, metadata)
+
+                    doc_tokens = num_tokens_from_string(
+                        budget_text(labels["filename"], effective_text, attribution.get("source_name"))
+                    )
 
                     selected = in_selection and cumulative_tokens + doc_tokens < token_budget
                     if selected or (in_pool and pool_tokens + doc_tokens < pool_budget):
+                        if parent_key is not None:
+                            seen_parents.add(parent_key)
                         entry = {
-                            "text": page_content,
+                            "text": effective_text,
                             **labels,
-                            **self._connector_labels.for_source(vectorstore_id),
+                            **attribution,
                         }
+                        if effective_text != page_content:
+                            entry["matched_text"] = page_content
                         if self.include_scores:
                             entry["score"] = score
                             entry["score_kind"] = score_kind
@@ -442,6 +478,7 @@ class ClassicRAG(BaseRetriever):
                     f"Error searching vectorstore {vectorstore_id}: {e}",
                     exc_info=True,
                 )
+                failed.append(vectorstore_id)
                 continue
 
         # ``chunks_per_source`` has a floor of 1 so no attached source is
@@ -471,6 +508,7 @@ class ClassicRAG(BaseRetriever):
             )
             all_docs = all_docs[:ceiling]
 
+        self.last_outcome = SearchOutcome.of(self.vectorstores, failed)
         logger.info(
             f"ClassicRAG._get_data: Retrieval complete - retrieved {len(all_docs)} documents "
             f"(requested chunks={self.chunks}, chunks_per_source={chunks_per_source}, "

@@ -6,6 +6,8 @@ import {
   useParams,
 } from 'react-router-dom';
 
+import AgentAnalytics from './AgentAnalytics';
+import AgentInsights from './AgentInsights';
 import AgentLogs from './AgentLogs';
 import AgentRouteGuard from './AgentRouteGuard';
 import AgentsList from './AgentsList';
@@ -38,38 +40,72 @@ function WorkflowBuilderForAgent() {
   return <WorkflowBuilder key={agentId} />;
 }
 
+/**
+ * The edit form for the agent in the URL, keyed by it like the workflow
+ * builder: another agent's edit page starts a fresh form, never carrying the
+ * last one's drafter conversation, build or a proposal still on its way.
+ */
+function NewAgentForAgent() {
+  const { agentId } = useParams();
+  return <NewAgent key={agentId} mode="edit" />;
+}
+
 export default function Agents() {
   return (
     <Routes>
       {/* Managing agents. */}
       <Route path="manage" element={<AgentsList />} />
-      <Route path="manage/templates" element={<AgentsList />} />
+      {/* The old Templates filter's address. */}
+      <Route
+        path="manage/templates"
+        element={<Navigate to={AGENTS_MANAGE_ROOT} replace />}
+      />
       <Route path="manage/mine" element={<AgentsList />} />
+      <Route path="manage/shared-with-you" element={<AgentsList />} />
+      {/* The old Team section's address (see `workspaceFilter`). */}
       <Route path="manage/team" element={<AgentsList />} />
       <Route path="manage/discovered" element={<AgentsList />} />
       <Route path="manage/new" element={<NewAgent mode="new" />} />
       {/* An agent's pages open only for a role that may use them; the
-          guard sends anyone else back to the list. */}
+          guard sends anyone else back to the list. Each page's guard has its
+          own key, so the agent it read for one page never reaches another
+          (its page would take that copy without reading it again). */}
       <Route
         path="manage/edit/:agentId"
         element={
-          <AgentRouteGuard action="view">
-            <NewAgent mode="edit" />
+          <AgentRouteGuard key="edit" action="view" classicEditor>
+            <NewAgentForAgent />
           </AgentRouteGuard>
         }
       />
       <Route
         path="manage/logs/:agentId"
         element={
-          <AgentRouteGuard action="view_logs">
+          <AgentRouteGuard key="logs" action="view_logs">
             <AgentLogs />
+          </AgentRouteGuard>
+        }
+      />
+      <Route
+        path="manage/analytics/:agentId"
+        element={
+          <AgentRouteGuard key="analytics" action="view_analytics">
+            <AgentAnalytics />
+          </AgentRouteGuard>
+        }
+      />
+      <Route
+        path="manage/insights/:agentId"
+        element={
+          <AgentRouteGuard key="insights" action="view_analytics">
+            <AgentInsights />
           </AgentRouteGuard>
         }
       />
       <Route
         path="manage/schedules/:agentId"
         element={
-          <AgentRouteGuard action="manage_schedules">
+          <AgentRouteGuard key="schedules" action="manage_schedules">
             <SchedulesView />
           </AgentRouteGuard>
         }
@@ -78,7 +114,7 @@ export default function Agents() {
       <Route
         path="manage/workflow/edit/:agentId"
         element={
-          <AgentRouteGuard action="view">
+          <AgentRouteGuard key="workflow" action="view">
             <WorkflowBuilderForAgent />
           </AgentRouteGuard>
         }

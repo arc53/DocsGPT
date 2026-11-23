@@ -56,6 +56,68 @@
       }
     }
   },
+  "ask_user.ask_user": {
+    "type": "object",
+    "required": [
+      "questions"
+    ],
+    "properties": {
+      "message": {
+        "type": "string"
+      },
+      "questions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "text",
+            "options"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "note": {
+              "type": "string"
+            },
+            "multi": {
+              "type": "boolean"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "label"
+                    ],
+                    "properties": {
+                      "label": {
+                        "type": "string"
+                      },
+                      "input": {
+                        "type": "string"
+                      },
+                      "exclusive": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "placeholder": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
   "attachments.attachments_list": {
     "type": "object",
     "required": [],
@@ -636,7 +698,6 @@
   "ntfy.ntfy_send_message": {
     "type": "object",
     "required": [
-      "server_url",
       "message",
       "topic"
     ],
@@ -751,6 +812,17 @@
       },
       "timeout_ms": {
         "type": "integer"
+      }
+    }
+  },
+  "report_cannot_complete.report_cannot_complete": {
+    "type": "object",
+    "required": [
+      "reason"
+    ],
+    "properties": {
+      "reason": {
+        "type": "string"
       }
     }
   },

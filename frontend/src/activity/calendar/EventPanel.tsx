@@ -157,13 +157,12 @@ export default function EventPanel({
           )}
           {event.origin_conversation_id && (
             <DescriptionItem label={t('activity.calendar.fromChat')}>
-              <Link
-                to={`/c/${event.origin_conversation_id}`}
-                className="text-primary hover:underline"
-              >
-                {event.origin_conversation_name ||
-                  t('activity.schedules.openChat')}
-              </Link>
+              <Button variant="link" size="text" asChild>
+                <Link to={`/c/${event.origin_conversation_id}`}>
+                  {event.origin_conversation_name ||
+                    t('activity.schedules.openChat')}
+                </Link>
+              </Button>
             </DescriptionItem>
           )}
         </DescriptionList>

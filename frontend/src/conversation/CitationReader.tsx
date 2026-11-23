@@ -241,7 +241,17 @@ export default function CitationReader({
           ) : null}
           {href ? (
             <DescriptionItem label={t('conversation.sources.reader.link')}>
-              <span className="wrap-anywhere">{href}</span>
+              {/* Inline, so a long address wraps instead of overflowing. */}
+              <Button
+                variant="link"
+                size="text"
+                className="inline wrap-anywhere whitespace-normal"
+                asChild
+              >
+                <a href={href} target="_blank" rel="noopener noreferrer">
+                  {href}
+                </a>
+              </Button>
             </DescriptionItem>
           ) : path ? (
             <DescriptionItem

@@ -1,6 +1,16 @@
-import type { TFunction } from 'i18next';
+import i18next, { type TFunction } from 'i18next';
 
+import { isRecord } from '../utils/wireGuards';
+import { CUSTOM_MODEL_CHAT_PERSONAL_ONLY_KEY } from '../models/customModelErrors';
 import type { Query } from './conversationModels';
+import {
+  AGENT_LIMIT_EXCEEDED,
+  type AgentLimitErrorBody,
+  agentLimitErrorMessage,
+  QUOTA_EXCEEDED,
+  type QuotaErrorBody,
+  quotaErrorMessage,
+} from './quotaError';
 
 /** Values a curated error was worded from (``needed_tokens``…). */
 export type ErrorParams = Record<string, unknown>;
@@ -12,8 +22,7 @@ export interface StreamError {
   params?: ErrorParams;
 }
 
-const isParams = (value: unknown): value is ErrorParams =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+const isParams = (value: unknown): value is ErrorParams => isRecord(value);
 
 /**
  * The text, code and params of a stream ``error`` event. A curated error
@@ -48,6 +57,9 @@ export function setErrorDetail(
   if (params) query.errorParams = params;
   else delete query.errorParams;
 }
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
 
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
@@ -85,8 +97,41 @@ export function curatedErrorText(
       return t('conversation.errors.serverError');
     case 'client_disconnect':
       return t('conversation.errors.clientDisconnect');
+    case 'time_limit':
+      return t('conversation.errors.timeLimit');
     case 'stopped':
       return t('conversation.errors.stopped');
+    case 'no_answer':
+      return t('conversation.errors.noAnswer');
+    // The chat's agent lives in another workspace; the bubble offers the
+    // switch when the caller is in that workspace.
+    case 'workspace_mismatch':
+      return t('workspace.chat.mismatch');
+    case 'workspace_not_found':
+      return t('workspace.chat.notFound');
+    // The person's allowance, before the run or during it (the partial
+    // answer stays above): worded from its values, with the reset.
+    case QUOTA_EXCEEDED:
+      return isNumber(params?.usage) && isNumber(params?.limit)
+        ? quotaErrorMessage(params as QuotaErrorBody, t, i18next.language)
+        : t('conversation.quotaExceeded.reached');
+    // The agent's own limit; a refusal before the run arrives worded.
+    case AGENT_LIMIT_EXCEEDED:
+      return isNumber(params?.usage) && isNumber(params?.limit)
+        ? agentLimitErrorMessage(
+            params as AgentLimitErrorBody,
+            t,
+            i18next.language,
+          )
+        : message;
+    // Someone else pays for this agent and can't: never their numbers.
+    case 'agent_paused':
+      return t('payer.notice.chat.agentPaused');
+    case 'no_payer':
+      return t('payer.notice.chat.noPayer');
+    // A team chat asked for the caller's own custom model.
+    case 'custom_model_personal_only':
+      return t(CUSTOM_MODEL_CHAT_PERSONAL_ONLY_KEY);
     default:
       return message;
   }

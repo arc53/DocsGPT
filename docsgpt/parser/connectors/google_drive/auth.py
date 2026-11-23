@@ -1,7 +1,10 @@
+import json
 import logging
 import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
+import requests
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -11,20 +14,26 @@ from docsgpt.core.settings import settings
 from docsgpt.parser.connectors.base import BaseConnectorAuth
 
 
+DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+DRIVE_READONLY_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
+# Scopes under which a user's own sign-in can list a folder's contents. With
+# drive.file it sees only the items picked in Google's picker, not what is in them.
+_WHOLE_DRIVE_SCOPES = {DRIVE_READONLY_SCOPE, 'https://www.googleapis.com/auth/drive'}
+_TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo'
+
+
 class GoogleDriveAuth(BaseConnectorAuth):
     """
     Handles Google OAuth 2.0 authentication for Google Drive access.
     """
-    
-    SCOPES = [
-        'https://www.googleapis.com/auth/drive.readonly'
-    ]
-    
+
     def __init__(self):
         self.client_id = settings.GOOGLE_CLIENT_ID
         self.client_secret = settings.GOOGLE_CLIENT_SECRET
         self.redirect_uri = f"{settings.CONNECTOR_REDIRECT_BASE_URI}"
-        
+        self.scopes = [DRIVE_READONLY_SCOPE if settings.GOOGLE_DRIVE_ACCESS == 'readonly' else DRIVE_FILE_SCOPE]
+        self._service_account_key = settings.GOOGLE_SERVICE_ACCOUNT_KEY
+
         if not self.client_id or not self.client_secret:
             raise ValueError("Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in settings.")
 
@@ -42,7 +51,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
                         "redirect_uris": [self.redirect_uri]
                     }
                 },
-                scopes=self.SCOPES,
+                scopes=self.scopes,
                 # Flow is rebuilt at exchange time, so an auto-generated
                 # code_verifier wouldn't survive; confidential client doesn't
                 # need PKCE anyway.
@@ -78,7 +87,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
                         "redirect_uris": [self.redirect_uri]
                     }
                 },
-                scopes=self.SCOPES,
+                scopes=self.scopes,
                 autogenerate_code_verifier=False,
             )
             flow.redirect_uri = self.redirect_uri
@@ -112,7 +121,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
                 'token_uri': credentials.token_uri,
                 'client_id': credentials.client_id,
                 'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes,
+                'scopes': getattr(credentials, 'granted_scopes', None) or credentials.scopes,
                 'expiry': credentials.expiry.isoformat() if credentials.expiry else None
             }
 
@@ -149,6 +158,95 @@ class GoogleDriveAuth(BaseConnectorAuth):
             logging.error(f"Error refreshing access token: {e}", exc_info=True)
             raise
     
+    def sanitize_token_info(self, token_info: Dict[str, Any], **extra_fields) -> Dict[str, Any]:
+        """The fields safe to persist, with the scopes Google granted.
+
+        The scopes say whether the sign-in can read a picked folder's
+        contents itself (``drive.readonly``) or only the picked items
+        (``drive.file``).
+        """
+        return super().sanitize_token_info(
+            token_info, scopes=_scope_list(token_info.get('scopes')), **extra_fields
+        )
+
+    def reads_whole_drive(self, token_info: Dict[str, Any]) -> bool:
+        """Whether this sign-in can list what is inside a folder.
+
+        A sign-in saved before its scopes were stored is looked up at
+        Google. When that fails it counts as per-file access, so a folder is
+        never read with more than the user granted.
+
+        Args:
+            token_info: The connection's stored token info.
+        """
+        scopes = _scope_list(token_info.get('scopes'))
+        if scopes is None:
+            scopes = self._granted_scopes(token_info.get('access_token'))
+        return bool(set(scopes or ()) & _WHOLE_DRIVE_SCOPES)
+
+    def _granted_scopes(self, access_token: Optional[str]) -> Optional[List[str]]:
+        """The scopes Google says ``access_token`` carries; None when it cannot tell."""
+        if not access_token:
+            return None
+        try:
+            # In the body, not the URL, so the token never lands in a logged URL.
+            response = requests.post(_TOKENINFO_URL, data={'access_token': access_token}, timeout=10)
+            if response.status_code != 200:
+                return None
+            return _scope_list(response.json().get('scope'))
+        except Exception as e:
+            logging.warning(f"Could not look up the scopes of a Google Drive sign-in: {e}")
+            return None
+
+    def _service_account_info(self) -> Optional[Dict[str, Any]]:
+        """The service account key from ``GOOGLE_SERVICE_ACCOUNT_KEY``: inline JSON or a file path."""
+        key = (self._service_account_key or '').strip()
+        if not key:
+            return None
+        try:
+            if key.startswith('{'):
+                return json.loads(key)
+            with open(key, encoding='utf-8') as f:
+                return json.load(f)
+        except (OSError, ValueError) as e:
+            raise ValueError(f"GOOGLE_SERVICE_ACCOUNT_KEY is not a readable service account key: {e}") from e
+
+    def service_account_email(self) -> Optional[str]:
+        """The address users share a folder with; None when no service account is set."""
+        info = self._service_account_info()
+        return info.get('client_email') if info else None
+
+    def build_service_account_service(self):
+        """A Drive client signed in as the service account; None when none is set.
+
+        It reads only what was shared with the service account, and only
+        ever with read access.
+        """
+        info = self._service_account_info()
+        if info is None:
+            return None
+        credentials = service_account.Credentials.from_service_account_info(info, scopes=[DRIVE_READONLY_SCOPE])
+        return build('drive', 'v3', credentials=credentials, cache_discovery=False)
+
+    def picker_options(self, token_info: Dict[str, Any]) -> Dict[str, Any]:
+        """How a browser picker treats folders for this sign-in.
+
+        ``folders`` is ``account`` when the sign-in reads folders itself,
+        ``service_account`` when a picked folder is read through the service
+        account (``share_with`` is its address) and ``off`` when folders
+        cannot be read at all.
+        """
+        if self.reads_whole_drive(token_info):
+            return {'folders': 'account'}
+        try:
+            email = self.service_account_email()
+        except ValueError as e:
+            logging.warning(f"Google Drive folders cannot be picked: {e}")
+            email = None
+        if email:
+            return {'folders': 'service_account', 'share_with': email}
+        return {'folders': 'off'}
+
     def create_credentials_from_token_info(self, token_info: Dict[str, Any]) -> Credentials:
         from docsgpt.core.settings import settings
 
@@ -162,7 +260,7 @@ class GoogleDriveAuth(BaseConnectorAuth):
             token_uri= 'https://oauth2.googleapis.com/token',
             client_id=settings.GOOGLE_CLIENT_ID,
             client_secret=settings.GOOGLE_CLIENT_SECRET,
-            scopes=token_info.get('scopes', ['https://www.googleapis.com/auth/drive.readonly'])
+            scopes=_scope_list(token_info.get('scopes')) or self.scopes
         )
 
         if not credentials.token:
@@ -233,3 +331,12 @@ class GoogleDriveAuth(BaseConnectorAuth):
         except Exception as e:
             logging.error(f"Error validating credentials: {e}")
             return False
+
+
+def _scope_list(scopes: Any) -> Optional[List[str]]:
+    """Scopes as a list, from Google's space-separated string or a list; None when absent."""
+    if not scopes:
+        return None
+    if isinstance(scopes, str):
+        return scopes.split()
+    return [str(scope) for scope in scopes]

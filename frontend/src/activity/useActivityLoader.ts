@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { usePageVisible } from '../backgroundJobs/usePageVisible';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
+import type { WorkspaceState } from '../workspace/workspaceSlice';
 import { loadActivityNow, resetActivity } from './activitySlice';
 
 /**
@@ -18,11 +19,15 @@ export const ACTIVITY_REFRESH_MS = 60_000;
  * and count read it. Loads per token and when the tab comes back into view;
  * `activityListenerMiddleware` refetches after the events that change it.
  * A new token clears what the last one loaded first, so its runs and marks
- * don't show until the new snapshot lands.
+ * don't show until the new snapshot lands. A switch of workspace clears it
+ * too (in the slice) and loads the new workspace's at once.
  */
 export default function useActivityLoader(): void {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
+  const workspaceId = useSelector(
+    (state: { workspace?: WorkspaceState }) => state.workspace?.current,
+  );
   const visible = usePageVisible();
   const loadedFor = useRef(token);
 
@@ -40,5 +45,5 @@ export default function useActivityLoader(): void {
       ACTIVITY_REFRESH_MS,
     );
     return () => window.clearInterval(timer);
-  }, [dispatch, token, visible]);
+  }, [dispatch, token, visible, workspaceId]);
 }

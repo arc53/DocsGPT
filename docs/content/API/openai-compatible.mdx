@@ -1,10 +1,9 @@
 ---
 title: OpenAI-Compatible API
+sidebarTitle: 🔄 OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
-lastUpdated: 2026-10-18
+lastUpdated: 2026-10-27
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # OpenAI-Compatible API
 
@@ -13,7 +12,7 @@ DocsGPT exposes `/v1/chat/completions` following the standard chat completions p
 ## Quick Start
 
 <Tabs items={['Python', 'cURL']}>
-  <Tabs.Tab>
+  <Tab>
     ```python
     from openai import OpenAI
 
@@ -28,15 +27,15 @@ DocsGPT exposes `/v1/chat/completions` following the standard chat completions p
     )
     print(response.choices[0].message.content)
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```bash
     curl -X POST http://localhost:7091/v1/chat/completions \
       -H "Authorization: Bearer your_agent_api_key" \
       -H "Content-Type: application/json" \
       -d '{"model":"docsgpt-agent","messages":[{"role":"user","content":"Summarize our refund policy"}]}'
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 The `model` field is accepted but ignored — the agent bound to your API key determines the model. The agent's prompt, sources, tools, and default model are loaded automatically.
@@ -100,7 +99,7 @@ Options DocsGPT can't honor are rejected with HTTP `400` (`invalid_request_error
 You can force the model to return JSON matching a schema, using either the OpenAI `response_format` field or the `response_schema` convenience field.
 
 <Tabs items={['response_format', 'response_schema']}>
-  <Tabs.Tab>
+  <Tab>
     ```json
     {
       "model": "docsgpt-agent",
@@ -122,8 +121,8 @@ You can force the model to return JSON matching a schema, using either the OpenA
       }
     }
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```json
     {
       "model": "docsgpt-agent",
@@ -138,7 +137,7 @@ You can force the model to return JSON matching a schema, using either the OpenA
       }
     }
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 - `response_format` follows OpenAI Structured Outputs. `strict` defaults to `true`; set `strict: false` to relax enforcement.
@@ -244,6 +243,13 @@ If you send back the `conversation_id` of the response (top-level or in `docsgpt
 from what it saved at the pause instead of from the messages you re-send. The run keeps its server-side tool calls
 and their results, its reasoning and its files, so the model doesn't redo work, and the provider's prompt cache still
 covers what the paused round sent.
+
+A resumed round can also add files, for example one your tool just produced. Pass their ids in
+`docsgpt.attachments` (or send them as `file` parts) with the tool results. Files the run already has keep their
+refs, and new ones are numbered after them (`F2`, `F3`, ...) and listed in the response's `docsgpt.attachments`. They
+are not put into the prompt: the model's tools reach them by ref, id or filename, so say in the tool result which
+file you added. They go through the same attachment guardrails as a new turn's files, and an id that is not the
+agent owner's is skipped. Sending ids the run already has adds nothing.
 
 ```json
 {

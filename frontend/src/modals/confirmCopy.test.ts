@@ -78,7 +78,7 @@ describe('confirm dialog copy', () => {
   it.each([
     'convTile.deleteWarning',
     'agents.deleteConfirmation',
-    'agents.folders.deleteConfirm',
+    'folders.deleteConfirm',
     'agents.schedules.deleteConfirm',
     'modals.prompts.deleteConfirmation',
     'modals.agentDetails.resetKeyConfirm',
@@ -94,12 +94,13 @@ describe('confirm dialog copy', () => {
     'settings.teams.share.removeConfirm',
     'settings.connectors.disconnect.title',
     'settings.connectors.remove.title',
+    'agents.form.analytics.removeTopic.title',
   ])('%s is the verb and the quoted name as a question', (key) => {
     expect(get(key)).toMatch(/^[A-Z][a-z]+ (.* )?"\{\{\w+\}\}"( .*)?\?$/);
   });
 
   it.each([
-    'modals.deleteConv.confirm',
+    'workspace.chat.deleteAll.confirm',
     'modals.chunk.deleteConfirmation',
     'agents.workflow.builder.deleteConfirmUnnamed',
   ])('%s is a short question with no warning in it', (key) => {

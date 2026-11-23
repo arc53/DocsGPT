@@ -2,6 +2,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 
+const state = vi.hoisted(() => ({
+  preference: { analyticsEnabled: true },
+  connectors: { enabled: true },
+  workspace: undefined as undefined | { current: string },
+}));
+vi.mock('react-redux', () => ({
+  useSelector: (selector: (s: unknown) => unknown) => selector(state),
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
@@ -9,10 +17,21 @@ vi.mock('./SidebarLevelProvider', () => ({
   useSidebarLevel: () => ({ goToLevel: vi.fn() }),
 }));
 
+import {
+  agentInsightsPath,
+  agentLogsPath,
+  agentsFilterPath,
+} from '@/agents/paths';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 import SectionRail from './SectionRail';
-import { SETTINGS_SECTION, getSectionItems } from './sections';
+import {
+  AGENTS_SECTION,
+  SETTINGS_SECTION,
+  buildAgentSection,
+  getSectionItems,
+  type Section,
+} from './sections';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -21,16 +40,13 @@ describe('SectionRail', () => {
   let root: Root;
   const items = getSectionItems(SETTINGS_SECTION, { isAdmin: false });
 
-  beforeEach(() => {
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
+  const render = (section: Section = SETTINGS_SECTION) =>
     act(() => {
       root.render(
         <MemoryRouter>
           <TooltipProvider>
             <SectionRail
-              section={SETTINGS_SECTION}
+              section={section}
               activeItemKey={items[0].key}
               isAdmin={false}
               onBack={() => undefined}
@@ -40,6 +56,15 @@ describe('SectionRail', () => {
         </MemoryRouter>,
       );
     });
+
+  beforeEach(() => {
+    state.preference.analyticsEnabled = true;
+    state.connectors.enabled = true;
+    state.workspace = undefined;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    render();
   });
 
   afterEach(() => {
@@ -66,5 +91,44 @@ describe('SectionRail', () => {
       expect(link.dataset.slot).toBe('tooltip-trigger');
     }
     expect(links()[0].getAttribute('aria-current')).toBe('page');
+  });
+
+  const hrefs = () => links().map((link) => link.getAttribute('href'));
+
+  // The rail lists what the expanded nav lists: a page the server has
+  // switched off is not a destination, or clicking it bounces.
+  it('drops Insights and Connectors while the server has them off', () => {
+    expect(hrefs()).toContain('/settings/insights');
+    expect(hrefs()).toContain('/settings/connectors');
+
+    state.preference.analyticsEnabled = false;
+    state.connectors.enabled = false;
+    render();
+    expect(hrefs()).not.toContain('/settings/insights');
+    expect(hrefs()).not.toContain('/settings/connectors');
+    expect(hrefs()).toContain('/settings/logs');
+  });
+
+  it("drops an agent's Insights tab while analytics is off", () => {
+    const agent = buildAgentSection('a1', 'Docs', false);
+    render(agent);
+    expect(hrefs()).toContain(agentInsightsPath('a1'));
+
+    state.preference.analyticsEnabled = false;
+    render(agent);
+    expect(hrefs()).not.toContain(agentInsightsPath('a1'));
+    expect(hrefs()).toContain(agentLogsPath('a1'));
+  });
+
+  it('leaves out Shared with you and Discovered in a team', () => {
+    render(AGENTS_SECTION);
+    expect(hrefs()).toContain(agentsFilterPath('sharedWithYou'));
+    expect(hrefs()).toContain(agentsFilterPath('shared'));
+
+    state.workspace = { current: 't1' };
+    render(AGENTS_SECTION);
+    expect(hrefs()).not.toContain(agentsFilterPath('sharedWithYou'));
+    expect(hrefs()).not.toContain(agentsFilterPath('shared'));
+    expect(hrefs()).toContain(agentsFilterPath('user'));
   });
 });

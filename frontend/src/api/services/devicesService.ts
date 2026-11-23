@@ -1,5 +1,6 @@
 import apiClient from '../client';
 import endpoints from '../endpoints';
+import { ApiError, readRefusal, requestFailed } from './apiError';
 
 export type ApprovalMode = 'ask' | 'full';
 
@@ -51,9 +52,25 @@ export interface AuditEntry {
   created_at: string;
 }
 
+/**
+ * A non-2xx device API response; `code` is the server's `error` field, and
+ * also its message (the server's own text is not shown).
+ */
+export class DevicesApiError extends ApiError {
+  constructor(status: number, code?: string) {
+    super(status, code || requestFailed(status), code);
+    this.name = 'DevicesApiError';
+  }
+}
+
+// A non-2xx status rejects, so callers never read a `{success: false, error}`
+// body as a device, a pairing or a successful revoke.
 const json = async (response: Response | unknown) => {
   const r = response as Response;
   if (!('json' in r) || typeof r.json !== 'function') return r as unknown;
+  if (typeof r.ok === 'boolean' && !r.ok) {
+    throw new DevicesApiError(r.status, (await readRefusal(r)).code);
+  }
   return r.json();
 };
 
@@ -104,10 +121,13 @@ const devicesService = {
   pollPairing: async (
     deviceCode: string,
     token: string | null,
+    signal?: AbortSignal,
   ): Promise<PairingStatus> => {
     const r = await apiClient.get(
       endpoints.USER.DEVICE_PAIRING(deviceCode),
       token,
+      {},
+      signal,
     );
     return (await json(r)) as PairingStatus;
   },
@@ -134,30 +154,6 @@ const devicesService = {
       token,
     );
     return (await json(r)) as { pattern: string };
-  },
-
-  listAutoApprovePatterns: async (
-    id: string,
-    token: string | null,
-  ): Promise<{ patterns: string[] }> => {
-    const r = await apiClient.get(
-      endpoints.USER.DEVICE_AUTO_APPROVE(id),
-      token,
-    );
-    return (await json(r)) as { patterns: string[] };
-  },
-
-  removeAutoApprovePattern: async (
-    id: string,
-    pattern: string,
-    token: string | null,
-  ): Promise<{ success: boolean }> => {
-    const r = await apiClient.delete(
-      endpoints.USER.DEVICE_AUTO_APPROVE(id),
-      token,
-      { pattern },
-    );
-    return (await json(r)) as { success: boolean };
   },
 
   listAudit: async (

@@ -1,10 +1,28 @@
 import i18n from 'i18next';
 
 import { baseURL } from '../api/client';
+import {
+  reportWorkspaceRefusal,
+  requestWorkspace,
+} from '../workspace/requestWorkspace';
 import conversationService from '../api/services/conversationService';
 import { Doc } from '../models/misc';
-import { Answer, FEEDBACK, RetrievalPayload } from './conversationModels';
-import { isQuotaError, quotaErrorMessage } from './quotaError';
+import {
+  Answer,
+  ClientCapability,
+  FEEDBACK,
+  RetrievalPayload,
+} from './conversationModels';
+import { noteQuotaError, noteTurnFinished } from '../payer/usageSlice';
+import {
+  agentLimitErrorMessage,
+  isAgentLimitError,
+  isQuotaError,
+  PAYER_STOP_CODES,
+  QUOTA_EXCEEDED,
+  quotaErrorMessage,
+  quotaErrorParams,
+} from './quotaError';
 import { ToolCallsType } from './types';
 
 /**
@@ -15,6 +33,22 @@ import { ToolCallsType } from './types';
  * happily coerce.
  */
 const _SEQUENCE_NO_RE = /^\d+$/;
+
+/** Chat refusals about the workspace, which the chat words and can fix. */
+const WORKSPACE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'workspace_mismatch',
+  'workspace_not_found',
+]);
+
+/**
+ * Tells the usage slice a turn ended, from its terminal stream frame: a stop
+ * for the person's allowance reads the quota at once, any other end after a
+ * pause (the turn's spend may have moved the meter).
+ */
+function _noteUsage(frame: { type?: unknown; code?: unknown }): void {
+  if (frame.type === 'error' && frame.code === QUOTA_EXCEEDED) noteQuotaError();
+  else if (frame.type === 'end' || frame.type === 'error') noteTurnFinished();
+}
 
 /**
  * Drain an SSE response body, forwarding each ``data:`` line to
@@ -46,6 +80,8 @@ async function _handlePreStreamHttpError(
   ).toLowerCase();
   if (contentType.includes('text/event-stream')) return false;
   let message: string | null = null;
+  let code: string | null = null;
+  let params: Record<string, unknown> | null = null;
   try {
     const text = await response.text();
     if (text) {
@@ -53,7 +89,35 @@ async function _handlePreStreamHttpError(
         const parsed = JSON.parse(text);
         if (isQuotaError(parsed)) {
           message = quotaErrorMessage(parsed, i18n.t.bind(i18n), i18n.language);
+          // With its code and values the chat words it as the in-run stop is.
+          code = QUOTA_EXCEEDED;
+          params = quotaErrorParams(parsed);
+        } else if (
+          parsed &&
+          typeof parsed === 'object' &&
+          PAYER_STOP_CODES.has(parsed.error_code)
+        ) {
+          // The agent is paused or has nobody to pay for it: no numbers.
+          code = parsed.error_code;
+          message =
+            (typeof parsed.message === 'string' && parsed.message) || code;
+        } else if (isAgentLimitError(parsed)) {
+          // The agent's own limit, worded for the user: a code makes the
+          // chat show it as prose rather than a raw server error.
+          message = agentLimitErrorMessage(
+            parsed,
+            i18n.t.bind(i18n),
+            i18n.language,
+          );
+          code = 'agent-limit-exceeded';
         } else if (parsed && typeof parsed === 'object') {
+          // A workspace refusal keeps its code, so the chat can word it and
+          // offer the fix.
+          if (
+            typeof parsed.error === 'string' &&
+            WORKSPACE_ERROR_CODES.has(parsed.error)
+          )
+            code = parsed.error;
           message =
             (typeof parsed.message === 'string' && parsed.message) ||
             (typeof parsed.error === 'string' && parsed.error) ||
@@ -71,8 +135,38 @@ async function _handlePreStreamHttpError(
   if (!message) {
     message = `HTTP ${response.status} ${response.statusText}`.trim();
   }
-  dispatch(JSON.stringify({ type: 'error', error: message }));
+  dispatch(
+    JSON.stringify(
+      code
+        ? { type: 'error', error: message, code, ...(params && { params }) }
+        : { type: 'error', error: message },
+    ),
+  );
   return true;
+}
+
+/**
+ * Passes a refused stream's ``error`` code to the workspace checks, as the
+ * API client does for a JSON refusal (a 404 ``workspace_not_found`` reloads
+ * the caller's workspaces).
+ *
+ * Args:
+ *   status: The response's HTTP status.
+ *   data: One ``data:`` payload of the stream.
+ *   workspace: The workspace the request was sent for.
+ */
+function _reportStreamRefusal(
+  status: number,
+  data: string,
+  workspace: string,
+): void {
+  try {
+    const parsed = JSON.parse(data);
+    if (parsed?.type === 'error' && typeof parsed.code === 'string')
+      reportWorkspaceRefusal(status, parsed.code, workspace);
+  } catch {
+    // Not JSON: nothing to report.
+  }
 }
 
 async function _drainSseBody(
@@ -155,6 +249,40 @@ async function _drainSseBody(
   }
 }
 
+/**
+ * Puts the composer's knowledge on a request: the picked sources as
+ * ``active_docs`` (one id, or a list for several) with the first one's
+ * retriever, and whole folders as ``active_folders``, which the server reads
+ * live (an agent chat ignores them, as it does the sources).
+ *
+ * Args:
+ *   payload: The request, changed in place.
+ *   selectedDocs: The picked sources.
+ *   activeFolders: The picked folder ids.
+ */
+export function applySelectedKnowledge(
+  payload: RetrievalPayload,
+  selectedDocs: Doc[],
+  activeFolders: string[] = [],
+): void {
+  if (selectedDocs.length > 1) {
+    payload.active_docs = selectedDocs.map((doc) => doc.id!);
+    payload.retriever = selectedDocs[0]?.retriever as string;
+  } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
+    // One source goes as a plain id (backward compatibility).
+    payload.active_docs = selectedDocs[0].id as string;
+    payload.retriever = selectedDocs[0].retriever as string;
+  }
+  if (activeFolders.length > 0) payload.active_folders = activeFolders;
+}
+
+/**
+ * What the web app can render, sent with every ``/stream`` request. ``forms``:
+ * it draws clarifying questions as cards and resumes the turn with the
+ * answer; without it the server never offers the model questions.
+ */
+export const CLIENT_CAPABILITIES: ClientCapability[] = ['forms'];
+
 export function handleFetchAnswer(
   question: string,
   signal: AbortSignal,
@@ -162,12 +290,12 @@ export function handleFetchAnswer(
   selectedDocs: Doc[],
   conversationId: string | null,
   promptId: string | null,
-  chunks: string,
   agentId?: string,
   attachments?: string[],
   save_conversation = true,
   modelId?: string,
   idempotencyKey?: string,
+  activeFolders: string[] = [],
 ): Promise<
   | {
       result: any;
@@ -193,8 +321,7 @@ export function handleFetchAnswer(
     question: question,
     conversation_id: conversationId,
     prompt_id: promptId,
-    chunks: chunks,
-    isNoneDoc: selectedDocs.length === 0,
+    isNoneDoc: selectedDocs.length === 0 && activeFolders.length === 0,
     agent_id: agentId,
     save_conversation: save_conversation,
     // The backend persists every conversation hidden unless the request
@@ -212,17 +339,7 @@ export function handleFetchAnswer(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs.length > 0) {
-    if (selectedDocs.length > 1) {
-      // Handle multiple documents
-      payload.active_docs = selectedDocs.map((doc) => doc.id!);
-      payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs[0].id as string;
-      payload.retriever = selectedDocs[0].retriever as string;
-    }
-  }
+  applySelectedKnowledge(payload, selectedDocs, activeFolders);
   const headers: Record<string, string> = {};
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
   return conversationService
@@ -256,7 +373,6 @@ export function handleFetchAnswerSteaming(
   selectedDocs: Doc[],
   conversationId: string | null,
   promptId: string | null,
-  chunks: string,
   onEvent: (event: MessageEvent) => void,
   indx?: number,
   agentId?: string,
@@ -264,13 +380,13 @@ export function handleFetchAnswerSteaming(
   save_conversation = true,
   modelId?: string,
   idempotencyKey?: string,
+  activeFolders: string[] = [],
 ): Promise<Answer> {
   const payload: RetrievalPayload = {
     question: question,
     conversation_id: conversationId,
     prompt_id: promptId,
-    chunks: chunks,
-    isNoneDoc: selectedDocs.length === 0,
+    isNoneDoc: selectedDocs.length === 0 && activeFolders.length === 0,
     index: indx,
     agent_id: agentId,
     save_conversation: save_conversation,
@@ -278,6 +394,7 @@ export function handleFetchAnswerSteaming(
     // explicitly opts into the sidebar; save_conversation alone no longer
     // lists it.
     visibility: save_conversation ? 'listed' : 'hidden',
+    capabilities: CLIENT_CAPABILITIES,
   };
 
   if (modelId) {
@@ -289,17 +406,7 @@ export function handleFetchAnswerSteaming(
     payload.attachments = attachments;
   }
 
-  if (selectedDocs.length > 0) {
-    if (selectedDocs.length > 1) {
-      // Handle multiple documents
-      payload.active_docs = selectedDocs.map((doc) => doc.id!);
-      payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs[0].id as string;
-      payload.retriever = selectedDocs[0].retriever as string;
-    }
-  }
+  applySelectedKnowledge(payload, selectedDocs, activeFolders);
 
   const headers: Record<string, string> = {};
   if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -319,6 +426,7 @@ export function handleFetchAnswerSteaming(
         if (parsed.type === 'message_id' && parsed.message_id) {
           messageId = parsed.message_id;
         } else if (parsed.type === 'end' || parsed.type === 'error') {
+          if (!endReceived) _noteUsage(parsed);
           endReceived = true;
         }
       }
@@ -329,6 +437,8 @@ export function handleFetchAnswerSteaming(
   };
 
   const runInitialPost = async (): Promise<void> => {
+    // The workspace a new chat is started in, as the request names it.
+    const workspace = requestWorkspace();
     const response = await conversationService.answerStream(
       payload,
       token,
@@ -341,9 +451,20 @@ export function handleFetchAnswerSteaming(
     // them into a typed ``error`` frame so the real message surfaces.
     if (await _handlePreStreamHttpError(response, dispatch)) return;
     if (!response.body) throw new Error('No response body');
-    await _drainSseBody(response.body, signal, dispatch, (id) => {
-      lastEventId = id;
-    });
+    // A refusal sent as an event stream: the API client checks only JSON
+    // bodies for a team the caller is no longer in, so it is told here.
+    const refusal = response.ok ? null : response.status;
+    await _drainSseBody(
+      response.body,
+      signal,
+      (data) => {
+        if (refusal !== null) _reportStreamRefusal(refusal, data, workspace);
+        dispatch(data);
+      },
+      (id) => {
+        lastEventId = id;
+      },
+    );
   };
 
   // Reconnect's stop predicate: as soon as ``dispatch`` flips
@@ -453,14 +574,22 @@ export function handleFetchAnswerSteaming(
   });
 }
 
+/**
+ * One action on a paused call: an approval's decision, a client tool's
+ * result, or a clarifying question's answer (or ``skipped``).
+ */
+export type ToolAction = {
+  call_id: string;
+  decision?: 'approved' | 'denied';
+  comment?: string;
+  result?: Record<string, any>;
+  answer?: string;
+  skipped?: true;
+};
+
 export function handleSubmitToolActions(
   conversationId: string,
-  toolActions: {
-    call_id: string;
-    decision?: 'approved' | 'denied';
-    comment?: string;
-    result?: Record<string, any>;
-  }[],
+  toolActions: ToolAction[],
   token: string | null,
   signal: AbortSignal,
   onEvent: (event: MessageEvent) => void,
@@ -469,6 +598,7 @@ export function handleSubmitToolActions(
   const payload = {
     conversation_id: conversationId,
     tool_actions: toolActions,
+    capabilities: CLIENT_CAPABILITIES,
   };
 
   const headers: Record<string, string> = {};
@@ -502,6 +632,7 @@ export function handleSubmitToolActions(
           // ``end``, so treating only ``end`` as terminal would
           // trigger a reconnect against an already-finished stream
           // and hang on keepalives.
+          if (!endReceived) _noteUsage(parsed);
           endReceived = true;
         }
       }
@@ -809,67 +940,6 @@ function translateV1ChunkToInternalEvents(
   }
 
   return events;
-}
-
-export function handleSearch(
-  question: string,
-  token: string | null,
-  selectedDocs: Doc[],
-  conversation_id: string | null,
-  chunks: string,
-) {
-  const payload: RetrievalPayload = {
-    question: question,
-    conversation_id: conversation_id,
-    chunks: chunks,
-    isNoneDoc: selectedDocs.length === 0,
-  };
-  if (selectedDocs.length > 0) {
-    if (selectedDocs.length > 1) {
-      // Handle multiple documents
-      payload.active_docs = selectedDocs.map((doc) => doc.id!);
-      payload.retriever = selectedDocs[0]?.retriever as string;
-    } else if (selectedDocs.length === 1 && 'id' in selectedDocs[0]) {
-      // Handle single document (backward compatibility)
-      payload.active_docs = selectedDocs[0].id as string;
-      payload.retriever = selectedDocs[0].retriever as string;
-    }
-  }
-  return conversationService
-    .search(payload, token)
-    .then((response) => response.json())
-    .then((data) => {
-      return data;
-    })
-    .catch((err) => console.log(err));
-}
-
-export function handleSearchViaApiKey(
-  question: string,
-  api_key: string,
-  history: Array<any> = [],
-) {
-  history = history.map((item) => {
-    return {
-      prompt: item.prompt,
-      response: item.response,
-      tool_calls: item.tool_calls,
-    };
-  });
-  return conversationService
-    .search(
-      {
-        question: question,
-        history: JSON.stringify(history),
-        api_key: api_key,
-      },
-      null,
-    )
-    .then((response) => response.json())
-    .then((data) => {
-      return data;
-    })
-    .catch((err) => console.log(err));
 }
 
 export function handleSendFeedback(

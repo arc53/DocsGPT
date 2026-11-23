@@ -37,17 +37,17 @@
       "use": "PDF generation"
     },
     {
-      "spec": "uharfbuzz==0.56.3",
+      "spec": "uharfbuzz==0.57.0",
       "import": "uharfbuzz",
       "use": "text shaping for reportlab (Indic scripts)"
     },
     {
-      "spec": "arabic-reshaper==3.0.1",
+      "spec": "arabic-reshaper==3.1.0",
       "import": "arabic_reshaper",
       "use": "join Arabic letters for reportlab"
     },
     {
-      "spec": "python-bidi==0.6.11",
+      "spec": "python-bidi==0.6.12",
       "import": "bidi",
       "use": "right-to-left display order for reportlab"
     },
@@ -57,7 +57,7 @@
       "use": "XML and HTML parsing"
     },
     {
-      "spec": "pillow==12.3.0",
+      "spec": "pillow==13.0.0",
       "import": "PIL",
       "use": "images"
     },
@@ -77,14 +77,9 @@
       "use": "YAML"
     },
     {
-      "spec": "pypdf==6.19.0",
+      "spec": "pypdf==7.0.1",
       "import": "pypdf",
       "use": "read, merge and split PDFs"
-    },
-    {
-      "spec": "PyPDF2==3.0.1",
-      "import": "PyPDF2",
-      "use": "older pypdf API that existing code imports"
     },
     {
       "spec": "pdfplumber==0.11.10",
@@ -97,7 +92,7 @@
       "use": "PDF text layout (pdfplumber's engine)"
     },
     {
-      "spec": "pypdfium2==5.14.0",
+      "spec": "pypdfium2==5.15.2",
       "import": "pypdfium2",
       "use": "render PDF pages to images"
     },
@@ -107,7 +102,7 @@
       "use": "OCR through the tesseract binary"
     },
     {
-      "spec": "imageio==2.38.0",
+      "spec": "imageio==2.38.1",
       "import": "imageio",
       "use": "animated GIF, WebP and PNG (MP4: the ffmpeg command)"
     }

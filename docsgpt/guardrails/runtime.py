@@ -109,6 +109,7 @@ def _judge_factory(agent):
             ),
             agent_id=agent.agent_id,
             model_user_id=agent.model_user_id,
+            stateless=True,
         )
         llm._token_usage_source = "guardrail"
         llm._request_id = getattr(agent, "request_id", None)

@@ -40,7 +40,7 @@ spec:
         fsGroup: 999  # the image's appuser, so it can write the model cache
       containers:
       - name: docsgpt-decider
-        image: arc53/docsgpt:1.0.0
+        image: arc53/docsgpt:1.1.0
         command: ["python", "-m", "docsgpt", "decide-server", "--host", "0.0.0.0", "--port", "7095",
                   "--device", "cpu"]
         ports:

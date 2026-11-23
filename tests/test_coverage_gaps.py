@@ -1051,41 +1051,6 @@ class TestConversationServiceEdge:
         service.update_compression_metadata(conv_id_str, metadata)
         mock_conv_col.update_one.assert_called_once()
 
-    def test_append_compression_message(self, monkeypatch):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        monkeypatch.setattr(
-            "docsgpt.api.answer.services.conversation_service.dual_write",
-            lambda repo_cls, fn: None,
-        )
-
-        conv_id_str = uuid.uuid4().hex[:24]
-        mock_conv_col = MagicMock()
-
-        service = ConversationService.__new__(ConversationService)
-        service.conversations_collection = mock_conv_col
-        service.agents_collection = MagicMock()
-
-        metadata = {"compressed_summary": "summary text"}
-        service.append_compression_message(conv_id_str, metadata)
-        mock_conv_col.update_one.assert_called_once()
-
-    def test_append_compression_message_empty_summary(self):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        mock_conv_col = MagicMock()
-        service = ConversationService.__new__(ConversationService)
-        service.conversations_collection = mock_conv_col
-        service.agents_collection = MagicMock()
-
-        # Should return without error (empty summary → early return)
-        service.append_compression_message("fakeid", {"compressed_summary": ""})
-        mock_conv_col.update_one.assert_not_called()
-
     def test_get_compression_metadata(self, monkeypatch):
         from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
@@ -1119,72 +1084,6 @@ class TestConversationServiceEdge:
 
         result = service.get_compression_metadata(str(uuid.uuid4())[:24])
         assert result is None
-
-
-# ---------------------------------------------------------------------------
-# 32. docsgpt/parser/remote/crawler_markdown.py  (lines 28,36,38,53,58-59,62)
-# ---------------------------------------------------------------------------
-@pytest.mark.unit
-class TestCrawlerMarkdownEdge:
-    def test_load_data_list_input(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-
-        loader = CrawlerLoader(limit=1)
-
-        with patch.object(loader, "_fetch_page", return_value=None):
-            with patch(
-                "docsgpt.parser.remote.crawler_markdown.validate_url",
-                side_effect=lambda u: u,
-            ):
-                docs = loader.load_data(["https://example.com"])
-        assert docs == []
-
-    def test_load_data_ssrf_error(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-        from docsgpt.core.url_validation import SSRFError
-
-        loader = CrawlerLoader(limit=1)
-        with patch(
-            "docsgpt.parser.remote.crawler_markdown.validate_url",
-            side_effect=SSRFError("blocked"),
-        ):
-            docs = loader.load_data("http://169.254.169.254")
-        assert docs == []
-
-    def test_fetch_page_ssrf_error(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-        from docsgpt.core.url_validation import SSRFError
-
-        loader = CrawlerLoader()
-        with patch(
-            "docsgpt.parser.remote.crawler_markdown.validate_url",
-            side_effect=SSRFError("blocked"),
-        ):
-            result = loader._fetch_page("http://internal")
-        assert result is None
-
-    def test_fetch_page_request_error(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-        import requests
-
-        loader = CrawlerLoader()
-        with patch(
-            "docsgpt.parser.remote.crawler_markdown.pinned_request",
-            side_effect=requests.exceptions.ConnectionError("fail"),
-        ):
-            result = loader._fetch_page("http://fail.com")
-        assert result is None
-
-    def test_url_to_virtual_path(self):
-        from docsgpt.parser.remote.crawler_markdown import CrawlerLoader
-
-        loader = CrawlerLoader()
-        assert loader._url_to_virtual_path("https://example.com/") == "index.md"
-        assert loader._url_to_virtual_path("https://example.com/page.html") == "page.md"
-        assert (
-            loader._url_to_virtual_path("https://example.com/docs/guide")
-            == "docs/guide.md"
-        )
 
 
 # ---------------------------------------------------------------------------

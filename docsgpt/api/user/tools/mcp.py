@@ -1,38 +1,59 @@
 """Tool management MCP server integration."""
 
+from typing import NamedTuple, Optional
 from urllib.parse import urlencode, urlparse
 
 from flask import current_app, jsonify, make_response, redirect, request
 from flask_restx import Namespace, Resource, fields
+from sqlalchemy import Connection
 
 from docsgpt.agents.tool_pins import carry_pins_between
 from docsgpt.agents.tools.mcp_tool import MCPOAuthManager, MCPTool
 from docsgpt.api import api
+from docsgpt.api.user.folders.service import FolderError, filing_folder, filing_owner
 from docsgpt.api.user.resource_access import AccessDenied, require
+from docsgpt.api.user.tasks import mcp_oauth_task
 from docsgpt.api.user.team_sharing import visible_with_access
 from docsgpt.api.user.tools.routes import (
     _CREDENTIALS_FOR_NEW_SERVER,
     _MCP_CREDENTIAL_AUTH_TYPES,
     _mcp_origin_changed,
     check_oauth_mcp_owner_only,
+    CODE_OAUTH_PERSONAL_ONLY,
+    create_workspace,
     denied_response,
+    personal_only_response,
     transform_actions,
 )
 from docsgpt.cache import get_redis_instance
-from docsgpt.connectors.resolve import REMOVED_CONNECTION_KEY
+from docsgpt.connectors.resolve import is_connectionless_member, own_connection, REMOVED_CONNECTION_KEY
+from docsgpt.connectors.team import (
+    ACCOUNT_ALREADY_CONNECTED,
+    authorize_connection,
+    CONNECTION_NOT_FOUND,
+    ConnectionAccess,
+    ConnectionDenied,
+    creation_owner,
+)
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.guardrails import tool_descriptions
 from docsgpt.security.encryption import decrypt_tool_credentials, encrypt_tool_credentials
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
+from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
 from docsgpt.storage.db.repositories.user_tools import UserToolsRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.workspaces.context import current_workspace, WorkspaceError
+from docsgpt.workspaces.principal import is_principal_id
 
 tools_mcp_ns = Namespace("tools", description="Tool management operations", path="/api")
 
 _ALLOWED_TRANSPORTS = {"auto", "sse", "http"}
+# Set by a team's sign-in on the task's config, never by a client.
+_TEAM_SIGN_IN_KEYS = ("oauth_connected_by", "oauth_previous_connected_by")
 
 
 def _sanitize_mcp_transport(config):
@@ -40,7 +61,8 @@ def _sanitize_mcp_transport(config):
 
     Strips ``command`` / ``args`` keys that are only valid for local STDIO
     transports, ``connection_id``, which only the tool executor sets
-    (it picks whose MCP tokens the tool uses), and the note that a
+    (it picks whose MCP tokens the tool uses), who signed in for a team,
+    which only a team's sign-in sets, and the note that a
     connection was removed, which only removing one writes (a save stores
     a fresh config, so it drops that note too). Returns the cleaned
     transport type string.
@@ -51,6 +73,8 @@ def _sanitize_mcp_transport(config):
     config.pop("command", None)
     config.pop("args", None)
     config.pop("connection_id", None)
+    for key in _TEAM_SIGN_IN_KEYS:
+        config.pop(key, None)
     config.pop(REMOVED_CONNECTION_KEY, None)
     config["transport_type"] = transport_type
     return transport_type
@@ -103,14 +127,73 @@ def _invalid_server_url_response(exc: InvalidServerUrl):
     return make_response(jsonify({"success": False, "error": str(exc), "message": str(exc)}), 400)
 
 
-def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
+def _url_parameters_error(config: dict):
+    """A 400 when the URL is at a preset's server and lacks a parameter the preset needs, else None.
+
+    Supabase's preset needs a project ref, so no connection reaches every
+    project the account can see; see :func:`catalog.check_url_parameters`.
+    """
+    from docsgpt.connectors import catalog
+
+    try:
+        catalog.check_url_parameters((config.get("server_url") or "").strip())
+    except catalog.UrlParametersRequired as exc:
+        return make_response(
+            jsonify({"success": False, "error": str(exc), "message": str(exc), "code": "url_parameters"}), 400,
+        )
+    return None
+
+
+def _mcp_connection_revision(user: str, config: dict, auth_type: str) -> dict | None:
+    """Capture the no-auth connection revision before remote discovery.
+
+    A connection can be disconnected while discovery is in flight. The save
+    transaction uses this revision to avoid overwriting that newer action.
+    """
+    if auth_type != "none":
+        return None
+    from docsgpt.connectors import catalog
+
+    base = catalog.base_url(config.get("server_url"))
+    if not base:
+        return None
+    host = base.split("://")[-1]
+    with db_readonly() as conn:
+        row = ConnectorSessionsRepository(conn).find_account(
+            user,
+            "custom_mcp",
+            server_url=base,
+            account_label=host,
+        )
+    if row is None:
+        return None
+    return {
+        "id": str(row["id"]),
+        "status": row.get("status"),
+        "updated_at": row["updated_at"],
+    }
+
+
+def _mcp_connection(
+    conn: Connection,
+    user: str,
+    config: dict,
+    auth_type: str,
+    auth_credentials: dict,
+    display_name: str,
+    no_auth_revision: dict | None = None,
+) -> str | None:
     """The connection an MCP tool runs with; created on first save.
 
     OAuth servers already have one (the sign-in stored its tokens there).
     Key, bearer and basic auth store their secret on a connection; servers
     with no auth get a credential-less connection so they still appear on
-    the Connectors page. Returns None when a multi-user install runs on the
-    default encryption key, which keeps the legacy per-tool secret.
+    the Connectors page. Saving restores an existing no-auth connection
+    after successful discovery, unless its captured revision changed while
+    discovery was running. The caller owns the transaction so connection
+    recovery and tool persistence commit or roll back together. Returns None
+    when a multi-user install runs on the default encryption key, which keeps
+    the legacy per-tool secret.
     """
     from docsgpt.connectors import catalog, service
 
@@ -118,29 +201,44 @@ def _mcp_connection(user, config, auth_type, auth_credentials, display_name):
     if not base:
         return None
     if auth_type == "oauth":
-        with db_readonly() as conn:
-            row = service._mcp_row(conn, user, base, None)
+        row = service._mcp_row(conn, user, base, None)
         return str(row["id"]) if row else None
     definition = catalog.get_definition("custom_mcp")
     host = base.split("://")[-1]
     try:
-        with db_session() as conn:
-            if auth_credentials:
-                row, _ = service.create_api_key_connection(
-                    conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
-                )
-            else:
-                repo = ConnectorSessionsRepository(conn)
-                row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host) or repo.create(
+        if auth_credentials:
+            row, _ = service.create_api_key_connection(
+                conn, user, definition, auth_credentials, server_url=base, display_name=display_name,
+            )
+        else:
+            repo = ConnectorSessionsRepository(conn)
+            row = repo.find_account(user, "custom_mcp", server_url=base, account_label=host)
+            if row is None:
+                row = repo.create(
                     user, "custom_mcp", connector_key="custom_mcp", auth_kind="none",
                     display_name=display_name, account_label=host, server_url=base,
+                )
+            elif (
+                no_auth_revision
+                and str(row["id"]) == str(no_auth_revision["id"])
+                and no_auth_revision.get("status") != service.STATUS_CONNECTED
+            ):
+                repo.update_if_revision(
+                    str(row["id"]),
+                    no_auth_revision["updated_at"],
+                    {"status": service.STATUS_CONNECTED, "last_error": None},
                 )
     except service.EncryptionKeyNotConfigured:
         return None
     return str(row["id"]) if row else None
 
 
-def _previous_connection(existing_doc, config, owner_id) -> str | None:
+def _previous_connection(
+    conn: Connection,
+    existing_doc: dict | None,
+    config: dict,
+    owner_id: str,
+) -> str | None:
     """The saved tool's connection, kept only while the server is unchanged.
 
     An edit that cannot resolve a connection of its own (the default
@@ -155,8 +253,7 @@ def _previous_connection(existing_doc, config, owner_id) -> str | None:
     base = catalog.base_url(config.get("server_url"))
     if not connection_id or not base:
         return None
-    with db_readonly() as conn:
-        row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
+    row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
     if row is None or catalog.base_url(row.get("server_url")) != base:
         return None
     wanted = {"oauth": "mcp_oauth", "none": "none"}.get(config.get("auth_type") or "none", "api_key")
@@ -232,25 +329,34 @@ def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
 def _existing_mcp_context(tool_id, user, config):
     """Resolve the stored MCP tool a test/save refers to, and its credentials.
 
-    With no ``tool_id`` the caller acts on their own new server. With one,
-    the caller needs ``edit_credentials`` on that tool and everything runs as
-    its owner. Stored secrets are write-only, so an empty secret field reuses
-    the stored one (on the tool, or on its key-based connection) while the
+    With no ``tool_id`` the caller acts on a new server in the request's
+    workspace: their own in Personal, the team's (owned by its principal) in a
+    team, where they need Editor and can't add a server they sign in to (a
+    team has no connections in v1). With one, the caller needs
+    ``edit_credentials`` on that tool and everything runs as its owner.
+    Stored secrets are write-only, so an empty secret field reuses the stored one (on the tool, or on its key-based connection) while the
     origin (scheme, host, port) is unchanged; a new origin never inherits them.
     A server that is or would become OAuth is the owner's alone (its tokens
     are the owner's sign-in).
 
     Returns:
         ``(existing_doc, owner_id, is_owner, moved, credentials)``, or a Flask
-        response (404 / 400) to return as is.
+        response (404 / 400 / 403) to return as is.
 
     Raises:
         AccessDenied: the caller can't see the tool (404), can't change its
             credentials (403), or isn't the owner of an OAuth server (403).
+        WorkspaceError: a new server in a team the caller isn't in (404) or is
+            only a Viewer of (403).
     """
     auth_credentials = _extract_auth_credentials(config)
     if not tool_id:
-        return None, user, True, False, auth_credentials
+        with db_readonly() as conn:
+            workspace = create_workspace(conn)
+        if workspace.is_team and (config.get("auth_type") or "none") == "oauth":
+            return personal_only_response(CODE_OAUTH_PERSONAL_ONLY)
+        owner_id, _created_by = workspace.owner_for_create(user)
+        return None, owner_id, True, False, auth_credentials
     with db_readonly() as conn:
         ra = require(conn, "tool", tool_id, user, "edit_credentials")
         existing_doc = UserToolsRepository(conn).get_any(ra.resource_id, ra.owner_id)
@@ -274,6 +380,176 @@ def _existing_mcp_context(tool_id, user, config):
     return existing_doc, ra.owner_id, ra.access == "owner", moved, credentials
 
 
+def _mcp_filing(data: dict, user: str, owner_id: str):
+    """Where a save asks to file its MCP server, checked before the server is contacted.
+
+    A new server is filed in the tree it lands in (the caller's own, or the
+    team's); an existing one by the tool's own rule: a team's server in the
+    team's tree, anyone else's in the caller's own, and only by someone who
+    may move it between folders.
+
+    Args:
+        data: The request body; only a present ``folder_id`` files (``null`` unfiles an existing server).
+        user: The caller.
+        owner_id: The server's owner (the new server's, or the stored one's).
+
+    Returns:
+        ``(tree_owner, folder_id)``, or None when the body names no folder.
+
+    Raises:
+        FolderError: 404 ``folder_not_found`` when the folder isn't in that tree.
+        AccessDenied: the caller may not move the existing server between folders.
+    """
+    if "folder_id" not in data:
+        return None
+    with db_readonly() as conn:
+        if not data.get("id"):
+            return owner_id, filing_folder(conn, owner_id, data["folder_id"])
+        tree_owner = filing_owner(require(conn, "tool", data["id"], user, "move_folder"), user)
+        return tree_owner, filing_folder(conn, tree_owner, data["folder_id"])
+
+
+class TeamSignIn(NamedTuple):
+    """A sign-in to an MCP server for the team the workspace header names.
+
+    Attributes:
+        owner_id: The team's principal: it owns the connection and its tokens.
+        access: The Admin's access to the connection being reconnected, or None for a new one.
+    """
+
+    owner_id: str
+    access: Optional[ConnectionAccess]
+
+    @property
+    def connection_id(self) -> Optional[str]:
+        """The connection being reconnected, if any."""
+        return str(self.access.row["id"]) if self.access is not None else None
+
+
+def _team_sign_in(data: dict, user: str, config: dict):
+    """Whether a test/save signs in to a server for the team, checked.
+
+    Only a new sign-in server asks for it (``owner=team``, no stored
+    ``id``); an Admin of the header's team signs in, and ``connection_id``
+    names the team's connection to that server being reconnected.
+
+    Args:
+        data: The request body.
+        user: The caller.
+        config: The sanitised MCP config.
+
+    Returns:
+        A :class:`TeamSignIn`, None for anything else, or a 400 response
+        when ``connection_id`` signs in to another server.
+
+    Raises:
+        WorkspaceError: 400 ``invalid_owner`` / ``team_workspace_required``,
+            404 outside the team, 403 ``workspace_role_required`` below Admin.
+        ConnectionDenied: 404 ``connection_not_found`` (not this team's
+            connection), 403 ``connection_admin_required``.
+    """
+    from docsgpt.connectors import catalog, service
+
+    if data.get("id") or (config.get("auth_type") or "none") != "oauth" or not data.get("owner"):
+        return None
+    with db_readonly() as conn:
+        owner_id, connected_by = creation_owner(conn, user, data.get("owner"))
+        if connected_by is None:
+            return None
+        connection_id = data.get("connection_id")
+        if not connection_id:
+            return TeamSignIn(owner_id, None)
+        access = authorize_connection(conn, str(connection_id), user, "manage")
+    if not access.is_team or access.owner_id != owner_id:
+        raise ConnectionDenied(404, CONNECTION_NOT_FOUND, "Connection not found")
+    if access.row.get("provider") != service.mcp_provider(catalog.base_url(config.get("server_url"))):
+        message = "This connection signs in to another server"
+        return make_response(jsonify({"success": False, "error": message, "message": message}), 400)
+    return TeamSignIn(owner_id, access)
+
+
+def _start_team_sign_in(config: dict, user: str, team: TeamSignIn):
+    """Start a fresh sign-in for the team, followed by ``user`` alone.
+
+    A stored sign-in never answers it: reconnecting means signing in again.
+    A new one is refused (409 ``account_already_connected``) while the team
+    holds a sign-in for that server; it is reconnected instead.
+
+    Args:
+        config: The sanitised MCP config.
+        user: The Admin signing in.
+        team: The checked :class:`TeamSignIn`.
+
+    Returns:
+        The Flask response: ``{success: false, requires_oauth: true, task_id}``.
+    """
+    from docsgpt.connectors import catalog, service
+
+    task_config = config.copy()
+    if team.access is None:
+        with db_readonly() as conn:
+            existing = ConnectorSessionsRepository(conn).get_by_user_provider(
+                team.owner_id, service.mcp_provider(catalog.base_url(config.get("server_url"))),
+            )
+        if existing is not None and service.has_credentials(existing):
+            return make_response(jsonify({
+                "success": False, "error": ACCOUNT_ALREADY_CONNECTED, "connection_id": str(existing["id"]),
+                "message": "The team is already signed in to this server. Reconnect it instead.",
+            }), 409)
+    else:
+        task_config["connection_id"] = team.connection_id
+        task_config["oauth_previous_connected_by"] = team.access.connected_by
+    task_id = mcp_oauth_task.delay(task_config, team.owner_id, user).id
+    # Only the Admin who started it cancels it, and its events are theirs.
+    MCPOAuthManager(get_redis_instance()).register_task(task_id, user)
+    return make_response(jsonify({"success": False, "requires_oauth": True, "task_id": task_id}), 200)
+
+
+def _team_signed_in_connection(conn: Connection, team: TeamSignIn, user: str, config: dict, result: dict):
+    """The team's connection a finished sign-in wrote, when it is the one ``user`` signed in to.
+
+    Args:
+        conn: Open connection.
+        team: The checked :class:`TeamSignIn`.
+        user: The Admin saving.
+        config: The MCP config being saved.
+        result: The sign-in's ``completed`` status, read from ``user``'s stream.
+
+    Returns:
+        The ``connector_sessions`` row, or None.
+    """
+    from docsgpt.connectors import catalog, service
+
+    connection_id = result.get("connection_id")
+    if not connection_id or (team.connection_id and str(connection_id) != team.connection_id):
+        return None
+    row = ConnectorSessionsRepository(conn).get(str(connection_id))
+    if (
+        row is None
+        or row.get("user_id") != team.owner_id
+        or row.get("connected_by") != user
+        or row.get("provider") != service.mcp_provider(catalog.base_url(config.get("server_url")))
+    ):
+        return None
+    return row
+
+
+def _audit_team_sign_in(conn: Connection, user: str, team: TeamSignIn, row: dict, result: dict) -> None:
+    """Record a team's new or reconnected MCP sign-in on the team's audit trail."""
+    from docsgpt.api.connector.connections import audit_team_connection
+
+    if team.access is None:
+        audit_team_connection(
+            conn, user, "team.connection_added", row,
+            connector_key=row.get("connector_key"), account_label=row.get("account_label"),
+        )
+        return
+    previous = result.get("previous_connected_by")
+    audit_team_connection(
+        conn, user, "team.connection_reconnected", row, replaced=previous != user, previous_connected_by=previous,
+    )
+
+
 @tools_mcp_ns.route("/mcp_server/test")
 class TestMCPServerConfig(Resource):
     @api.expect(
@@ -287,10 +563,25 @@ class TestMCPServerConfig(Resource):
                 "config": fields.Raw(
                     required=True, description="MCP server configuration to test"
                 ),
+                "owner": fields.String(
+                    required=False,
+                    description="team: sign in to a new sign-in server for the team the workspace header names "
+                    "(Admins); the sign-in's events, cancel and status are the caller's",
+                ),
+                "connection_id": fields.String(
+                    required=False, description="With owner=team: the team's connection to this server to reconnect",
+                ),
             },
         )
     )
-    @api.doc(description="Test MCP server connection with provided configuration")
+    @api.doc(
+        description=(
+            "Test MCP server connection with provided configuration. With owner=team on a sign-in server "
+            "(Admins of the header's team), always starts a fresh sign-in for the team: "
+            "{requires_oauth, task_id}; 409 account_already_connected {connection_id} when the team is "
+            "already signed in to that server (reconnect it with connection_id instead)."
+        )
+    )
     def post(self):
         decoded_token = request.decoded_token
         if not decoded_token:
@@ -313,10 +604,18 @@ class TestMCPServerConfig(Resource):
                 )
 
             _validate_mcp_server_url(config)
+            parameters_error = _url_parameters_error(config)
+            if parameters_error is not None:
+                return parameters_error
             policy_error = _mcp_policy_error(config)
             if policy_error is not None:
                 return policy_error
 
+            team = _team_sign_in(data, user, config)
+            if isinstance(team, TeamSignIn):
+                return _start_team_sign_in(config, user, team)
+            if team is not None:
+                return team
             ctx = _existing_mcp_context(data.get("id"), user, config)
             if not isinstance(ctx, tuple):
                 return ctx
@@ -361,6 +660,8 @@ class TestMCPServerConfig(Resource):
             return make_response(jsonify(safe_result), 200)
         except AccessDenied as e:
             return denied_response(e)
+        except (WorkspaceError, ConnectionDenied) as e:
+            return e.response()
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server test request: {e}")
             return _invalid_server_url_response(e)
@@ -396,6 +697,19 @@ class MCPServerSave(Resource):
                 "status": fields.Boolean(
                     required=False, default=True, description="Tool status"
                 ),
+                "folder_id": fields.String(
+                    required=False,
+                    description="Folder to file the server in: the workspace's tree for a new server, the "
+                    "tool's own tree for an existing one; null unfiles an existing server",
+                ),
+                "owner": fields.String(
+                    required=False,
+                    description="team: save a sign-in server on the team's connection the caller just signed in "
+                    "to (config.oauth_task_id from /mcp_server/test with owner=team; Admins)",
+                ),
+                "connection_id": fields.String(
+                    required=False, description="With owner=team: the team's connection that was reconnected",
+                ),
             },
         )
     )
@@ -404,7 +718,9 @@ class MCPServerSave(Resource):
             "Create or update MCP server with automatic tool discovery. While Admin > Guardrails warns on tool "
             "descriptions, each discovered action is scored for prompt injection and stored with "
             "`injection: {p, scorer}`; the response's `injection` is `{flagged: [names], unscored: [names]}` "
-            "(null while the warnings are off). Nothing is deactivated."
+            "(null while the warnings are off). Nothing is deactivated. The response's `connection_id` is the "
+            "connection the server runs on. With owner=team, the tool is the team's, on the team connection "
+            "the caller's finished sign-in wrote; signing in again updates that tool."
         )
     )
     def post(self):
@@ -429,20 +745,41 @@ class MCPServerSave(Resource):
                 )
 
             _validate_mcp_server_url(config)
+            parameters_error = _url_parameters_error(config)
+            if parameters_error is not None:
+                return parameters_error
             policy_error = _mcp_policy_error(config)
             if policy_error is not None:
                 return policy_error
 
-            # An existing id is always an update of THAT row, written as its
-            # owner; it never falls through to creating a copy for the caller.
-            ctx = _existing_mcp_context(data.get("id"), user, config)
-            if not isinstance(ctx, tuple):
-                return ctx
-            existing_doc, owner_id, is_owner, _moved, merged_credentials = ctx
+            team = _team_sign_in(data, user, config)
+            if team is not None and not isinstance(team, TeamSignIn):
+                return team
+            if team is not None:
+                # A sign-in server for the team: the tool runs on the team's
+                # connection its Admin just signed in to.
+                existing_doc, owner_id, is_owner, merged_credentials = None, team.owner_id, True, {}
+            else:
+                # An existing id is always an update of THAT row, written as its
+                # owner; it never falls through to creating a copy for the caller.
+                ctx = _existing_mcp_context(data.get("id"), user, config)
+                if not isinstance(ctx, tuple):
+                    return ctx
+                existing_doc, owner_id, is_owner, _moved, merged_credentials = ctx
+            filing = _mcp_filing(data, user, owner_id)
+            # A team's server (owned by its principal) keeps a key-based secret on
+            # the tool, sealed under the principal; a sign-in server is on a team connection.
+            team_owned = is_principal_id(owner_id)
             auth_type = config.get("auth_type", "none")
             mcp_config = config.copy()
             mcp_config["auth_credentials"] = merged_credentials
+            connection_revision = None if team_owned else _mcp_connection_revision(owner_id, config, auth_type)
+            oauth_result: dict = {}
 
+            if team is not None and not config.get("oauth_task_id"):
+                return make_response(
+                    jsonify({"success": False, "error": "Sign in to this server for the team first."}), 400,
+                )
             if auth_type == "oauth" and not config.get("oauth_task_id"):
                 # Only the owner reaches here for an existing server (see
                 # ``_existing_mcp_context``). No new handshake: they signed in
@@ -465,9 +802,11 @@ class MCPServerSave(Resource):
             elif auth_type == "oauth":
                 redis_client = get_redis_instance()
                 manager = MCPOAuthManager(redis_client)
+                # Read from the caller's own stream: a sign-in someone else started is not theirs to save.
                 result = manager.get_oauth_status(
                     config["oauth_task_id"], user
                 )
+                oauth_result = result
                 if not result.get("status") == "completed":
                     return make_response(
                         jsonify(
@@ -503,7 +842,7 @@ class MCPServerSave(Resource):
                 "redirect_uri",
             ]:
                 storage_config.pop(field, None)
-            from docsgpt.connectors import catalog
+            from docsgpt.connectors import catalog, service
             from docsgpt.connectors.permissions import apply_default_permissions
 
             # Scored as read, so a re-save of an unchanged server is a cache hit; warn only.
@@ -515,39 +854,53 @@ class MCPServerSave(Resource):
             )
 
             display_name = data["displayName"]
-            # The connection is the owner's: an editor's save stores the
-            # secret on the owner's account, as the tool runs as its owner.
-            connection_id = _mcp_connection(
-                owner_id, storage_config, auth_type, merged_credentials, display_name,
-            ) or _previous_connection(existing_doc, storage_config, owner_id)
-            if auth_type == "oauth" and not connection_id:
-                # A sign-in server's tokens live on its connection. Without one
-                # (it was removed, and a client cached before that answered the
-                # discovery) the tool would be saved unconnected.
-                return make_response(
-                    jsonify({
-                        "success": False,
-                        "error": "Not signed in to this server. Sign in again to connect it.",
-                    }),
-                    400,
-                )
-            if connection_id and auth_type != "oauth":
-                # The secret lives on the connection only.
-                storage_config.pop("encrypted_credentials", None)
             description = f"MCP Server: {storage_config.get('server_url', 'Unknown')}"
             status_bool = bool(data.get("status", True))
-            fields_out = {
-                "display_name": display_name,
-                "custom_name": display_name,
-                "description": description,
-                "config": storage_config,
-                "connection_id": connection_id,
-            }
             updated_message = (
                 f"MCP server updated successfully! Discovered {len(transformed_actions)} tools."
             )
 
             with db_session() as conn:
+                # The connection is the owner's: an editor's save stores the
+                # secret on the owner's account, as the tool runs as its owner.
+                # Connection recovery and tool persistence share this transaction.
+                team_row = None
+                if team is not None:
+                    team_row = _team_signed_in_connection(conn, team, user, storage_config, oauth_result)
+                    connection_id = str(team_row["id"]) if team_row is not None else None
+                else:
+                    connection_id = None if team_owned else (_mcp_connection(
+                        conn,
+                        owner_id,
+                        storage_config,
+                        auth_type,
+                        merged_credentials,
+                        display_name,
+                        connection_revision,
+                    ) or _previous_connection(conn, existing_doc, storage_config, owner_id))
+                if auth_type == "oauth" and not connection_id:
+                    # A sign-in server's tokens live on its connection. Without one
+                    # (it was removed, and a client cached before that answered the
+                    # discovery) the tool would be saved unconnected.
+                    return make_response(
+                        jsonify({
+                            "success": False,
+                            "error": "Not signed in to this server. Sign in again to connect it.",
+                        }),
+                        400,
+                    )
+                if connection_id and auth_type != "oauth":
+                    # The secret lives on the connection only.
+                    storage_config.pop("encrypted_credentials", None)
+                # A preset's tool rebuilt from its connection gets the same project back.
+                service.remember_url_parameters(conn, connection_id, storage_config.get("server_url"))
+                fields_out = {
+                    "display_name": display_name,
+                    "custom_name": display_name,
+                    "description": description,
+                    "config": storage_config,
+                    "connection_id": connection_id,
+                }
                 repo = UserToolsRepository(conn)
                 if existing_doc is not None:
                     # ``status`` is the owner's own chat switch; an editor's
@@ -565,19 +918,34 @@ class MCPServerSave(Resource):
                         "tools_count": len(transformed_actions),
                     }
                 else:
-                    fields_out["status"] = status_bool
-                    # Fall back to find_by_user_and_name — the original
-                    # dual-write path also ran an existence check before
-                    # deciding between insert and update.
-                    existing_by_name = repo.find_by_user_and_name(user, "mcp_tool")
+                    if not team_owned:
+                        # A team server's ``status`` stays off: each member switches it
+                        # into their own chats (the creator's choice is set below).
+                        fields_out["status"] = status_bool
+                    if team is not None:
+                        # Signing in to the team's server again updates its tool.
+                        existing_by_name = next((
+                            t for t in repo.list_for_user(owner_id)
+                            if t.get("name") == "mcp_tool" and str(t.get("connection_id") or "") == connection_id
+                        ), None)
+                    elif team_owned:
+                        # A new server in a team is added, never matched by its address: the team's tool
+                        # there may run on an Admin's sign-in, which a member's save must not take over.
+                        existing_by_name = None
+                    else:
+                        # Fall back to find_by_user_and_name — the original
+                        # dual-write path also ran an existence check before
+                        # deciding between insert and update.
+                        existing_by_name = repo.find_by_user_and_name(owner_id, "mcp_tool")
                     if existing_by_name and (
-                        (existing_by_name.get("config") or {}).get("server_url")
+                        team is not None
+                        or (existing_by_name.get("config") or {}).get("server_url")
                         == storage_config.get("server_url")
                     ):
                         fields_out["actions"] = carry_pins_between(
                             existing_by_name.get("actions"), transformed_actions,
                         )
-                        repo.update(str(existing_by_name["id"]), user, fields_out)
+                        repo.update(str(existing_by_name["id"]), owner_id, fields_out)
                         saved_id = str(existing_by_name["id"])
                         response_data = {
                             "success": True,
@@ -587,15 +955,16 @@ class MCPServerSave(Resource):
                         }
                     else:
                         created = repo.create(
-                            user, "mcp_tool",
+                            owner_id, "mcp_tool",
                             config=storage_config,
                             custom_name=display_name,
                             display_name=display_name,
                             description=description,
                             config_requirements={},
                             actions=transformed_actions,
-                            status=status_bool,
+                            status=status_bool and not team_owned,
                             connection_id=connection_id,
+                            created_by=user,
                         )
                         saved_id = str(created["id"])
                         response_data = {
@@ -604,10 +973,21 @@ class MCPServerSave(Resource):
                             "message": f"MCP server created successfully! Discovered {len(transformed_actions)} tools.",
                             "tools_count": len(transformed_actions),
                         }
+                    if team_owned and status_bool:
+                        UserToolPreferencesRepository(conn).set_in_chat(user, saved_id, True)
+                if filing is not None and (existing_doc is not None or filing[1]):
+                    FolderItemsRepository(conn).file(filing[0], "tool", saved_id, filing[1])
+                if team_row is not None:
+                    _audit_team_sign_in(conn, user, team, team_row, oauth_result)
             response_data["injection"] = description_scan
+            response_data["connection_id"] = connection_id
             return make_response(jsonify(response_data), 200)
         except AccessDenied as e:
             return denied_response(e)
+        except (WorkspaceError, ConnectionDenied) as e:
+            return e.response()
+        except FolderError as e:
+            return e.response()
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")
             return _invalid_server_url_response(e)
@@ -726,16 +1106,23 @@ class MCPAuthStatus(Resource):
         user = decoded_token.get("sub")
         try:
             with db_readonly() as conn:
+                workspace = current_workspace(conn)
                 tools_repo = UserToolsRepository(conn)
                 sessions_repo = ConnectorSessionsRepository(conn)
-                all_tools = tools_repo.list_for_user(user)
-                owned_ids = {str(t["id"]) for t in all_tools}
-                # Team-shared MCP servers the caller can see run with the
-                # owner's connection, so their status is the owner's.
-                shared_ids = [
-                    tid for tid in visible_with_access(conn, user, "tool") if tid not in owned_ids
-                ]
-                all_tools = all_tools + tools_repo.list_by_ids(shared_ids)
+                if workspace.is_team:
+                    # The team's servers, the same list its Tools page shows.
+                    all_tools = tools_repo.list_for_user(workspace.owner_id)
+                else:
+                    all_tools = tools_repo.list_for_user(user)
+                    owned_ids = {str(t["id"]) for t in all_tools}
+                    # Team-shared MCP servers the caller can see run with the
+                    # owner's connection, so their status is the owner's.
+                    shared_ids = [
+                        tid for tid in visible_with_access(conn, user, "tool") if tid not in owned_ids
+                    ]
+                    all_tools = all_tools + tools_repo.list_by_ids(shared_ids)
+                    # A team's server never shows in Personal.
+                    all_tools = [t for t in all_tools if not is_principal_id(t.get("user_id"))]
                 mcp_tools = [t for t in all_tools if t.get("name") == "mcp_tool"]
                 if not mcp_tools:
                     return make_response(
@@ -752,7 +1139,10 @@ class MCPAuthStatus(Resource):
                     config = tool.get("config") or {}
                     auth_type = config.get("auth_type", "none")
                     row = None
-                    if tool.get("connection_id"):
+                    if is_connectionless_member(tool):
+                        # A team's tool on each person's own account: the caller's sign-in, never the team's.
+                        row = own_connection(conn, user, tool)
+                    elif tool.get("connection_id"):
                         row = sessions_repo.get(str(tool["connection_id"]))
                     elif auth_type == "oauth" and config.get("server_url"):
                         parsed = urlparse(config["server_url"])
@@ -773,6 +1163,8 @@ class MCPAuthStatus(Resource):
                         statuses[tool_id] = "configured"
 
             return make_response(jsonify({"success": True, "statuses": statuses}), 200)
+        except WorkspaceError as e:
+            return e.response()
         except Exception as e:
             current_app.logger.error(
                 "Error checking MCP auth status: %s", e, exc_info=True

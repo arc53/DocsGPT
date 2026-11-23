@@ -2,7 +2,7 @@ import 'katex/dist/katex.min.css';
 // Registers `\ce` and `\pu` with the KaTeX that rehype-katex renders with.
 import 'katex/contrib/mhchem';
 
-import { Fragment, memo, type ReactNode, useMemo } from 'react';
+import { Fragment, memo, type ReactNode, useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
@@ -32,7 +32,7 @@ import {
   type SandboxArtifact,
   sandboxUrlTransform,
 } from './sandboxLinks';
-import { cn, focusRing } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 // A formula KaTeX cannot typeset (a half-streamed one, most often) shows its
 // source in the muted text colour rather than KaTeX's red.
@@ -105,6 +105,11 @@ export default function MarkdownAnswer({
 }) {
   const { t } = useTranslation();
   const [isDarkTheme] = useDarkTheme();
+  // Every web link opens a new tab; one hidden description per answer says
+  // so to screen readers without landing in copied text. Always rendered:
+  // guessing from the markdown misses links with no URL text (an email
+  // autolink, a shortcut reference), and a hidden span costs nothing.
+  const newTabHintId = useId();
   const artifacts = useStableArtifacts(artifactsProp);
   const turnArtifacts = useStableArtifacts(turnArtifactsProp);
 
@@ -153,8 +158,6 @@ export default function MarkdownAnswer({
               toolName: artifact.toolName ?? '',
             })
           }
-          /* Sits mid-sentence, so it must wrap with the surrounding text. */
-          className="whitespace-normal"
         >
           {content}
         </Button>
@@ -201,14 +204,16 @@ export default function MarkdownAnswer({
           );
         }
         return (
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(focusRing, 'rounded-sm outline-none')}
-          >
-            {children}
-          </a>
+          <Button variant="link" size="text" asChild>
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-describedby={newTabHintId}
+            >
+              {children}
+            </a>
+          </Button>
         );
       },
       img({ src, alt }) {
@@ -260,7 +265,15 @@ export default function MarkdownAnswer({
         );
       },
     };
-  }, [t, isDarkTheme, artifacts, turnArtifacts, onOpenArtifact, onOpenSource]);
+  }, [
+    t,
+    isDarkTheme,
+    artifacts,
+    turnArtifacts,
+    onOpenArtifact,
+    onOpenSource,
+    newTabHintId,
+  ]);
 
   return (
     <>
@@ -289,6 +302,9 @@ export default function MarkdownAnswer({
           )}
         </Fragment>
       ))}
+      <span id={newTabHintId} hidden>
+        {t('conversation.opensInNewTab')}
+      </span>
     </>
   );
 }

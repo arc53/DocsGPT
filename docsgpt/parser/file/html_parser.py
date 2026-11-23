@@ -10,16 +10,18 @@ tables, headings and byte-exact code blocks at a few ms per page.
 import logging
 import re
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 from docsgpt.core.settings import settings
 from docsgpt.parser.file.base_parser import BaseParser
+from docsgpt.parser.html_text import html_to_text
 from docsgpt.utils import truncate_to_line_boundary
 
 logger = logging.getLogger(__name__)
 
-# The crawler's conventions (``crawler_markdown.py`` / ``read_webpage.py``),
-# so file and web ingestion produce the same Markdown shape.
+# Shared with the web loaders (``remote/page_content.py``) and the
+# ``read_webpage`` tool, so file and web ingestion produce the same Markdown
+# shape.
 #
 # ``table_infer_header``: a GFM table cannot start with a body row, so without
 # it markdownify puts an empty header above any table that carries no ``<th>``
@@ -41,37 +43,201 @@ _DROP_TAGS = ("title", "script", "style", "noscript", "template")
 _URI_ATTRIBUTES = ("src", "href", "srcset", "poster", "data")
 
 
-def html_to_markdown(html: Union[str, bytes]) -> str:
-    """Convert an HTML/XHTML document to Markdown.
+def _span_number(value) -> Optional[int]:
+    """A span attribute's ASCII digits as a number, clamped to 1000, or ``None``.
+
+    ``str.isdigit`` also accepts digits such as ``²`` that ``int()`` rejects, and
+    ``int()`` refuses a digit run past Python's conversion limit, so a run longer
+    than the clamp is clamped by its length instead of converted.
+    """
+    if not (isinstance(value, str) and value.isascii() and value.isdigit()):
+        return None
+    digits = value.lstrip("0")
+    return 1000 if len(digits) > 4 else min(1000, int(digits or "0"))
+
+
+def _span(cell, attribute: str) -> int:
+    """A cell's ``rowspan`` or ``colspan``, clamped the way markdownify clamps colspan."""
+    number = _span_number(cell.get(attribute))
+    return 1 if number is None else max(1, number)
+
+
+def _spans_row_group(cell) -> bool:
+    """Whether the cell carries ``rowspan="0"``: the rest of its row group.
+
+    HTML keeps ``rowspan="0"`` (``colspan="0"`` was dropped in HTML5 and is
+    one column): a browser reports ``rowSpan === 0`` and lays the cell out to
+    the last row of its ``thead``/``tbody``/``tfoot``, so the rows below it
+    are short a cell exactly as they are under a numeric ``rowspan``.
 
     Args:
-        html: The markup. Pass the raw bytes when you have them: BeautifulSoup
-            then decodes by the document's own BOM / ``<meta charset>``
-            instead of the process locale, so a windows-1250 page keeps its
-            diacritics.
+        cell: A ``td``/``th`` tag.
 
     Returns:
-        Markdown with runs of blank lines collapsed to one.
+        True when ``rowspan`` reads as zero.
     """
-    from bs4 import BeautifulSoup
-
-    return soup_to_markdown(BeautifulSoup(html, "html.parser"))
+    return _span_number(cell.get("rowspan")) == 0
 
 
-def soup_to_markdown(soup) -> str:
+def _readable_colspan(cell) -> None:
+    """Rewrite a ``colspan`` that markdownify would fail to read.
+
+    markdownify reads it with ``str.isdigit()`` and ``int()``, so a digit such as
+    ``²`` or a run past the conversion limit raises. The first is no number to a
+    browser either and is dropped; the second is written as its clamp.
+    """
+    value = cell.get("colspan")
+    if isinstance(value, str) and value.isdigit():
+        number = _span_number(value)
+        if number is None:
+            del cell["colspan"]
+        else:
+            cell["colspan"] = str(number)
+
+
+# A span attribute must not be able to make the output, or the conversion, much
+# larger than the page: a table gets its placeholders only while they stay within
+# a few per real cell, and is otherwise converted as markdownify converts it.
+_PLACEHOLDERS_PER_CELL = 8
+_MIN_PLACEHOLDERS = 64
+
+
+def _fill_row_spans(soup) -> None:
+    """Give every row the cells a ``rowspan`` from an earlier row takes up.
+
+    A GFM table cannot merge cells downwards, so a ``rowspan`` cell is written
+    once and the rows it reaches into come out one cell short. Every value in
+    those rows then reads under the wrong column: a table whose first column is
+    a region spanning several product rows puts the product under ``Region``
+    and the count under ``Product``.
+    """
+    for table in soup.find_all("table"):
+        # A nested table's rows are its own grid; it comes up in this loop itself.
+        rows = [row for row in table.find_all("tr") if row.find_parent("table") is table]
+        cells = [row.find_all(["td", "th"], recursive=False) for row in rows]
+        for row_cells in cells:
+            for cell in row_cells:
+                _readable_colspan(cell)
+        layout = _row_span_layout(cells, _row_group_ends(rows))
+        if layout is None:
+            continue
+        placed, covered = layout
+        for row, row_placed, row_covered in zip(rows, placed, covered):
+            if row_covered:
+                _pad_row(soup, row, row_placed, sorted(row_covered))
+
+
+def _row_group_ends(rows: list) -> List[int]:
+    """For each row, the index of the last row of the row group it sits in.
+
+    A row group is the row's ``thead``/``tbody``/``tfoot``; rows written
+    directly under the table are grouped by the table itself. A rowspan never
+    reaches past its group: ``rowspan="0"`` ends at its last row, and a numeric
+    rowspan stops there too.
+
+    Args:
+        rows: The table's ``tr`` tags, in document order.
+
+    Returns:
+        One index per row, positional with ``rows``.
+    """
+    groups: List[int] = []
+    last: Dict[int, int] = {}
+    for index, row in enumerate(rows):
+        group = row.find_parent(["thead", "tbody", "tfoot", "table"])
+        groups.append(id(group))
+        last[id(group)] = index
+    return [last[group] for group in groups]
+
+
+def _row_span_layout(cells: List[list], group_ends: List[int]) -> Optional[Tuple[List[list], List[set]]]:
+    """Where each row's own cells sit, and which columns earlier rowspans take.
+
+    Returns ``None`` once the placeholders would pass the table's budget.
+    """
+    budget = _MIN_PLACEHOLDERS + _PLACEHOLDERS_PER_CELL * sum(map(len, cells))
+    covered: List[set] = [set() for _ in cells]
+    placed: List[list] = []
+    needed = 0
+    for index, row_cells in enumerate(cells):
+        column = 0
+        row_placed = []
+        for cell in row_cells:
+            while column in covered[index]:
+                column += 1
+            row_placed.append((column, cell))
+            columns = _span(cell, "colspan")
+            if _spans_row_group(cell):
+                # ``rowspan="0"``: down to the last row of the row group.
+                rows_below = group_ends[index] - index
+            else:
+                # A rowspan never reaches past its row group.
+                rows_below = min(_span(cell, "rowspan") - 1, group_ends[index] - index)
+            needed += columns * rows_below
+            if needed > budget:
+                return None
+            for below in range(index + 1, index + 1 + rows_below):
+                covered[below].update(range(column, column + columns))
+            column += columns
+        placed.append(row_placed)
+    return placed, covered
+
+
+def _pad_row(soup, row, placed: list, columns: List[int]) -> None:
+    """Put an empty cell in front of the first own cell after each column.
+
+    The row is rebuilt in one pass. Its children are taken out front to back,
+    so every ``extract()`` finds its node at index 0, and put back in order; a
+    placeholder inserted with ``insert_before`` would scan its siblings instead.
+    """
+    column_of = {id(cell): at for at, cell in placed}
+    children = list(row.contents)
+    for child in children:
+        child.extract()
+    pending = iter(columns)
+    column = next(pending, None)
+    for child in children:
+        at = column_of.get(id(child))
+        while at is not None and column is not None and column < at:
+            row.append(soup.new_tag("td"))
+            column = next(pending, None)
+        row.append(child)
+    while column is not None:
+        row.append(soup.new_tag("td"))
+        column = next(pending, None)
+
+
+class MarkupTooDeepError(ValueError):
+    """Markup nested too deep for the recursive Markdown conversion."""
+
+
+def soup_to_markdown(soup, converter=None, plain_when_too_deep: bool = True) -> str:
     """Convert a parsed ``BeautifulSoup`` tree to Markdown.
 
     Destructive: the non-content elements in ``_DROP_TAGS`` (including
     ``<title>``) are removed from ``soup``; read the title first.
 
+    markdownify converts one element per recursion level, so a tree nested a
+    few hundred deep (html.parser nests every unclosed ``<p>``, ``<li>`` or
+    ``<span>`` in the one before it) exhausts Python's recursion limit.
+
     Args:
-        soup: The parsed document.
+        soup: The parsed document (or one element of it).
+        converter: A ``MarkdownConverter`` to use instead of the default one
+            built from ``MARKDOWNIFY_OPTIONS`` (the web extractor passes one
+            that rewrites links).
+        plain_when_too_deep: For a tree nested too deep, return its plain
+            text, one line per string; ``False`` raises ``MarkupTooDeepError``.
 
     Returns:
         Markdown with runs of blank lines collapsed to one.
+
+    Raises:
+        MarkupTooDeepError: The tree is too deep and ``plain_when_too_deep`` is off.
     """
     from bs4 import CData, Declaration, ProcessingInstruction
-    from markdownify import MarkdownConverter
+
+    from docsgpt.parser.markdown_conversion import WhitespacePreservingConverter
 
     for tag in soup.find_all(_DROP_TAGS):
         tag.decompose()
@@ -86,7 +252,16 @@ def soup_to_markdown(soup) -> str:
                 value = " ".join(value)
             if isinstance(value, str) and "data:" in value.lower():
                 del tag[attribute]
-    markdown = MarkdownConverter(**MARKDOWNIFY_OPTIONS).convert_soup(soup)
+    _fill_row_spans(soup)
+    converter = converter or WhitespacePreservingConverter(**MARKDOWNIFY_OPTIONS)
+    try:
+        markdown = converter.convert_soup(soup)
+    except RecursionError as e:
+        if not plain_when_too_deep:
+            raise MarkupTooDeepError("markup is nested too deep to convert to Markdown") from e
+        logger.warning("Markup is nested too deep to convert to Markdown; keeping its plain text")
+        # get_text walks the tree without recursing.
+        markdown = soup.get_text("\n", strip=True)
     return re.sub(r"\n{3,}", "\n\n", markdown).strip()
 
 
@@ -150,13 +325,28 @@ def read_markup_head(file: Path, max_bytes: int) -> bytes:
         if max_bytes <= 0:
             return fh.read()
         head = fh.read(max_bytes + 1)
-    if len(head) <= max_bytes:
-        return head
+    return cap_markup_bytes(head, max_bytes, Path(file).name)
+
+
+def cap_markup_bytes(data: bytes, max_bytes: int, label: str = "markup") -> bytes:
+    """Head-truncate markup bytes to ``max_bytes``, as ``read_markup_head`` does.
+
+    Args:
+        data: The markup.
+        max_bytes: Size gate; ``<= 0`` keeps everything.
+        label: What to name in the warning (a file name or a URL).
+
+    Returns:
+        ``data``, or its first ``max_bytes`` cut on a line boundary and
+        without a torn trailing character.
+    """
+    if max_bytes <= 0 or len(data) <= max_bytes:
+        return data
     logger.warning(
-        f"Markup {Path(file).name} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
+        f"Markup {label} exceeds MARKUP_MAX_BYTES ({max_bytes}); "
         f"parsing the first {max_bytes} bytes to bound memory"
     )
-    head = head[:max_bytes]
+    head = data[:max_bytes]
     if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
         # UTF-16 (BOM-declared): a byte-level line cut lands between the two
         # bytes of a code unit and the strict decode then fails outright, so
@@ -184,7 +374,7 @@ class HTMLParser(BaseParser):
 
         with open(file, "r", errors=errors) as f:
             soup = BeautifulSoup(f, "html.parser")
-        return soup.get_text("\n")
+        return html_to_text(soup)
 
     def get_file_metadata(self, file: Path) -> Dict:
         """Return the document title, when the markup carries one."""

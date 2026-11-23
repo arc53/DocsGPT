@@ -809,9 +809,9 @@ class DecideBackend(RemoteBackend):
             reply = self._send("POST", "/v1/decide/batch", {"requests": bodies}, lane=lane, deadline=deadline,
                                budget=budget, check=lambda data: len(data["responses"]) == len(bodies))
             items = reply.data["responses"] if reply.data is not None else None
-        if reply.reason == "rejected":
+        if reply.reason == "rejected":  # a refusal says nothing of which item, or whether it was the item's fault
             if len(requests) == 1:
-                return ["bad_item"]
+                return ["backend_error"]
             return [self._part([r], lane, deadline, budget, self._clock())[0] for r in requests]
         if reply.data is None:
             return [reply.reason] * len(requests)
@@ -826,14 +826,16 @@ class DecideBackend(RemoteBackend):
         return body
 
     def _outcome(self, request: Request, item: Any, ms: float, queue_ms: float) -> Outcome | str:
+        """The answers in a server's reply item, or why there are none: the server's own item error, or
+        ``backend_error`` for a reply that is not an answer to the questions asked."""
         if not isinstance(item, dict):
-            return "bad_item"
+            return "backend_error"
         if "error" in item:
-            return item["error"] if item["error"] in ITEM_REASONS else "bad_item"
+            return item["error"] if item["error"] in ITEM_REASONS else "backend_error"
         answers = _checked(item.get("answers"), request.questions)
         if answers is None:
             self._log_once("answers", logging.WARNING, "The decision server answered with the wrong question types")
-            return "bad_item"
+            return "backend_error"
         counted = self.encode(request)
         if counted is None:  # the tokenizer is still loading: take the server's count
             usage = item.get("usage") if isinstance(item.get("usage"), dict) else {}

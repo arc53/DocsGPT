@@ -123,6 +123,13 @@ class AuthSettings(SettingsGroup):
     PAT_MAX_PER_USER: int = Field(
         default=25, gt=0, description="Maximum number of live personal access tokens per user."
     )
+    TEAM_CHAT_EXPORT_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Lets a team's owner and admins export every chat of their team workspace as one file. "
+            "Personal chats are never included."
+        ),
+    )
 
     @field_validator("AUTH_TYPE", mode="before")
     @classmethod

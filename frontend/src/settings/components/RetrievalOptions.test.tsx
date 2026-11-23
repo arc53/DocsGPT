@@ -8,6 +8,7 @@ import {
   isPrescreenConfigValid,
   chunkingChanged,
   scoreThresholdHidden,
+  sourceHasFileLinks,
   DEFAULT_RETRIEVAL_OPTIONS,
   MAX_CHUNK_TOKENS,
   NO_DECISION_FEATURES,
@@ -165,6 +166,7 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
         chunks: 3,
         score_threshold: 0.25,
         rephrase_query: false,
+        show_links: false,
         prescreen: {
           enabled: true,
           candidate_k: 50,
@@ -186,6 +188,23 @@ describe('round-trip configToOptions(optionsToConfig(x)) == x', () => {
       },
     };
     expect(configToOptions(optionsToConfig(v))).toEqual(v);
+  });
+
+  it('shows file links unless the source turned them off', () => {
+    expect(configToOptions(undefined).retrieval.show_links).toBe(true);
+    const off = configToOptions({
+      retrieval: { show_links: false },
+    } as SourceConfig);
+    expect(off.retrieval.show_links).toBe(false);
+    expect(optionsToConfig(off).retrieval?.show_links).toBe(false);
+  });
+
+  it('offers file links only for services whose files have them', () => {
+    expect(sourceHasFileLinks('google_drive')).toBe(true);
+    expect(sourceHasFileLinks('share_point')).toBe(true);
+    expect(sourceHasFileLinks('confluence')).toBe(true);
+    expect(sourceHasFileLinks('github')).toBe(false);
+    expect(sourceHasFileLinks(undefined)).toBe(false);
   });
 
   it('round-trips a custom relevance filter', () => {

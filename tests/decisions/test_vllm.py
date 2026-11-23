@@ -114,10 +114,10 @@ class TestRequests:
         run(backend, [Request("s", {"relevant": Q.RELEVANT})], lane=lane)
         assert server.log[-1]["body"]["priority"] == priority
 
-    def test_missing_label_tokens_are_a_bad_item_and_name_the_fix(self, vllm, caplog):
+    def test_missing_label_tokens_are_a_backend_error_and_name_the_fix(self, vllm, caplog):
         backend, _ = vllm(FakeVllmServer(drop={902}))
         with caplog.at_level(logging.WARNING, logger="docsgpt.decisions.backends.http"):
-            assert run(backend, [Request("s", {"relevant": Q.RELEVANT})] * 2) == ["bad_item", "bad_item"]
+            assert run(backend, [Request("s", {"relevant": Q.RELEVANT})] * 2) == ["backend_error", "backend_error"]
         assert sum("processed_logprobs" in r.message for r in caplog.records) == 1
         assert not backend._breaker.open
 
@@ -128,14 +128,15 @@ class TestRequests:
         assert out[0] == "bad_item" and isinstance(out[1], Outcome)
         assert sum(e["path"] == "/v1/completions" for e in server.log) == 1
 
-    def test_one_failed_question_fails_only_its_state(self, vllm):
+    def test_a_refused_completion_is_a_backend_error_that_fails_only_its_state(self, vllm):
         import httpx2
 
         backend, server = vllm()
         backend._probe()
         server.script.append(httpx2.Response(400, json={"error": "too long"}))
         out = run(backend, [Request("a", {"relevant": Q.RELEVANT}), Request("b", {"relevant": Q.RELEVANT})])
-        assert sorted(isinstance(o, Outcome) for o in out) == [False, True] and "bad_item" in out
+        assert sorted(isinstance(o, Outcome) for o in out) == [False, True] and "backend_error" in out
+        assert "bad_item" not in out  # a 4xx says nothing of whether the item was at fault
 
 
 @pytest.mark.unit

@@ -1,14 +1,16 @@
 import { TriangleAlert, CircleCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { type FileRejection } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
+import { TEAM_ERROR_KEYS } from '../api/services/teamsService';
 import userService from '../api/services/userService';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
 import { Dropzone } from '../components/ui/dropzone';
+import { FormField } from '../components/ui/form-field';
 import { Input } from '../components/ui/input';
 import { Modal, ModalActions } from '../components/ui/modal';
 import {
@@ -19,8 +21,43 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { agentEditPath } from '../agents/paths';
+import {
+  folderPath,
+  folderShowsOn,
+  formatFolderPath,
+} from '../components/folders/folderTree';
+import { importFolderRefs } from '../components/folders/importFolderRef';
+import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from '../connectors/connectionErrors';
+import { CUSTOM_MODEL_ERROR_KEYS } from '../models/customModelErrors';
 import { ActiveState } from '../models/misc';
+import type { ImportModelRefusal } from '../models/types';
 import { selectSourceDocs, selectToken } from '../preferences/preferenceSlice';
+
+/** A plan entry for a whole knowledge folder rather than one source. */
+const isFolderEntry = (source: { type: string }) => source.type === 'folder';
+
+// Radix Select can't hold an empty value: "Leave unattached" gets a sentinel.
+const UNATTACHED = '__docsgpt-unattached__';
+
+/** The map with `key` set to `value`, or without it for "Leave unattached". */
+const mapped = (
+  map: Record<string, string>,
+  key: string,
+  value: string,
+): Record<string, string> => {
+  const next = { ...map };
+  if (value === UNATTACHED) delete next[key];
+  else next[key] = value;
+  return next;
+};
+
+// Names come from the file and the account: React escapes them already, so
+// i18next must not turn `&` or quotes into entities.
+const noEscape = { interpolation: { escapeValue: false } };
 
 const YAML_ACCEPT = {
   'application/x-yaml': ['.yaml', '.yml'],
@@ -29,9 +66,16 @@ const YAML_ACCEPT = {
 
 type PlanSource = {
   name: string;
+  /** `folder` for a whole knowledge folder, matched to the importer's own. */
   type: string;
   status: 'matched' | 'missing';
   target_id: string | null;
+  /** Folder entries: the entry's key in the file (`folder-N` by default). */
+  key?: string;
+  /** Folder entries: the names down to it, when the file carries them. */
+  path?: string[] | null;
+  /** Folder entries: `path` joined with `/`. */
+  path_key?: string | null;
 };
 
 type PlanTool = {
@@ -49,6 +93,8 @@ type PlanModel = {
   display_name?: string;
   status: 'matched' | 'unavailable' | 'reuse' | 'create';
   requires_secrets?: string[];
+  /** Why a team import leaves a custom model off. */
+  reason?: ImportModelRefusal;
 };
 
 type ImportPlan = {
@@ -61,11 +107,39 @@ type ImportPlan = {
   tools: PlanTool[];
   prompt: { status: string; name?: string };
   models: PlanModel[];
+  /** What the import will leave off (a folder the importer doesn't have). */
+  warnings?: string[];
   workflow?: {
     nodes: number;
     edges: number;
     action: 'create' | 'update' | 'delete';
   } | null;
+};
+
+/** What the importer chose for the plan's gaps, sent as the resolution. */
+type Resolutions = {
+  /** A missing source mapped by name to one of the importer's. */
+  sources: Record<string, string>;
+  /** A missing folder mapped by its ref to a folder of the workspace. */
+  folders: Record<string, string>;
+  toolSecrets: Record<string, Record<string, string>>;
+  /** A custom model's key, by its display name. */
+  modelKeys: Record<string, string>;
+};
+
+/** One picked file: its YAML, the server's plan of exactly that YAML, and the mappings made on that plan. */
+type ImportSession = {
+  yaml: string;
+  fileName: string;
+  plan: ImportPlan | null;
+  resolutions: Resolutions;
+};
+
+const EMPTY_SESSION: ImportSession = {
+  yaml: '',
+  fileName: '',
+  plan: null,
+  resolutions: { sources: {}, folders: {}, toolSecrets: {}, modelKeys: {} },
 };
 
 interface ImportAgentModalProps {
@@ -82,32 +156,71 @@ export default function ImportAgentModal({
   const sourceDocs = useSelector(selectSourceDocs);
   const navigate = useNavigate();
 
-  const [yamlText, setYamlText] = useState<string>('');
-  const [fileName, setFileName] = useState<string>('');
+  // One pick of a file and everything read from it: a new pick replaces the
+  // whole session, so a plan or a mapping never outlives the file it is for.
+  const [session, setSession] = useState<ImportSession>(EMPTY_SESSION);
+  const { yaml: yamlText, fileName, plan, resolutions } = session;
+  const {
+    sources: sourceMap,
+    folders: folderMap,
+    toolSecrets,
+    modelKeys,
+  } = resolutions;
+  // Bumped on every pick and reset: a file read or a review that answers
+  // after the pick changed belongs to a file no longer picked, and is dropped.
+  const pickId = useRef(0);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [plan, setPlan] = useState<ImportPlan | null>(null);
 
-  const [sourceMap, setSourceMap] = useState<Record<string, string>>({});
-  const [toolSecrets, setToolSecrets] = useState<
-    Record<string, Record<string, string>>
-  >({});
-  const [modelKeys, setModelKeys] = useState<Record<string, string>>({});
+  /** Updates one kind of mapping of the current session. */
+  const setResolution = <K extends keyof Resolutions>(
+    key: K,
+    update: (prev: Resolutions[K]) => Resolutions[K],
+  ) =>
+    setSession((prev) => ({
+      ...prev,
+      resolutions: {
+        ...prev.resolutions,
+        [key]: update(prev.resolutions[key]),
+      },
+    }));
+
+  // A missing folder mapped by hand to a folder of the workspace's tree,
+  // keyed the way the server reads `resolution.folders` (its key, else its
+  // path, else its name: whichever is the entry's alone).
+  const folderRefs = useMemo(() => {
+    const entries = (plan?.sources ?? []).filter(isFolderEntry);
+    const refs = importFolderRefs(entries);
+    return new Map(entries.map((entry, index) => [entry, refs[index]]));
+  }, [plan]);
+  const { tree: folderTree } = useSourceFolderTree();
+  const folderOptions = useMemo(
+    () =>
+      [...folderTree.byId.values()]
+        .filter((folder) => folderShowsOn(folderTree, folder, 'source'))
+        .map((folder) => ({
+          id: folder.id,
+          label: formatFolderPath(folderPath(folderTree, folder.id)),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [folderTree],
+  );
   const [warnings, setWarnings] = useState<string[] | null>(null);
   const [importedStatus, setImportedStatus] = useState<string | null>(null);
   const [goToEditPath, setGoToEditPath] = useState<string | null>(null);
 
-  const reset = () => {
-    setYamlText('');
-    setFileName('');
+  /** Starts a new session: whatever is still in flight is dropped. */
+  const newPick = (next: ImportSession = EMPTY_SESSION) => {
+    pickId.current += 1;
+    setSession(next);
     setLoading(false);
+  };
+
+  const reset = () => {
+    newPick();
     setImporting(false);
     setError(null);
-    setPlan(null);
-    setSourceMap({});
-    setToolSecrets({});
-    setModelKeys({});
     setWarnings(null);
     setImportedStatus(null);
     setGoToEditPath(null);
@@ -125,9 +238,12 @@ export default function ImportAgentModal({
       return;
     }
     setError(null);
-    setPlan(null);
-    setFileName(selectedFile.name);
-    setYamlText(await selectedFile.text());
+    newPick({ ...EMPTY_SESSION, fileName: selectedFile.name });
+    const pick = pickId.current;
+    const text = await selectedFile.text();
+    // A later pick read faster than this one: keep the later file.
+    if (pick !== pickId.current) return;
+    setSession((prev) => ({ ...prev, yaml: text }));
   };
 
   const handleDrop = (
@@ -137,8 +253,7 @@ export default function ImportAgentModal({
     // A rejected file never reaches acceptedFiles, so without this the
     // drop is a silent no-op and any previously picked file stays staged.
     if (fileRejections.length > 0) {
-      setFileName('');
-      setYamlText('');
+      newPick();
       setError(t('modals.importAgent.invalidFileType'));
       return;
     }
@@ -147,36 +262,117 @@ export default function ImportAgentModal({
 
   const handleAnalyze = async () => {
     if (!yamlText) return;
+    const pick = pickId.current;
+    const analysed = yamlText;
     setLoading(true);
     setError(null);
     try {
-      const response = await userService.planImportAgent(yamlText, token);
+      const response = await userService.planImportAgent(analysed, token);
       const data = await response.json();
+      if (pick !== pickId.current) return;
       if (!response.ok || !data.success) {
         setError(data.message || t('modals.importAgent.readError'));
         return;
       }
-      setPlan(data.plan as ImportPlan);
+      // The plan joins the session only while it still holds the file read.
+      setSession((prev) =>
+        prev.yaml === analysed
+          ? { ...prev, plan: data.plan as ImportPlan }
+          : prev,
+      );
     } catch {
-      setError(t('modals.importAgent.readError'));
+      if (pick === pickId.current) setError(t('modals.importAgent.readError'));
     } finally {
-      setLoading(false);
+      if (pick === pickId.current) setLoading(false);
     }
   };
 
+  /** A whole-folder entry of the plan: matched, or missing with a picker. */
+  const renderFolderEntry = (s: PlanSource, index: number) => {
+    const ref = folderRefs.get(s) ?? null;
+    // Two folders of one name read apart by their path.
+    const name = s.path?.length ? s.path.join(' › ') : s.name;
+    return s.status === 'matched' ? (
+      <p
+        key={`folder:${ref ?? index}`}
+        className="flex items-center gap-2 text-sm"
+      >
+        <CircleCheck className="text-success size-4" aria-hidden="true" />
+        {t('modals.importAgent.folderMatched', { name, ...noEscape })}
+      </p>
+    ) : (
+      <div key={`folder:${ref ?? index}`} className="flex flex-col gap-1">
+        <p className="flex items-center gap-2 text-sm">
+          <TriangleAlert className="text-warning size-4" aria-hidden="true" />
+          {t('modals.importAgent.folderMissing', { name, ...noEscape })}
+        </p>
+        {ref && folderOptions.length > 0 && (
+          <FormField
+            label={t('modals.importAgent.folderFor', { name, ...noEscape })}
+          >
+            <Select
+              value={folderMap[ref] || ''}
+              onValueChange={(value) =>
+                setResolution('folders', (prev) => mapped(prev, ref, value))
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue
+                  placeholder={t('modals.importAgent.leaveUnattached')}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {/* A pick can be taken back without cancelling. */}
+                <SelectItem value={UNATTACHED}>
+                  {t('modals.importAgent.leaveUnattached')}
+                </SelectItem>
+                {folderOptions.map((folder) => (
+                  <SelectItem key={folder.id} value={folder.id}>
+                    {folder.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+        )}
+      </div>
+    );
+  };
+
+  // An import over an agent that reaches outside its team is refused as
+  // its save would be: said in the app's words, not the server's English.
+  const importRefusal = (data: Record<string, unknown>): string => {
+    const code = connectionErrorCode(data) ?? data.code;
+    if (code === 'team_connection_outside')
+      return connectionErrorMessage(t, data);
+    if (code === 'team_item_shared_outside')
+      return t(TEAM_ERROR_KEYS.team_item_shared_outside);
+    return (
+      (typeof data.message === 'string' && data.message) ||
+      t('modals.importAgent.importError')
+    );
+  };
+
   const handleImport = async () => {
-    if (!plan) return;
+    // The plan and the YAML come from one session, so the file sent is the
+    // file the plan on screen was read from.
+    if (!plan || !yamlText) return;
     setImporting(true);
     setError(null);
 
     const resolution: {
       sources: Record<string, string>;
+      folders: Record<string, string>;
       tools: Record<string, { secrets: Record<string, string> }>;
       models: Record<string, { api_key: string }>;
-    } = { sources: {}, tools: {}, models: {} };
+    } = { sources: {}, folders: {}, tools: {}, models: {} };
 
     plan.sources.forEach((s) => {
-      if (s.status === 'missing' && sourceMap[s.name]) {
+      if (s.status !== 'missing') return;
+      if (isFolderEntry(s)) {
+        const ref = folderRefs.get(s);
+        if (ref && folderMap[ref]) resolution.folders[ref] = folderMap[ref];
+      } else if (sourceMap[s.name]) {
         resolution.sources[s.name] = sourceMap[s.name];
       }
     });
@@ -207,7 +403,7 @@ export default function ImportAgentModal({
       );
       const data = await response.json();
       if (!response.ok || !data.success) {
-        setError(data.message || t('modals.importAgent.importError'));
+        setError(importRefusal(data));
         return;
       }
       const agentId = data.agent_id as string;
@@ -220,7 +416,7 @@ export default function ImportAgentModal({
         setGoToEditPath(editPath);
         setWarnings(data.warnings as string[]);
         setImportedStatus((data.status as string) || null);
-        setPlan(null);
+        setSession((prev) => ({ ...prev, plan: null }));
         return;
       }
       handleClose();
@@ -233,7 +429,7 @@ export default function ImportAgentModal({
   };
 
   const setToolSecret = (key: string, field: string, value: string) => {
-    setToolSecrets((prev) => ({
+    setResolution('toolSecrets', (prev) => ({
       ...prev,
       [key]: { ...(prev[key] || {}), [field]: value },
     }));
@@ -353,16 +549,36 @@ export default function ImportAgentModal({
                 </p>
               ))}
 
+            {plan.warnings && plan.warnings.length > 0 && (
+              <Alert variant="warning" role="status">
+                <AlertTitle>
+                  {t('modals.importAgent.planWarningsTitle')}
+                </AlertTitle>
+                <AlertDescription>
+                  <ul className="list-disc space-y-1 pl-5">
+                    {plan.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {plan.sources.length > 0 && (
               <Section title={t('modals.importAgent.sources')}>
-                {plan.sources.map((s) =>
-                  s.status === 'matched' ? (
+                {plan.sources.map((s, index) =>
+                  isFolderEntry(s) ? (
+                    renderFolderEntry(s, index)
+                  ) : s.status === 'matched' ? (
                     <p key={s.name} className="flex items-center gap-2 text-sm">
                       <CircleCheck
                         className="text-success size-4"
                         aria-hidden="true"
                       />
-                      {t('modals.importAgent.sourceMatched', { name: s.name })}
+                      {t('modals.importAgent.sourceMatched', {
+                        name: s.name,
+                        ...noEscape,
+                      })}
                     </p>
                   ) : (
                     <div key={s.name} className="flex flex-col gap-1">
@@ -373,34 +589,47 @@ export default function ImportAgentModal({
                         />
                         {t('modals.importAgent.sourceMissing', {
                           name: s.name,
+                          ...noEscape,
                         })}
                       </p>
-                      <Select
-                        value={sourceMap[s.name] || ''}
-                        onValueChange={(value) =>
-                          setSourceMap((prev) => ({ ...prev, [s.name]: value }))
-                        }
+                      <FormField
+                        label={t('modals.importAgent.sourceFor', {
+                          name: s.name,
+                          ...noEscape,
+                        })}
                       >
-                        <SelectTrigger className="w-full">
-                          <SelectValue
-                            placeholder={t(
-                              'modals.importAgent.leaveUnattached',
+                        <Select
+                          value={sourceMap[s.name] || ''}
+                          onValueChange={(value) =>
+                            setResolution('sources', (prev) =>
+                              mapped(prev, s.name, value),
+                            )
+                          }
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue
+                              placeholder={t(
+                                'modals.importAgent.leaveUnattached',
+                              )}
+                            />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={UNATTACHED}>
+                              {t('modals.importAgent.leaveUnattached')}
+                            </SelectItem>
+                            {(sourceDocs || []).map(
+                              (doc: { id?: string; name?: string }) => (
+                                <SelectItem
+                                  key={String(doc.id)}
+                                  value={String(doc.id)}
+                                >
+                                  {doc.name}
+                                </SelectItem>
+                              ),
                             )}
-                          />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(sourceDocs || []).map(
-                            (doc: { id?: string; name?: string }) => (
-                              <SelectItem
-                                key={String(doc.id)}
-                                value={String(doc.id)}
-                              >
-                                {doc.name}
-                              </SelectItem>
-                            ),
-                          )}
-                        </SelectContent>
-                      </Select>
+                          </SelectContent>
+                        </Select>
+                      </FormField>
                     </div>
                   ),
                 )}
@@ -419,6 +648,7 @@ export default function ImportAgentModal({
                         />
                         {t('modals.importAgent.toolBuiltin', {
                           type: tool.type,
+                          ...noEscape,
                         })}
                       </p>
                     )}
@@ -430,6 +660,7 @@ export default function ImportAgentModal({
                         />
                         {t('modals.importAgent.toolReuse', {
                           name: tool.name || tool.type,
+                          ...noEscape,
                         })}
                       </p>
                     )}
@@ -438,6 +669,7 @@ export default function ImportAgentModal({
                         <AlertDescription>
                           {t('modals.importAgent.toolUnavailable', {
                             type: tool.type,
+                            ...noEscape,
                           })}
                         </AlertDescription>
                       </Alert>
@@ -447,6 +679,7 @@ export default function ImportAgentModal({
                         <p className="text-sm">
                           {t('modals.importAgent.toolCreate', {
                             name: tool.name || tool.type,
+                            ...noEscape,
                           })}
                         </p>
                         {(tool.requires_secrets || []).map((field) => (
@@ -455,7 +688,7 @@ export default function ImportAgentModal({
                             type="password"
                             placeholder={t(
                               'modals.importAgent.secretPlaceholder',
-                              { field },
+                              { field, ...noEscape },
                             )}
                             value={toolSecrets[tool.key]?.[field] || ''}
                             onChange={(e) =>
@@ -470,8 +703,24 @@ export default function ImportAgentModal({
               </Section>
             )}
 
-            {plan.models.some((m) => m.status === 'create') && (
+            {plan.models.some(
+              (m) => m.status === 'create' || leftOffReason(m),
+            ) && (
               <Section title={t('modals.importAgent.models')}>
+                {plan.models.filter(leftOffReason).map((m) => (
+                  // A team import that may not add the model: why.
+                  <Alert key={m.display_name} variant="warning">
+                    <AlertDescription>
+                      <p>
+                        {t('modals.importAgent.modelLeftOff', {
+                          name: m.display_name,
+                          ...noEscape,
+                        })}
+                      </p>
+                      <p>{t(leftOffReason(m) as string)}</p>
+                    </AlertDescription>
+                  </Alert>
+                ))}
                 {plan.models
                   .filter((m) => m.status === 'create')
                   .map((m) => (
@@ -479,6 +728,7 @@ export default function ImportAgentModal({
                       <p className="text-sm">
                         {t('modals.importAgent.modelCustom', {
                           name: m.display_name,
+                          ...noEscape,
                         })}
                       </p>
                       <Input
@@ -486,7 +736,7 @@ export default function ImportAgentModal({
                         placeholder={t('modals.importAgent.apiKeyPlaceholder')}
                         value={modelKeys[m.display_name || ''] || ''}
                         onChange={(e) =>
-                          setModelKeys((prev) => ({
+                          setResolution('modelKeys', (prev) => ({
                             ...prev,
                             [m.display_name || '']: e.target.value,
                           }))
@@ -507,6 +757,15 @@ export default function ImportAgentModal({
       </div>
     </Modal>
   );
+}
+
+/**
+ * The locale key of why a team import leaves a custom model off (only an
+ * Admin adds one, never a token), or null for a model it keeps.
+ */
+function leftOffReason(model: PlanModel): string | null {
+  if (model.status !== 'unavailable' || !model.reason) return null;
+  return CUSTOM_MODEL_ERROR_KEYS[model.reason] ?? null;
 }
 
 function Section({
