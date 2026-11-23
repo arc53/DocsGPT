@@ -1,6 +1,7 @@
 """Tests for GoogleDriveLoader."""
 
 import copy
+import os
 import json
 from unittest.mock import MagicMock, patch
 
@@ -944,9 +945,11 @@ class TestDownloadFailureIsolation:
         "status, reason",
         [(403, "cannotDownloadFile"), (403, "insufficientFilePermissions"), (404, "notFound")],
     )
-    def test_access_refusal_withholds_fingerprint(self, drive_loader, tmp_path, status, reason):
+    def test_access_refusal_is_a_transient_failure(self, drive_loader, tmp_path, status, reason):
         # Sharing settings can change without touching modifiedTime, so a file
-        # refused for access must not be fingerprinted as if it were indexed.
+        # refused for access is reported for a retry, not as the file's own fault.
+        # The fingerprint still describes the whole selection: the sync keeps
+        # it and retries only that file.
         loader, _ = drive_loader(
             {"f1": {"name": "a.pdf", "mimeType": "application/pdf"}, "f2": {"name": "b.txt", "mimeType": "text/plain"}},
             errors={"f1": _http_error(status, reason)},
@@ -955,10 +958,12 @@ class TestDownloadFailureIsolation:
         assert result["files_downloaded"] == 1
         assert result["files_skipped"] == 1
         assert result["files_failed"] == 0
-        assert result["sync_fingerprint"] is None
+        assert result["sync_fingerprint"]
+        assert result["failures"]["f1"]["kind"] == "transient"
+        assert result["file_ids"] == {"b.txt": "f2"}
 
     @pytest.mark.unit
-    def test_transient_failure_withholds_fingerprint(self, drive_loader, tmp_path):
+    def test_transient_failure_keeps_fingerprint(self, drive_loader, tmp_path):
         loader, _ = drive_loader(
             {"f1": {"name": "a.txt", "mimeType": "text/plain"}, "f2": {"name": "b.txt", "mimeType": "text/plain"}},
             errors={"f1": _http_error(403, "userRateLimitExceeded")},
@@ -966,7 +971,17 @@ class TestDownloadFailureIsolation:
         result = loader.download_to_directory(str(tmp_path), {"file_ids": ["f1", "f2"]})
         assert result["files_downloaded"] == 1
         assert result["files_failed"] == 1
-        assert result["sync_fingerprint"] is None
+        assert result["sync_fingerprint"]
+        assert result["failures"] == {"f1": {"kind": "transient", "error": result["failures"]["f1"]["error"]}}
+
+    @pytest.mark.unit
+    def test_content_refusal_is_a_permanent_failure(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(
+            {"big": {"name": "Huge", "mimeType": GDOC}, "f1": {"name": "a.txt", "mimeType": "text/plain"}},
+            errors={"big": _http_error(403, "exportSizeLimitExceeded")},
+        )
+        result = loader.download_to_directory(str(tmp_path), {"file_ids": ["big", "f1"]})
+        assert result["failures"]["big"]["kind"] == "permanent"
 
     @pytest.mark.unit
     def test_unreadable_subfolder_does_not_stop_siblings(self, drive_loader, tmp_path):
@@ -1444,3 +1459,75 @@ class TestFolderAccess:
     def test_item_fields_ask_whether_access_is_inherited(self):
         from docsgpt.parser.connectors.google_drive.loader import _ITEM_FIELDS
         assert "inheritedPermissionsDisabled" in _ITEM_FIELDS.split(",")
+
+
+class TestListSelection:
+
+    TREE = {
+        "root": {"name": "R", "mimeType": FOLDER},
+        "f1": {"name": "a.txt", "mimeType": "text/plain", "parent": "root", "modifiedTime": "2026-10-01T00:00:00Z",
+               "webViewLink": "https://drive/f1"},
+        "f2": {"name": "b.txt", "mimeType": "text/plain", "parent": "root", "modifiedTime": "2026-10-02T00:00:00Z"},
+    }
+    CONFIG = {"folder_ids": ["root"], "recursive": True}
+
+    @pytest.mark.unit
+    def test_lists_paths_ids_and_versions_without_downloading(self, drive_loader, tmp_path):
+        loader, drive = drive_loader(copy.deepcopy(self.TREE))
+        listing = loader.list_selection(self.CONFIG)
+        assert drive.media_calls == []
+        assert listing.complete
+        assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
+            ("f1", os.path.join("R", "a.txt"), "2026-10-01T00:00:00Z", "https://drive/f1"),
+            ("f2", os.path.join("R", "b.txt"), "2026-10-02T00:00:00Z", None),
+        ]
+        assert _files(tmp_path) == []
+
+    @pytest.mark.unit
+    def test_paths_match_the_full_download(self, drive_loader, tmp_path):
+        loader, _ = drive_loader(copy.deepcopy(self.TREE))
+        listing = loader.list_selection(self.CONFIG)
+        result = loader.download_to_directory(str(tmp_path), self.CONFIG)
+        assert sorted(result["file_ids"]) == sorted(e.path for e in listing.entries)
+        assert result["sync_fingerprint"] == loader.sync_fingerprint(self.CONFIG)
+
+    @pytest.mark.unit
+    def test_one_walk_serves_the_listing_fingerprint_and_download(self, drive_loader, tmp_path):
+        loader, drive = drive_loader(copy.deepcopy(self.TREE))
+        loader.list_selection(self.CONFIG)
+        calls = len(drive.list_calls)
+        loader.sync_fingerprint(self.CONFIG)
+        loader.download_to_directory(str(tmp_path), self.CONFIG)
+        assert len(drive.list_calls) == calls
+
+    @pytest.mark.unit
+    def test_incomplete_when_a_folder_cannot_be_read(self, drive_loader):
+        loader, drive = drive_loader(copy.deepcopy(self.TREE), get_errors={"root": _http_error(500, "backendError")})
+        listing = loader.list_selection(self.CONFIG)
+        assert not listing.complete
+
+    @pytest.mark.unit
+    def test_download_files_fetches_only_the_given_ids(self, drive_loader, tmp_path):
+        loader, drive = drive_loader(copy.deepcopy(self.TREE))
+        loader.list_selection(self.CONFIG)
+        assert drive.media_calls == []
+        result = loader.download_files(str(tmp_path), ["f2"])
+        assert drive.media_calls == ["f2"]
+        assert _files(tmp_path) == ["R/b.txt"]
+        assert result["files_downloaded"] == 1
+        assert result["file_ids"] == {os.path.join("R", "b.txt"): "f2"}
+        assert result["failures"] == {}
+
+    @pytest.mark.unit
+    def test_download_files_reports_failures_by_kind(self, drive_loader, tmp_path):
+        tree = copy.deepcopy(self.TREE)
+        tree["big"] = {"name": "Huge", "mimeType": GDOC, "parent": "root"}
+        loader, _ = drive_loader(
+            tree, errors={"f1": _http_error(429, "rateLimitExceeded"), "big": _http_error(403, "exportSizeLimitExceeded")},
+        )
+        loader.list_selection(self.CONFIG)
+        result = loader.download_files(str(tmp_path), ["f1", "big", "unknown"])
+        assert result["files_downloaded"] == 0
+        assert {k: v["kind"] for k, v in result["failures"].items()} == {
+            "f1": "transient", "big": "permanent", "unknown": "transient",
+        }

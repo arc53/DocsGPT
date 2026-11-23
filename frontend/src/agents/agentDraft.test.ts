@@ -2,13 +2,17 @@ import i18next from 'i18next';
 
 import { DEFAULT_ANALYTICS } from './analyticsConfig';
 import {
+  AGENT_DRAFT_FIELDS,
+  AGENT_STEP_FIELDS,
   type AgentDraftForm,
   type GuardrailControlToAdd,
   agentDraftContext,
   agentDraftValues,
   agentProposalSummary,
   agentStepResult,
+  draftValueOf,
   editedSinceFields,
+  fieldsToApply,
   gapLine,
   gapRequest,
   gapTitle,
@@ -28,6 +32,7 @@ const form = (over: Partial<AgentDraftForm> = {}): AgentDraftForm => ({
   description: '',
   agent_type: 'classic',
   sources: [],
+  folders: [],
   tools: [],
   starters: [],
   prompt: 'default',
@@ -85,6 +90,59 @@ describe('agentDraft', () => {
     expect(proposal.next_step).toBe('prompt');
     expect(parseAgentProposal('text')).toBeNull();
     expect(parseAgentProposal({ fields: {} })!.next_step).toBeNull();
+  });
+
+  it('reads drafted knowledge folders as the whole list, like sources', () => {
+    const proposal = parseAgentProposal({
+      fields: { sources: ['s1'], folders: ['f1', 7, 'f2'] },
+      reasons: [
+        { field: 'folders', summary: 'Live: what is filed later reaches it' },
+      ],
+      gaps: [{ gap_type: 'docs gap', fields: ['folders', 'tools'] }],
+      dropped: [{ field: 'folders', id: 'gone', reason: 'not_found' }],
+    })!;
+    expect(proposal.fields).toEqual({ sources: ['s1'], folders: ['f1', 'f2'] });
+    // A gap names only the fields the proposal sets.
+    expect(proposal.gaps[0].fields).toEqual(['folders']);
+    expect(proposal.dropped).toEqual([
+      { field: 'folders', id: 'gone', reason: 'not_found' },
+    ]);
+    expect(parseAgentProposal({ fields: { folders: 'f1' } })!.fields).toEqual(
+      {},
+    );
+  });
+
+  it('drafts knowledge folders in the knowledge step, right after sources', () => {
+    expect(AGENT_DRAFT_FIELDS.slice(0, 3)).toEqual([
+      'sources',
+      'folders',
+      'tools',
+    ]);
+    expect(AGENT_STEP_FIELDS.knowledge).toContain('folders');
+    // Compared in any order, like sources.
+    expect(draftValueOf('folders', ['b', 'a'])).toEqual(['a', 'b']);
+    const now = form({ sources: ['s1', 's2'], folders: ['f1'] });
+    // The server takes fed sources off when it adds their folder: both change.
+    const changes = planAgentPatch(
+      { sources: ['s2'], folders: ['f2', 'f1', 'f2'] },
+      now,
+      [],
+    );
+    expect(changes).toEqual([
+      { field: 'sources', next: ['s2'], previous: ['s1', 's2'] },
+      { field: 'folders', next: ['f2', 'f1'], previous: ['f1'] },
+    ]);
+    expect(planAgentPatch({ folders: ['f1'] }, now, [])).toEqual([]);
+  });
+
+  it('leaves drafted folders out where the picker offers none', () => {
+    const fields = { sources: ['s1'], folders: ['f1'], name: 'N' };
+    expect(fieldsToApply(fields, true)).toBe(fields);
+    // The server trimmed the sources for those folders: neither applies.
+    expect(fieldsToApply(fields, false)).toEqual({ name: 'N' });
+    expect(fieldsToApply({ sources: ['s1'] }, false)).toEqual({
+      sources: ['s1'],
+    });
   });
 
   it('reads limits, guardrail checks and topics from the safety step', () => {
@@ -380,10 +438,11 @@ describe('agentDraft', () => {
     });
   });
 
-  it('reads an untouched form as empty, and a picked source as not', () => {
+  it('reads an untouched form as empty, and a picked source or folder as not', () => {
     expect(isAgentFormEmpty(form())).toBe(true);
     expect(isAgentFormEmpty(form({ starters: ['  '] }))).toBe(true);
     expect(isAgentFormEmpty(form({ sources: ['s1'] }))).toBe(false);
+    expect(isAgentFormEmpty(form({ folders: ['f1'] }))).toBe(false);
     expect(isAgentFormEmpty(form({ prompt: 'p1' }))).toBe(false);
   });
 
@@ -450,6 +509,10 @@ describe('agentDraft', () => {
         promptDraft: true,
       }),
     ).toEqual(['tightenPrompt']);
+    // A knowledge folder is something to answer from too.
+    expect(
+      improveSuggestions(form({ folders: ['f1'], starters: ['Hi'] }), none),
+    ).toEqual(['writePrompt']);
   });
 
   it('sends the form and the step as the contract context', () => {
@@ -522,6 +585,8 @@ describe('agentDraft', () => {
         description: '',
         agent_type: 'classic',
         sources: [],
+        folders: [],
+        folders_offered: true,
         tools: ['t1'],
         // The prompt view's unsaved text goes beside the picked prompt.
         prompt_id: 'p1',
@@ -559,6 +624,30 @@ describe('agentDraft', () => {
       limits: { mode: 'none', value: null },
       guardrails: { enabled: false, mode: 'monitor_only', controls: [] },
     });
+    // The form's knowledge folders go beside its sources; an agent of
+    // another workspace has a picker that offers none.
+    expect(
+      agentDraftContext(
+        'a1',
+        form({ sources: ['s1'], folders: ['f1', 'f2'] }),
+        { step: null, earlier: [] },
+        null,
+      ).form,
+    ).toMatchObject({
+      sources: ['s1'],
+      folders: ['f1', 'f2'],
+      folders_offered: true,
+    });
+    expect(
+      agentDraftContext(
+        'a1',
+        form({ folders: ['f1'] }),
+        { step: null, earlier: [] },
+        null,
+        {},
+        false,
+      ).form,
+    ).toMatchObject({ folders: ['f1'], folders_offered: false });
     // A control switched off runs no check: the recipe may offer it again,
     // and a check on at one stage only can get its other stage.
     expect(
@@ -590,6 +679,31 @@ describe('agentDraft', () => {
         null,
       ).form.guardrails.controls,
     ).toEqual([{ check: 'injection', stage: 'input' }]);
+  });
+
+  it('labels drafted and dropped knowledge folders as their own field', () => {
+    const proposal = parseAgentProposal({
+      fields: { sources: ['s2'], folders: ['f1'] },
+      reasons: [
+        { field: 'sources', summary: 'The handbook' },
+        { field: 'folders', summary: 'Live: new policies reach it' },
+      ],
+      dropped: [{ field: 'folders', id: 'gone', reason: 'not_found' }],
+    })!;
+    const fields: unknown[] = [];
+    const record = ((key: string, options?: Record<string, unknown>) => {
+      if (key === 'drafter.agent.droppedLine') fields.push(options?.field);
+      return key;
+    }) as never;
+    const { rows } = agentProposalSummary(proposal, record, [
+      'sources',
+      'folders',
+    ]);
+    expect(rows.map((row) => [row.key, row.label])).toEqual([
+      ['sources-0', 'agents.form.labels.sources'],
+      ['folders-1', 'drafter.agent.fields.folders'],
+    ]);
+    expect(fields).toEqual(['drafter.agent.fields.folders']);
   });
 
   it('gives a reason row only for the fields the draft changed', () => {
@@ -808,6 +922,15 @@ describe('agentDraft', () => {
     expect(agentStepResult('knowledge', form(), t, '')).toBe(
       'drafter.agent.build.result.none',
     );
+    // Knowledge folders count beside sources and tools, or on their own.
+    expect(
+      agentStepResult('knowledge', { ...filled, folders: ['f1'] }, t, ''),
+    ).toBe(
+      'drafter.counts.sources:2, drafter.counts.folders:1, and Tracking API',
+    );
+    expect(
+      agentStepResult('knowledge', form({ folders: ['f1', 'f2'] }), t, ''),
+    ).toBe('drafter.counts.folders:2');
     expect(agentStepResult('safety', form(), t, '')).toBe(
       'drafter.agent.build.result.noLimit',
     );
@@ -970,6 +1093,54 @@ describe('agentDraft', () => {
     ]);
     // A later proposal of the same turn takes this one's values as sent.
     expect(plan.sent).toMatchObject({ name: 'Old', description: 'New' });
+  });
+
+  it('keeps sources and folders together when either moved while the turn ran', () => {
+    // Sent with sources S and T; folder H ticked by hand meanwhile. The
+    // server took S off because the drafted folder G feeds it.
+    const sent = form({ sources: ['S', 'T'], description: 'Was' });
+    const now = form({
+      sources: ['S', 'T'],
+      folders: ['H'],
+      description: 'Was',
+    });
+    const plan = planAgentProposal(
+      { folders: ['G'], sources: ['T'], description: 'New' },
+      now,
+      sent,
+      [],
+      () => null,
+    );
+    expect(plan.changes.map((change) => change.field)).toEqual(['description']);
+    expect(plan.kept).toEqual([
+      { field: 'sources', previous: ['S', 'T'], applied: ['T'] },
+      { field: 'folders', previous: [], applied: ['G'] },
+    ]);
+    expect(plan.sent).toMatchObject({ sources: ['S', 'T'], folders: [] });
+    // "You changed Knowledge… in the form" names what still differs.
+    expect(
+      editedSinceFields(plan.applied, plan.kept, agentDraftValues(now)),
+    ).toEqual(['sources', 'folders']);
+    // Sources alone were normalised against the folders sent: kept too.
+    const sourcesOnly = planAgentProposal(
+      { sources: ['T'] },
+      now,
+      sent,
+      [],
+      () => null,
+    );
+    expect(sourcesOnly.changes).toEqual([]);
+    expect(sourcesOnly.kept.map((change) => change.field)).toEqual(['sources']);
+    // Sources picked by hand hold back drafted folders the same way.
+    const picked = planAgentProposal(
+      { folders: ['G'] },
+      form({ sources: ['S', 'T', 'U'] }),
+      sent,
+      [],
+      () => null,
+    );
+    expect(picked.changes).toEqual([]);
+    expect(picked.kept.map((change) => change.field)).toEqual(['folders']);
   });
 
   it('tells an undone field from an edited one', () => {

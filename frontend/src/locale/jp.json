@@ -1842,6 +1842,7 @@
         "other_step": "別のステップで行う変更"
       },
       "fields": {
+        "folders": "ナレッジフォルダ",
         "limits": "利用制限"
       },
       "formEdited": "フォームで {{fields}} を変更しました。",
@@ -1910,6 +1911,7 @@
     "changeModel": "モデルを変更",
     "counts": {
       "agents_other": "エージェント {{count}} 件",
+      "folders_other": "フォルダ {{count}} 件",
       "models_other": "モデル {{count}} 件",
       "prompts_other": "プロンプト {{count}} 件",
       "sources_other": "ナレッジ {{count}} 件",
@@ -2595,8 +2597,8 @@
         "failed": "アップロード失敗",
         "ingestionFailed": "取り込みに失敗しました。",
         "parsing": "ファイルを解析中...",
-        "partialDownload_one": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
-        "partialDownload_other": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_one": "{{count}} 件の項目を読み込めなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_other": "{{count}} 件の項目を読み込めなかったため、除外されました。ソースを同期して再試行してください。",
         "preparing": "アップロードを準備中",
         "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください",
         "tooManyFiles": "このソースのファイル数が上限の {{limit}} 件を超えています。より小さいフォルダ、パス、または選択範囲を選んでください。",
@@ -3999,8 +4001,6 @@
       "taskModelDescription": "フォームの下書き、ナレッジグラフの構築、モニターのチェックを行います。チャットではエージェントのモデルを使用します。",
       "taskModelFailed": "{{model}} で前回のタスクを実行できませんでした。プロバイダーが API キーを拒否しました。別のモデルを選ぶか、管理者にキーの確認を依頼してください。",
       "taskModelFailedItem": "· キーが拒否されました",
-      "taskModelInstanceDefault": "インスタンスのデフォルトを使用（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用",
       "taskModelLoadError": "タスクモデルを読み込めませんでした。",
       "taskModelSaveFailed": "タスクモデルを保存できませんでした。もう一度お試しください。",
       "taskModelUnavailable": "タスクモデルを実行できなくなりました（無効化または削除されました）。そのため、インスタンスのデフォルトが使われます。モデルが戻ると再び使われます。置き換えるには、ここでオプションを選んでください。",
@@ -4348,6 +4348,8 @@
       "files": "ファイル",
       "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
+      "filesFailed_one": "前回の同期で {{count}} 件のファイルの最新版をインデックスできませんでした。以前にインデックスされたファイルは、前の内容で検索に表示されることがあります。",
+      "filesFailed_other": "前回の同期で {{count}} 件のファイルの最新版をインデックスできませんでした。以前にインデックスされたファイルは、前の内容で検索に表示されることがあります。",
       "filesLoadError": "ファイルを読み込めませんでした",
       "filterFiles": "ファイルを絞り込む",
       "folderAlt": "フォルダ",
@@ -4590,6 +4592,7 @@
         },
         "title": "詳細設定"
       },
+      "retryFailedFiles": "今すぐ再試行",
       "searchAlt": "検索",
       "searchChunks": "チャンクを検索",
       "searchPlaceholder": "ナレッジを検索…",

@@ -350,6 +350,21 @@ describe('source.ingest.completed', () => {
     expect(state.tasks[0].itemsNotDownloaded).toBeUndefined();
   });
 
+  it('keeps how many files a sync could not read, partial or not', () => {
+    let state = stateWithTask(makeTask({ status: 'training' }));
+    state = reducer(
+      state,
+      ingest('source.ingest.completed', {
+        incremental: true,
+        files_failed: 2,
+        folders_failed: 5,
+      }),
+    );
+    expect(state.tasks[0].status).toBe('completed');
+    // Folders count only for a partial download.
+    expect(state.tasks[0].itemsNotDownloaded).toBe(2);
+  });
+
   it('with limited=true transitions training -> failed and flags tokenLimitReached', () => {
     let state = stateWithTask(
       makeTask({ status: 'training', dismissed: true }),
@@ -629,6 +644,29 @@ describe('upload race — SSE auto-created duplicate absorbed on sourceId bind',
     expect(task.id).toBe('client-1');
     expect(task.status).toBe('completed');
     expect(task.progress).toBe(100);
+  });
+
+  it('keeps how many files the orphan could not read', () => {
+    let state = stateWithTask(
+      makeTask({ id: 'client-1', sourceId: undefined, status: 'uploading' }),
+    );
+    state = reducer(
+      state,
+      ingest('source.ingest.queued', { filename: 'doc.pdf' }),
+    );
+    state = reducer(
+      state,
+      ingest('source.ingest.completed', { files_failed: 2 }),
+    );
+    state = reducer(
+      state,
+      updateUploadTask({
+        id: 'client-1',
+        updates: { sourceId: SOURCE_ID, status: 'training', progress: 0 },
+      }),
+    );
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0].itemsNotDownloaded).toBe(2);
   });
 });
 

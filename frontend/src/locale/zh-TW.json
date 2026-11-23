@@ -1842,6 +1842,7 @@
         "other_step": "屬於其他步驟的變更"
       },
       "fields": {
+        "folders": "知識庫資料夾",
         "limits": "使用限制"
       },
       "formEdited": "你在表單中變更了 {{fields}}。",
@@ -1910,6 +1911,7 @@
     "changeModel": "更換模型",
     "counts": {
       "agents_other": "{{count}} 個代理",
+      "folders_other": "{{count}} 個資料夾",
       "models_other": "{{count}} 個模型",
       "prompts_other": "{{count}} 個提示詞",
       "sources_other": "{{count}} 個知識來源",
@@ -2595,8 +2597,8 @@
         "failed": "上傳失敗",
         "ingestionFailed": "匯入失敗。",
         "parsing": "正在解析檔案...",
-        "partialDownload_one": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
-        "partialDownload_other": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
+        "partialDownload_one": "有 {{count}} 個項目無法讀取，已略過。請同步此來源以重試。",
+        "partialDownload_other": "有 {{count}} 個項目無法讀取，已略過。請同步此來源以重試。",
         "preparing": "準備上傳",
         "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
         "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
@@ -3999,8 +4001,6 @@
       "taskModelDescription": "用於草擬表單、建立知識圖譜和檢查監控。對話使用代理的模型。",
       "taskModelFailed": "{{model}} 無法執行你的上一個任務：其提供者拒絕了 API 金鑰。請選擇其他模型，或請管理員檢查金鑰。",
       "taskModelFailedItem": "· 金鑰遭拒絕",
-      "taskModelInstanceDefault": "使用執行個體預設值（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "使用執行個體預設值",
       "taskModelLoadError": "無法載入任務模型。",
       "taskModelSaveFailed": "無法儲存任務模型，請再試一次。",
       "taskModelUnavailable": "你的任務模型已無法執行（已被停用或移除），因此改用執行個體預設值。如果該模型恢復，會再次使用它；在此選擇一個選項即可取代它。",
@@ -4348,6 +4348,8 @@
       "files": "檔案",
       "filesByline_one": "{{files}} 個檔案 · {{tokens}} Token",
       "filesByline_other": "{{files}} 個檔案 · {{tokens}} Token",
+      "filesFailed_one": "上次同步時有 {{count}} 個檔案的最新版本無法編入索引。先前已編入索引的檔案可能仍以舊內容出現在搜尋中。",
+      "filesFailed_other": "上次同步時有 {{count}} 個檔案的最新版本無法編入索引。先前已編入索引的檔案可能仍以舊內容出現在搜尋中。",
       "filesLoadError": "無法載入檔案",
       "filterFiles": "篩選檔案",
       "folderAlt": "資料夾",
@@ -4590,6 +4592,7 @@
         },
         "title": "進階設定"
       },
+      "retryFailedFiles": "立即重試",
       "searchAlt": "搜尋",
       "searchChunks": "搜尋文本塊",
       "searchPlaceholder": "搜尋知識…",
