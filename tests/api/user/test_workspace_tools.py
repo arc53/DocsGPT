@@ -13,7 +13,7 @@ import pytest
 from flask import Flask
 from sqlalchemy import text
 
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials, encrypt_credentials
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_tool_preferences import UserToolPreferencesRepository
@@ -235,7 +235,7 @@ class TestTeamCreate:
         from docsgpt.agents.tool_executor import API_TOOL_SECRETS_KEY
 
         blob = row["config"][API_TOOL_SECRETS_KEY]
-        assert decrypt_credentials(blob, principal) and decrypt_credentials(blob, "eddie") == {}
+        assert decrypt_tool_credentials(blob, principal) and decrypt_tool_credentials(blob, "eddie") == {}
 
     def test_remote_device_is_personal_only(self, app, pg_conn):
         tid, principal = _team(pg_conn)
@@ -382,7 +382,7 @@ class TestTeamMCP:
         row = _row(pg_conn, resp.json["id"], principal)
         assert row["created_by"] == "eddie" and row["status"] is False
         assert row["connection_id"] is None
-        assert decrypt_credentials(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
+        assert decrypt_tool_credentials(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
         assert cls.call_args.kwargs["user_id"] == principal
         count = pg_conn.execute(
             text("SELECT count(*) FROM connector_sessions WHERE user_id = :p"), {"p": principal}
@@ -401,7 +401,7 @@ class TestTeamMCP:
         assert resp.status_code == 200, resp.json
         row = _row(pg_conn, tool["id"], principal)
         assert row["display_name"] == "Renamed" and row["connection_id"] is None
-        assert decrypt_credentials(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
+        assert decrypt_tool_credentials(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
 
     def test_a_new_team_server_is_filed_in_the_teams_folder(self, app, pg_conn):
         from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository

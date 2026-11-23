@@ -14,7 +14,7 @@ import pytest
 from flask import Flask
 
 import docsgpt.api.user  # noqa: F401  (import order: avoids the tools/tasks cycle)
-from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
 from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
@@ -74,8 +74,8 @@ class TestCopy:
         row = _row(pg_conn, body["id"])
         assert row["user_id"] == principal and row["created_by"] == user
         # The key is the team's now: it opens with the principal, not with the person.
-        assert decrypt_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-mine"
-        assert not decrypt_credentials(row["api_key_encrypted"], user)
+        assert decrypt_tool_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-mine"
+        assert not decrypt_tool_credentials(row["api_key_encrypted"], user)
         # The person's own row is untouched.
         assert _row(pg_conn, mid) == before
         invalidate.assert_called_once_with(principal)

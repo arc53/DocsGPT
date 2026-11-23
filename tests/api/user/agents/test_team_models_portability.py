@@ -26,7 +26,7 @@ from docsgpt.api.user.agents.portability import (
     apply_import,
     plan_import,
 )
-from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.user_custom_models import UserCustomModelsRepository
 from docsgpt.workspaces.context import WORKSPACE_HEADER
@@ -164,7 +164,7 @@ class TestTeamApply:
 
         [row] = UserCustomModelsRepository(pg_conn).list_for_user(principal)
         assert row["created_by"] == ADMIN
-        assert decrypt_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-new"
+        assert decrypt_tool_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-new"
         assert UserCustomModelsRepository(pg_conn).list_for_user(ADMIN) == []
         agent = _agent(pg_conn, result["agent_id"], principal)
         assert agent["models"] == [str(row["id"])] and agent["default_model_id"] == str(row["id"])

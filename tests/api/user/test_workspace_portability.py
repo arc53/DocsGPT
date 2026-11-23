@@ -30,7 +30,7 @@ from docsgpt.api.user.agents.portability import (
     plan_import,
     serialize_agent,
 )
-from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.folders import FoldersRepository
 from docsgpt.storage.db.repositories.prompts import PromptsRepository
@@ -194,8 +194,8 @@ class TestTeamImport:
         }
         # Secrets are sealed to the team, so every member's run opens them as the team.
         blob = tool["config"]["encrypted_credentials"]
-        assert decrypt_credentials(blob, principal) == {"api_key": "SECRET"}
-        assert decrypt_credentials(blob, EDITOR) == {}
+        assert decrypt_tool_credentials(blob, principal) == {"api_key": "SECRET"}
+        assert decrypt_tool_credentials(blob, EDITOR) == {}
 
     def test_a_workflow_lands_under_the_principal(self, pg_conn):
         tid, principal = _team(pg_conn)
@@ -563,7 +563,7 @@ class TestImportedApiToolSecrets:
         from docsgpt.agents.tool_executor import api_tool_action_with_secrets
 
         assert "sk-live" not in json.dumps(tool["config"])
-        assert decrypt_credentials(tool["config"]["encrypted_action_secrets"], owner) == {
+        assert decrypt_tool_credentials(tool["config"]["encrypted_action_secrets"], owner) == {
             "get_users": {"headers": {"X-Key": "sk-live"}}
         }
         action = api_tool_action_with_secrets(tool, "get_users")
@@ -577,4 +577,4 @@ class TestImportedApiToolSecrets:
         tool = self._import(pg_conn, _team_ws(tid, principal))
         assert tool["user_id"] == principal
         self._assert_sealed_and_runs(tool, principal)
-        assert decrypt_credentials(tool["config"]["encrypted_action_secrets"], EDITOR) == {}
+        assert decrypt_tool_credentials(tool["config"]["encrypted_action_secrets"], EDITOR) == {}
