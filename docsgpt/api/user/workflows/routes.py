@@ -10,6 +10,8 @@ from flask_restx import Namespace, Resource
 from sqlalchemy import text as sql_text
 
 from docsgpt.agents.workflows.schemas import (
+    AI_DECISION_MAX_BRANCHES,
+    AI_DECISION_NO_MATCH,
     LOOP_BODY_NODE_TYPES,
     LOOP_RESERVED_VARIABLES,
     NodeType,
@@ -527,7 +529,21 @@ def workflow_graph_errors(
     retry_error = retry_config_error(graph.get("retry_defaults"))
     if retry_error:
         errors.append(f"Workflow retry defaults {retry_error}")
+    if not errors:
+        _warm_decision_model(graph.get("nodes"))
     return errors
+
+
+def _warm_decision_model(nodes: Any) -> None:
+    """Start loading the decision model when a graph holds an AI decision, so its first run doesn't wait on it."""
+    for node in nodes if isinstance(nodes, list) else []:
+        data = node.get("data") if isinstance(node, dict) else None
+        config = data.get("config", data) if isinstance(data, dict) else None
+        if node.get("type") == "condition" and isinstance(config, dict) and config.get("mode") == "ai":
+            from docsgpt import decisions
+
+            decisions.warm()
+            return
 
 
 def stored_graph(conn, workflow: Dict) -> Tuple[List[Dict], List[Dict]]:
@@ -848,6 +864,37 @@ CUSTOM_MODEL_TEAM_ONLY_MESSAGE = (
 )
 
 
+def _ai_decision_errors(title: str, config: Dict, cases: List) -> List[str]:
+    """What is wrong with an AI decision's branch names, confidence floor and retry settings."""
+    errors: List[str] = []
+    seen: Set[str] = set()
+    for case in cases:
+        name = str(case.get("name") or "").strip() if isinstance(case, dict) else ""
+        if not name:
+            continue
+        key = name.casefold()
+        if key == AI_DECISION_NO_MATCH:
+            errors.append(
+                f"AI decision '{title}' can't name a branch '{name}': Else takes what fits no branch"
+            )
+        elif key in seen:
+            errors.append(f"AI decision '{title}' has more than one branch named '{name}'")
+        seen.add(key)
+    if len(seen) > AI_DECISION_MAX_BRANCHES:
+        errors.append(f"AI decision '{title}' can have at most {AI_DECISION_MAX_BRANCHES} branches")
+    min_confidence = config.get("min_confidence")
+    if min_confidence is not None and (
+        isinstance(min_confidence, bool)
+        or not isinstance(min_confidence, (int, float))
+        or not 0 <= min_confidence <= 1
+    ):
+        errors.append(f"AI decision '{title}' minimum confidence must be a number from 0 to 1")
+    retry_error = retry_config_error(config.get("retry"))
+    if retry_error:
+        errors.append(f"AI decision '{title}' retry {retry_error}")
+    return errors
+
+
 def graph_model_ids(nodes: Any) -> List[str]:
     """The ``model_id`` of every agent node of a graph (from ``data.config`` when present).
 
@@ -1052,15 +1099,23 @@ def validate_workflow_structure(
                 f"Condition node '{cnode_title}' must have at least 2 outgoing edges"
             )
         node_data = cnode.get("data", {}) or {}
+        if isinstance(node_data.get("config"), dict):
+            node_data = node_data["config"]
+        ai_mode = node_data.get("mode") == "ai"
+        # A rule case is set by its expression; an AI decision's branch by its name.
+        case_key = "name" if ai_mode else "expression"
+        case_word = "a name" if ai_mode else "an expression"
         cases = node_data.get("cases", [])
         if not isinstance(cases, list):
             cases = []
         if not cases or not any(
-            isinstance(c, dict) and str(c.get("expression", "")).strip() for c in cases
+            isinstance(c, dict) and str(c.get(case_key) or "").strip() for c in cases
         ):
             errors.append(
-                f"Condition node '{cnode_title}' must have at least one case with an expression"
+                f"Condition node '{cnode_title}' must have at least one case with {case_word}"
             )
+        if ai_mode:
+            errors.extend(_ai_decision_errors(cnode_title, node_data, cases))
 
         case_handles: Set[str] = set()
         duplicate_case_handles: Set[str] = set()
@@ -1115,20 +1170,20 @@ def validate_workflow_structure(
             if not handle:
                 continue
 
-            raw_expression = case.get("expression", "")
+            raw_expression = case.get(case_key, "")
             has_expression = isinstance(raw_expression, str) and bool(
                 raw_expression.strip()
             )
             has_outgoing = bool(outgoing_by_handle.get(handle))
             if has_expression and not has_outgoing:
                 errors.append(
-                    f"Condition node '{cnode_title}' case '{handle}' has an expression but no outgoing edge"
+                    f"Condition node '{cnode_title}' case '{handle}' has {case_word} but no outgoing edge"
                 )
             if not has_expression and has_outgoing:
                 errors.append(
-                    f"Condition node '{cnode_title}' case '{handle}' has an outgoing edge but no expression"
+                    f"Condition node '{cnode_title}' case '{handle}' has an outgoing edge but no {case_key}"
                 )
-            if has_expression:
+            if has_expression and not ai_mode:
                 try:
                     validate_cel_expression(raw_expression)
                 except CelEvaluationError as exc:

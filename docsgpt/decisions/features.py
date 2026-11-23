@@ -182,6 +182,8 @@ INJECTION_ATTACHMENT = "injection_attachment"
 INJECTION_TOOL_DESCRIPTION = "injection_tool_description"
 INJECTION_ATTACHMENT_PARSE = "injection_attachment_parse"
 INJECTION_LAZY = "injection_lazy"
+#: A workflow's AI decision node; the node itself is the opt-in, so it has no mode setting.
+WORKFLOW_DECISION = "workflow_decision"
 
 
 #: Conversation analytics (``docsgpt.analytics.tasks``): the background sweep's turn calls. It has a switch, not a

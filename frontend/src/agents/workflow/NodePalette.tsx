@@ -1,3 +1,4 @@
+import { Sparkles } from 'lucide-react';
 import { type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -5,11 +6,28 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { cn, focusRing } from '@/lib/utils';
 
 import { NODE_META, nodeToneClass, type WorkflowNodeType } from './nodeTones';
+import { AI_DECISION_PALETTE_TYPE } from './paletteTypes';
 
 interface PaletteEntry {
-  type: WorkflowNodeType;
+  /** The node type, or a preset of one. */
+  type: WorkflowNodeType | typeof AI_DECISION_PALETTE_TYPE;
   group: 'core' | 'logic';
   hintKey?: string;
+}
+
+const PRESET_META = {
+  [AI_DECISION_PALETTE_TYPE]: {
+    icon: Sparkles,
+    labelKey: 'agents.workflow.nodes.aiDecision',
+    tone: 'condition' as WorkflowNodeType,
+  },
+};
+
+function entryMeta(entry: PaletteEntry) {
+  if (entry.type === AI_DECISION_PALETTE_TYPE) {
+    return PRESET_META[AI_DECISION_PALETTE_TYPE];
+  }
+  return { ...NODE_META[entry.type], tone: entry.type };
 }
 
 const PALETTE: PaletteEntry[] = [
@@ -26,6 +44,11 @@ const PALETTE: PaletteEntry[] = [
     group: 'logic',
     hintKey: 'agents.workflow.builder.conditionHint',
   },
+  {
+    type: AI_DECISION_PALETTE_TYPE,
+    group: 'logic',
+    hintKey: 'agents.workflow.builder.aiDecisionHint',
+  },
   { type: 'code', group: 'logic', hintKey: 'agents.workflow.builder.codeHint' },
   { type: 'loop', group: 'logic', hintKey: 'agents.workflow.builder.loopHint' },
 ];
@@ -37,7 +60,7 @@ const GROUPS: { group: PaletteEntry['group']; titleKey: string }[] = [
 
 interface NodePaletteItemProps {
   entry: PaletteEntry;
-  onAdd: (nodeType: WorkflowNodeType) => void;
+  onAdd: (nodeType: string) => void;
   onDragStart: (e: DragEvent, nodeType: string) => void;
 }
 
@@ -52,7 +75,7 @@ interface NodePaletteItemProps {
  */
 function NodePaletteItem({ entry, onAdd, onDragStart }: NodePaletteItemProps) {
   const { t } = useTranslation();
-  const { icon: Icon, labelKey } = NODE_META[entry.type];
+  const { icon: Icon, labelKey, tone } = entryMeta(entry);
   const label = (
     <span className="text-foreground text-sm font-medium">{t(labelKey)}</span>
   );
@@ -70,7 +93,7 @@ function NodePaletteItem({ entry, onAdd, onDragStart }: NodePaletteItemProps) {
       <span
         className={cn(
           'flex size-8 shrink-0 items-center justify-center rounded-md',
-          nodeToneClass(entry.type),
+          nodeToneClass(tone),
         )}
       >
         <Icon className="size-4.5" aria-hidden="true" />
@@ -90,8 +113,8 @@ function NodePaletteItem({ entry, onAdd, onDragStart }: NodePaletteItemProps) {
 }
 
 interface NodePaletteProps {
-  /** Adds a node of the given type without dragging (click or Enter). */
-  onAdd: (nodeType: WorkflowNodeType) => void;
+  /** Adds a node of the given palette type without dragging (click or Enter). */
+  onAdd: (nodeType: string) => void;
   /** Starts dragging a node of the given type onto the canvas. */
   onDragStart: (e: DragEvent, nodeType: string) => void;
 }

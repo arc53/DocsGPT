@@ -13,7 +13,7 @@ It runs on CPU with ONNX Runtime, which DocsGPT already ships for embeddings, so
 
 ## Everything ships off
 
-Every feature that uses the decision model is off by default, and nothing is downloaded or loaded while they all are. The operator turns each on with one switch in `.env`, `DECISION_INJECTION_ENABLED`, `DECISION_RELEVANCE_ENABLED` or `DECISION_ANALYTICS_ENABLED`; what then uses the model (which agents, sources, stages, thresholds and topics) is set in the UI. The first switch turned on downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, and the API loads it when it starts. Until it is ready, features carry on without it. The switches are in [Turning features on](#turning-features-on).
+Every feature that uses the decision model is off by default, and nothing is downloaded or loaded while they all are, unless a workflow has an [AI decision](#workflow-ai-decisions) node. The operator turns each on with one switch in `.env`, `DECISION_INJECTION_ENABLED`, `DECISION_RELEVANCE_ENABLED` or `DECISION_ANALYTICS_ENABLED`; what then uses the model (which agents, sources, stages, thresholds and topics) is set in the UI. The first switch turned on downloads the model (about 0.5 GB) into `DECISION_CACHE_DIR`, and the API loads it when it starts. Until it is ready, features carry on without it. The switches are in [Turning features on](#turning-features-on).
 
 Two settings apply to the model as a whole:
 
@@ -75,6 +75,10 @@ Nothing runs in the request path. A Celery beat task, `analytics-sweep`, runs ev
 - **Failures.** A call the model answers none of writes nothing, stops the sweep and is tried again by the next one. A message (or conversation) the model fails on while answering the rest of the call is tried again by later sweeps, after the messages it has not failed on; after three failures, or at once when the model reports it as unreadable, it is counted as failed and left until the model or the questions change. A call about a single message that fails counts as one of those failures only when the model answers other calls in the same sweep, so a model that fails everything (for example, a misconfigured server) marks nothing as failed, and the messages are labelled once it is fixed. A few messages the model always fails on never hold up the others, and a message that keeps failing alone counts one failure for each day it does, even with nothing else to answer, so a model that stays broken for days marks the messages it tried as failed.
 
 The sweep reads the stored conversation, the same text Logs shows, and its labels hold no text. In API mode that text goes to the decision server, as every feature's does.
+
+### Workflow AI decisions
+
+A workflow's [AI decision](/Agents/nodes#ai-decision) node asks the model which branch its input belongs on. The node is its own opt-in, so it has no switch: a workflow that has one uses the model whenever it runs, and saving such a workflow starts loading the model. The node waits up to 30 seconds for an answer, the first load included, and fails rather than guess when none comes. Its calls count under the feature `workflow_decision`. With `DECISION_MODE=none` the node fails with a message saying the model is off.
 
 ## Offline and air-gapped installs
 

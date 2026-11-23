@@ -101,6 +101,7 @@ import {
 } from './nodes';
 import CanvasControls from './CanvasControls';
 import NodePalette from './NodePalette';
+import { AI_DECISION_PALETTE_TYPE, paletteNodeType } from './paletteTypes';
 import NodePanel from './panels/NodePanel';
 import { WorkflowModelsContext } from './WorkflowModelsContext';
 import type { ItemWorkspace } from '../../components/pickerScope';
@@ -118,6 +119,7 @@ import {
 } from './nodeResources';
 import {
   type AgentNodeConfig,
+  aiDecisionErrors,
   findFreePosition,
   NO_ESCAPE,
   normalizeConditionCases,
@@ -689,8 +691,9 @@ function WorkflowBuilderInner() {
    * snapshot first; the selection is left as it was.
    */
   const createNode = useCallback(
-    (type: string, position: XYPosition, loop?: Node) => {
+    (paletteType: string, position: XYPosition, loop?: Node) => {
       takeSnapshot();
+      const type = paletteNodeType(paletteType);
 
       const baseNode: Node = {
         id: `${type}_${Date.now()}`,
@@ -721,6 +724,19 @@ function WorkflowBuilderInner() {
         baseNode.data.title = 'Set State';
         baseNode.data.config = {
           operations: [{ expression: '', target_variable: '' }],
+        };
+      } else if (paletteType === AI_DECISION_PALETTE_TYPE) {
+        baseNode.data.title = 'AI decision';
+        baseNode.data.config = {
+          mode: 'ai',
+          cases: [
+            {
+              name: '',
+              description: '',
+              expression: '',
+              sourceHandle: 'case_0',
+            },
+          ],
         };
       } else if (type === 'condition') {
         baseNode.data.title = 'If / Else';
@@ -763,7 +779,7 @@ function WorkflowBuilderInner() {
         y: event.clientY,
       });
       // Dropped on a loop: the node joins its body.
-      const loop = LOOP_BODY_TYPES.has(type)
+      const loop = LOOP_BODY_TYPES.has(paletteNodeType(type))
         ? findLoopAt(nodes, point)
         : undefined;
       createNode(type, loop ? toLoopPosition(loop, point) : point, loop);
@@ -778,7 +794,7 @@ function WorkflowBuilderInner() {
       const anchor = selectedNode
         ? nodes.find((n) => n.id === selectedNode.id)
         : undefined;
-      const fitsInLoop = LOOP_BODY_TYPES.has(type);
+      const fitsInLoop = LOOP_BODY_TYPES.has(paletteNodeType(type));
       // A selected loop takes the new node into its body.
       if (anchor?.type === 'loop' && fitsInLoop) {
         createNode(
@@ -1640,16 +1656,29 @@ function WorkflowBuilderInner() {
     conditionNodes.forEach((node) => {
       const conditionTitle = node.data?.title || node.id;
       const conditionMode = node.data?.config?.mode || 'simple';
+      const isAi = conditionMode === 'ai';
       const cases = (node.data?.config?.cases || []) as ConditionCase[];
-      if (
-        !cases.length ||
-        !cases.some((c: ConditionCase) => Boolean((c.expression || '').trim()))
-      ) {
+      // A rule case is set by its expression; an AI decision's branch by its name.
+      const caseFilled = (c: ConditionCase) =>
+        Boolean(((isAi ? c.name : c.expression) || '').trim());
+      if (!cases.length || !cases.some(caseFilled)) {
         errors.push(
-          t('agents.workflow.validation.conditionNeedsCase', {
-            ...NO_ESCAPE,
-            name: conditionTitle,
-          }),
+          t(
+            isAi
+              ? 'agents.workflow.validation.aiNeedsBranch'
+              : 'agents.workflow.validation.conditionNeedsCase',
+            { ...NO_ESCAPE, name: conditionTitle },
+          ),
+        );
+      }
+      if (isAi) {
+        errors.push(
+          ...aiDecisionErrors(
+            t,
+            conditionTitle,
+            cases,
+            node.data?.config?.min_confidence,
+          ),
         );
       }
 
@@ -1745,24 +1774,26 @@ function WorkflowBuilderInner() {
         const handle = (conditionCase.sourceHandle || '').trim();
         if (!handle) return;
 
-        const hasExpression = Boolean((conditionCase.expression || '').trim());
+        const hasExpression = caseFilled(conditionCase);
         const hasOutgoing = Boolean(outgoingByHandle.get(handle)?.length);
         if (hasExpression && !hasOutgoing) {
           errors.push(
-            t('agents.workflow.validation.caseNoConnection', {
-              ...NO_ESCAPE,
-              name: conditionTitle,
-              handle,
-            }),
+            t(
+              isAi
+                ? 'agents.workflow.validation.aiBranchNoConnection'
+                : 'agents.workflow.validation.caseNoConnection',
+              { ...NO_ESCAPE, name: conditionTitle, handle },
+            ),
           );
         }
         if (!hasExpression && hasOutgoing) {
           errors.push(
-            t('agents.workflow.validation.caseNoExpression', {
-              ...NO_ESCAPE,
-              name: conditionTitle,
-              handle,
-            }),
+            t(
+              isAi
+                ? 'agents.workflow.validation.aiBranchNoName'
+                : 'agents.workflow.validation.caseNoExpression',
+              { ...NO_ESCAPE, name: conditionTitle, handle },
+            ),
           );
         }
         if (conditionMode === 'simple' && hasExpression) {
@@ -2687,6 +2718,9 @@ function WorkflowBuilderInner() {
                   node={selectedNode}
                   onUpdate={handleUpdateNodeData}
                   onRemoveBranch={handleRemoveConditionBranch}
+                  nodes={nodes}
+                  edges={edges}
+                  retryDefaults={retryDefaults}
                 />
               )}
               {selectedNode.type === 'loop' && (

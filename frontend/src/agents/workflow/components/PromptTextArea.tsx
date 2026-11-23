@@ -210,6 +210,17 @@ export function extractUpstreamVariables(
       }
     }
 
+    if (node.type === 'condition' && node.data?.config?.mode === 'ai') {
+      // The decision: `{ reason, branch }`.
+      pushNodeOutput(node, `node_${node.id}_output`, 'AI decision', false);
+      const outputVariable = String(
+        node.data?.config?.output_variable || '',
+      ).trim();
+      if (outputVariable) {
+        pushNodeOutput(node, outputVariable, 'AI decision', false);
+      }
+    }
+
     if (node.type === 'state') {
       const operations = node.data?.config?.operations;
       if (!Array.isArray(operations)) continue;
@@ -243,6 +254,7 @@ const SECTION_LABEL_KEYS: Record<string, string> = {
   Code: 'agents.workflow.nodes.code',
   Loop: 'agents.workflow.nodes.loop',
   'Set State': 'agents.workflow.nodes.setState',
+  'AI decision': 'agents.workflow.nodes.aiDecision',
 };
 
 function groupBySection(

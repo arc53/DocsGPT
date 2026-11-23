@@ -20,6 +20,7 @@ from docsgpt.agents.workflows.retry import (
     INVALID_OUTPUT,
     RETRYABLE_NODE_TYPES,
     TRANSIENT,
+    DecisionUnavailableError,
     EmptyCompletionError,
     InvalidNodeOutputError,
     RetryPolicy,
@@ -40,6 +41,8 @@ from docsgpt.agents.workflows.run_documents import (
     snapshot_documents,
 )
 from docsgpt.agents.workflows.schemas import (
+    AI_DECISION_MAX_BRANCHES,
+    AI_DECISION_NO_MATCH,
     LOOP_RESERVED_VARIABLES,
     STREAM_OUTPUT_VALUES,
     AgentNodeConfig,
@@ -123,6 +126,13 @@ _RETRY_POLL_SECONDS = 0.5
 # attempt; the error can repeat the whole reply.
 _RETRY_FEEDBACK_MAX_CHARS = 1000
 
+# The question an AI decision asks when its node sets no instructions of its own.
+_DECISION_QUESTION = "Which branch does the text belong on?"
+# What the decision model reads for its no-match option, worded like the trained questions' ``other``.
+_DECISION_NO_MATCH_TEXT = "None of the above."
+# Seconds an AI decision waits for the decision model, loading included: a chat run and a scheduled one.
+_DECISION_TIMEOUT_SECONDS = 30.0
+
 # Added to a node's prompt when its last reply was rejected as invalid output.
 _INVALID_OUTPUT_FEEDBACK = (
     "Your previous reply could not be used: {error}\n"
@@ -132,6 +142,10 @@ _INVALID_OUTPUT_FEEDBACK = (
 
 class WorkflowLoopError(ValueError):
     """A loop node is misconfigured or one of its items failed; the message is safe to show."""
+
+
+class WorkflowDecisionError(ValueError):
+    """An AI decision is misconfigured or the decision model is off; the message is safe to show."""
 
 
 class _LoopItemFailed(Exception):
@@ -144,6 +158,14 @@ class _LoopItemFailed(Exception):
 
 class _LoopItemCancelled(Exception):
     """A loop item stopped between nodes because another item failed the loop."""
+
+
+def _is_ai_decision(node: WorkflowNode) -> bool:
+    """Whether a node is an If / Else node in ``ai`` mode, which the decision model routes."""
+    if node.type != NodeType.CONDITION:
+        return False
+    config = node.config.get("config", node.config)
+    return isinstance(config, dict) and config.get("mode") == "ai"
 
 
 def _event_bytes(value: Any) -> int:
@@ -430,7 +452,16 @@ class WorkflowEngine:
                 # provider errors are not for end users.
                 # A document a node could not be given whole is the same: the
                 # message names the document and says what to change.
-                is_config_error = isinstance(e, (CelEvaluationError, WorkflowLoopError, WorkflowDocumentError))
+                is_config_error = isinstance(
+                    e,
+                    (
+                        CelEvaluationError,
+                        WorkflowLoopError,
+                        WorkflowDocumentError,
+                        WorkflowDecisionError,
+                        DecisionUnavailableError,
+                    ),
+                )
                 user_friendly_error = (
                     f"{node.title or node.type.value}: {e}"
                     if is_config_error
@@ -767,7 +798,7 @@ class WorkflowEngine:
         """The node's retry policy: its own ``retry`` over the workflow's ``retry_defaults``."""
         from docsgpt.core.settings import settings
 
-        if node.type.value not in RETRYABLE_NODE_TYPES:
+        if node.type.value not in RETRYABLE_NODE_TYPES and not _is_ai_decision(node):
             return RetryPolicy()
         config = node.config.get("config", node.config)
         return resolve_retry_policy(
@@ -1929,6 +1960,9 @@ class WorkflowEngine:
         self, node: WorkflowNode
     ) -> Generator[Dict[str, str], None, None]:
         config = ConditionNodeConfig(**node.config.get("config", node.config))
+        if config.mode == "ai":
+            self._condition_result = self._decide_branch(node, config)
+            return
         matched_handle = None
 
         for case in config.cases:
@@ -1943,6 +1977,70 @@ class WorkflowEngine:
 
         self._condition_result = matched_handle or "else"
         yield from ()
+
+    def _decide_branch(self, node: WorkflowNode, config: ConditionNodeConfig) -> str:
+        """Ask the decision model which branch fits the input.
+
+        Returns:
+            The chosen branch's handle, or ``else`` when the model picks no branch or is less sure than
+            ``min_confidence``.
+        """
+        from docsgpt import decisions
+        from docsgpt.decisions.features import WORKFLOW_DECISION
+
+        handles: Dict[str, str] = {}
+        criteria: Dict[str, str] = {}
+        for case in config.cases:
+            name = (case.name or "").strip()
+            if not name:
+                continue
+            if name.casefold() == AI_DECISION_NO_MATCH or name in handles:
+                raise WorkflowDecisionError(f'AI decision has a branch named "{name}" twice or "other".')
+            handles[name] = case.source_handle
+            criteria[name] = (case.description or "").strip() or name
+        if not handles:
+            raise WorkflowDecisionError("AI decision needs at least one branch with a name.")
+        if len(handles) > AI_DECISION_MAX_BRANCHES:
+            raise WorkflowDecisionError(f"AI decision has more than {AI_DECISION_MAX_BRANCHES} branches.")
+        criteria[AI_DECISION_NO_MATCH] = _DECISION_NO_MATCH_TEXT
+
+        text = self._format_template(config.prompt_template) if config.prompt_template else self.state.get("query", "")
+        question = {
+            "type": "choice",
+            "instructions": config.instructions.strip() or _DECISION_QUESTION,
+            "criteria": criteria,
+        }
+        request = decisions.Request(decisions.states.text(str(text)), {"branch": question})
+        background = decisions.Budget.background(_DECISION_TIMEOUT_SECONDS)
+        scheduled = getattr(self.agent, "endpoint", None) == "schedule"
+        result = decisions.decide_batch(
+            [request],
+            feature=WORKFLOW_DECISION,
+            budget=background if scheduled else decisions.Budget.hot(_DECISION_TIMEOUT_SECONDS),
+        )
+        if result[0] is None and result.reasons[0] == "loading":
+            # A hot call never waits for the model to load; the background lane waits until the deadline.
+            result = decisions.decide_batch([request], feature=WORKFLOW_DECISION, budget=background)
+        decision = result[0]
+        if decision is None:
+            reason = result.reasons[0] or result.status
+            if reason == "off":
+                raise WorkflowDecisionError("AI decision needs the decision model, which is off here.")
+            raise DecisionUnavailableError(f"The decision model did not answer ({reason}).")
+
+        chosen, confidence = decision.top("branch")
+        taken = chosen if chosen in handles and confidence >= config.min_confidence else None
+        output: Dict[str, Any] = {
+            "branch": taken,
+            "confidence": round(confidence, 4),
+            "probabilities": {name: round(p, 4) for name, p in decision.probs("branch").items()},
+        }
+        if decision.truncated:
+            output["truncated"] = True
+        self.state[f"node_{node.id}_output"] = output
+        if config.output_variable:
+            self.state[config.output_variable] = output
+        return handles[taken] if taken else "else"
 
     def _execute_end_node(
         self, node: WorkflowNode

@@ -30,6 +30,24 @@ const node: Node = {
   },
 };
 
+const aiNode: Node = {
+  ...node,
+  data: {
+    title: 'Route',
+    config: {
+      mode: 'ai',
+      cases: [
+        {
+          name: 'Billing',
+          description: 'Invoices and payments',
+          expression: '',
+          sourceHandle: 'case_0',
+        },
+      ],
+    },
+  },
+};
+
 describe('ConditionPanel', () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -45,19 +63,26 @@ describe('ConditionPanel', () => {
     container.remove();
   });
 
-  const render = () => {
+  const render = (target: Node = node) => {
     const onUpdate = vi.fn();
     act(() => {
       root.render(
         <ConditionPanel
-          node={node}
+          node={target}
           onUpdate={onUpdate}
           onRemoveBranch={vi.fn()}
+          nodes={[target]}
+          edges={[]}
         />,
       );
     });
     return { onUpdate };
   };
+
+  const fieldLabels = () =>
+    Array.from(
+      container.querySelectorAll('[data-slot="form-field-label"]'),
+    ).map((l) => l.textContent);
 
   it('picks the mode with a ToggleGroup that fills its row', () => {
     const { onUpdate } = render();
@@ -102,6 +127,49 @@ describe('ConditionPanel', () => {
       b.textContent?.includes('agents.workflow.builder.addCondition'),
     )!;
     expect(add.getAttribute('data-variant')).toBe('outline');
+    act(() => add.click());
+    const cases = onUpdate.mock.calls[0][0].config.cases;
+    expect(cases).toHaveLength(2);
+    expect(cases[1].sourceHandle).toBe('case_1');
+  });
+
+  it('switches to AI mode', () => {
+    const { onUpdate } = render();
+    const ai = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent === 'agents.workflow.builder.modeAi',
+    )!;
+    act(() => ai.click());
+    expect(onUpdate).toHaveBeenCalledWith({
+      config: expect.objectContaining({ mode: 'ai' }),
+    });
+  });
+
+  it('asks an AI decision for its input, question and described branches', () => {
+    render(aiNode);
+    const labels = fieldLabels();
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'agents.workflow.builder.aiInput',
+        'agents.workflow.builder.aiInstructions',
+        'agents.workflow.builder.branchName',
+        'agents.workflow.builder.branchDescription',
+        'agents.workflow.builder.outputVariable',
+        'agents.workflow.builder.minConfidence',
+      ]),
+    );
+    expect(labels).not.toContain('agents.workflow.builder.variable');
+    expect(container.textContent).toContain('agents.workflow.nodes.branch');
+    const description = Array.from(container.querySelectorAll('textarea')).find(
+      (area) => area.value === 'Invoices and payments',
+    );
+    expect(description).toBeDefined();
+  });
+
+  it('adds a branch to an AI decision', () => {
+    const { onUpdate } = render(aiNode);
+    const add = Array.from(container.querySelectorAll('button')).find((b) =>
+      b.textContent?.includes('agents.workflow.builder.addBranch'),
+    )!;
     act(() => add.click());
     const cases = onUpdate.mock.calls[0][0].config.cases;
     expect(cases).toHaveLength(2);
