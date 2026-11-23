@@ -48,8 +48,8 @@ class JSONParser(BaseParser):
 
         Args:
             file (Path): Path to the .json file.
-            errors (str): Error handling policy. Unused: JSON is read as strict
-                UTF-8, and a file that is not valid UTF-8 is not valid JSON.
+            errors (str): Error handling policy. Unused because JSON is read as
+                strict UTF-8 with an optional leading byte order mark.
 
         Returns:
             Union[str, List[str]]: Concatenated rows if ``concat_rows`` is
@@ -65,7 +65,7 @@ class JSONParser(BaseParser):
                 also re-failed on every retry instead of failing once.
         """
         try:
-            with open(file, "r", encoding="utf-8") as f:
+            with open(file, "r", encoding="utf-8-sig") as f:
                 data = json.load(f, **self._json_config)
         except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise DocumentParseError(
