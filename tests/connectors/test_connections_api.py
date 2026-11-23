@@ -382,26 +382,6 @@ class TestPickerToken:
         assert resp.status_code == 404
 
 
-class TestClaim:
-    def test_claims_own_token(self, app, pg_conn):
-        from docsgpt.api.connector.connections import ConnectionClaim
-
-        cid = _connection(pg_conn, provider="google_drive", auth_kind="oauth", secrets={}, session_token="legacy")
-        with _db(pg_conn):
-            resp = _call(app, ConnectionClaim, "post", "/api/connections/claim",
-                         body={"provider": "google_drive", "session_token": "legacy"})
-        assert resp.get_json()["connection_id"] == cid
-
-    def test_other_users_token_is_not_found(self, app, pg_conn):
-        from docsgpt.api.connector.connections import ConnectionClaim
-
-        _connection(pg_conn, user="bob", provider="google_drive", auth_kind="oauth", secrets={}, session_token="b")
-        with _db(pg_conn):
-            resp = _call(app, ConnectionClaim, "post", "/api/connections/claim",
-                         body={"provider": "google_drive", "session_token": "b"})
-        assert resp.status_code == 404
-
-
 class TestPermissions:
     def test_set_permissions(self, app, pg_conn):
         from docsgpt.api.connector.connections import ConnectionToolPermissions

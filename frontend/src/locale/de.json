@@ -2626,7 +2626,6 @@
         "partialDownload_one": "{{count}} Element konnte nicht gelesen werden und wurde ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
         "partialDownload_other": "{{count}} Elemente konnten nicht gelesen werden und wurden ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
         "preparing": "Upload wird vorbereitet",
-        "tokenLimit": "Token-Limit überschritten, bitte lade ein kleineres Dokument hoch",
         "tooManyFiles": "Diese Quelle hat mehr als {{limit}} Dateien, mehr als eine Quelle enthalten kann. Wähle einen kleineren Ordner, Pfad oder eine kleinere Auswahl.",
         "tooManyTokens": "Diese Quelle hat mehr als {{limit}} Tokens Text, mehr als eine Quelle enthalten kann. Teile sie in kleinere Quellen auf.",
         "training": "Upload läuft",

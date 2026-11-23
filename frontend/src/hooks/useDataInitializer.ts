@@ -9,7 +9,6 @@ import {
   setConnectorsEnabled,
 } from '../connectors/connectorsSlice';
 import { initChatPrompt } from '../preferences/chatPrompt';
-import { claimLegacySessionTokens } from '../utils/providerUtils';
 import { getDocs, getConversations } from '../preferences/preferenceApi';
 import {
   selectConversations,
@@ -104,13 +103,6 @@ export default function useDataInitializer(
     if (!workspaceId || workspaceId === PERSONAL_WORKSPACE) return;
     dispatch(loadTeamConnectors({ token, teamId: workspaceId }));
   }, [isAuthLoading, connectorsEnabled, token, workspaceId, dispatch]);
-
-  // Connector sign-ins used to leave a session token in localStorage. Link
-  // each one to its server-side connection once, then forget it.
-  useEffect(() => {
-    if (isAuthLoading) return;
-    claimLegacySessionTokens(token);
-  }, [isAuthLoading, token]);
 
   // Initialize documents
   useEffect(() => {

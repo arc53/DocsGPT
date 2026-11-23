@@ -22,8 +22,6 @@ const conversationService = {
       headers,
       signal,
     ),
-  search: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.CONVERSATION.SEARCH, data, token, {}),
   feedback: (data: any, token: string | null): Promise<any> =>
     apiClient.post(endpoints.CONVERSATION.FEEDBACK, data, token, {}),
   getConversation: (id: string, token: string | null): Promise<any> =>

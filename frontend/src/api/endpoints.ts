@@ -201,7 +201,6 @@ const endpoints = {
       `/api/connections/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/parameters`,
     CONNECTION_WRITES: (id: string) =>
       `/api/connections/${encodeURIComponent(id)}/writes`,
-    CONNECTIONS_CLAIM: '/api/connections/claim',
     TOOL_CREDENTIAL_MODE: (toolId: string) =>
       `/api/connections/tools/${encodeURIComponent(toolId)}/credential-mode`,
     ADMIN_CONNECTORS: '/api/admin/connectors',
@@ -353,7 +352,6 @@ const endpoints = {
   CONVERSATION: {
     ANSWER: '/api/answer',
     ANSWER_STREAMING: '/stream',
-    SEARCH: '/api/search',
     FEEDBACK: '/api/feedback',
     CONVERSATION: (id: string) => `/api/get_single_conversation?id=${id}`,
     CONVERSATIONS: '/api/get_conversations',
