@@ -1,527 +1,854 @@
-import { Copy, Eye, Pencil, Trash2, Users } from 'lucide-react';
+import { Folder as FolderIcon, FolderOpen } from 'lucide-react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import FilterSelect from '../components/FilterSelect';
+import PageToolbar from '../components/PageToolbar';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import { canCreateIn } from '../components/folders/folderTree';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import { can, type AccessFields } from '../utils/accessUtils';
+import { MetaItem, MetaLine } from '../components/ui/meta-line';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '../components/ui/tooltip';
+import SearchInput from '../components/SearchInput';
+import SkeletonLoader from '../components/SkeletonLoader';
 import { Button } from '../components/ui/button';
-import { Combobox } from '../components/ui/combobox';
-import { FormField } from '../components/ui/form-field';
-import { IconButton } from '../components/ui/icon-button';
+import {
+  Card,
+  CardDescription,
+  CardFooter,
+  CardTitle,
+} from '../components/ui/card';
+import { ActionMenu } from '../components/ui/dropdown-menu';
+import { EmptyState } from '../components/ui/empty-state';
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
 import { SectionHeader } from '../components/ui/section-header';
-import { SettingRow } from '../components/ui/setting-row';
-import ConfirmationModal from '../modals/ConfirmationModal';
-import { ActiveState, Prompt, PromptProps } from '../models/misc';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import SectionShell from '../navigation/SectionShell';
+import { promptDrafterMode } from '../drafter/promptDraft';
+import { useDrafterConfig } from '../drafter/useDrafterConfig';
+import { usePromptDrafter } from '../drafter/usePromptDrafter';
+import { WandButton } from '../drafter/WandButton';
+import { useMediaQuery } from '../hooks';
+import { useLeaveGuard } from '../hooks/useLeaveGuard';
+import { shownFilters, useUrlFilter } from '../hooks/useUrlFilter';
+import type { Prompt } from '../models/misc';
 import { showActionToast } from '../notifications/actionToastSlice';
-import { selectToken } from '../preferences/preferenceSlice';
-import ShareToTeamModal from '../teams/ShareToTeamModal';
-import PromptsModal from '../preferences/PromptsModal';
-import { can } from '../utils/accessUtils';
-import { cn } from '@/lib/utils';
-
-// Presets (`public`) carry no access fields and are never edited in place.
-const canEditPrompt = (prompt: Prompt) =>
-  prompt.type !== 'public' && can(prompt, 'edit');
-const canDeletePrompt = (prompt: Prompt) =>
-  prompt.type !== 'public' && can(prompt, 'delete');
-const canSharePrompt = (prompt: Prompt) =>
-  prompt.type !== 'public' && can(prompt, 'share');
-
-type PromptsDropdownProps = {
-  className?: string;
-};
-
-type ExtendedPromptProps = PromptProps & {
-  title?: string;
-  /**
-   * `row` (Settings → General): a SettingRow whose label names the picker.
-   * `heading`: the title is a section heading above it.
-   * `field` (the agent form): the title is the picker's floating FormField
-   * label, like the fields around it.
-   */
-  titleAs?: 'row' | 'heading' | 'field';
-  /** The surface behind a `field` picker, for its label's notch. */
-  labelSurface?: 'card' | 'background' | 'muted';
-  /** The row's muted description, for `titleAs="row"`. */
-  description?: string;
-  dropdownProps?: PromptsDropdownProps;
-  showAddButton?: boolean;
-};
-
-export default function Prompts({
-  prompts,
-  selectedPrompt,
-  onSelectPrompt,
+import { chatPromptDeleted, chooseChatPrompt } from '../preferences/chatPrompt';
+import {
+  selectPrompt,
+  selectToken,
   setPrompts,
-  title,
-  titleAs = 'row',
-  description,
-  dropdownProps = {},
-  showAddButton = true,
-  labelSurface = 'card',
-}: ExtendedPromptProps) {
-  const token = useSelector(selectToken);
-  const dispatch = useDispatch();
+} from '../preferences/preferenceSlice';
+import type { MenuOption } from '../components/ui/dropdown-menu';
+import { PRESET_PROMPT_IDS } from '../prompts/promptAccess';
+import { PromptDraftPanel } from '../prompts/PromptDraftPanel';
+import { PromptView } from '../prompts/PromptView';
+import {
+  PromptConflictNotice,
+  PromptLeaveDialog,
+  PromptSaveButton,
+  promptSaveDisabled,
+  savePrompt,
+} from '../prompts/PromptViewChrome';
+import { type PromptDetail, usePromptDetail } from '../prompts/usePromptDetail';
+import type { AppDispatch } from '../store';
+import { agentChatPath, agentEditPath } from '../agents/paths';
+import { agentUseCount } from '../utils/resourceUsage';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
+import { captureWorkspace } from '../workspace/requestWorkspace';
+import {
+  type FiledItem,
+  filedAt,
+  folderLabelOf,
+  itemsWithin,
+  listedFolders,
+} from './folderListing';
+import FolderSection from './FolderSection';
+import UsedByAgents from './UsedByAgents';
+import { useFolderPage } from './useFolderPage';
+import usePromptActions from './usePromptActions';
+import { selectCanCreateHere, selectInTeam } from './workspaceAccess';
+
+const USAGE_FILTERS = ['all', 'inUse', 'unused'] as const;
+type UsageFilter = (typeof USAGE_FILTERS)[number];
+
+/** A prompt as the list carries it: its workspace fields and its filing. */
+type ListedPrompt = Prompt & AccessFields & FiledItem;
+
+/**
+ * The page's sections: the built-in prompts, the workspace's own (yours in
+ * Personal, the team's in a team), those other teams shared with the team,
+ * and those shared with the caller.
+ */
+const SECTIONS = ['included', 'yours', 'teamShared', 'shared'] as const;
+type SectionKey = (typeof SECTIONS)[number];
+
+/**
+ * A prompt's section. A built-in one is `public`; the rest go by `origin`,
+ * where one without it (an API older than workspaces) is the caller's own.
+ */
+const sectionOf = (prompt: ListedPrompt): SectionKey =>
+  prompt.type === 'public'
+    ? 'included'
+    : prompt.origin === 'shared'
+      ? 'shared'
+      : prompt.origin === 'team_shared'
+        ? 'teamShared'
+        : 'yours';
+
+/** The kind track's values: All, then one per section. */
+const KINDS = ['all', ...SECTIONS] as const;
+type KindFilter = (typeof KINDS)[number];
+
+const GRID =
+  'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+
+/**
+ * Arrow keys move the checked radio card by card; the save waits this long
+ * for the next move, so only where the user stops is sent.
+ */
+const ARROW_PICK_DELAY_MS = 600;
+const ARROW_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+/**
+ * Settings › Prompts in the current workspace: the line saying whose they
+ * are, the workspace's folders, the presets, the workspace's own prompts
+ * and, in Personal, the ones shared with the caller, as cards. A folder
+ * opens in place (`?folder=`) with its crumb row; a search or a filter lists
+ * everything in reach, each prompt naming its folder. A radio on each card
+ * picks the prompt chats without an agent use (kept on the server); the ⋯
+ * opens, duplicates, files, moves, shares or deletes. Opening a prompt, Add
+ * and Duplicate show it as a detail view in place of the list
+ * (PromptDetailPage); a prompt added inside a folder is filed there.
+ */
+export default function Prompts() {
   const { t } = useTranslation();
-  const showError = (message: string) =>
-    dispatch(showActionToast({ variant: 'destructive', message }));
-  const pickerId = React.useId();
-  const titleText = title ? title : t('settings.general.prompt');
-  const [newPromptName, setNewPromptName] = React.useState('');
-  const [newPromptContent, setNewPromptContent] = React.useState('');
-  const [editPromptName, setEditPromptName] = React.useState('');
-  const [editPromptContent, setEditPromptContent] = React.useState('');
-  const [currentPromptEdit, setCurrentPromptEdit] = React.useState<Prompt>({
-    id: '',
-    name: '',
-    type: '',
-  });
-  // The open prompt's version, sent back so a save over someone else's
-  // newer edit is refused (409) instead of overwriting it.
-  const [editPromptUpdatedAt, setEditPromptUpdatedAt] = React.useState<
-    string | null
-  >(null);
-  const [editReadOnly, setEditReadOnly] = React.useState(false);
-  const [modalType, setModalType] = React.useState<'ADD' | 'EDIT'>('ADD');
-  const [duplicateSource, setDuplicateSource] = React.useState<string | null>(
-    null,
-  );
-  const [modalState, setModalState] = React.useState<ActiveState>('INACTIVE');
-  const [open, setOpen] = React.useState(false);
+  const dispatch = useDispatch<AppDispatch>();
+  const token = useSelector(selectToken);
+  const chatPrompt = useSelector(selectPrompt);
+  const inTeam = useSelector(selectInTeam);
+  const canCreate = useSelector(selectCanCreateHere);
 
-  const [promptToDelete, setPromptToDelete] = React.useState<{
-    id: string;
-    name: string;
-  } | null>(null);
+  const [prompts, setPromptList] = React.useState<ListedPrompt[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  // The first load failed: an error with Retry, not an empty page.
+  const [loadFailed, setLoadFailed] = React.useState(false);
+  const [searchTerm, setSearchTerm] = React.useState('');
+  // The address holds the kind and usage filters, so Back and a reload
+  // keep them.
+  const [kind, setKind] = useUrlFilter(KINDS, { name: 'kind' });
+  const [usage, setUsage] = useUrlFilter(USAGE_FILTERS, { name: 'usage' });
+  // Under a usage filter, a prompt the chat pick moved to or from keeps the
+  // usage it had before (by id), so its card (and a focused radio) doesn't
+  // vanish mid-pick. It settles on the next search or filter change or
+  // reload, as a Tools tile does.
+  const filterKey = `${kind}\n${usage}\n${searchTerm}`;
+  const [heldUsage, setHeldUsage] = React.useState<{
+    key: string;
+    inUse: Record<string, boolean>;
+  }>({ key: '', inUse: {} });
+  // A new search or filter drops what was held, so coming back to the
+  // first filter doesn't bring it back.
+  if (heldUsage.key !== '' && heldUsage.key !== filterKey)
+    setHeldUsage({ key: '', inUse: {} });
+  const heldInUse = heldUsage.key === filterKey ? heldUsage.inUse : {};
 
-  const [promptToShare, setPromptToShare] = React.useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-
-  const handleSelectPrompt = (prompt: {
-    name: string;
-    id: string;
-    type: string;
-  }) => {
-    setEditPromptName(prompt.name);
-    onSelectPrompt(prompt.name, prompt.id, prompt.type);
-    setOpen(false);
+  const showList = (list: ListedPrompt[]) => {
+    setPromptList(list);
+    // The pickers (agent form, Teams) read the same list.
+    dispatch(setPrompts(list));
   };
 
-  const handleAddPrompt = async () => {
-    try {
-      const response = await userService.createPrompt(
-        {
-          name: newPromptName,
-          content: newPromptContent,
-        },
-        token,
-      );
-      if (!response.ok) {
-        throw new Error('Failed to add prompt');
-      }
-      const newPrompt = await response.json();
-      if (setPrompts) {
-        setPrompts([
-          ...prompts,
-          { name: newPromptName, id: newPrompt.id, type: 'private' },
-        ]);
-      }
-      setModalState('INACTIVE');
-      onSelectPrompt(newPromptName, newPrompt.id, 'private');
-      setNewPromptName('');
-      setNewPromptContent('');
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleDeletePrompt = (id: string) => {
-    const promptToRemove = prompts.find((prompt) => prompt.id === id);
-    if (promptToRemove) {
-      setPromptToDelete({ id, name: promptToRemove.name });
-    }
-  };
-
-  // Returned to ConfirmationModal: it stays pending while this runs, closes
-  // on success and keeps a failure in the dialog.
-  const confirmDeletePrompt = () => {
-    if (!promptToDelete) return;
+  // `quiet`: a reload after a change keeps the cards on screen. A list that
+  // answers after a workspace switch is the old workspace's: dropped.
+  const loadPrompts = (quiet = false) => {
+    if (!quiet) setLoading(true);
+    const workspace = captureWorkspace();
     return userService
-      .deletePrompt({ id: promptToDelete.id }, token)
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error('Failed to delete prompt');
-        }
-        setPrompts(prompts.filter((prompt) => prompt.id !== promptToDelete.id));
-        // Only change selection if we're deleting the currently selected prompt
-        if (
-          prompts.length > 0 &&
-          selectedPrompt &&
-          selectedPrompt.id === promptToDelete.id
-        ) {
-          const firstPrompt = prompts.find((p) => p.id !== promptToDelete.id);
-          if (firstPrompt) {
-            onSelectPrompt(firstPrompt.name, firstPrompt.id, firstPrompt.type);
-          }
-        }
-      });
-  };
-
-  const handleFetchPromptContent = async (id: string) => {
-    try {
-      const response = await userService.getSinglePrompt(id, token);
-      if (!response.ok) {
-        throw new Error('Failed to fetch prompt content');
-      }
-      const promptContent = await response.json();
-      setEditPromptContent(promptContent.content);
-      setEditPromptUpdatedAt(promptContent.updated_at ?? null);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const openEditModal = (prompt: Prompt) => {
-    setModalType('EDIT');
-    setEditReadOnly(!canEditPrompt(prompt));
-    setEditPromptUpdatedAt(null);
-    setEditPromptName(prompt.name);
-    setEditPromptContent('');
-    handleFetchPromptContent(prompt.id);
-    setCurrentPromptEdit(prompt);
-    setModalState('ACTIVE');
-    setOpen(false);
-  };
-
-  const generateCopyName = (baseName: string) => {
-    let candidate = `${baseName} copy`;
-    let counter = 2;
-    while (prompts.some((prompt) => prompt.name === candidate)) {
-      candidate = `${baseName} copy ${counter}`;
-      counter += 1;
-    }
-    return candidate;
-  };
-
-  const handleDuplicatePrompt = async (prompt: {
-    id: string;
-    name: string;
-  }) => {
-    try {
-      const response = await userService.getSinglePrompt(prompt.id, token);
-      if (!response.ok) {
-        throw new Error('Failed to fetch prompt content');
-      }
-      const promptContent = await response.json();
-      setModalType('ADD');
-      setDuplicateSource(prompt.name);
-      setNewPromptName(generateCopyName(prompt.name));
-      setNewPromptContent(promptContent.content);
-      setModalState('ACTIVE');
-      setOpen(false);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const handleDuplicateFromModal = () => {
-    setDuplicateSource(currentPromptEdit.name);
-    setNewPromptName(generateCopyName(currentPromptEdit.name));
-    setNewPromptContent(editPromptContent);
-    setModalType('ADD');
-  };
-
-  const handleSaveChanges = (id: string, type: string) =>
-    userService
-      .updatePrompt(
-        {
-          id: id,
-          name: editPromptName,
-          content: editPromptContent,
-          ...(editPromptUpdatedAt && {
-            expected_updated_at: editPromptUpdatedAt,
-          }),
-        },
-        token,
-      )
-      .then((response) => {
-        if (!response.ok) {
-          showError(
-            t(
-              response.status === 409
-                ? 'settings.general.promptActions.editConflict'
-                : 'settings.general.promptActions.saveFailed',
-            ),
-          );
-          return;
-        }
-        if (setPrompts) {
-          const existingPromptIndex = prompts.findIndex(
-            (prompt) => prompt.id === id,
-          );
-          if (existingPromptIndex === -1) {
-            setPrompts([
-              ...prompts,
-              { name: editPromptName, id: id, type: type },
-            ]);
-          } else {
-            const updatedPrompts = [...prompts];
-            updatedPrompts[existingPromptIndex] = {
-              name: editPromptName,
-              id: id,
-              type: type,
-            };
-            setPrompts(updatedPrompts);
-          }
-        }
-        setModalState('INACTIVE');
-        onSelectPrompt(editPromptName, id, type);
+      .getPrompts(token)
+      .then((response: Response) => {
+        if (!response.ok)
+          throw new Error(`Failed to load prompts (${response.status})`);
+        return response.json();
       })
-      .catch((error) => {
-        console.error(error);
-      });
+      .then((data: ListedPrompt[]) => {
+        if (!workspace.isCurrent()) return;
+        showList(Array.isArray(data) ? data : []);
+        setHeldUsage({ key: '', inUse: {} });
+        setLoadFailed(false);
+      })
+      .catch((error: unknown) => {
+        console.error('Error fetching prompts:', error);
+        if (!quiet) setLoadFailed(true);
+      })
+      .finally(() => setLoading(false));
+  };
 
-  const picker = (
-    <Combobox
-      options={prompts.map((prompt) => ({
-        value: prompt.id,
-        label: prompt.name,
-      }))}
-      value={selectedPrompt?.id || null}
-      valueOption={
-        selectedPrompt?.name
-          ? { value: selectedPrompt.id, label: selectedPrompt.name }
-          : undefined
-      }
-      onValueChange={(id) => {
-        const prompt = prompts.find((p) => p.id === id);
-        if (prompt) handleSelectPrompt(prompt);
-      }}
-      open={open}
-      onOpenChange={setOpen}
-      placeholder={t('settings.general.promptActions.select')}
-      searchPlaceholder={t('settings.sources.searchPlaceholder')}
-      emptyText={t('settings.sources.noResults')}
-      // A form field in NewAgent (square); a settings-row control elsewhere.
-      shape={titleAs === 'field' ? 'default' : 'pill'}
-      id={pickerId}
-      aria-label={titleAs === 'heading' ? titleText : undefined}
-      className={cn(titleAs === 'row' && 'sm:w-56')}
-      renderItem={(option) => {
-        const prompt = prompts.find((p) => p.id === option.value)!;
-        const canEdit = canEditPrompt(prompt);
-        return (
-          <>
-            <span className="min-w-0 flex-1 truncate" title={prompt.name}>
-              {prompt.name}
-            </span>
-            <div className="flex shrink-0 items-center gap-1">
-              <IconButton
-                variant="ghost-on-accent"
-                size="icon-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openEditModal(prompt);
-                }}
-                label={
-                  canEdit
-                    ? t('settings.general.promptActions.edit')
-                    : t('settings.general.promptActions.view')
-                }
-              >
-                {canEdit ? (
-                  <Pencil className="text-current" aria-hidden="true" />
-                ) : (
-                  <Eye className="text-current" aria-hidden="true" />
-                )}
-              </IconButton>
-              {can(prompt, 'duplicate') && (
-                <IconButton
-                  variant="ghost-on-accent"
-                  size="icon-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDuplicatePrompt(prompt);
-                  }}
-                  label={t('settings.general.promptActions.duplicate')}
-                >
-                  <Copy className="text-current" aria-hidden="true" />
-                </IconButton>
-              )}
-              {canSharePrompt(prompt) && (
-                <IconButton
-                  variant="ghost-on-accent"
-                  size="icon-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpen(false);
-                    setPromptToShare({
-                      id: prompt.id,
-                      name: prompt.name,
-                    });
-                  }}
-                  label={t('agents.shareWithTeam')}
-                >
-                  <Users className="text-current" aria-hidden="true" />
-                </IconButton>
-              )}
-              {canDeletePrompt(prompt) && (
-                <IconButton
-                  variant="ghost-destructive-on-accent"
-                  size="icon-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpen(false);
-                    handleDeletePrompt(prompt.id);
-                  }}
-                  label={t('settings.general.promptActions.delete')}
-                >
-                  <Trash2 className="text-current" aria-hidden="true" />
-                </IconButton>
-              )}
-            </div>
-          </>
+  React.useEffect(() => {
+    loadPrompts();
+  }, [token]);
+
+  const page = useFolderPage('prompt', () => void loadPrompts(true));
+  const { folderId, folder, tree } = page;
+  const inFolder = folderId !== null;
+  // Opening a folder (or leaving one) starts a fresh search there.
+  React.useEffect(() => {
+    setSearchTerm('');
+  }, [folderId]);
+
+  const detail = usePromptDetail({
+    prompts,
+    folderId,
+    // Saved: back on the list, which loads again.
+    onSaved: () => {
+      detail.close();
+      loadPrompts(true);
+    },
+  });
+  const { menuOptions, dialogs } = usePromptActions({
+    onSaved: () => loadPrompts(true),
+    onDeleted: (deleted) => {
+      showList(prompts.filter((prompt) => prompt.id !== deleted.id));
+      // The server reads a deleted chat prompt back as default.
+      dispatch(chatPromptDeleted(deleted.id, token));
+      // Deleted from its own ⋯: back on the list.
+      if (
+        detail.target?.kind === 'edit' &&
+        detail.target.prompt.id === deleted.id
+      )
+        detail.close();
+    },
+    onOpen: detail.open,
+    onDuplicate: (prompt) => void detail.duplicate(prompt),
+    onMoved: () => void loadPrompts(true),
+  });
+
+  /** In use: an agent uses it, or chats without an agent do. */
+  const isInUse = (prompt: Prompt) =>
+    agentUseCount(prompt.used_by) > 0 || prompt.id === chatPrompt.id;
+
+  // The radio's value changes on an arrow key too (Radix checks the radio it
+  // moves to); such a pick saves after a pause, a click or Space at once.
+  const arrowPick = React.useRef(false);
+  const pickChatPrompt = (id: string) => {
+    const delay = arrowPick.current ? ARROW_PICK_DELAY_MS : 0;
+    arrowPick.current = false;
+    const prompt = prompts.find((item) => item.id === id);
+    if (!prompt) return;
+    if (usage !== 'all') {
+      const held = { ...heldInUse };
+      for (const moved of [prompt, chatPrompt])
+        if (!(moved.id in held)) held[moved.id] = isInUse(moved);
+      setHeldUsage({ key: filterKey, inUse: held });
+    }
+    dispatch(chooseChatPrompt(prompt, token, delay)).then((saved) => {
+      if (!saved)
+        dispatch(
+          showActionToast({
+            variant: 'destructive',
+            message: t('settings.prompts.chatPromptFailed'),
+          }),
         );
-      }}
-    />
-  );
+    });
+  };
 
-  // The listed row carries the access fields; a stored selection may not.
-  const selectedListed =
-    prompts.find((prompt) => prompt.id === selectedPrompt?.id) ??
-    selectedPrompt;
-  const editButton = selectedPrompt?.id && canEditPrompt(selectedListed) && (
-    <IconButton
-      variant="ghost-muted"
-      size="icon-xs"
-      shape="pill"
-      onClick={() => openEditModal(selectedListed)}
-      label={t('settings.general.promptActions.edit')}
-      icon={Pencil}
-    />
+  const matchesUsage = (prompt: Prompt, key: UsageFilter) =>
+    key === 'all' ||
+    (key === 'inUse') === (heldInUse[prompt.id] ?? isInUse(prompt));
+  const matchesKind = (prompt: ListedPrompt, key: KindFilter) =>
+    key === 'all' || sectionOf(prompt) === key;
+  const query = searchTerm.trim().toLowerCase();
+  // A search or a filter lists everything in reach, folders' contents too;
+  // otherwise the level shows what is filed right here.
+  const flat = query !== '' || kind !== 'all' || usage !== 'all';
+  // In reach: every prompt at the root; inside a folder, those filed in it
+  // or below (the presets are never filed).
+  const inReach = inFolder
+    ? itemsWithin(
+        tree,
+        prompts.filter((prompt) => prompt.type !== 'public'),
+        folderId,
+      )
+    : prompts;
+  const searched = inReach.filter((prompt) =>
+    prompt.name.toLowerCase().includes(query),
   );
+  // Each filter counts with the other one and the search applied, so a pill
+  // never leads to "No prompts found".
+  const kindCounts = Object.fromEntries(
+    KINDS.map((key) => [
+      key,
+      searched.filter((p) => matchesUsage(p, usage) && matchesKind(p, key))
+        .length,
+    ]),
+  ) as Record<KindFilter, number>;
+  const usageCounts = Object.fromEntries(
+    USAGE_FILTERS.map((key) => [
+      key,
+      searched.filter((p) => matchesKind(p, kind) && matchesUsage(p, key))
+        .length,
+    ]),
+  ) as Record<UsageFilter, number>;
+  // No pill leads to an empty list; with only All left there is no track.
+  const kinds = shownFilters(KINDS, kind, kindCounts);
 
-  // A prompt that belongs to this field, so a neutral pill rather than the
-  // primary one reserved for a page's own action.
-  const addButton = showAddButton && (
-    <Button
-      type="button"
-      variant="outline"
-      size="field"
-      shape="pill"
-      onClick={() => {
-        setModalType('ADD');
-        setDuplicateSource(null);
-        setModalState('ACTIVE');
-      }}
-    >
-      {t('settings.general.add')}
+  const shown = flat
+    ? searched.filter(
+        (prompt) => matchesKind(prompt, kind) && matchesUsage(prompt, usage),
+      )
+    : searched.filter(
+        (prompt) => prompt.type === 'public' || filedAt(tree, prompt, folderId),
+      );
+  const sections = SECTIONS.map((key) => ({
+    key,
+    prompts: shown.filter((prompt) => sectionOf(prompt) === key),
+  })).filter((section) => section.prompts.length > 0);
+  // A filter alone lists prompts only; a search also finds folders.
+  const folders =
+    flat && !query ? [] : listedFolders(tree, 'prompt', folderId, query);
+
+  /** A section's title (and its kind pill's): the team's own say so. */
+  const sectionTitle = (key: SectionKey) =>
+    key === 'shared'
+      ? t('workspace.page.sharedWithYou')
+      : key === 'teamShared'
+        ? t('workspace.page.sharedFromTeams.title')
+        : key === 'yours' && inTeam
+          ? t('settings.prompts.sections.team')
+          : t(`settings.prompts.sections.${key}`);
+
+  const renderCard = (prompt: ListedPrompt) => {
+    const inChats = prompt.id === chatPrompt.id;
+    // The presets open with the same lines, so they say what they do.
+    const description = PRESET_PROMPT_IDS.includes(prompt.id)
+      ? t(`settings.prompts.presets.${prompt.id}`)
+      : prompt.preview;
+    const options = menuOptions(prompt);
+    // Where a prompt a search or filter found is filed.
+    const folderLabel = flat ? folderLabelOf(tree, prompt, folderId) : null;
+    return (
+      // DESIGN "A clickable card that holds a link": a stretched button
+      // opens the prompt; the menu, the usage link and the radio sit above
+      // it, never inside.
+      <Card
+        key={prompt.id}
+        variant="filled"
+        padding="lg"
+        interactive="within"
+        className="h-full"
+      >
+        <button
+          type="button"
+          onClick={() => detail.open(prompt)}
+          className="flex w-full min-w-0 cursor-pointer pr-9 text-left outline-none after:absolute after:inset-0 after:rounded-2xl"
+        >
+          <CardTitle
+            className="line-clamp-2 min-w-0 wrap-anywhere"
+            title={prompt.name}
+          >
+            {prompt.name}
+          </CardTitle>
+        </button>
+        {options.length > 0 ? (
+          <div className="absolute top-5 right-4 z-10">
+            <ActionMenu
+              options={options}
+              triggerLabel={t('settings.prompts.actions', {
+                interpolation: { escapeValue: false },
+                name: prompt.name,
+              })}
+            />
+          </div>
+        ) : null}
+        {description ? (
+          <CardDescription size="xs" className="line-clamp-3 wrap-break-word">
+            {description}
+          </CardDescription>
+        ) : null}
+        {/* Facts in the meta line; the radio says whether it is the chat
+            prompt, with no badge repeating it. */}
+        <CardFooter className="mt-auto w-full">
+          <MetaLine className="relative z-10">
+            {folderLabel ? (
+              <MetaItem icon={<FolderIcon />} title={folderLabel}>
+                {folderLabel}
+              </MetaItem>
+            ) : null}
+            {showsCreator(prompt) ? <CreatorMeta item={prompt} /> : null}
+            {showsSharedFrom(prompt) ? <SharedFromMeta item={prompt} /> : null}
+            {showsRole(prompt) ? <RoleMeta item={prompt} /> : null}
+            {agentUseCount(prompt.used_by) > 0 ? (
+              <UsedByAgents usage={prompt.used_by} />
+            ) : null}
+          </MetaLine>
+          {/* The tooltip hangs on a wrapper: as the trigger itself it would
+              set the radio's data-state. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="relative z-10 ml-auto flex shrink-0">
+                <RadioGroupItem
+                  value={prompt.id}
+                  aria-label={t('settings.prompts.useInChats', {
+                    interpolation: { escapeValue: false },
+                    name: prompt.name,
+                  })}
+                />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {inChats
+                ? t('settings.prompts.chatPromptOn')
+                : t('settings.prompts.chatPromptOff')}
+            </TooltipContent>
+          </Tooltip>
+        </CardFooter>
+      </Card>
+    );
+  };
+
+  if (detail.target)
+    return (
+      <PromptDetailPage
+        key={detail.key}
+        detail={detail}
+        prompts={prompts}
+        menuOptions={menuOptions}
+        dialogs={dialogs}
+      />
+    );
+
+  // The open folder before the tree has loaded: wait for it (or say it
+  // failed) rather than draw a folder with no name.
+  const folderPending = inFolder && !folder;
+  const foldersFailed = page.list.failed && !page.list.loaded;
+  const addPrompt = (
+    <Button type="button" size="field" shape="pill" onClick={detail.add}>
+      {t('settings.prompts.addPrompt')}
     </Button>
   );
 
   return (
-    <>
-      {titleAs === 'row' ? (
-        <SettingRow
-          label={titleText}
-          description={description}
-          htmlFor={pickerId}
-          stack
-        >
-          <div className="flex items-center gap-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-none">
-              {picker}
-              {editButton}
-            </div>
-            {addButton}
-          </div>
-        </SettingRow>
-      ) : titleAs === 'field' ? (
-        <div className="flex items-center gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            <FormField
-              id={pickerId}
-              label={titleText}
-              labelSurface={labelSurface}
-              className="min-w-0 flex-1"
-            >
-              {picker}
-            </FormField>
-            {editButton}
-          </div>
-          {addButton}
+    <SectionShell>
+      {/* Inside a folder its crumb row stands where the intro was: the
+          trail, its count line, what else it holds, and its ⋯ last. */}
+      {folder ? (
+        <div className="mb-5">
+          <FolderCrumbRow
+            kind="prompt"
+            trail={page.trail}
+            onNavigate={page.openFolder}
+            meta={folderCountLine(t, folder, 'prompt')}
+            menu={page.folderMenu.crumbMenu(folder)}
+          />
         </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <SectionHeader as="h2" title={titleText} />
-          <div className="flex flex-row flex-wrap items-end justify-start gap-6">
-            <div
-              className={cn(
-                'flex w-56 items-center gap-1',
-                dropdownProps.className,
-              )}
-            >
-              {picker}
-              {editButton}
-            </div>
-            {addButton}
-          </div>
+      ) : inFolder ? null : (
+        <div className="mb-5">
+          <p className="text-muted-foreground text-sm leading-6">
+            {t('settings.prompts.subtitle')}
+          </p>
         </div>
       )}
-      <PromptsModal
-        existingPrompts={prompts}
-        type={modalType}
-        modalState={modalState}
-        setModalState={setModalState}
-        newPromptName={newPromptName}
-        setNewPromptName={setNewPromptName}
-        newPromptContent={newPromptContent}
-        setNewPromptContent={setNewPromptContent}
-        editPromptName={editPromptName}
-        setEditPromptName={setEditPromptName}
-        editPromptContent={editPromptContent}
-        setEditPromptContent={setEditPromptContent}
-        currentPromptEdit={currentPromptEdit}
-        handleAddPrompt={handleAddPrompt}
-        handleEditPrompt={handleSaveChanges}
-        readOnly={editReadOnly}
-        onDuplicate={
-          can(
-            prompts.find((prompt) => prompt.id === currentPromptEdit.id) ??
-              currentPromptEdit,
-            'duplicate',
-          )
-            ? handleDuplicateFromModal
-            : undefined
+      <PageToolbar
+        search={
+          <SearchInput
+            maxLength={256}
+            label={
+              folder
+                ? t('folders.searchIn', {
+                    name: folder.name,
+                    interpolation: { escapeValue: false },
+                  })
+                : t('settings.prompts.searchPlaceholder')
+            }
+            name="prompt-search-input"
+            id="prompt-search-input"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         }
-        duplicateSourceName={duplicateSource}
-      />
-      {promptToDelete && (
-        <ConfirmationModal
-          message={t('modals.prompts.deleteConfirmation', {
-            interpolation: { escapeValue: false },
-            name: promptToDelete.name,
-          })}
-          description={t('common.cantUndo')}
-          modalState="ACTIVE"
-          setModalState={() => setPromptToDelete(null)}
-          submitLabel={t('modals.prompts.delete')}
-          handleSubmit={confirmDeletePrompt}
-          error={t('settings.general.promptActions.deleteFailed')}
-          handleCancel={() => setPromptToDelete(null)}
-          variant="destructive"
+        // Below Editor in a team nothing can be added here.
+        action={
+          canCreate ? (
+            <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
+              <NewFolderButton
+                atDepthLimit={!canCreateIn(tree, folderId)}
+                onClick={page.newFolder}
+              />
+              {addPrompt}
+            </div>
+          ) : undefined
+        }
+        divider
+      >
+        {!loading && !loadFailed && inReach.length > 0 ? (
+          <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
+            {kinds.length > 0 ? (
+              <ToggleGroup
+                type="single"
+                value={kind}
+                onValueChange={(value) => value && setKind(value as KindFilter)}
+                aria-label={t('settings.prompts.kindFilterLabel')}
+              >
+                {kinds.map((key) => (
+                  <ToggleGroupItem
+                    key={key}
+                    value={key}
+                    count={kindCounts[key]}
+                  >
+                    {key === 'all'
+                      ? t('settings.prompts.filters.all')
+                      : key === 'shared'
+                        ? t('settings.prompts.kinds.shared')
+                        : sectionTitle(key)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            ) : null}
+            <FilterSelect
+              value={usage}
+              onValueChange={setUsage}
+              values={USAGE_FILTERS}
+              counts={usageCounts}
+              labelOf={(value) => t(`settings.usage.filters.${value}`)}
+              ariaLabel={t('settings.usage.filterLabel')}
+            />
+          </div>
+        ) : null}
+      </PageToolbar>
+      {folderPending && foldersFailed ? (
+        <FolderSection
+          kind="prompt"
+          page={page}
+          folders={[]}
+          query=""
+          title=""
+        />
+      ) : loading || folderPending ? (
+        <div className={GRID}>
+          <SkeletonLoader component="toolCards" count={6} />
+        </div>
+      ) : loadFailed ? (
+        <EmptyState
+          tone="destructive"
+          illustration="none"
+          title={t('settings.prompts.loadError')}
+          onRetry={() => loadPrompts()}
+        />
+      ) : sections.length === 0 && folders.length === 0 && !foldersFailed ? (
+        folder && !flat ? (
+          <EmptyState
+            size="sm"
+            icon={FolderOpen}
+            title={t('folders.emptyTitle')}
+            description={t('settings.prompts.folders.emptyHint')}
+            action={canCreate ? addPrompt : undefined}
+          />
+        ) : (
+          <EmptyState
+            size="xs"
+            illustration="none"
+            title={t('settings.prompts.noPromptsFound')}
+          />
+        )
+      ) : (
+        <div className="flex flex-col gap-8">
+          <FolderSection
+            kind="prompt"
+            page={page}
+            folders={folders}
+            query={query}
+            title={t('settings.prompts.sections.folders')}
+          />
+          {sections.length > 0 ? (
+            // One group across the sections: one Tab stop, arrow keys
+            // between the cards, and one prompt picked.
+            <RadioGroup
+              value={chatPrompt.id}
+              onValueChange={pickChatPrompt}
+              // Only an arrow key on one of the radios moves the pick; one
+              // in a card's ⋯ menu (portalled, outside this element)
+              // doesn't, and a pointer press never waits.
+              onKeyDownCapture={(event) => {
+                const target = event.target as HTMLElement;
+                arrowPick.current =
+                  ARROW_KEYS.has(event.key) &&
+                  event.currentTarget.contains(target) &&
+                  target.getAttribute('role') === 'radio';
+              }}
+              onPointerDownCapture={() => {
+                arrowPick.current = false;
+              }}
+              aria-label={t('settings.prompts.chatPromptLabel')}
+            >
+              <div className="flex flex-col gap-8">
+                {sections.map((section) => (
+                  <section key={section.key} className="flex flex-col gap-3">
+                    <SectionHeader
+                      as="h2"
+                      size="sm"
+                      title={sectionTitle(section.key)}
+                      count={section.prompts.length}
+                    />
+                    <div className={GRID}>
+                      {section.prompts.map(renderCard)}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </RadioGroup>
+          ) : null}
+        </div>
+      )}
+      {page.dialogs}
+      {dialogs}
+    </SectionShell>
+  );
+}
+
+/**
+ * An open prompt in place of the list (PATTERNS "A detail page inside a list
+ * section"): the crumb row with Improve (Write on an empty new prompt), Save
+ * and the prompt's ⋯, the agents using it, and the editor; Improve docks the
+ * drafter's drawer beside the page. A built-in or view-only prompt is a
+ * read-only view whose Improve makes a copy first and drafts on the copy.
+ * Leaving through the crumb with unsaved changes asks first, as an open
+ * tool does.
+ */
+function PromptDetailPage({
+  detail,
+  prompts,
+  menuOptions,
+  dialogs,
+}: {
+  detail: PromptDetail;
+  prompts: Prompt[];
+  menuOptions: (prompt: Prompt, detail?: boolean) => MenuOption[];
+  dialogs: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  const { target, readOnly } = detail;
+  const canCreate = useSelector(selectCanCreateHere);
+  // The open prompt as the list last loaded it (a share changes it).
+  const saved =
+    target?.kind === 'edit'
+      ? (prompts.find((prompt) => prompt.id === target.prompt.id) ??
+        target.prompt)
+      : null;
+  const builtIn = saved?.type === 'public';
+  const usedBy = agentUseCount(saved?.used_by);
+
+  const drafterConfig = useDrafterConfig();
+  const mode = promptDrafterMode(detail.content);
+  const drafter = usePromptDrafter({
+    mode,
+    promptId: saved?.id ?? null,
+    name: detail.name,
+    content: detail.content,
+    setName: detail.setName,
+    setContent: detail.setContent,
+  });
+  const streaming = drafter.session.streaming;
+  const saveDisabled = promptSaveDisabled(
+    detail,
+    streaming || drafter.review !== null,
+  );
+  // A copy made by Improve opens with the drawer.
+  const [drawerOpen, setDrawerOpen] = React.useState(
+    target?.kind === 'new' && target.draft,
+  );
+  const [leaving, setLeaving] = React.useState(false);
+  // On a phone the drawer is a sheet over the editor: stepping through the
+  // changes (one by one, a finding's Change n) puts it aside so the page
+  // lands on the change, and it opens again once every change is chosen.
+  const { isMobile } = useMediaQuery();
+  const [reviewAside, setReviewAside] = React.useState(false);
+  if (reviewAside && drafter.review === null) {
+    setReviewAside(false);
+    setDrawerOpen(true);
+  }
+  const stepAside = <A extends unknown[]>(action: (...args: A) => void) =>
+    isMobile
+      ? (...args: A) => {
+          action(...args);
+          setDrawerOpen(false);
+          setReviewAside(true);
+        }
+      : action;
+  const backToDrafter = () => {
+    setReviewAside(false);
+    setDrawerOpen(true);
+  };
+  // The drawer's Change model link asks before leaving unsaved changes.
+  const leaveGuard = useLeaveGuard(detail.dirty);
+
+  const drafterOn =
+    drafterConfig?.enabled === true && detail.status === 'ready';
+  // A prompt the caller can't change is improved as a copy, saved in the
+  // current workspace, so only by someone who may create there.
+  const canImprove =
+    drafterOn &&
+    (!readOnly || (!!saved && canCreate && can(saved, 'duplicate')));
+  const improve = () => {
+    if (readOnly && saved) void detail.duplicate(saved, { draft: true });
+    else setDrawerOpen((open) => !open);
+  };
+
+  const back = () => (detail.dirty ? setLeaving(true) : detail.close());
+
+  // The checks hint's way to a full review: the drawer opens on it.
+  const reviewFromHint =
+    drafterOn && !readOnly && mode === 'improve'
+      ? () => {
+          setDrawerOpen(true);
+          drafter.startReview(t('drafter.prompt.suggestions.review'));
+        }
+      : undefined;
+
+  // A review finding's agent opens as the used-by list opens it: its editor
+  // for one the caller may edit, else its chat.
+  const openAgent = ({ id }: { id: string }) => {
+    const agent = saved?.used_by?.agents.find((item) => item.id === id);
+    leaveGuard.leaveTo(
+      agent?.can_edit
+        ? agentEditPath(id, agent.agent_type === 'workflow')
+        : agentChatPath(id),
+    );
+  };
+
+  const draftedSlot = (field: 'name' | 'content') => ({
+    drafted: drafter.drafted.isDrafted(field),
+    onUndo: () => drafter.drafted.undo(field),
+  });
+
+  const options = saved ? menuOptions(saved, true) : [];
+  const byline = [
+    builtIn ? t('modals.prompts.viewDescription') : null,
+    target?.kind === 'new' && target.copyOf
+      ? t('modals.prompts.duplicateDescription', {
+          name: target.copyOf,
+          interpolation: { escapeValue: false },
+        })
+      : null,
+    usedBy > 0 ? <UsedByAgents key="used-by" usage={saved?.used_by} /> : null,
+  ].filter(Boolean);
+
+  return (
+    // The drafter's docked panel sits beside the page's scroller, not in it.
+    <div className="relative flex h-full overflow-hidden">
+      <div className="h-full min-w-0 flex-1">
+        <SectionShell>
+          <PromptView
+            parent={{ label: t('settings.prompts.label'), onClick: back }}
+            label={
+              saved
+                ? saved.name
+                : target?.kind === 'new' && target.copyOf
+                  ? t('modals.prompts.duplicatePrompt')
+                  : t('modals.prompts.addPrompt')
+            }
+            actions={
+              <>
+                {canImprove && (
+                  <WandButton
+                    mode={readOnly ? 'improve' : mode}
+                    open={readOnly ? undefined : drawerOpen}
+                    compactOnPhone
+                    onClick={improve}
+                  />
+                )}
+                {!readOnly && (
+                  <PromptSaveButton detail={detail} disabled={saveDisabled} />
+                )}
+              </>
+            }
+            menu={
+              options.length > 0 ? (
+                <ActionMenu
+                  size="toolbar"
+                  options={options}
+                  triggerLabel={t('settings.prompts.actions', {
+                    interpolation: { escapeValue: false },
+                    name: saved?.name,
+                  })}
+                />
+              ) : undefined
+            }
+            byline={byline.length > 0 ? <MetaLine>{byline}</MetaLine> : null}
+            loading={detail.status === 'loading'}
+            onRetry={detail.status === 'error' ? detail.retry : undefined}
+            notice={
+              <PromptConflictNotice detail={detail} disabled={saveDisabled} />
+            }
+            idPrefix={saved ? 'edit' : 'new'}
+            name={detail.name}
+            setName={detail.setName}
+            content={detail.content}
+            setContent={detail.setContent}
+            isReadOnly={readOnly}
+            // A built-in prompt says so in the byline; a shared one the role
+            // can't change gets the shared notice.
+            showViewOnlyNotice={readOnly && !builtIn}
+            review={drafter.review}
+            onDecide={drafter.decide}
+            draftedName={draftedSlot('name')}
+            draftedContent={draftedSlot('content')}
+            nameError={
+              detail.nameExists && detail.name
+                ? t('modals.prompts.nameExists')
+                : undefined
+            }
+            locked={streaming}
+            onReview={reviewFromHint}
+            onBackToDrafter={
+              drafterOn && !readOnly && !drawerOpen ? backToDrafter : undefined
+            }
+          />
+          {dialogs}
+          {leaveGuard.dialog}
+          {leaving && (
+            <PromptLeaveDialog
+              detail={detail}
+              reviewing={drafter.review !== null}
+              onClose={() => setLeaving(false)}
+              onLeave={detail.close}
+            />
+          )}
+        </SectionShell>
+      </div>
+      {drafterOn && !readOnly && (
+        <PromptDraftPanel
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          drafter={{
+            ...drafter,
+            reviewOneByOne: stepAside(drafter.reviewOneByOne),
+            goTo: stepAside(drafter.goTo),
+          }}
+          mode={mode}
+          usedBy={usedBy}
+          modelName={drafterConfig?.model?.display_name ?? null}
+          onNavigate={leaveGuard.onNavigate()}
+          onOpenAgent={openAgent}
+          save={{
+            // Like the page's Save: a copy after a conflict.
+            onSave: () => void savePrompt(detail),
+            // The header's Save, under the written draft.
+            disabled: saveDisabled,
+            saving: detail.saving,
+            dirty: detail.dirty,
+          }}
         />
       )}
-      {promptToShare && (
-        <ShareToTeamModal
-          resourceType="prompt"
-          resourceId={promptToShare.id}
-          resourceName={promptToShare.name}
-          onClose={() => setPromptToShare(null)}
-        />
-      )}
-    </>
+    </div>
   );
 }

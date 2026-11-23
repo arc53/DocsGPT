@@ -2,8 +2,20 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { type Node } from 'reactflow';
 
+vi.mock('../../../modals/AddToolModal', () => ({ default: () => null }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
+}));
+
+// The Knowledge and Tools pickers read the sources and connections from the
+// store (AgentPanel.pickers.test.tsx covers them).
+vi.mock('react-redux', () => ({
+  useSelector: (selector: (state: unknown) => unknown) =>
+    selector({
+      preference: { token: null, sourceDocs: [] },
+      connectors: { connections: [], catalog: [] },
+    }),
+  useDispatch: () => vi.fn(),
 }));
 
 import AgentPanel from './AgentPanel';
@@ -55,12 +67,12 @@ describe('AgentPanel', () => {
           edges={[]}
           availableModels={[]}
           availableTools={[]}
-          sourceOptions={[]}
           documentOptions={[]}
           jsonSchemaText={jsonSchemaText}
           jsonSchemaError={null}
           modelSupportsStructuredOutput
           onJsonSchemaChange={vi.fn()}
+          onReloadTools={vi.fn(async () => [])}
         />,
       );
     });
@@ -133,6 +145,14 @@ describe('AgentPanel', () => {
   it('opens advanced settings when one of them is set', () => {
     render(makeNode({ file_passing: 'native' }));
     expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens advanced settings when the step streams other than a summary', () => {
+    render(makeNode({ stream_output: 'none' }));
+    expect(advancedToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain(
+      'agents.workflow.builder.streamOutput',
+    );
   });
 
   it('opens advanced settings when a schema is present', () => {

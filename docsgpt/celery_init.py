@@ -6,12 +6,11 @@ import sys
 import threading
 from typing import Any, Optional
 
-from celery import Celery
+from docsgpt.celery_publish import Celery
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 from celery.signals import (
     before_task_publish,
-    celeryd_after_setup,
     setup_logging,
     task_postrun,
     task_prerun,
@@ -117,6 +116,37 @@ def _unbind_task_log_context(task_id, **_):
         )
 
 
+@task_prerun.connect
+def _track_in_flight(task_id=None, task=None, **_):
+    """Count the task as running from its queue for the queue gauge.
+
+    The gauge never fails a task: a broker error only loses the count.
+    """
+    request = getattr(task, "request", None)
+    if request is None or getattr(request, "is_eager", False):
+        return
+    queue = (getattr(request, "delivery_info", None) or {}).get("routing_key")
+    if not queue:
+        return
+    try:
+        from docsgpt.events import queue_gauge
+
+        queue_gauge.task_started(task_id, str(queue))
+    except Exception:
+        logging.getLogger(__name__).debug("in-flight tracking failed for task %s", task_id, exc_info=True)
+
+
+@task_postrun.connect
+def _untrack_in_flight(task_id=None, **_):
+    """Stop counting the task as running."""
+    try:
+        from docsgpt.events import queue_gauge
+
+        queue_gauge.task_finished(task_id)
+    except Exception:
+        logging.getLogger(__name__).debug("in-flight untracking failed for task %s", task_id, exc_info=True)
+
+
 def _trim_native_heap() -> None:
     """Return freed glibc heap pages to the OS (Linux only; no-op elsewhere)."""
     # docling/torch parsing makes large transient allocations; glibc keeps the
@@ -136,7 +166,6 @@ def _trim_native_heap() -> None:
 # measured at ~86 ms for the collect against ~8 ms for the embed itself on a
 # worker holding the ONNX model, i.e. a 9x slowdown of the whole round trip.
 _NO_RECLAIM_TASKS = frozenset({"docsgpt.vectorstore.embeddings_tasks.embed_texts"})
-LEGACY_TASK_PREFIX = "application."
 
 
 @task_postrun.connect
@@ -148,10 +177,7 @@ def _reclaim_memory_after_task(task=None, **kwargs):
     generational collect after a task that allocated a few kilobytes just
     charges the next task for walking the whole heap.
     """
-    name = getattr(task, "name", None)
-    if isinstance(name, str) and name.startswith(LEGACY_TASK_PREFIX):
-        name = "docsgpt." + name[len(LEGACY_TASK_PREFIX):]
-    if name in _NO_RECLAIM_TASKS:
+    if getattr(task, "name", None) in _NO_RECLAIM_TASKS:
         return
     gc.collect()
     torch = sys.modules.get("torch")
@@ -243,42 +269,3 @@ def in_worker() -> bool:
         or task_join_will_block()
         or celery.current_worker_task is not None
     )
-
-#: Task-name prefix the package carried before the rename to ``docsgpt``.
-
-
-def register_legacy_task_names(app: Celery) -> int:
-    """Make every ``docsgpt.*`` task answer to its old ``application.*`` name too.
-
-    Messages queued by the previous release carry the old names; without the
-    alias a worker on this release rejects them as unregistered. Each alias is
-    a distinct task object (a subclass carrying the old name), not the same
-    object under a second key: Celery builds its execution tracer per task
-    object, and one object under two names would log every run under
-    whichever name was traced last. Kept for one release, together with the
-    ``application`` import alias.
-
-    Returns:
-        The number of aliases added.
-    """
-    added = 0
-    for name, task in list(app.tasks.items()):
-        if not name.startswith("docsgpt."):
-            continue
-        legacy = LEGACY_TASK_PREFIX + name[len("docsgpt."):]
-        if legacy in app.tasks:
-            continue
-        base = type(task)
-        legacy_cls = type(base.__name__, (base,), {"name": legacy, "__module__": base.__module__, "__doc__": base.__doc__})
-        app.register_task(legacy_cls())
-        added += 1
-    return added
-
-
-@celeryd_after_setup.connect
-def _alias_legacy_task_names(sender=None, instance=None, **kwargs):
-    """Register the pre-rename task names once the worker has loaded its tasks."""
-    app = getattr(instance, "app", None) or celery
-    added = register_legacy_task_names(app)
-    if added:
-        logging.getLogger(__name__).info("Registered %d legacy 'application.*' task-name aliases", added)

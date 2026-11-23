@@ -31,8 +31,25 @@ class WorkflowsRepository:
         *,
         retry_defaults: dict | None = None,
         legacy_mongo_id: str | None = None,
+        created_by: str | None = None,
     ) -> dict:
+        """Insert a workflow.
+
+        Args:
+            user_id: Its owner (a person, or a team's principal).
+            name: Its name.
+            description: Its description.
+            retry_defaults: The retry policy its nodes inherit.
+            legacy_mongo_id: The Mongo id of a migrated workflow.
+            created_by: The person who added it. Omitted, the database
+                fills in the owner, except for a team's principal (pass it then).
+
+        Returns:
+            dict: The new row.
+        """
         values: dict = {"user_id": user_id, "name": name}
+        if created_by is not None:
+            values["created_by"] = created_by
         if description is not None:
             values["description"] = description
         if retry_defaults is not None:
@@ -53,6 +70,21 @@ class WorkflowsRepository:
             {"id": workflow_id, "user_id": user_id},
         )
         row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_for_update(self, workflow_id: str) -> Optional[dict]:
+        """Fetch a workflow by ID and lock its row until the transaction ends.
+
+        Graph saves read ``current_graph_version`` through this, so two saves
+        of one workflow write one version after the other. ``FOR NO KEY
+        UPDATE``, the lock an ``UPDATE`` of the row takes anyway, so a run
+        starting meanwhile (its ``workflow_runs`` foreign key takes ``FOR KEY
+        SHARE``) doesn't wait for the save.
+        """
+        row = self._conn.execute(
+            text("SELECT * FROM workflows WHERE id = CAST(:id AS uuid) FOR NO KEY UPDATE"),
+            {"id": workflow_id},
+        ).fetchone()
         return row_to_dict(row) if row is not None else None
 
     def get_by_id(self, workflow_id: str) -> Optional[dict]:
@@ -137,6 +169,7 @@ class WorkflowsRepository:
         *,
         from_owner: Optional[str] = None,
         node_config_transform=None,
+        created_by: Optional[str] = None,
     ) -> Optional[dict]:
         """Deep-copy a workflow's current graph into a new workflow owned by ``new_owner``.
 
@@ -155,6 +188,8 @@ class WorkflowsRepository:
         e.g. adoption strips refs the new owner can't resolve, since node
         configs carry raw tool/source/model ids that are owner-scoped at run
         time and would otherwise ride along as ghost references.
+
+        ``created_by`` names who made the copy (needed when ``new_owner`` is a team's principal).
         """
         from docsgpt.storage.db.repositories.workflow_edges import (
             WorkflowEdgesRepository,
@@ -184,6 +219,7 @@ class WorkflowsRepository:
             source.get("name") or "",
             description=source.get("description"),
             retry_defaults=source.get("retry_defaults"),
+            created_by=created_by,
         )
         clone_id = str(clone["id"])
 

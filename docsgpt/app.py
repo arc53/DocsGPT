@@ -7,7 +7,7 @@ import jwt
 from flask import Flask, Response, jsonify, redirect, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from docsgpt.auth import handle_auth
+from docsgpt.auth import handle_auth, principal_refusal
 
 from docsgpt.core import log_context
 from docsgpt.core.paths import env_file
@@ -136,12 +136,6 @@ if admin_ns not in api.namespaces:
     api.add_namespace(admin_ns)
 if pat_ns not in api.namespaces:
     api.add_namespace(pat_ns)
-app.config.update(
-    UPLOAD_FOLDER="inputs",
-    CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
-    CELERY_RESULT_BACKEND=settings.CELERY_RESULT_BACKEND,
-    MONGO_URI=settings.MONGO_URI,
-)
 celery.config_from_object("docsgpt.celeryconfig")
 api.init_app(app)
 
@@ -405,6 +399,10 @@ def authenticate_request():
         request.decoded_token = None
         return None
     decoded_token = handle_auth(request)
+    # Checked again here, whatever the decoder: nobody acts as a team principal.
+    refusal = principal_refusal(decoded_token)
+    if refusal is not None:
+        return jsonify(refusal), 401
     if not decoded_token:
         request.decoded_token = None
     elif "error" in decoded_token:
@@ -467,7 +465,7 @@ def after_request(response: Response) -> Response:
     """Add CORS headers for the pure Flask development entrypoint."""
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Headers"] = (
-        "Content-Type, Authorization, Idempotency-Key"
+        "Content-Type, Authorization, Idempotency-Key, X-DocsGPT-Workspace"
     )
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
     return response

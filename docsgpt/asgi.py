@@ -17,6 +17,7 @@ from docsgpt.api.user.workflow_runs.download import run_artifact_download_routes
 from docsgpt.app import app as flask_app
 from docsgpt.core.settings import settings
 from docsgpt.mcp_server import mcp
+from docsgpt.security.client_ip import ClientAddressMiddleware
 from docsgpt.ui import StaticUI
 
 _WSGI_THREADPOOL = int(settings.WSGI_THREADPOOL_WORKERS)
@@ -82,6 +83,8 @@ asgi_app = Starlette(
         Mount("/", app=_backend),
     ],
     middleware=[
+        # Outermost: every route below, Flask included, sees the real client address.
+        Middleware(ClientAddressMiddleware),
         Middleware(
             CORSMiddleware,
             allow_origins=["*"],
@@ -91,8 +94,11 @@ asgi_app = Starlette(
                 "Authorization",
                 "Mcp-Session-Id",
                 "Idempotency-Key",
+                # The workspace a list or create works in (docsgpt/workspaces/context.py).
+                "X-DocsGPT-Workspace",
             ],
-            expose_headers=["Mcp-Session-Id"],
+            # Content-Disposition carries a download's filename (a team's chat export) to a web app on another origin.
+            expose_headers=["Mcp-Session-Id", "Content-Disposition"],
         ),
     ],
     lifespan=mcp_app.lifespan,

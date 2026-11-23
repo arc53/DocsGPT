@@ -807,7 +807,7 @@ class TestJudgeCall:
 
         monkeypatch.setattr(judge, "_build_llm", build)
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "judge-model")
-        monkeypatch.setattr("docsgpt.core.model_utils.validate_model_id", lambda m, user_id=None: True)
+        monkeypatch.setattr("docsgpt.core.model_utils.model_is_usable", lambda m, user_id=None: True)
         verdict = judge.judge(
             user_id="u1",
             monitor_id="m1",
@@ -850,6 +850,9 @@ class TestJudgeCall:
         monkeypatch.setattr(PROVIDERS_BY_NAME["openai"], "llm_class", _LLM)
         monkeypatch.setattr("docsgpt.core.model_utils.get_provider_from_model_id", lambda m, user_id=None: "openai")
         monkeypatch.setattr("docsgpt.core.model_utils.get_api_key_for_provider", lambda p: "provider-key")
+        # Nothing stored: the task model falls to the default model.
+        monkeypatch.setattr("docsgpt.core.model_utils._stored_task_models", lambda user_id: (None, None))
+        monkeypatch.setattr(settings, "TASK_MODEL_ID", None)
         for configured in (None, "gpt-5.6-sol-foundry", "not-in-the-catalog"):
             monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", configured)
             verdict = judge.judge(user_id="u1", monitor_id="m1", description="d", condition="c",
@@ -897,14 +900,27 @@ class TestJudgeCall:
                         content="x")
         assert caught.value.refused is True
 
-    def test_default_model_when_unset(self, monkeypatch):
+    def test_the_owners_task_model_when_unset(self, monkeypatch):
         monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", None)
-        from docsgpt.core.model_registry import ModelRegistry
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
 
-        monkeypatch.setattr(
-            ModelRegistry, "get_instance", classmethod(lambda cls: SimpleNamespace(default_model_id="m"))
+    def test_the_owners_task_model_when_the_setting_is_unknown(self, monkeypatch):
+        monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "not-in-the-catalog")
+        monkeypatch.setattr("docsgpt.core.model_utils.model_is_usable", lambda m, user_id=None: False)
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
+
+    def test_the_owners_task_model_when_the_setting_is_disabled(self, monkeypatch):
+        """A disabled model is in the catalog but never runs, as with ``TASK_MODEL_ID``."""
+        registry = SimpleNamespace(
+            get_model=lambda model_id, user_id=None: SimpleNamespace(id=model_id, enabled=False),
+            model_exists=lambda model_id, user_id=None: True,
         )
-        assert judge.judge_model_id("u1") == "m"
+        monkeypatch.setattr("docsgpt.core.model_registry.ModelRegistry.get_instance", lambda: registry)
+        monkeypatch.setattr(settings, "MONITOR_JUDGE_MODEL", "disabled-model")
+        monkeypatch.setattr("docsgpt.core.model_utils.get_task_model_id", lambda user_id: f"task-{user_id}")
+        assert judge.judge_model_id("u1") == "task-u1"
 
     def test_build_llm_tags_token_usage(self, monkeypatch):
         captured = {}
@@ -958,6 +974,40 @@ class TestConversationNoLongerResumable:
             )
         assert tick.run_tick(monitor["id"]) == {"state": "cancelled"}
         assert page["calls"] == 0 and wakes == []
+        assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+
+    def _share(self, mon_db, conversation_id):
+        with mon_db.begin() as conn:
+            conn.execute(
+                text("UPDATE conversations SET is_shared_usage = true WHERE id = CAST(:id AS uuid)"),
+                {"id": conversation_id},
+            )
+
+    def test_a_webhook_delivery_ends_its_monitor_without_the_judge(
+        self, mon_db, conversation_id, no_judge, wakes, events
+    ):
+        monitor, link = _webhook(mon_db, conversation_id, check=None, condition="the build passed", state={})
+        self._share(mon_db, conversation_id)
+        hit_id = _hit(mon_db, link, "a", {"status": "success"})
+
+        assert tick.process_hit(hit_id) == {"state": "cancelled"}
+        assert wakes == []
+        assert reload(mon_db, monitor["id"])["status"] == "cancelled"
+        with mon_db.connect() as conn:
+            assert TriggerHitsRepository(conn).get(hit_id)["status"] == "ignored"
+            assert TriggerLinksRepository(conn).get_live(link["token_hash"], "webhook") is None
+
+    def test_an_ingest_event_ends_its_monitor_without_the_judge(
+        self, mon_db, conversation_id, no_judge, wakes, events
+    ):
+        monitor = make_monitor(
+            mon_db, conversation_id, source={"type": "ingest", "source_id": "src-1"}, check=None,
+            condition="the ingest failed", state={},
+        )
+        self._share(mon_db, conversation_id)
+
+        assert tick.process_event(monitor["id"], {"event": "failed", "source_id": "src-1"}) == {"state": "cancelled"}
+        assert wakes == []
         assert reload(mon_db, monitor["id"])["status"] == "cancelled"
 
 

@@ -51,6 +51,10 @@ os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
 os.environ.setdefault("TRACES_ENABLED", "false")
 # A dev .env often turns conversation insights on; tests that need them say so.
 os.environ.setdefault("DECISION_ANALYTICS_ENABLED", "false")
+# The parse cache reads and writes ``parsed_files`` through its own DB session,
+# which would reach the operator's dev database from any test that parses a
+# file. Off by default; the parse-cache tests switch it on against pg_conn.
+os.environ.setdefault("PARSE_CACHE_ENABLED", "false")
 # Importing ``docsgpt.app`` pins the embedding model in whatever database
 # ``POSTGRES_URI`` names, unless the environment names the model. Name the
 # settings default, so importing the app from a test writes to no database
@@ -234,8 +238,42 @@ class _SharedDatabase:
         pgconn._POOLS.clear()
 
 
-def pytest_collection_modifyitems(items):
-    """Give every migration test a database of its own: they run DDL and commit through Alembic."""
+def pytest_addoption(parser):
+    """``--shard INDEX/TOTAL`` runs one slice of the suite; CI runs the slices as parallel jobs."""
+    parser.addoption(
+        "--shard",
+        default=None,
+        metavar="INDEX/TOTAL",
+        help="run only this slice of the suite, such as 2/3 (test files are dealt out by test count)",
+    )
+
+
+def _keep_shard(config, items) -> None:
+    """Deselect the tests whose file belongs to another shard."""
+    value = config.getoption("--shard")
+    if not value:
+        return
+    from tests.sharding import assign_shards, parse_shard
+
+    try:
+        index, total = parse_shard(value)
+    except ValueError as error:
+        raise pytest.UsageError(str(error)) from None
+    files = [item.nodeid.split("::", 1)[0] for item in items]
+    shards = assign_shards(files, total)
+    kept = [item for item, file in zip(items, files) if shards[file] == index]
+    dropped = [item for item, file in zip(items, files) if shards[file] != index]
+    if dropped:
+        config.hook.pytest_deselected(items=dropped)
+        items[:] = kept
+
+
+def pytest_collection_modifyitems(config, items):
+    """Keep this job's shard, and give every migration test a database of its own.
+
+    Migration tests run DDL and commit through Alembic, so each gets ``fresh_db``.
+    """
+    _keep_shard(config, items)
     for item in items:
         if item.path.name.startswith("test_migration_"):
             item.add_marker(pytest.mark.fresh_db)
@@ -691,3 +729,13 @@ def flask_app():
 
     app = Flask(__name__)
     return app
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ocr_limiters():
+    """Start every test with no OCR request limiter, so a 429 one test halved never slows another."""
+    from docsgpt.parser.file.ocr_limiter import reset_limiters
+
+    reset_limiters()
+    yield
+    reset_limiters()

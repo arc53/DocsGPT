@@ -31,7 +31,7 @@ Use these commands once the dev prerequisites above are satisfied.
 ```bash
 uv sync                    # deps from uv.lock + the dev group (test tools, ruff) + docsgpt itself, editable
 source .venv/bin/activate  # macOS/Linux
-# pip instead: pip install -r docsgpt/requirements.txt -r tests/requirements.txt && pip install -e .
+# pip instead: pip install -r tests/requirements.txt && pip install -e .   (core + docling + test tools)
 # Optional extras (not installed by default); name every extra you want, `uv sync` removes the others:
 # uv sync --extra docling   # docling parser engine (OCR backend, structured output)
 # uv sync --extra milvus    # VECTOR_STORE=milvus
@@ -206,6 +206,7 @@ process, so a green run on one selection and an abort on another is expected.
 
 ```bash
 cd frontend && npm run lint
+cd frontend && npm test
 cd frontend && npm run build
 ```
 
@@ -215,8 +216,12 @@ cd frontend && npm run build
 cd docs && npm run dates:check && npm run build
 ```
 
-Read `docs/AGENTS.md` first: every page carries a `lastUpdated` date that you bump when
-you change what the page tells the reader.
+Read `docs/AGENTS.md` first. Leave the `lastUpdated` date of an existing page alone (a new
+page gets today's date) and leave the generated files alone: the "Generated docs" workflow
+updates both on `main` after the merge, and CI fails a pull request that changes them. For a
+docs change a reader would not notice (a typo, wording polish), put `[keep-date]` in the pull
+request title or in the subject line of every commit that changes the page, so the page keeps
+its date; `docs/AGENTS.md` has the details.
 
 If Vale is installed locally and you edited prose, also run:
 
@@ -230,7 +235,7 @@ vale .
 - `tests/`: backend unit/integration tests and test-only Python dependencies.
 - `frontend/`: Vite + React + TypeScript application.
 - `frontend/src/`: main UI code, including `components`, `conversation`, `hooks`, `locale`, `settings`, `upload`, and Redux store wiring in `store.ts`.
-- `docs/`: separate documentation site built with Next.js/Nextra.
+- `docs/`: separate documentation site built with Next.js/Fumadocs.
 - `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord, Slack and Telegram bots live in their own repos (`arc53/discord-docsgpt-extension`, `arc53/slack-bot-docsgpt-extenstion`, `arc53/tg-bot-docsgpt-extenstion`); the old Chrome extension was removed and has no public successor.
 - `deployment/`: Docker Compose variants and Kubernetes manifests.
 
@@ -251,8 +256,9 @@ vale .
 - Parsers live in `docsgpt/parser/` and handle different document formats in the ingestion stage.
 - Agents and tools are in `docsgpt/agents/` and `docsgpt/agents/tools/`.
 - Celery setup/config lives in `docsgpt/celery_init.py` and `docsgpt/celeryconfig.py`.
-- Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`; regenerate the docs reference with `python -m docsgpt.core.settings.reference --write`.
-- REST routes are documented from the flask-restx Swagger document; after adding or changing a route, regenerate the docs snapshot with `python -m docsgpt.api.reference --write` (CI fails if `docs/data/swagger.json` is stale).
+- Settings and env vars are managed via Pydantic in `docsgpt/core/settings/` (one module per domain, composed into `Settings`). Every field needs a `description`. Don't regenerate the docs reference (`docs/content/Deploying/Settings-Reference.mdx`) in your branch: the "Generated docs" workflow (`.github/workflows/generated-docs.yml`) does it on `main` after the merge, and CI fails a pull request that changes the file.
+- REST routes are documented from the flask-restx Swagger document; the snapshot `docs/data/swagger.json` is regenerated the same way, on `main` after the merge, so leave it out of your branch too.
+- A curated MCP connector preset is one file, `docsgpt/connectors/presets/mcp/<name>.yaml` (see the README there). The docs' preset table is generated from those files after the merge.
 
 ### Frontend
 
@@ -265,6 +271,8 @@ vale .
   keep typography, spacing, radius and motion on its roles.
 - Every user-visible string, attributes included (`aria-label`, `label`, `placeholder`, `title`, `alt`), is a `t()`
   key in all eight locales under `frontend/src/locale/` (`de en es fr jp ru zh zh-TW`). Admin pages stay English.
+  The files keep their keys sorted at every level: put a new key where its name goes, or run `npm run locale:sort`
+  (the pre-commit hook does). `npm test` and CI fail on an unsorted file.
 
 #### Icons
 
@@ -283,9 +291,8 @@ DocsGPT historically mixed three icon sources: `lucide-react`, inline SVG compon
    variants in this branch). The pattern is acceptable for existing call sites — don't
    bulk-migrate without a reason.
 
-Three pre-existing dark-variant pairs (`documentation`, `no-files`, `science-spark`) are
-hand-tuned multi-color illustrations, not pure inverts; they keep their `-dark` companion
-files until a per-illustration refactor.
+One pre-existing dark-variant pair (`no-files`) is a hand-tuned multi-color illustration,
+not a pure invert; it keeps its `-dark` companion file until a per-illustration refactor.
 
 ## PR readiness
 

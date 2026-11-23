@@ -4,6 +4,7 @@ import { TraceSpan } from '../types';
 import {
   barGeometry,
   buildSpanRows,
+  formatCost,
   formatDurationMs,
   formatTokens,
   spanHeadline,
@@ -109,6 +110,16 @@ describe('formatTokens', () => {
     expect(formatTokens(950)).toBe('950');
     expect(formatTokens(12345)).toBe('12.3k');
     expect(formatTokens(2_500_000)).toBe('2.5M');
+  });
+});
+
+describe('formatCost', () => {
+  it('shows cents above a dollar and two significant digits below', () => {
+    expect(formatCost(12.5)).toBe('$12.50');
+    expect(formatCost(0.35)).toBe('$0.35');
+    expect(formatCost(0.0123)).toBe('$0.012');
+    expect(formatCost(0.0042)).toBe('$0.0042');
+    expect(formatCost(0.00001)).toBe('<$0.0001');
   });
 });
 

@@ -101,7 +101,8 @@ export interface WidgetProps extends LocaleProps {
   heroDescription?: string;
   /**
    * Questions listed under the welcome card before the first message. A click
-   * sends the question. Blank entries are skipped.
+   * sends the question. Blank entries are skipped. Left out, the widget shows
+   * the agent's starters (fetched with `apiKey`); `[]` shows none.
    */
   suggestedQuestions?: string[];
   /** Heading over `suggestedQuestions`; an empty string hides it. */
@@ -181,7 +182,6 @@ export interface WidgetCoreHandle {
 }
 
 export interface WidgetCoreProps extends WidgetProps {
-  widgetRef?: React.RefObject<HTMLDivElement> | null;
   handleClose?: React.MouseEventHandler | undefined;
   isOpen: boolean;
   prefilledQuery?: string;

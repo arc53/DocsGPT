@@ -5,15 +5,26 @@ import { useDispatch, useSelector } from 'react-redux';
 import { EmptyState } from '@/components/ui/empty-state';
 
 import MessageInput from '../components/MessageInput';
+import { getSendReadiness } from '../components/message-input/armedSend';
+import AgentStarters from '../hero/AgentStarters';
 import ConversationMessages from '../conversation/ConversationMessages';
 import { Query } from '../conversation/conversationModels';
+import {
+  pendingQuestionCall,
+  type QuestionAction,
+} from '../conversation/questionCall';
 import { selectSelectedAgent } from '../preferences/preferenceSlice';
 import { AppDispatch } from '../store';
+import {
+  selectAttachments,
+  selectSendableAttachments,
+} from '../upload/uploadSlice';
 import {
   addQuery,
   fetchPreviewAnswer,
   handlePreviewAbort,
   resendQuery,
+  resumePreviewQuestion,
   selectPreviewQueries,
   selectPreviewStatus,
 } from './agentPreviewSlice';
@@ -25,6 +36,11 @@ export default function AgentPreview() {
   const queries = useSelector(selectPreviewQueries);
   const status = useSelector(selectPreviewStatus);
   const selectedAgent = useSelector(selectSelectedAgent);
+  const attachments = useSelector(selectAttachments);
+  const sendableAttachments = useSelector(selectSendableAttachments);
+  // A starter that must wait for pending attachments is parked here;
+  // MessageInput consumes it into an armed composer send.
+  const [queuedQuestion, setQueuedQuestion] = useState<string | null>(null);
 
   const [lastQueryReturnedErr, setLastQueryReturnedErr] = useState(false);
 
@@ -55,6 +71,11 @@ export default function AgentPreview() {
       if (index !== undefined) {
         if (!isRetry) dispatch(resendQuery({ index, prompt: trimmedQuestion }));
         handleFetchAnswer({ question: trimmedQuestion, index });
+      } else if (getSendReadiness(attachments).state !== 'ready') {
+        // A starter bypasses MessageInput's submit gate: with files still
+        // uploading/parsing, sending now would leave them behind. Route the
+        // question into the composer, where the armed-send banner takes over.
+        setQueuedQuestion(trimmedQuestion);
       } else {
         if (!isRetry) {
           const newQuery: Query = { prompt: trimmedQuestion };
@@ -63,8 +84,18 @@ export default function AgentPreview() {
         handleFetchAnswer({ question: trimmedQuestion, index: undefined });
       }
     },
-    [dispatch, handleFetchAnswer],
+    [dispatch, handleFetchAnswer, attachments],
   );
+
+  const handleQuestionAction = useCallback(
+    (callId: string, action: QuestionAction) => {
+      fetchStream.current = dispatch(resumePreviewQuestion({ callId, action }));
+    },
+    [dispatch],
+  );
+  // The latest turn waits on clarifying questions: the composer answers them
+  // (not with files attached, which an answer can't carry).
+  const waitingQuestion = pendingQuestionCall(queries);
 
   const handleQuestionSubmission = (
     question?: string,
@@ -79,7 +110,11 @@ export default function AgentPreview() {
       });
     } else if (question && status !== 'loading') {
       const currentInput = question.trim();
-      if (lastQueryReturnedErr && queries.length > 0) {
+      if (waitingQuestion && sendableAttachments.length === 0) {
+        handleQuestionAction(waitingQuestion.call_id, {
+          answer: currentInput,
+        });
+      } else if (lastQueryReturnedErr && queries.length > 0) {
         const lastQueryIndex = queries.length - 1;
         handleQuestion({
           question: currentInput,
@@ -116,11 +151,18 @@ export default function AgentPreview() {
     <div className="relative h-full w-full">
       <div className="scrollbar-overlay absolute inset-0 bottom-[180px] overflow-hidden px-4 pt-4 [&>div>div]:w-full! [&>div>div]:max-w-none!">
         {queries.length === 0 ? (
-          <section className="flex h-full items-center justify-center">
-            <EmptyState
-              size="sm"
-              illustration="none"
-              title={t('agents.preview.emptyTitle')}
+          <section className="flex h-full flex-col">
+            <div className="flex grow items-center justify-center">
+              <EmptyState
+                size="sm"
+                illustration="none"
+                title={t('agents.preview.emptyTitle')}
+              />
+            </div>
+            <AgentStarters
+              className="mb-3"
+              starters={selectedAgent?.starters}
+              onAsk={(question) => handleQuestion({ question })}
             />
           </section>
         ) : (
@@ -130,6 +172,7 @@ export default function AgentPreview() {
             queries={queries}
             status={status}
             showHeroOnEmpty={false}
+            onQuestionAction={handleQuestionAction}
           />
         )}
       </div>
@@ -137,7 +180,12 @@ export default function AgentPreview() {
         <div className="w-full px-4">
           <MessageInput
             onSubmit={(text) => handleQuestionSubmission(text)}
+            queuedQuestion={queuedQuestion}
+            onQueuedQuestionConsumed={() => setQueuedQuestion(null)}
             loading={status === 'loading'}
+            placeholder={
+              waitingQuestion ? t('questions.typeAnswer') : undefined
+            }
             showSourceButton={selectedAgent ? false : true}
             showToolButton={selectedAgent ? false : true}
             autoFocus={false}

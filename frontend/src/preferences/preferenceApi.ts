@@ -1,6 +1,11 @@
 import conversationService from '../api/services/conversationService';
 import userService from '../api/services/userService';
-import { Doc, GetDocsResponse, Prompt } from '../models/misc';
+import {
+  Doc,
+  GetDocsResponse,
+  Prompt,
+  type SourceListScope,
+} from '../models/misc';
 import { GetConversationsResult, ConversationSummary } from './types';
 
 //Fetches all JSON objects from the source. We only use the objects with the "model" property in SelectDocsModal.tsx. Hopefully can clean up the source file later.
@@ -21,6 +26,19 @@ export async function getDocs(token: string | null): Promise<Doc[] | null> {
   }
 }
 
+/** Whose sources a Knowledge listing asks for; left out, both. */
+export type SourceOrigin = 'own' | 'shared';
+
+/** A Knowledge page, with how many sources each origin holds. */
+export type PaginatedDocs = GetDocsResponse & {
+  /**
+   * The workspace's own sources and the ones shared with the caller, each
+   * with the search, kind, usage and folder applied but not the origin; in a
+   * team `shared` is always 0. Absent from an older backend.
+   */
+  originCounts?: Record<SourceOrigin, number>;
+};
+
 export async function getDocsWithPagination(
   sort = 'date',
   order = 'desc',
@@ -28,10 +46,31 @@ export async function getDocsWithPagination(
   rowsPerPage = 10,
   searchTerm = '',
   token: string | null,
-): Promise<GetDocsResponse | null> {
+  {
+    kind = 'all',
+    usage = 'all',
+    scope,
+    origin,
+  }: {
+    kind?: string;
+    usage?: string;
+    scope?: SourceListScope;
+    origin?: SourceOrigin;
+  } = {},
+): Promise<PaginatedDocs | null> {
   try {
-    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${searchTerm}`;
-    const response = await userService.getDocsWithPagination(query, token);
+    // The kind and usage filters are sent only when set, and the folder
+    // scope only when given.
+    const filters = `${kind !== 'all' ? `&kind=${kind}` : ''}${usage !== 'all' ? `&usage=${usage}` : ''}`;
+    const folder = scope
+      ? `&folder=${encodeURIComponent(scope.folder)}&direct=${scope.direct}`
+      : '';
+    const query = `sort=${sort}&order=${order}&page=${pageNumber}&rows=${rowsPerPage}&search=${encodeURIComponent(searchTerm)}${filters}${folder}`;
+    const response = await userService.getDocsWithPagination(
+      query,
+      token,
+      origin,
+    );
     if (!response.ok)
       throw new Error(`Failed to load sources (${response.status})`);
     const data = await response.json();
@@ -46,6 +85,10 @@ export async function getDocsWithPagination(
       totalPages: data.totalPages,
       currentPage: data.currentPage ?? pageNumber,
       nextCursor: data.nextCursor,
+      kindCounts: data.kind_counts,
+      usageCounts: data.usage_counts,
+      subtreeTotal: data.subtree_total,
+      originCounts: data.origin_counts,
     };
   } catch (error) {
     console.log(error);
@@ -141,11 +184,6 @@ export async function searchConversations(
   }
 }
 
-export function getLocalApiKey(): string | null {
-  const key = localStorage.getItem('DocsGPTApiKey');
-  return key;
-}
-
 function parseStoredRecentDocs(docsString: string | null): Doc[] | null {
   if (!docsString) {
     return null;
@@ -206,40 +244,41 @@ export function getLocalRecentDocs(sourceDocs?: Doc[] | null): Doc[] | null {
   return validDocs.length > 0 ? validDocs : null;
 }
 
-export function getLocalPrompt(
-  availablePrompts?: Prompt[] | null,
-): Prompt | null {
-  const promptString = localStorage.getItem('DocsGPTPrompt');
-  const selectedPrompt = promptString
-    ? (JSON.parse(promptString) as Prompt)
-    : null;
+/** A whole folder picked in the composer: its id, and its name for the pill. */
+export type SelectedFolder = { id: string; name: string };
 
-  if (!availablePrompts || !selectedPrompt) {
-    return selectedPrompt;
+const RECENT_FOLDERS_KEY = 'DocsGPTRecentFolders';
+
+/**
+ * The composer's picked folders from the last visit, like its picked
+ * sources; anything malformed reads as none.
+ */
+export function getStoredRecentFolders(): SelectedFolder[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(RECENT_FOLDERS_KEY) ?? '[]',
+    );
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is SelectedFolder =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof item.id === 'string' &&
+        typeof item.name === 'string',
+    );
+  } catch {
+    return [];
   }
-
-  const isPromptAvailable = (selected: Prompt) => {
-    return availablePrompts.some((available) => {
-      return available.id === selected.id;
-    });
-  };
-
-  const isValid = isPromptAvailable(selectedPrompt);
-
-  if (!isValid) {
-    localStorage.removeItem('DocsGPTPrompt');
-    return null;
-  }
-
-  return selectedPrompt;
 }
 
-export function setLocalApiKey(key: string): void {
-  localStorage.setItem('DocsGPTApiKey', key);
-}
-
-export function setLocalPrompt(prompt: Prompt): void {
-  localStorage.setItem('DocsGPTPrompt', JSON.stringify(prompt));
+export function setStoredRecentFolders(folders: SelectedFolder[]): void {
+  try {
+    if (folders.length > 0)
+      localStorage.setItem(RECENT_FOLDERS_KEY, JSON.stringify(folders));
+    else localStorage.removeItem(RECENT_FOLDERS_KEY);
+  } catch {
+    // Storage off (a private window): the pick lasts for this visit.
+  }
 }
 
 export function setLocalRecentDocs(docs: Doc[] | null): void {

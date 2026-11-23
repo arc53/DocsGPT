@@ -91,7 +91,6 @@ LABELS: tuple[Label, ...] = (
     Label("induced_by_untrusted", "tool", Q.INDUCED_BY_UNTRUSTED),
     Label("loop", "tool", None, "derive.is_loop"),
 )
-BY_NAME = {lab.name: lab for lab in LABELS}
 
 
 def _choice(instructions: str, options: dict[str, Optional[str]]) -> dict[str, Any]:

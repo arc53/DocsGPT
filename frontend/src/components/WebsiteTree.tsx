@@ -275,7 +275,7 @@ const WebsiteTree: React.FC<WebsiteTreeProps> = ({
 
   const refreshPage = async (path: string, name: string, url?: string) => {
     const startedAt = Date.now();
-    let taskId: string | null = null;
+    let taskId: string | null;
     // Taken at once: the menu turns its changes off until this one is done.
     const hold = changes.begin(tr('refreshing'));
     let refusal: string | null = null;

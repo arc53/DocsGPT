@@ -214,6 +214,27 @@ describe('Now page', () => {
     expect(container.textContent).toContain('activity.now.reconnect');
   });
 
+  it('lists a chat waiting on its questions, counted with the rest', async () => {
+    const question = {
+      kind: 'question' as const,
+      id: 'question:c3',
+      conversation_id: 'c3',
+      title: 'Halvorsen QBR',
+      agent_name: 'Account desk',
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    await render({ ...SNAPSHOT, needs_you: [...SNAPSHOT.needs_you, question] });
+    expect(container.textContent).toContain('activity.now.waitingForAnswer');
+    expect(container.textContent).toContain('Halvorsen QBR');
+    expect(container.textContent).toContain('activity.now.question');
+    expect(button('activity.now.answer')).toBeDefined();
+    // Three items and the connection to reconnect.
+    const needsYou = Array.from(container.querySelectorAll('h2, h3'))
+      .find((h) => h.textContent?.startsWith('activity.now.needsYou'))
+      ?.querySelector('[data-slot="count"]')?.textContent;
+    expect(needsYou).toContain('4');
+  });
+
   it('counts what runs as the sidebar does, a chat just started included', async () => {
     const store = makeStore();
     await act(async () => {
@@ -298,16 +319,31 @@ describe('Now page', () => {
   });
 
   it('says what an ingest is doing and how long it has run', async () => {
-    await render();
-    const [embedding, reading] = Array.from(
-      container.querySelectorAll('li[data-kind="ingest"]'),
-    ) as HTMLElement[];
-    expect(embedding.textContent).toContain('activity.now.operation.sync');
-    expect(embedding.textContent).toContain('activity.now.chunks');
-    expect(reading.textContent).toContain('activity.now.operation.upload');
-    expect(reading.textContent).toContain('activity.now.reading');
-    expect(reading.textContent).toContain('1:35');
-    expect(reading.querySelector('[role="progressbar"]')).toBeNull();
+    // A pinned clock: the run time must not tick on while the test runs.
+    const now = Date.parse('2026-11-15T12:00:00Z');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      await render({
+        ...SNAPSHOT,
+        running: SNAPSHOT.running.map((item) =>
+          item.id === 's2'
+            ? { ...item, started_at: new Date(now - 95_000).toISOString() }
+            : item,
+        ),
+      });
+      const [embedding, reading] = Array.from(
+        container.querySelectorAll('li[data-kind="ingest"]'),
+      ) as HTMLElement[];
+      expect(embedding.textContent).toContain('activity.now.operation.sync');
+      expect(embedding.textContent).toContain('activity.now.chunks');
+      expect(reading.textContent).toContain('activity.now.operation.upload');
+      expect(reading.textContent).toContain('activity.now.reading');
+      expect(reading.textContent).toContain('1:35');
+      expect(reading.querySelector('[role="progressbar"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('lists a knowledge sync batch in Up next', async () => {

@@ -22,6 +22,17 @@ export interface WorkflowExecutionStep {
   error?: string;
   /** A loop's items so far: how many there are, ended and failed. */
   items?: LoopItemProgress;
+  /** The step's place in the run's saved steps, to fetch its full values. */
+  stepIndex?: number;
+  /** The stream sent a summary: the event would have been too large. */
+  summarized?: boolean;
+  /** The start of an output too large to stream whole. */
+  outputPreview?: string;
+  outputTruncated?: boolean;
+  /** The node streams its status only (``stream_output: none``). */
+  outputOmitted?: boolean;
+  /** Keys a summarized step set, without their values. */
+  stateKeysChanged?: string[];
   /** While a retry runs: its attempt (from 2), out of how many. */
   attempt?: number;
   maxAttempts?: number;
@@ -50,6 +61,8 @@ export interface WorkflowQuery extends Query {
   // The run id for this query's execution; lets the artifacts panel list the
   // run's produced artifacts (GET /api/artifacts?workflow_run_id=).
   workflowRunId?: string;
+  /** False for an unsaved draft's run: nothing is stored under its id. */
+  workflowRunSaved?: boolean;
 }
 
 export interface WorkflowPreviewState {
@@ -211,6 +224,7 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                         setWorkflowRunId({
                           index: targetIndex,
                           workflowRunId: data.workflow_run_id,
+                          saved: data.run_saved,
                         }),
                       );
                     } else if (data.type === 'thought') {
@@ -249,6 +263,12 @@ export const fetchWorkflowPreviewAnswer = createAsyncThunk<
                             stateDelta: data.state_delta ?? data.state_snapshot,
                             output: data.output,
                             error: data.error,
+                            stepIndex: data.step_index,
+                            summarized: data.summarized,
+                            outputPreview: data.output_preview,
+                            outputTruncated: data.output_truncated,
+                            outputOmitted: data.output_omitted,
+                            stateKeysChanged: data.state_keys_changed,
                             attempt: data.attempt,
                             maxAttempts: data.max_attempts,
                             retryError: data.retry_error,
@@ -408,16 +428,6 @@ export const workflowPreviewSlice = createSlice({
         state.queries[index].tool_calls.push(tool_call);
       }
     },
-    updateQuery(
-      state,
-      action: PayloadAction<{ index: number; query: Partial<Query> }>,
-    ) {
-      const { index, query } = action.payload;
-      state.queries[index] = {
-        ...state.queries[index],
-        ...query,
-      };
-    },
     updateExecutionStep(
       state,
       action: PayloadAction<{
@@ -451,6 +461,12 @@ export const workflowPreviewSlice = createSlice({
         stateDelta: step.stateDelta,
         output: step.output,
         error: step.error,
+        stepIndex: step.stepIndex,
+        summarized: step.summarized,
+        outputPreview: step.outputPreview,
+        outputTruncated: step.outputTruncated,
+        outputOmitted: step.outputOmitted,
+        stateKeysChanged: step.stateKeysChanged,
         startedAt:
           existingIndex !== -1
             ? querySteps[existingIndex].startedAt
@@ -519,11 +535,16 @@ export const workflowPreviewSlice = createSlice({
     },
     setWorkflowRunId(
       state,
-      action: PayloadAction<{ index: number; workflowRunId: string }>,
+      action: PayloadAction<{
+        index: number;
+        workflowRunId: string;
+        saved?: boolean;
+      }>,
     ) {
-      const { index, workflowRunId } = action.payload;
+      const { index, workflowRunId, saved } = action.payload;
       if (state.queries[index]) {
         state.queries[index].workflowRunId = workflowRunId;
+        state.queries[index].workflowRunSaved = saved;
       }
     },
     setActiveNodeId(state, action: PayloadAction<string | null>) {
@@ -554,10 +575,6 @@ export const workflowPreviewSlice = createSlice({
     clearQueryRun(state, action: PayloadAction<{ index: number }>) {
       const query = state.queries[action.payload.index];
       if (query) query.executionSteps = [];
-      state.executionSteps = [];
-      state.activeNodeId = null;
-    },
-    clearExecutionSteps: (state) => {
       state.executionSteps = [];
       state.activeNodeId = null;
     },
@@ -607,7 +624,6 @@ export const selectWorkflowPreviewOpen = (
 
 export const {
   addQuery,
-  updateQuery,
   resendQuery,
   updateStreamingQuery,
   updateThought,
@@ -620,7 +636,6 @@ export const {
   setStatus,
   raiseError,
   resetWorkflowPreview,
-  clearExecutionSteps,
   clearQueryRun,
   setPreviewOpen,
 } = workflowPreviewSlice.actions;

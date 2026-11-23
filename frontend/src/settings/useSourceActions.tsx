@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Eye,
+  FolderInput,
   Network,
   RefreshCw,
   Search,
@@ -13,6 +14,9 @@ import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 
 import userService from '../api/services/userService';
+import { canMoveToFolder } from '../components/folders/folderFiling';
+import { selectFoldersInTeam } from '../components/folders/folderWorkspace';
+import MoveToFolderModal from '../components/folders/MoveToFolderModal';
 import type { MenuOption } from '../components/ui/dropdown-menu';
 import { requestSync, syncRefusal } from '../connectors/syncRefusal';
 import ConfirmationModal from '../modals/ConfirmationModal';
@@ -26,7 +30,10 @@ import {
   selectUploadTasks,
   updateUploadTask,
 } from '../upload/uploadSlice';
-import { can } from '../utils/accessUtils';
+import { can, canOpenShare } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
+import { agentUseCount } from '../utils/resourceUsage';
+import { useMoveToWorkspace } from '../workspace/move/useMoveToWorkspace';
 import useRetrievalAvailability from './components/useRetrievalAvailability';
 import ConvertToWikiModal from './ConvertToWikiModal';
 import EnableGraphRAGModal from './EnableGraphRAGModal';
@@ -58,6 +65,13 @@ interface UseSourceActionsOptions {
   /** Updates the source in place (a saved schedule or config), no refetch. */
   onPatched: (id: string, patch: Partial<Doc>) => void;
   /**
+   * The source was filed into a folder (null: taken out of any), once the
+   * server did it and the folder list reloaded.
+   */
+  onMoved?: (doc: Doc, folderId: string | null) => void;
+  /** The source moved to another workspace: it leaves this list. */
+  onMovedToWorkspace?: (doc: Doc) => void;
+  /**
    * A sync the server accepted (Sync now from a menu or Source settings), so
    * an open view of the source can wait for it to finish.
    */
@@ -73,8 +87,9 @@ interface UseSourceActionsOptions {
  * Every source-level action, for the card's menu and the opened source's ⋯,
  * so the two can't drift apart: the menu options, the dialogs they open
  * (Source settings, Wiki settings, Test retrieval, Share, Convert to wiki,
- * Enable GraphRAG, the delete confirm) and Sync now and Reingest with their
- * toasts. Render `modals` once wherever the menus show.
+ * Enable GraphRAG, Move to team or Personal, the delete confirm) and Sync now
+ * and Reingest with their toasts. Render `modals` once wherever the menus
+ * show.
  *
  * @returns `menuOptions(doc, place)`, `openTestRetrieval`, `syncNow` and
  *   `modals`.
@@ -85,6 +100,8 @@ export function useSourceActions({
   onDeleted,
   onChanged,
   onPatched,
+  onMoved,
+  onMovedToWorkspace,
   onSyncStarted,
   syncingId = null,
 }: UseSourceActionsOptions) {
@@ -92,6 +109,8 @@ export function useSourceActions({
   const dispatch = useDispatch();
   const token = useSelector(selectToken);
   const uploadTasks = useSelector(selectUploadTasks);
+  const inTeam = useSelector(selectFoldersInTeam);
+  const moveToWorkspace = useMoveToWorkspace('source');
 
   const [toConfigure, setToConfigure] = useState<Doc | null>(null);
   const [toTest, setToTest] = useState<Doc | null>(null);
@@ -100,6 +119,7 @@ export function useSourceActions({
   const [toGraph, setToGraph] = useState<Doc | null>(null);
   const [wikiSettingsOf, setWikiSettingsOf] = useState<Doc | null>(null);
   const [toDelete, setToDelete] = useState<Doc | null>(null);
+  const [toMove, setToMove] = useState<Doc | null>(null);
 
   const { graphRAGAvailable, hybridAvailable, availableModels, decision } =
     useRetrievalAvailability(token);
@@ -202,8 +222,9 @@ export function useSourceActions({
 
   /**
    * The source's actions. On the card: View, Reingest (failed), Sync now,
-   * Settings, Test retrieval, Convert to wiki, Share with team, then Delete
-   * set apart. In the opened view the same, less View and Test retrieval
+   * Settings, Test retrieval, Convert to wiki, Share, Move to folder (anyone
+   * who can see it files it in their own folders, but a team's source only in
+   * the team's), Move to team… or Move to Personal…, then Delete set apart. In the opened view the same, less View and Test retrieval
    * (a button beside it), and less Sync now where it is the view's primary.
    */
   const menuOptions = (doc: Doc, place: SourceMenuPlace): MenuOption[] => {
@@ -289,14 +310,31 @@ export function useSourceActions({
       });
     }
 
-    // Owner-only unless the owner lets editors share (editors_can_share).
-    if (doc.id && can(doc, 'share')) {
+    // Owner-only unless the owner lets editors share (editors_can_share); a
+    // team's source shows every member where its access comes from.
+    if (doc.id && canOpenShare(doc)) {
       options.push({
         icon: Users,
         label: t('settings.sources.shareWithTeam'),
         onClick: () => setToShare(doc),
       });
     }
+
+    if (doc.id && can(doc, 'move_folder') && canMoveToFolder(doc, inTeam)) {
+      options.push({
+        icon: FolderInput,
+        label: t('folders.moveToFolder'),
+        onClick: () => setToMove(doc),
+      });
+    }
+
+    const moveOut = doc.id
+      ? moveToWorkspace.menuOption(
+          { ...doc, id: doc.id },
+          { onMoved: () => onMovedToWorkspace?.(doc) },
+        )
+      : null;
+    if (moveOut) options.push(moveOut);
 
     if (can(doc, 'delete')) {
       options.push({
@@ -331,7 +369,14 @@ export function useSourceActions({
             interpolation: { escapeValue: false },
             name: toDelete.name,
           })}
-          description={t('settings.sources.deleteConsequence')}
+          description={
+            agentUseCount(toDelete.used_by) > 0
+              ? t('settings.sources.deleteUsedBy', {
+                  count: agentUseCount(toDelete.used_by),
+                  formatted: formatCount(agentUseCount(toDelete.used_by)),
+                })
+              : t('settings.sources.deleteConsequence')
+          }
           modalState="ACTIVE"
           setModalState={(state) => state === 'INACTIVE' && setToDelete(null)}
           handleSubmit={confirmDelete}
@@ -346,12 +391,30 @@ export function useSourceActions({
         />
       )}
 
+      {toMove?.id && (
+        <MoveToFolderModal
+          open
+          onOpenChange={(open) => !open && setToMove(null)}
+          kind="source"
+          subject={{
+            kind: 'items',
+            ids: [toMove.id],
+            name: toMove.name,
+            folderId: toMove.folder_id ?? null,
+          }}
+          onMoved={(folderId) => onMoved?.(toMove, folderId)}
+        />
+      )}
+
+      {moveToWorkspace.dialog}
+
       {toShare?.id && (
         <ShareToTeamModal
           resourceType="source"
           resourceId={toShare.id}
           resourceName={toShare.name}
           onClose={() => setToShare(null)}
+          onMoved={() => onMovedToWorkspace?.(toShare)}
         />
       )}
 

@@ -9,8 +9,19 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// No store by default (every selector reads null); a team test sets one.
+const redux = vi.hoisted(() => ({
+  state: null as null | Record<string, unknown>,
+}));
 vi.mock('react-redux', () => ({
-  useSelector: () => null,
+  useSelector: (selector: (state: unknown) => unknown) => {
+    if (!redux.state) return null;
+    try {
+      return selector(redux.state) ?? null;
+    } catch {
+      return null;
+    }
+  },
   useDispatch: () => vi.fn(),
 }));
 
@@ -325,6 +336,96 @@ describe('SourceConfigModal first section, by kind', () => {
       expect(setModalState).not.toHaveBeenCalledWith('INACTIVE');
     },
   );
+
+  describe("a team's source on an account connected for the team", () => {
+    const TEAM_SOURCE = {
+      type: 'connector:file',
+      connectionId: 'team-conn',
+      syncFrequency: 'daily',
+      allowed_actions: ['use', 'edit', 'view_config'],
+    };
+    const inTeam = (
+      role: 'owner' | 'admin' | 'editor',
+      connection: Record<string, unknown> | null,
+    ) => {
+      redux.state = {
+        preference: { token: null },
+        workspace: {
+          current: 't1',
+          workspaces: [{ id: 't1', kind: 'team', name: 'Ops', role }],
+        },
+        connectors: {
+          connections: [],
+          teams: {
+            t1: {
+              catalog: [],
+              connections: connection
+                ? [{ id: 'team-conn', owner: 'team', ...connection }]
+                : [],
+              loaded: true,
+              failed: false,
+              latestRequestId: null,
+            },
+          },
+        },
+      };
+    };
+    afterEach(() => {
+      redux.state = null;
+    });
+
+    // Its schedule spends the allowance of whoever connected the account,
+    // so only Admins set it; an Editor still syncs it now (and pays).
+    it('leaves the schedule to Admins, and an Editor still syncs it now', async () => {
+      inTeam('editor', { allowed_actions: ['view', 'sync'] });
+      await render(doc(TEAM_SOURCE));
+      expect(scheduleTrigger()).toBeNull();
+      await act(async () => button('settings.sources.syncNow')!.click());
+      expect(onSyncNow).toHaveBeenCalled();
+    });
+
+    it('lets an Admin set the schedule', async () => {
+      inTeam('admin', { allowed_actions: ['view', 'sync', 'manage'] });
+      await render(doc(TEAM_SOURCE));
+      expect(scheduleTrigger()?.textContent).toBe(
+        'settings.sources.syncFrequency.daily',
+      );
+    });
+
+    it.each([
+      ['editor', false],
+      ['admin', true],
+    ] as const)(
+      "goes by the role while the team's list is loading (%s)",
+      async (role, shown) => {
+        inTeam(role, null);
+        await render(doc(TEAM_SOURCE));
+        expect(!!scheduleTrigger()).toBe(shown);
+      },
+    );
+
+    it('words a refused schedule change about the team account', async () => {
+      inTeam('admin', { allowed_actions: ['view', 'sync', 'manage'] });
+      service.manageSync.mockResolvedValue({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          success: false,
+          error: 'connection_admin_required',
+          message: 'English',
+        }),
+      });
+      await render(doc(TEAM_SOURCE));
+      await pickSchedule('weekly');
+      await act(async () =>
+        button('settings.sources.configModal.save')!.click(),
+      );
+      expect(document.body.textContent).toContain(
+        'settings.connectors.team.errors.adminRequired',
+      );
+      expect(document.body.textContent).not.toContain('English');
+    });
+  });
 
   it('runs Sync now from the footer of a synced source', async () => {
     await render(doc({ type: 'connector:file', syncFrequency: 'never' }));

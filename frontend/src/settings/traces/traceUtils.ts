@@ -93,6 +93,13 @@ export function formatTokens(n: number | null | undefined): string {
   return String(Math.round(value));
 }
 
+/** A USD amount: cents above $1, two significant digits below it. */
+export function formatCost(usd: number): string {
+  if (usd >= 1) return `$${usd.toFixed(2)}`;
+  if (usd < 0.0001) return '<$0.0001';
+  return `$${Number(usd.toPrecision(2))}`;
+}
+
 function trimZero(s: string): string {
   return s.endsWith('.0') ? s.slice(0, -2) : s;
 }

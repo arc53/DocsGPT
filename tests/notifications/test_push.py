@@ -185,6 +185,18 @@ class TestBuildPayload:
         assert push.build_payload(kind="x", title="", body="", url="//evil", conversation_id=None)["url"] == "/"
         assert push.build_payload(kind="x", title="", body="", url="/c/1", conversation_id=None)["title"] == "DocsGPT"
 
+    def test_one_notice_per_schedule_on_the_device(self):
+        def tag(schedule_id):
+            return push.build_payload(
+                kind="schedule_paused", title="t", body="b", url="/", conversation_id=None, schedule_id=schedule_id,
+            )["tag"]
+
+        assert tag("s1") == "docsgpt:schedule:s1"
+        assert tag("s1") != tag("s2")
+        assert push.build_payload(kind="job", title="t", body="b", url="/", conversation_id=None)["tag"] == (
+            "docsgpt:job"
+        )
+
     def test_fits_in_a_push_message(self):
         payload = push.build_payload(kind="monitor", title="é" * 500, body="日" * 2000, url="/c/x", conversation_id="x")
         assert len(json.dumps(payload, ensure_ascii=False).encode()) < 3000

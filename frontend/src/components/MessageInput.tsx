@@ -1,7 +1,7 @@
 import { envVar } from '@/env';
 import { useAvoidToasts } from '@/components/ui/toast-layout';
 import { cn } from '@/lib/utils';
-import { CloudUpload, Database } from 'lucide-react';
+import { CloudUpload } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -36,29 +36,37 @@ import { ActiveState, Doc } from '../models/misc';
 import {
   selectAttachmentBudgetShare,
   selectSelectedDocs,
+  selectSelectedFolders,
+  selectSelectedAgent,
   selectSelectedModel,
   selectSourceDocs,
   selectSttAvailable,
   selectToken,
   setSelectedDocs,
+  setSelectedFolders,
 } from '../preferences/preferenceSlice';
+import UsageNotice, { useUsageStop } from '../payer/UsageNotice';
+import { chatUsageScope } from '../payer/usageSlice';
 import type { AppDispatch, RootState } from '../store';
 import Upload from '../upload/Upload';
 import { isTouchDevice } from '../utils/browserUtils';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { IconButton } from './ui/icon-button';
 import { type MultiSelectPopoverItem } from './MultiSelectPopover';
-import ToolIcon from './ToolIcon';
-import ConnectorIcon from '../connectors/ConnectorIcon';
+import { toolPickerItems } from './toolPickerItems';
 import {
   connectionNeedsSignIn,
   loadConnectors,
   selectConnections,
   selectConnectorCatalog,
 } from '../connectors/connectorsSlice';
-import { toolServiceOf } from '../connectors/toolService';
-import { groupTools } from '../settings/toolGroups';
+import {
+  loadChatTools,
+  selectChatTools,
+  selectChatToolsLoading,
+  setChatToolInChat,
+  settleChatToolToggle,
+} from '../conversation/chatToolsSlice';
 import SignInAgainNotice, {
   useSignInAgain,
 } from '../connectors/SignInAgainNotice';
@@ -91,12 +99,15 @@ import {
   getFileExtension,
   partitionAttachmentFiles,
 } from '../constants/fileUpload';
-import { UserToolType } from '../settings/types';
-import { sourceItemId, toSourcePickerItems } from '../utils/sourceUtils';
+import { useDeviceOnline } from '../hooks/useDeviceOnline';
+import { useToolKindFilter } from '../settings/useToolKindFilter';
+import { sourceItemId } from '../utils/sourceUtils';
+import type { KnowledgePick } from './folders/folderPick';
+import { useKnowledgeFolderPicker } from './folders/useKnowledgeFolderPicker';
 import { showActionToast } from '../notifications/actionToastSlice';
 import { selectPushChannelHealthy } from '../notifications/notificationsSlice';
 import { isOwner } from '../utils/accessUtils';
-import { isChatPickerToolVisible, toolInChat } from '../utils/toolUtils';
+import { toolInChat } from '../utils/toolUtils';
 
 const generateId = (): string =>
   `${Date.now()}-${Math.random().toString(36).substring(2)}`;
@@ -352,6 +363,17 @@ type MessageInputProps = {
   // input and arms the send so the standard waiting banner takes over.
   queuedQuestion?: string | null;
   onQueuedQuestionConsumed?: () => void;
+  // Typing stays open but nothing sends: the chat it would go to is still
+  // loading. Unlike ``loading`` it shows no stop control.
+  sendBlocked?: boolean;
+  /** Replaces the empty field's prompt ("Or type your answer…"). */
+  placeholder?: string;
+  /**
+   * The person's allowance above the composer: the 80% line, and the stop
+   * at 100%, which holds sending. Set on the chat's own composer; a chat
+   * someone else pays for (a public link) leaves it out.
+   */
+  usageNotice?: boolean;
 };
 
 export default function MessageInput({
@@ -363,6 +385,9 @@ export default function MessageInput({
   allowSendWithoutText = false,
   queuedQuestion = null,
   onQueuedQuestionConsumed,
+  sendBlocked = false,
+  placeholder,
+  usageNotice = false,
 }: MessageInputProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -373,10 +398,10 @@ export default function MessageInput({
   const voiceFileInputRef = useRef<HTMLInputElement>(null);
   const [isSourcesPopupOpen, setIsSourcesPopupOpen] = useState(false);
   const [isToolsPopupOpen, setIsToolsPopupOpen] = useState(false);
-  const [userTools, setUserTools] = useState<UserToolType[]>([]);
+  const userTools = useSelector(selectChatTools);
   const connections = useSelector(selectConnections);
   const catalog = useSelector(selectConnectorCatalog);
-  const [toolsLoading, setToolsLoading] = useState(false);
+  const toolsLoading = useSelector(selectChatToolsLoading);
   const [uploadModalState, setUploadModalState] =
     useState<ActiveState>('INACTIVE');
   const [addToolModalState, setAddToolModalState] =
@@ -387,6 +412,7 @@ export default function MessageInput({
   const [voiceError, setVoiceError] = useState<string | null>(null);
 
   const selectedDocs = useSelector(selectSelectedDocs);
+  const selectedFolders = useSelector(selectSelectedFolders);
   const sourceDocs = useSelector(selectSourceDocs);
   const token = useSelector(selectToken);
   const attachments = useSelector(selectAttachments);
@@ -407,6 +433,10 @@ export default function MessageInput({
     [attachments, selectedModel],
   );
   const attachmentBudgetShare = useSelector(selectAttachmentBudgetShare);
+  // A chat with an agent spends the agent allowance, one without the direct
+  // one, and one with an agent reached only by its link spends the publisher's.
+  const usageScope = chatUsageScope(useSelector(selectSelectedAgent));
+  const usageStopped = useUsageStop(usageScope) && usageNotice;
   // No cap on how many files attach: past the model's attachment budget the
   // files still send, and Knowledge is offered as the better home for them.
   const overAttachmentBudget = useMemo(
@@ -1192,7 +1222,7 @@ export default function MessageInput({
       return;
     }
 
-    let stream: MediaStream | null = null;
+    let stream: MediaStream;
     try {
       setVoiceError(null);
       stream = await getUserMediaStream({ audio: true });
@@ -1366,61 +1396,55 @@ export default function MessageInput({
     void _docs;
   };
 
-  const sourceItems: MultiSelectPopoverItem[] = useMemo(
-    () =>
-      toSourcePickerItems(
-        sourceDocs,
-        {
-          own: t('conversation.sources.groupOwn'),
-          team: t('conversation.sources.groupTeam'),
-        },
-        <Database />,
-      ),
-    [sourceDocs, t],
+  // The picker's rows: folders (a folder picks whole, its chevron opens
+  // it), then sources, with the kind track counting the open place.
+  const selectedDocList = useMemo(
+    () => (Array.isArray(selectedDocs) ? selectedDocs : []),
+    [selectedDocs],
   );
-
-  const selectedSourceIds = (
-    selectedDocs && Array.isArray(selectedDocs) ? selectedDocs : []
-  ).map((doc) => sourceItemId(doc));
-
-  const handleToggleSource = (id: string) => {
-    if (!sourceDocs) return;
-    const current = Array.isArray(selectedDocs) ? selectedDocs : [];
-    const matched = current.find((doc) => sourceItemId(doc) === id);
-    let updated: Doc[];
-    if (matched) {
-      updated = current.filter((doc) => sourceItemId(doc) !== id);
-    } else {
-      const incoming = sourceDocs.find((doc) => sourceItemId(doc) === id);
-      if (!incoming) return;
-      updated = [...current, incoming];
-    }
-    dispatch(setSelectedDocs(updated.length > 0 ? updated : []));
+  const knowledgePick = useMemo<KnowledgePick>(
+    () => ({
+      sources: selectedDocList.map((doc) => sourceItemId(doc)),
+      folders: selectedFolders.map((folder) => folder.id),
+    }),
+    [selectedDocList, selectedFolders],
+  );
+  const handlePickChange = (next: KnowledgePick) => {
+    const docs = sourceDocs ?? [];
+    // A picked source keeps its stored copy; a new one comes from the list.
+    const updated = next.sources
+      .map(
+        (id) =>
+          selectedDocList.find((doc) => sourceItemId(doc) === id) ??
+          docs.find((doc) => sourceItemId(doc) === id),
+      )
+      .filter((doc): doc is Doc => Boolean(doc));
+    const folders = next.folders.map((id) => ({
+      id,
+      name:
+        knowledgeTree.byId.get(id)?.name ??
+        selectedFolders.find((folder) => folder.id === id)?.name ??
+        '',
+    }));
+    dispatch(setSelectedDocs(updated));
+    dispatch(setSelectedFolders(folders));
     handlePostDocumentSelect(updated.length > 0 ? updated : null);
   };
+  const { popoverProps: knowledgePopover, tree: knowledgeTree } =
+    useKnowledgeFolderPicker({
+      open: isSourcesPopupOpen,
+      docs: sourceDocs ?? [],
+      pick: knowledgePick,
+      onPickChange: handlePickChange,
+      connections,
+    });
 
-  // The list loads on mount and on each open; only the latest request's
-  // answer applies, so a slow older one can't undo a toggle.
-  const toolsRequestRef = useRef(0);
+  // The list loads on mount and on each open; the slice applies only the
+  // newest request's answer, from this composer or one a chat switch
+  // unmounted, so a slow older one can't undo a toggle.
   const fetchUserTools = useCallback(() => {
-    const request = ++toolsRequestRef.current;
-    const isLatest = () => request === toolsRequestRef.current;
-    setToolsLoading(true);
-    userService
-      .getUserTools(token)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!isLatest()) return;
-        const filtered = (data.tools || []).filter(isChatPickerToolVisible);
-        setUserTools(filtered);
-      })
-      .catch((error) => {
-        console.error('Error fetching tools:', error);
-      })
-      .finally(() => {
-        if (isLatest()) setToolsLoading(false);
-      });
-  }, [token]);
+    (dispatch as AppDispatch)(loadChatTools({ token }));
+  }, [token, dispatch]);
 
   // Launched from the Tools picker; the modals live here because the picker
   // closes when a sign-in opens.
@@ -1439,55 +1463,22 @@ export default function MessageInput({
     }
   }, [isToolsPopupOpen, fetchUserTools]);
 
-  // Tools from a connected service sit under that service; the rest are
-  // built in. Groups only appear once some tool comes from a connection.
-  // A teammate's connection is never in the caller's list, so the tool's own
-  // connection id decides, and the service is named from the catalog.
-  const toolService = (tool: UserToolType) =>
-    toolServiceOf(tool, connections, catalog);
-  const anyConnectedTool = userTools.some((tool) => !!tool.connection_id);
-  // Same groups as the Tools page and the agent builder: built in, one per
-  // service, then custom tools (an API tool, an MCP server with no
-  // connection).
-  const toolItems: MultiSelectPopoverItem[] = groupTools(
-    userTools,
+  // Remote devices' online state, asked for when the picker opens.
+  const deviceOnline = useDeviceOnline(isToolsPopupOpen, userTools);
+
+  // The groups the agent builder and the Tools page use: Included, Added,
+  // one per service, then Custom. A teammate's connection is never in the
+  // caller's list, so the tool's own connection id decides, and the
+  // service is named from the catalog.
+  // The picker's kind track (Included · Added · Services · Custom), past
+  // 10 tools; the rows are built from the kind picked.
+  const toolKinds = useToolKindFilter(userTools, isToolsPopupOpen);
+  const toolItems: MultiSelectPopoverItem[] = toolPickerItems(toolKinds.tools, {
+    t,
     connections,
     catalog,
-  )
-    .flatMap((group) => group.tools.map((tool) => ({ tool, group })))
-    .map(({ tool, group }) => {
-      const service = toolService(tool);
-      const connection = service?.connection;
-      return {
-        id: tool.id,
-        label: tool.customName || tool.displayName,
-        icon: service?.icon ? (
-          <ConnectorIcon icon={service.icon} className="size-5" />
-        ) : (
-          <ToolIcon name={tool.name} className="size-5" />
-        ),
-        group: anyConnectedTool
-          ? group.kind === 'service'
-            ? group.service?.name
-            : group.kind === 'custom'
-              ? t('agents.form.toolsPopup.groupCustom')
-              : t('settings.tools.groupBuiltIn')
-          : undefined,
-        // Shared-by line; the sign-in warning below wins when both apply.
-        description:
-          !isOwner(tool) && tool.shared_via
-            ? t('settings.tools.sharedBy', {
-                interpolation: { escapeValue: false },
-                team: tool.shared_via,
-              })
-            : undefined,
-        descriptionNode: connectionNeedsSignIn(connection) ? (
-          <Badge variant="warning">
-            {t('settings.connectors.status.reconnect')}
-          </Badge>
-        ) : undefined,
-      };
-    });
+    deviceOnline,
+  });
   // Each broken connection once, with the tool it would re-sign (an MCP
   // preset keeps its tool rather than gaining a second one).
   const brokenConnections = connections
@@ -1505,25 +1496,19 @@ export default function MessageInput({
     .filter((tool) => toolInChat(tool))
     .map((tool) => tool.id);
 
-  // Ticks at once and unticks again when the server refuses it.
-  const setToolInChat = (id: string, value: boolean) =>
-    setUserTools((prev) =>
-      prev.map((tool) =>
-        tool.id !== id
-          ? tool
-          : isOwner(tool)
-            ? { ...tool, status: value, in_chat: value }
-            : { ...tool, in_chat: value },
-      ),
-    );
-
+  // Ticks at once and unticks again when the server refuses it; the slice
+  // holds the tick over any reload until the update answers.
   const handleToggleTool = (id: string) => {
     const tool = userTools.find((t) => t.id === id);
     if (!tool) return;
     const newStatus = !toolInChat(tool);
-    setToolInChat(id, newStatus);
+    const owner = isOwner(tool);
+    dispatch(setChatToolInChat({ id, value: newStatus, owner }));
+    const settle = () => dispatch(settleChatToolToggle({ id }));
     const fail = () => {
-      setToolInChat(id, !newStatus);
+      dispatch(
+        settleChatToolToggle({ id, rollback: { value: !newStatus, owner } }),
+      );
       dispatch(
         showActionToast({
           variant: 'destructive',
@@ -1534,7 +1519,8 @@ export default function MessageInput({
     userService
       .updateToolStatus({ id, status: newStatus }, token)
       .then((response: Response) => {
-        if (!response.ok) fail();
+        if (response.ok) settle();
+        else fail();
       })
       .catch((error: unknown) => {
         console.error('Failed to update tool status:', error);
@@ -1556,6 +1542,8 @@ export default function MessageInput({
     (allowSendWithoutText && attachments.some((a) => a.status !== 'failed'));
   const composerIdle =
     !loading &&
+    !sendBlocked &&
+    !usageStopped &&
     recordingState !== 'recording' &&
     recordingState !== 'transcribing';
   const canSubmit = hasSubmittableContent && composerIdle;
@@ -1672,6 +1660,7 @@ export default function MessageInput({
   return (
     <div {...getRootProps()} className="flex w-full flex-col">
       {signInAgain.modals}
+      {usageNotice && usageScope && <UsageNotice scope={usageScope} />}
       {/* react-dropzone input (for drag/drop) */}
       <input {...getInputProps()} />
       <input
@@ -1753,7 +1742,7 @@ export default function MessageInput({
               recordingState === 'recording' ||
               recordingState === 'transcribing'
             }
-            placeholder={t('inputPlaceholder')}
+            placeholder={placeholder ?? t('inputPlaceholder')}
             className="text-foreground placeholder:text-muted-foreground w-full resize-none overflow-x-hidden overflow-y-auto rounded-t-3xl bg-transparent px-2 text-base leading-tight whitespace-pre-wrap opacity-100 focus:outline-hidden sm:px-3"
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
@@ -1767,10 +1756,9 @@ export default function MessageInput({
               <SourcesTrigger
                 open={isSourcesPopupOpen}
                 onOpenChange={setIsSourcesPopupOpen}
-                items={sourceItems}
-                selectedIds={selectedSourceIds}
-                onToggle={handleToggleSource}
+                {...knowledgePopover}
                 selectedDocs={selectedDocs}
+                selectedFolders={selectedFolders}
                 onUploadClick={handleUploadClick}
               />
             )}
@@ -1783,6 +1771,7 @@ export default function MessageInput({
                 selectedIds={selectedToolIds}
                 onToggle={handleToggleTool}
                 loading={toolsLoading}
+                filters={toolKinds.filters}
                 onAddTool={() => setAddToolModalState('ACTIVE')}
                 notice={
                   <SignInAgainNotice
@@ -1875,8 +1864,7 @@ export default function MessageInput({
           modalState={addToolModalState}
           setModalState={setAddToolModalState}
           getUserTools={fetchUserTools}
-          onToolAdded={fetchUserTools}
-          onDevicePaired={fetchUserTools}
+          onToolsCreated={() => fetchUserTools()}
         />
       )}
 

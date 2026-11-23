@@ -2,25 +2,20 @@ import userService from '../api/services/userService';
 import {
   selectAgents,
   selectSharedAgents,
-  selectTemplateAgents,
   setAgents,
   setSharedAgents,
-  setTemplateAgents,
 } from '../preferences/preferenceSlice';
 
-export type AgentSectionId = 'template' | 'user' | 'team' | 'shared';
+/**
+ * The agent list's sections. `user` is the workspace's own agents (My
+ * agents in Personal, the team's in a team); `teamShared` the ones other
+ * teams shared with the team (a team only); `sharedWithYou` the ones people
+ * shared with the caller directly (Personal only); `shared` the public ones
+ * opened by a link (Discovered, Personal only).
+ */
+export type AgentSectionId = 'user' | 'teamShared' | 'sharedWithYou' | 'shared';
 
 export const agentSectionsConfig = [
-  {
-    id: 'template' as const,
-    title: 'Templates',
-    description: 'Agents provided by DocsGPT',
-    showNewAgentButton: false,
-    emptyStateDescription: 'No template agents found.',
-    fetchAgents: (token: string | null) => userService.getTemplateAgents(token),
-    selectData: selectTemplateAgents,
-    updateAction: setTemplateAgents,
-  },
   {
     id: 'user' as const,
     title: 'My agents',
@@ -32,15 +27,25 @@ export const agentSectionsConfig = [
     updateAction: setAgents,
   },
   {
-    // Team-shared agents are split out of the 'user' payload client-side
-    // (they arrive in /api/get_agents tagged ownership:'team'), so this
-    // section reuses the same selector/action — the hook partitions by
-    // ownership for display.
-    id: 'team' as const,
-    title: 'Team',
-    description: 'Agents your teammates shared with you',
+    // Another team's agents shared with this team: split out of the team's
+    // /api/get_agents payload by `origin`, like Shared with you.
+    id: 'teamShared' as const,
+    title: 'Shared with this team',
+    description: 'Agents other teams shared with this team',
     showNewAgentButton: false,
-    emptyStateDescription: 'No agents have been shared with your team yet.',
+    emptyStateDescription: 'No other team has shared an agent with this team.',
+    fetchAgents: (token: string | null) => userService.getAgents(token),
+    selectData: selectAgents,
+    updateAction: setAgents,
+  },
+  {
+    // Split out of the same /api/get_agents payload by `origin`, so it reuses
+    // the user section's selector and action.
+    id: 'sharedWithYou' as const,
+    title: 'Shared with you',
+    description: 'Agents people shared with you',
+    showNewAgentButton: false,
+    emptyStateDescription: 'No one has shared an agent with you yet.',
     fetchAgents: (token: string | null) => userService.getAgents(token),
     selectData: selectAgents,
     updateAction: setAgents,
@@ -56,3 +61,15 @@ export const agentSectionsConfig = [
     updateAction: setSharedAgents,
   },
 ];
+
+/**
+ * The sections a team workspace leaves out: people share with a person, and
+ * a public link is opened by one.
+ */
+export const PERSONAL_ONLY_SECTIONS: readonly AgentSectionId[] = [
+  'sharedWithYou',
+  'shared',
+];
+
+/** The sections Personal leaves out: other teams share with a team. */
+export const TEAM_ONLY_SECTIONS: readonly AgentSectionId[] = ['teamShared'];

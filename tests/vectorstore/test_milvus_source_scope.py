@@ -21,6 +21,33 @@ def _store(source_id="src-A"):
 
 @pytest.mark.unit
 class TestMilvusChunkDeletesStayInTheirSource:
+    def test_clear_parent_text_preserves_vectors_and_scopes_source(self):
+        store = _store()
+        store._client.query.return_value = [
+            {
+                "id": "x1",
+                "text": "child",
+                "vector": [0.1, 0.2],
+                "source_id": "src-A",
+                "metadata": {"source_id": "src-A", "parent_text": "parent"},
+            }
+        ]
+
+        updated = store.clear_parent_text(["x1"])
+
+        assert updated == [("x1", "x1")]
+        assert store._client.query.call_args.kwargs["filter"] == 'id in ["x1"] and source_id == "src-A"'
+        store._client.upsert.assert_called_once_with(
+            collection_name="c",
+            data=[{
+                "id": "x1",
+                "text": "child",
+                "vector": [0.1, 0.2],
+                "source_id": "src-A",
+                "metadata": {"source_id": "src-A"},
+            }],
+        )
+
     def test_delete_chunk_is_filtered_on_the_source(self):
         store = _store()
         store._client.query.return_value = [{"id": "x1"}]

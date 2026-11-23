@@ -1,15 +1,16 @@
 ---
 title: Connectors
+sidebarTitle: 🔌 Connectors Overview
 description: Connect DocsGPT to the services your team uses. One connection can sync content into Knowledge and give agents tools, with credentials encrypted on the server.
-lastUpdated: 2026-10-30
+lastUpdated: 2026-11-03
 ---
 
-import { Callout } from 'nextra/components'
-import { Steps } from 'nextra/components'
+import Image from 'next/image'
+import { McpPresetTable } from '../../../components/McpPresets'
 
 # Connectors
 
-A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, Twelve Data, draw.io, CoinGecko, Neon, Airtable, Cloudflare), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
+A connector is a service DocsGPT can connect to: Google Drive, SharePoint, Confluence, GitHub, Amazon S3, Reddit, Brave Search, Telegram, ntfy, PostgreSQL, curated MCP servers (Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, Twelve Data, draw.io, CoinGecko, Neon, Airtable, Cloudflare, Excalidraw), and any MCP server or OpenAPI spec you add yourself. A **connection** is a saved setup for a connector, with credentials when the service requires them.
 
 Connections are the single place credentials live when a service requires them. A synced source and an agent tool both point at a connection, so you sign in once when needed, reconnect when a token expires, and disconnect in one place.
 
@@ -32,7 +33,15 @@ Connections are the single place credentials live when a service requires them. 
 
 ## Using connectors
 
-Open **Settings > Connectors**. Filters narrow the list by category, and **Connected** shows what you already use.
+Open **Settings > Connectors**. Services that need you to sign in again come first, then **Connected**, then **Available**. **All**, **Knowledge** and **Tools** narrow the list to services that sync content or give agents tools, and the **Any status** menu picks **Needs sign-in**, **Connected** or **Not connected**. Each card's last line names your account and what the service can do: **Syncs**, **Looks up**, **Acts**.
+
+<Image
+  src="/connectors-page.webp"
+  alt="The Connectors page: Search connectors, Add custom connector, the All, Knowledge and Tools filter with counts and the Any status menu, then Connected services (Google Drive, SharePoint, Amazon S3, Brave Search) with the account on each, and Available services, each card ending with Syncs, Looks up or Acts"
+  width={1440}
+  height={900}
+  style={{ width: '100%', height: 'auto', margin: '1em auto', display: 'block', borderRadius: '8px' }}
+/>
 
 1. Pick a connector. Services with OAuth open the provider's sign-in page in a pop-up; API-key services ask for the key.
 2. Choose what the connection sets up. Tool services create their tools right away. Services that only sync (Google Drive, SharePoint, Confluence, Amazon S3, Reddit) ask how to use them: **Sync content now** (picked) or **Just connect**. With **Just connect**, the account is connected and nothing is added yet; you can sync later with **Sync content** on the connection's page. GitHub and Linear, which also offer tools, ask with a **Sync into Knowledge** switch instead: off by default, on when you started from **Add knowledge**. To sync, pick files or folders, how often to sync (never, daily, weekly or monthly) and, under **Advanced retrieval settings**, the same chunking and retrieval options as an upload.
@@ -40,7 +49,7 @@ Open **Settings > Connectors**. Filters narrow the list by category, and **Conne
    The last step says what happened and offers the next one: **Open in Knowledge** for content you just synced, **Try it in chat** when you turned on tools, or **Sync content** when nothing syncs yet.
 3. Adjust what the tools may do. Each action is **Read** or **Write**, and each can be **Always allow**, **Needs approval** or **Off**. Writes default to needing approval.
 
-**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow, and list tools grouped by the connection they use. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
+**Knowledge** (formerly Sources) is what the assistant searches: uploads, links, and content synced from your connections. The **Add knowledge** and **Add Tool** dialogs, the composer's Knowledge and Tools menus, and the agent builder all start the same flow. Tool lists group a connected service's tools under its name, with the account on each tool. A service offered two ways appears as one card: Confluence syncs pages into Knowledge and, through **Jira & Confluence**, lets agents search and update Jira and Confluence. GitHub and Linear do both from one connection: see [GitHub](#github) and [Linear](#linear).
 
 A connector's page is the one place to manage it: its accounts (**Reconnect**, **Rename**, **Disconnect**), the Knowledge it syncs (each source opens in Knowledge, with **Sync now** in its menu), and its tools (on or off, and what each action may do). Disconnecting keeps synced content but stops its sync: **Sync now** and **Reingest** on such a source are refused until its account is connected again, and it never syncs with another of your accounts.
 
@@ -60,9 +69,22 @@ An ntfy connection can hold a **Server URL**. The access token and every message
 
 If a provider rejects a token that DocsGPT cannot refresh, the connection is marked **Reconnect needed**, its synced sources pause, and you get a notification. Reconnecting the same account resumes them. In a chat, a tool whose connection is missing or expired shows a **Connect** prompt instead of failing; the answer continues once you connect.
 
+### In a team workspace
+
+A team Admin can connect an account for the team. In a team, **Settings > Connectors** lists the team's accounts, under "These accounts belong to the team. Your own accounts are in Personal.", and Admins connect a service with **Connect for the team**. The account belongs to the team: its sources are the team's knowledge, and its tools run on it for every member.
+
+- **Everyone in the team** sees each account, who connected it ("Connected by Lena"), and its status or why it is paused. Viewers and Editors see only the services the team has connected.
+- **Editors** sync the team's sources with **Sync now**, and pay for that sync.
+- **Admins** manage the accounts: tools and what each action may do, how often a source syncs, **Reconnect**, **Disconnect** and remove.
+- **Only whoever connected an account** browses it and picks what it syncs, while they're an Admin. Scheduled syncs are paid by them.
+
+The account pauses when whoever connected it leaves the team, stops being an Admin or is deactivated, and its scheduled syncs pause while they're out of allowance. Another Admin can then choose **Reconnect** and sign in with their own account: the sources and tools stay on the connection, and files the new account can't open drop out at the next sync.
+
+A tool on a team account works only for the team's members, in the app: an agent that uses one can't get an API key, widget, public link or webhook, or be shared with another team. A team can also add a tool each person signs in to with their own account. See [Team connections](/Using/team-workspaces#team-connections).
+
 ### Sharing a tool with a team
 
-Sharing a tool that uses a connection asks whose account team members use:
+Sharing a personal tool that uses a connection asks whose account team members use:
 
 - **Your account.** Everyone acts as your account on that service. When the tool can write, you confirm this before sharing, and a member's write actions always need approval.
 - **Each person's own.** Each person uses their own account, and sees a **Connect** prompt the first time they use the tool. Through an agent's API key or widget, the agent runs as its owner, so the tool uses the agent owner's account.
@@ -103,7 +125,7 @@ A connector that still needs server settings starts turned off and is hidden fro
 
 Credentials are encrypted with a key derived from `ENCRYPTION_SECRET_KEY` and bound to the connection's owner. **Set your own value before anyone connects a service.**
 
-```env
+```dotenv
 ENCRYPTION_SECRET_KEY=a-long-random-value
 ```
 
@@ -144,7 +166,7 @@ In the [Google Cloud Console](https://console.cloud.google.com/), enable the **G
 
 ### Set the server settings
 
-```env
+```dotenv
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```
@@ -155,7 +177,7 @@ To offer Google's own file picker, also build the frontend with `VITE_GOOGLE_CLI
 
 Publish the OAuth consent screen, or make it an **Internal** Workspace app. DocsGPT requests the restricted `drive.readonly` scope, so a published **External** app needs Google's verification before accounts outside your organization can use it freely.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Apps left in **Testing** get refresh tokens that expire after seven days, which stops background sync.
 </Callout>
 
@@ -165,7 +187,7 @@ Apps left in **Testing** get refresh tokens that expire after seven days, which 
 
 Register an app in [Microsoft Entra ID](https://entra.microsoft.com/) with a **Web** redirect URI from Admin > Connectors, create a client secret, and grant the delegated Microsoft Graph permissions `Files.Read`, `Sites.Read.All` and `User.Read`.
 
-```env
+```dotenv
 MICROSOFT_CLIENT_ID=your-application-id
 MICROSOFT_CLIENT_SECRET=your-client-secret
 MICROSOFT_TENANT_ID=common   # or your tenant id for a single-tenant app
@@ -177,7 +199,7 @@ See [SharePoint / OneDrive](/Sources/Connectors/sharepoint) for tenant options.
 
 Create an **OAuth 2.0 (3LO)** app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), add the redirect URI from Admin > Connectors as its callback URL, and add the scopes `read:page:confluence`, `read:space:confluence`, `read:attachment:confluence` and `read:me`. See [Confluence](/Sources/Connectors/confluence) for details.
 
-```env
+```dotenv
 CONFLUENCE_CLIENT_ID=your-client-id
 CONFLUENCE_CLIENT_SECRET=your-client-secret
 ```
@@ -236,7 +258,7 @@ On the app's page, generate a client secret. You do not need a private key: Docs
 
 ### Set the server settings
 
-```env
+```dotenv
 GITHUB_CLIENT_ID=Iv23li...        # the app's Client ID
 GITHUB_CLIENT_SECRET=your-client-secret
 GITHUB_APP_SLUG=docsgpt-acme      # from the app's public link, github.com/apps/<slug>
@@ -266,7 +288,7 @@ Leave **Contents** read-only unless agents should edit files. Without a permissi
 
 The **GitHub** tile under **Upload & web** in **Add knowledge** still ingests a public repository from its URL, without an account. `GITHUB_ACCESS_TOKEN`, if set, is used only there and only for public repositories, to raise GitHub's rate limit: DocsGPT checks that the repository is public first, because that token belongs to the server and not to the member asking. For a private repository, the form links to the member's GitHub connection.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Earlier versions read any repository `GITHUB_ACCESS_TOKEN` could see, private ones included. Sources made that way from private repositories stop syncing; recreate them from a GitHub connection.
 </Callout>
 
@@ -308,13 +330,17 @@ Each post becomes one document with its title, subreddit, score, author and link
 
 ### MCP presets
 
-Notion, Linear, Atlassian, Sentry, Stripe, ClickUp, Canva, Zapier, Trello, Miro, Resend, Cal.com, Context7, Alpha Vantage, Twelve Data, Neon, Airtable and Cloudflare are remote MCP servers that support OAuth with dynamic client registration, so they need no server settings. Members sign in with their own account. The presets ship in `docsgpt/connectors/presets/mcp.yaml`.
+The presets are remote MCP servers that need no server settings. Those that sign in with OAuth support dynamic client registration, and members sign in with their own account; the rest need no sign-in at all. Each preset is one file in `docsgpt/connectors/presets/mcp/`, and this table is generated from those files.
+
+<McpPresetTable />
 
 Alpha Vantage gives agents read-only market data: stock quotes and history, company fundamentals and earnings, forex, crypto, commodities, economic indicators (CPI, GDP, unemployment, Treasury yields), technical indicators and news sentiment. Its server has 133 tools, more than some models take in one request (OpenAI's limit is 128), so 22 core tools start on and the rest start **Off**; `TOOL_CALL` still reaches any of them, and you can turn more on per action. Alpha Vantage accepts sign-ins only from DocsGPT cloud and `localhost`. A self-hosted instance on its own domain gets `invalid_redirect_uri` at sign-in; add it as a custom MCP connector instead, with your [free API key](https://www.alphavantage.co/support/#api-key) in the URL: `https://mcp.alphavantage.co/mcp?apikey=<KEY>`. The free tier allows 25 requests a day.
 
 draw.io is a remote MCP preset that needs no account or credentials. Pick its card and click **Connect** to give agents diagram tools. An agent can create an editable diagram and return a link that opens it in the draw.io editor. The hosted server receives the diagram content; [draw.io's MCP server](https://github.com/jgraph/drawio-mcp) also documents a self-hosted option.
 
 CoinGecko is also a no-sign-in preset: pick its card and click **Connect**. Agents can then answer crypto questions with live prices, market caps, volumes, trending coins and price history. The server has two tools: its `search_docs` looks up CoinGecko SDK documentation (methods, parameters and request structure), and `execute` runs the TypeScript the agent writes against the CoinGecko SDK in a sandbox. The keyless server shares rate limits across all users, so heavy use can be throttled. See [CoinGecko's MCP server docs](https://docs.coingecko.com/docs/mcp-server).
+
+Excalidraw is another no-sign-in preset: pick its card and click **Connect**. Ask an agent to draw a diagram and its `create_view` call draws a live, hand-drawn canvas inline in the answer, an MCP App (see [MCP Apps](/Tools/mcp-tools#mcp-apps)). The canvas's own tools (`export_to_excalidraw`, `save_checkpoint`, `read_checkpoint`) are for the canvas, not the agent: exporting to an editable excalidraw.com link is a button on the canvas. `export_to_excalidraw` and `save_checkpoint` change things, so the canvas asks before it runs them until you set them to **Always allow**. Where MCP Apps are off, the agent calls `export_to_excalidraw` itself and returns the link.
 
 Canva's server covers designs end to end: search and read designs, pages and content, create and edit them, generate images, upload assets, organize folders, read and write comments, and export to PDF, PNG, JPG, PPTX or MP4. Brand kits, brand templates, autofill and resizing a design to new dimensions need Canva Pro or above; the rest works on a free account.
 

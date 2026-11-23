@@ -1574,6 +1574,22 @@ def test_reject_ambiguous_url_accepts(url):
     assert reject_ambiguous_url(url) is None
 
 
+# Percent-encoded hosts are refused outright.
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("url", [
+    "http://127%2e0%2e0%2e1/",
+    "http://%31%32%37.0.0.1/",
+    "http://localhost%2e/",
+    "http://exa%6dple.com/",
+])
+def test_percent_encoded_host_is_refused(url):
+    with mock.patch("socket.getaddrinfo", return_value=_addrinfo("93.184.216.34")):
+        with pytest.raises(UnsafeUserUrlError, match="percent-encodes its host"):
+            validate_user_base_url(url)
+
+
 # Operator allowlist (SAFE_URL_ALLOWED_HOSTS)
 
 

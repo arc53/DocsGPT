@@ -22,6 +22,13 @@ class SchedulerSettings(SettingsGroup):
     SCHEDULE_AUTOPAUSE_FAILURES: int = Field(
         default=3, description="Consecutive failures after which a schedule is paused automatically."
     )
+    SCHEDULE_NOTIFY_RECURRING_FAILURES: bool = Field(
+        default=False,
+        description=(
+            "Also notify the owner of a recurring schedule on the first failed run in a row, "
+            "not only when the schedule pauses itself."
+        ),
+    )
     SCHEDULE_ONCE_MAX_HORIZON: int = Field(
         default=31_536_000, description="How far ahead a one-off run may be scheduled, in seconds (one year)."
     )

@@ -412,6 +412,21 @@ class TestMongoDBVectorStoreUpdateChunk:
             **extra,
         }
 
+    def test_clears_parent_metadata_with_one_scoped_update_without_embedding(self):
+        store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
+        mock_collection.update_many.return_value = Mock(modified_count=2)
+
+        with patch.dict("sys.modules", _fake_bson()):
+            updated = store.clear_parent_text(["abc", "def"])
+
+        assert updated == [("abc", "abc"), ("def", "def")]
+        query, update = mock_collection.update_many.call_args[0]
+        assert query == {
+            "_id": {"$in": [("oid", "abc"), ("oid", "def")]}, "source_id": "src1"
+        }
+        assert update == {"$unset": {"parent_text": ""}}
+        mock_emb.embed_documents.assert_not_called()
+
     def test_updates_in_place_with_set(self):
         store, mock_collection, mock_emb = _make_mongodb_store(source_id="src1")
         mock_emb.embed_documents.return_value = [[0.4, 0.5]]

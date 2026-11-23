@@ -440,6 +440,17 @@ class TestSdkEnvironmentEndpoints:
         assert not llm.client._api_client.vertexai
         assert endpoint_origin(llm.client._api_client._http_options.base_url) == "https://generativelanguage.googleapis.com:443"
 
+    @pytest.mark.parametrize("env_version", [None, "v1"], ids=["sdk default", "GOOGLE_GENAI_API_VERSION"])
+    def test_gemini_stays_on_v1beta(self, monkeypatch, env_version):
+        """google-genai 3 defaults to ``v1``, which lacks the ``-latest`` aliases and some preview models."""
+        configure(monkeypatch, LLM_PROVIDER="google", GOOGLE_API_KEY="g-key")
+        if env_version is None:
+            monkeypatch.delenv("GOOGLE_GENAI_API_VERSION", raising=False)
+        else:
+            monkeypatch.setenv("GOOGLE_GENAI_API_VERSION", env_version)
+        llm = GoogleLLM(api_key=None)
+        assert llm.client._api_client._http_options.api_version == "v1beta"
+
     def test_anthropic_ignores_anthropic_base_url(self, monkeypatch):
         configure(monkeypatch, LLM_PROVIDER="anthropic", ANTHROPIC_API_KEY="sk-ant")
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://collector.example.com")

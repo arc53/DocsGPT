@@ -39,6 +39,10 @@ def parent_id_of(config: Any) -> Optional[str]:
     return value if isinstance(value, str) and value.strip() else None
 
 
+StreamOutput = Literal["full", "summary", "none"]
+STREAM_OUTPUT_VALUES = ("full", "summary", "none")
+
+
 class AgentType(str, Enum):
     CLASSIC = "classic"
     REACT = "react"
@@ -69,6 +73,8 @@ class AgentNodeConfig(BaseModel):
     stream_to_user: bool = True
     tools: List[str] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list)
+    # Source folders read live: their owner's filed sources at run time.
+    folders: List[str] = Field(default_factory=list)
     chunks: str = "6"
     retriever: str = ""
     model_id: Optional[str] = None
@@ -84,6 +90,11 @@ class AgentNodeConfig(BaseModel):
     # ``lines`` (the whole text with ``[D#:L#]`` line references; never cut,
     # the node fails when it does not fit).
     file_passing: Literal["auto", "native", "extract", "lines"] = "auto"
+    # How the step's output and state changes reach the stream: ``summary``
+    # sends them while the event fits WORKFLOW_STREAM_MAX_EVENT_BYTES and a
+    # preview past that, ``full`` always, ``none`` never (status only). Any
+    # node type may set it; the saved run keeps the full values either way.
+    stream_output: StreamOutput = "summary"
 
 
 class CodeNodeConfig(BaseModel):
@@ -93,6 +104,7 @@ class CodeNodeConfig(BaseModel):
     output_variable: Optional[str] = None
     timeout: Optional[int] = None
     json_schema: Optional[Dict[str, Any]] = None
+    stream_output: StreamOutput = "summary"
 
 
 class LoopNodeConfig(BaseModel):

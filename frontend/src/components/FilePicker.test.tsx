@@ -101,7 +101,6 @@ describe('FilePicker', () => {
           enabled: true,
           catalog: [],
           connections,
-          loading: false,
           loaded: true,
           failed: false,
         },
@@ -298,5 +297,105 @@ describe('FilePicker', () => {
     await render('confluence', []);
     expect(getConnectorFiles).not.toHaveBeenCalled();
     expect(container.querySelector('[data-slot="tabs-list"]')).toBeNull();
+  });
+
+  it.each([
+    ['connection_picker_owner_only', 'pickerOwnerOnly'],
+    ['connection_paused', 'paused'],
+  ])('words a team account refusal (%s), with no retry', async (code, key) => {
+    getConnectorFiles.mockResolvedValue({
+      json: async () => ({ success: false, error: code }),
+    });
+    await render('confluence', [], {
+      connectionId: 'team-conn',
+      onReconnect: vi.fn(),
+    });
+    expect(container.textContent).toContain(
+      `settings.connectors.team.errors.${key}`,
+    );
+    expect(buttonNamed('retry')).toBeUndefined();
+    expect(buttonNamed('settings.connectors.status.reconnect')).toBeUndefined();
+  });
+
+  describe('in a team', () => {
+    const teamStore = (personal: Connection[], team: Connection[]) =>
+      configureStore({
+        reducer: {
+          connectors: connectorsReducer,
+          preference: (state = { token: null }) => state,
+          workspace: (state = { current: 't1', workspaces: [] }) => state,
+        },
+        preloadedState: {
+          connectors: {
+            enabled: true,
+            catalog: [],
+            connections: personal,
+            loaded: true,
+            failed: false,
+            teams: {
+              t1: {
+                catalog: [],
+                connections: team,
+                loaded: true,
+                failed: false,
+                latestRequestId: null,
+              },
+            },
+          },
+          preference: { token: null },
+        },
+      });
+    const renderInTeam = async (personal: Connection[], team: Connection[]) => {
+      await act(async () => {
+        root.render(
+          <Provider store={teamStore(personal, team)}>
+            <FilePicker
+              provider="confluence"
+              token={null}
+              onSelectionChange={() => undefined}
+            />
+          </Provider>,
+        );
+      });
+    };
+
+    // A team source reads only through a team account the caller may pick
+    // from: never their own, never a teammate's.
+    it('never browses a personal account, and offers no sign-in of its own', async () => {
+      getConnectorFiles.mockResolvedValue(page([]));
+      await renderInTeam(
+        [connection({ id: 'mine', connector_key: 'confluence' })],
+        [
+          connection({
+            id: 'team-other',
+            connector_key: 'confluence',
+            owner: 'team',
+            can_pick: false,
+            allowed_actions: ['view', 'sync', 'manage'],
+          }),
+        ],
+      );
+      expect(getConnectorFiles).not.toHaveBeenCalled();
+      expect(authRendered).not.toHaveBeenCalled();
+    });
+
+    it("browses the team's account the caller connected", async () => {
+      getConnectorFiles.mockResolvedValue(page([]));
+      await renderInTeam(
+        [connection({ id: 'mine', connector_key: 'confluence' })],
+        [
+          connection({
+            id: 'team-mine',
+            connector_key: 'confluence',
+            owner: 'team',
+            can_pick: true,
+            allowed_actions: ['view', 'sync', 'manage', 'pick'],
+          }),
+        ],
+      );
+      expect(getConnectorFiles.mock.calls[0][0].connection_id).toBe(
+        'team-mine',
+      );
+    });
   });
 });

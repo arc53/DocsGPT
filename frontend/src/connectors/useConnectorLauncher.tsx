@@ -3,7 +3,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 
 import connectorsService from '../api/services/connectorsService';
-import MCPServerModal from '../modals/MCPServerModal';
+import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
+import MCPServerModal, { type McpSaved } from '../modals/MCPServerModal';
 import type { ActiveState } from '../models/misc';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
@@ -11,7 +12,7 @@ import ConnectWizard, {
   type LaunchPurpose,
   type WizardMode,
 } from './ConnectWizard';
-import { loadConnectors } from './connectorsSlice';
+import { reloadConnectors } from './connectorsSlice';
 import { connectsInWizard } from './launchRules';
 import type { ConnectorDefinition } from './types';
 
@@ -28,6 +29,12 @@ export type LaunchOptions = {
    * starts on Sync content now.
    */
   purpose?: LaunchPurpose;
+  /**
+   * `team`: connect (or reconnect) an account for the current team; only
+   * the Connectors page in a team asks. Never inferred from the workspace:
+   * the chat's Connect card connects the person's own account anywhere.
+   */
+  owner?: 'team';
 };
 
 type Active =
@@ -38,6 +45,7 @@ type Active =
       connectionId?: string;
       mcpToolId?: string;
       purpose?: LaunchPurpose;
+      owner?: 'team';
     }
   | {
       kind: 'mcp';
@@ -49,13 +57,58 @@ type Active =
 const isMcp = (connector: ConnectorDefinition) =>
   connector.auth_kind === 'mcp' || connector.auth_kind === 'mcp_oauth';
 
+/**
+ * The MCP server form's input for signing a team's server in again from its
+ * connection: the server signs the team in only when the save names the
+ * team's connection, and refuses one naming the tool (that is a person's
+ * own save). Null for anything else.
+ *
+ * Args:
+ *   options: The launch options.
+ *
+ * Returns:
+ *   The server without its tool id, with `owner: 'team'` and its
+ *   `connection_id`; or null.
+ */
+function teamReconnect(options: LaunchOptions): Record<string, unknown> | null {
+  const server = options.mcpServer;
+  if (
+    options.owner !== 'team' ||
+    !options.connectionId ||
+    !server ||
+    server.auth_type !== 'oauth'
+  )
+    return null;
+  const named: Record<string, unknown> = {
+    ...server,
+    owner: 'team',
+    connection_id: options.connectionId,
+  };
+  delete named.id;
+  return named;
+}
+
 type LauncherCallbacks = {
-  /** The run connected an account, or repaired one (a reconnect). */
-  onConnected?: () => void;
+  /**
+   * The run connected an account, or repaired one (a reconnect), with the
+   * ids of the tools it set up (the connection's tools, a saved MCP server).
+   */
+  onConnected?: (toolIds: string[]) => void;
   /** The run ended with nothing connected (cancelled, or closed early). */
   onCancel?: () => void;
   /** Sources a sync started from the wizard, still ingesting. */
   onSynced?: (sourceIds: string[]) => void;
+  /**
+   * Leaves for a page (the API tool editor, Try it in chat, Open in
+   * Knowledge); an opener with unsaved work asks first. The router's
+   * navigate otherwise.
+   */
+  onNavigate?: LeaveTo;
+  /**
+   * The caller's Knowledge folder a sync started here files its sources into
+   * (Add knowledge inside a folder).
+   */
+  folderId?: string | null;
 };
 
 /**
@@ -65,38 +118,54 @@ type LauncherCallbacks = {
  *
  * Args:
  *   onConnected: Called when a run ends having connected or repaired an
- *     account.
+ *     account, with the ids of the tools it set up.
  *   onCancel: Called when a run ends with nothing connected, so an opener
  *     that stepped aside (Add knowledge) can come back.
  *   onSynced: Called with the sources a sync started from the wizard, still
  *     ingesting.
+ *   onNavigate: How a run leaves for a page; the router's navigate when
+ *     left out.
+ *   folderId: The Knowledge folder a sync started here files into.
  */
 export default function useConnectorLauncher({
   onConnected,
   onCancel,
   onSynced,
+  onNavigate,
+  folderId = null,
 }: LauncherCallbacks = {}) {
   const dispatch = useDispatch<AppDispatch>();
-  const navigate = useNavigate();
+  const routerNavigate = useNavigate();
+  const navigate: LeaveTo =
+    onNavigate ?? ((path, options) => leaveNow(routerNavigate, path, options));
   const token = useSelector(selectToken);
   const [active, setActive] = useState<Active>(null);
   // An MCP server saved in this run: its summary wizard closing is a connect.
   const mcpSaved = useRef(false);
+  // The saved MCP server's tool, reported if no summary lists it.
+  const mcpToolId = useRef<string | undefined>(undefined);
 
-  // Every close reads the connections again: a cancelled run may still have
-  // signed in (the account exists, nothing was set up on it).
+  // Every close reads the connections again (the team's too, in a team): a
+  // cancelled run may still have signed in (the account exists, nothing was
+  // set up on it).
   const refresh = useCallback(() => {
-    dispatch(loadConnectors({ token }));
+    dispatch(reloadConnectors({ token }));
   }, [dispatch, token]);
 
   /** End the run: tell the opener whether it connected anything. */
   const end = useCallback(
-    (connected: boolean) => {
+    (connected: boolean, toolIds: string[] = []) => {
       setActive(null);
       refresh();
       const saved = mcpSaved.current;
+      const savedTool = mcpToolId.current;
       mcpSaved.current = false;
-      if (connected || saved) onConnected?.();
+      mcpToolId.current = undefined;
+      const ids =
+        savedTool && !toolIds.includes(savedTool)
+          ? [...toolIds, savedTool]
+          : toolIds;
+      if (connected || saved) onConnected?.(ids);
       else onCancel?.();
     },
     [refresh, onConnected, onCancel],
@@ -105,6 +174,7 @@ export default function useConnectorLauncher({
   const launch = useCallback(
     async (connector: ConnectorDefinition, options: LaunchOptions = {}) => {
       mcpSaved.current = false;
+      mcpToolId.current = undefined;
       if (connectsInWizard(connector)) {
         setActive({
           kind: 'wizard',
@@ -117,6 +187,7 @@ export default function useConnectorLauncher({
               ? options.mcpServer.id
               : undefined,
           purpose: options.purpose,
+          owner: options.owner,
         });
         return;
       }
@@ -125,6 +196,7 @@ export default function useConnectorLauncher({
           kind: 'mcp',
           connector,
           server:
+            teamReconnect(options) ??
             options.mcpServer ??
             (connector.mcp_url
               ? {
@@ -151,15 +223,39 @@ export default function useConnectorLauncher({
         mode: options.mode ?? 'connect',
         connectionId: options.connectionId,
         purpose: options.purpose,
+        owner: options.owner,
       });
     },
     [navigate],
   );
 
-  const afterMcpSave = async () => {
+  const afterMcpSave = async (toolId?: string, teamSave?: McpSaved) => {
     if (active?.kind !== 'mcp') return;
     const connector = active.connector;
     mcpSaved.current = true;
+    // Signing an existing server in again creates no tool.
+    const existing =
+      typeof active.server?.id === 'string' ||
+      typeof active.server?.connection_id === 'string';
+    mcpToolId.current = existing ? undefined : toolId;
+    // A save in a team names the connection it runs on, or none for a tool
+    // on each person's own sign-in: the caller's own list would name theirs.
+    if (teamSave) {
+      // The form closes right after this yields; the summary comes after.
+      await Promise.resolve();
+      if (teamSave.connectionId) {
+        // The summary names the new account from the team's list.
+        refresh();
+        setActive({
+          kind: 'wizard',
+          connector,
+          mode: 'done',
+          connectionId: teamSave.connectionId,
+          owner: 'team',
+        });
+      } else end(true);
+      return;
+    }
     const list = await connectorsService.listConnections(token);
     refresh();
     const connections = (list?.connections ?? []) as {
@@ -201,9 +297,14 @@ export default function useConnectorLauncher({
           connectionId={active.connectionId}
           mcpToolId={active.mcpToolId}
           purpose={active.purpose}
+          owner={active.owner}
+          folderId={folderId}
           onSynced={onSynced}
+          onNavigate={onNavigate}
           // A wizard that does not say (an older run) connected nothing.
-          onClose={(connected?: boolean) => end(connected === true)}
+          onClose={(connected?: boolean, toolIds?: string[]) =>
+            end(connected === true, toolIds)
+          }
         />
       )}
       {active?.kind === 'mcp' && (

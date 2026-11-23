@@ -10,10 +10,11 @@ and the frontend never hard-code a list of services.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Optional
-from urllib.parse import urlparse
+from typing import Any, Optional
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import yaml
 
@@ -44,6 +45,8 @@ class CredentialField:
             Short, and never "Optional" (the form stars required fields).
             Words wrapped in ``<link>…</link>`` link to ``hint_url``.
         hint_url: Where the hint's ``<link>`` words go; set only with one.
+        pattern: A regular expression the whole value must match, checked on
+            the server; the frontend checks it too before sending.
     """
 
     key: str
@@ -53,6 +56,7 @@ class CredentialField:
     parameter: Optional[str] = None
     hint: Optional[str] = None
     hint_url: Optional[str] = None
+    pattern: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -63,6 +67,7 @@ class CredentialField:
             "parameter": self.parameter,
             "hint": self.hint,
             "hint_url": self.hint_url,
+            "pattern": self.pattern,
         }
 
 
@@ -109,6 +114,10 @@ class ConnectorDefinition:
             connector works without them, with pasted credentials only.
         default_actions: The MCP actions that start on when a preset's tool
             is created; the rest start "Off". Empty turns every action on.
+        url_parameters: Query parameters every connection to a preset's
+            server must carry, asked for before sign-in (Supabase's project
+            ref, which keeps a connection to one project). Each is required
+            and has a ``pattern``; see :func:`check_url_parameters`.
     """
 
     key: str
@@ -133,6 +142,7 @@ class ConnectorDefinition:
     part_of: Optional[str] = None
     oauth_settings: tuple[str, ...] = ()
     default_actions: tuple[str, ...] = ()
+    url_parameters: tuple[CredentialField, ...] = ()
 
     @property
     def oauth_configured(self) -> bool:
@@ -195,6 +205,7 @@ class ConnectorDefinition:
             "part_of": self.part_of,
             "sign_in_methods": self.sign_in_methods,
             "picker_client_id": self.picker_client_id,
+            "url_parameters": [f.to_dict() for f in self.url_parameters],
         }
 
 
@@ -429,18 +440,48 @@ _BUILT_IN: tuple[ConnectorDefinition, ...] = (
     ),
 )
 
-_PRESETS_FILE = Path(__file__).parent / "presets" / "mcp.yaml"
+#: One ``<name>.yaml`` per curated MCP server; see the README next to them.
+_PRESETS_DIR = Path(__file__).parent / "presets" / "mcp"
+
+#: Where a preset without a ``rank`` sorts: after every ranked one.
+_UNRANKED = 1_000_000
+
+
+def _read_preset_files(path: Optional[Path] = None) -> list[dict[str, Any]]:
+    """Read every preset file, in catalog order.
+
+    Args:
+        path: The presets folder; the one shipped with the package by default.
+
+    Returns:
+        One mapping per ``*.yaml`` file, ranked presets first (lowest ``rank``
+        first), then the rest by name.
+
+    Raises:
+        ValueError: A file does not hold a mapping, or its name is not the
+            part of its ``key`` after ``mcp:``.
+    """
+    path = path or _PRESETS_DIR
+    if not path.is_dir():
+        return []
+    entries = []
+    for file in sorted(path.glob("*.yaml")):
+        with file.open(encoding="utf-8") as fh:
+            entry = yaml.safe_load(fh)
+        if not isinstance(entry, dict):
+            raise ValueError(f"{file} must hold one preset as a mapping")
+        if entry.get("key") != f"mcp:{file.stem}":
+            raise ValueError(f"{file} must have key mcp:{file.stem}, not {entry.get('key')!r}")
+        entry["url_parameters"] = _url_parameter_fields(file, entry.get("url_parameters"))
+        entries.append(entry)
+    entries.sort(key=lambda entry: (entry.get("rank", _UNRANKED), str(entry["name"]).casefold(), entry["key"]))
+    return entries
 
 
 def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...]:
     """Read the curated MCP server presets shipped with the repository."""
-    path = path or _PRESETS_FILE
-    if not path.exists():
-        return ()
-    with path.open(encoding="utf-8") as fh:
-        entries = yaml.safe_load(fh) or []
     presets = []
-    for entry in entries:
+    for entry in _read_preset_files(path):
         presets.append(
             ConnectorDefinition(
                 key=entry["key"],
@@ -460,9 +501,46 @@ def _load_presets(path: Optional[Path] = None) -> tuple[ConnectorDefinition, ...
                 oauth_scopes=tuple(entry.get("oauth_scopes") or ()),
                 part_of=entry.get("part_of"),
                 default_actions=tuple(entry.get("default_actions") or ()),
+                url_parameters=entry["url_parameters"],
             )
         )
     return tuple(presets)
+
+
+def _url_parameter_fields(file: Path, raw: Any) -> tuple[CredentialField, ...]:
+    """A preset file's ``url_parameters``, as the fields the connect form asks for.
+
+    Args:
+        file: The preset file, named in errors.
+        raw: Its ``url_parameters`` value: a list of ``{key, label, pattern,
+            hint?, hint_url?}`` mappings, or nothing.
+
+    Returns:
+        One required, non-secret field per parameter.
+
+    Raises:
+        ValueError: A parameter has no key or label, or no pattern the server
+            can check values against.
+    """
+    fields = []
+    for item in raw or ():
+        if not isinstance(item, dict) or not item.get("key") or not item.get("label"):
+            raise ValueError(f"{file}: each url_parameters entry needs a key and a label")
+        try:
+            re.compile(str(item.get("pattern") or ""))
+        except re.error as exc:
+            raise ValueError(f"{file}: url parameter {item['key']} has an invalid pattern: {exc}") from exc
+        if not item.get("pattern"):
+            raise ValueError(f"{file}: url parameter {item['key']} needs a pattern")
+        fields.append(CredentialField(
+            key=str(item["key"]),
+            label=str(item["label"]),
+            secret=False,
+            hint=item.get("hint"),
+            hint_url=item.get("hint_url"),
+            pattern=str(item["pattern"]),
+        ))
+    return tuple(fields)
 
 
 _REGISTRY: dict[str, ConnectorDefinition] = {}
@@ -496,6 +574,83 @@ def preset_for_url(url: Optional[str]) -> Optional[ConnectorDefinition]:
         if definition.publisher == "preset" and definition.mcp_base_url == target:
             return definition
     return None
+
+
+class UrlParametersRequired(ValueError):
+    """A URL at a preset's server lacks a parameter the preset needs; the message is safe to show."""
+
+
+def _parameter_value(query: dict[str, list[str]], field: CredentialField) -> Optional[str]:
+    """``field``'s one value in ``query`` when it matches the field's pattern, else None."""
+    values = query.get(field.key) or []
+    if len(values) != 1 or not re.fullmatch(field.pattern or "", values[0]):
+        return None
+    return values[0]
+
+
+def check_url_parameters(url: Optional[str]) -> None:
+    """Refuse a URL at a preset's server that lacks the parameters the preset needs.
+
+    A custom MCP server at a preset's address is that preset (see
+    :func:`connector_key_for_row`), so the check goes by the server, not by
+    the form the URL came from. Parameters the preset doesn't name pass.
+
+    Args:
+        url: An MCP server URL.
+
+    Raises:
+        UrlParametersRequired: A parameter is missing, repeated, or does not
+            match its pattern.
+    """
+    preset = preset_for_url(url)
+    if preset is None or not preset.url_parameters:
+        return
+    query = parse_qs(urlparse(url or "").query, keep_blank_values=True)
+    for field_ in preset.url_parameters:
+        if not any(query.get(field_.key) or ()):
+            raise UrlParametersRequired(f"{preset.name} needs a {field_.label}")
+        if _parameter_value(query, field_) is None:
+            raise UrlParametersRequired(f"{field_.label} is not valid for {preset.name}")
+
+
+def url_parameter_values(url: Optional[str]) -> dict[str, str]:
+    """The values of its preset's URL parameters that ``url`` carries.
+
+    Args:
+        url: An MCP server URL.
+
+    Returns:
+        Parameter key to value, for the valid ones only; empty when the URL
+        is not at a preset that names any.
+    """
+    preset = preset_for_url(url)
+    if preset is None or not preset.url_parameters:
+        return {}
+    query = parse_qs(urlparse(url or "").query, keep_blank_values=True)
+    values = {f.key: _parameter_value(query, f) for f in preset.url_parameters}
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def preset_url(definition: ConnectorDefinition, values: Optional[dict]) -> Optional[str]:
+    """A preset's MCP URL carrying the URL parameters it needs.
+
+    Args:
+        definition: The preset.
+        values: Parameter key to value, as stored on its connection.
+
+    Returns:
+        The URL; the plain ``mcp_url`` for a preset that needs none, and None
+        when a needed value is missing or invalid.
+    """
+    if not definition.url_parameters:
+        return definition.mcp_url
+    query = {key: [value] for key, value in (values or {}).items() if isinstance(value, str)}
+    params = {f.key: _parameter_value(query, f) for f in definition.url_parameters}
+    if None in params.values():
+        return None
+    parsed = urlparse(definition.mcp_url or "")
+    joined = "&".join(part for part in (parsed.query, urlencode(params)) if part)
+    return parsed._replace(query=joined).geturl()
 
 
 def definition_for_tool(tool_name: str) -> Optional[ConnectorDefinition]:
@@ -550,19 +705,6 @@ def tool_connector_keys() -> set[str]:
     }
 
 
-def iter_by_category(definitions: Iterable[ConnectorDefinition]) -> dict[str, list[ConnectorDefinition]]:
-    """Group definitions by category, keeping :data:`CATEGORIES` order."""
-    grouped: dict[str, list[ConnectorDefinition]] = {c: [] for c in CATEGORIES}
-    for definition in definitions:
-        grouped.setdefault(definition.category, []).append(definition)
-    return grouped
-
-
 def reset_registry_for_tests() -> None:
     """Drop the cached registry so a test can load a different presets file."""
     _REGISTRY.clear()
-
-
-def to_public(definition: ConnectorDefinition, **extra: Any) -> dict:
-    """Definition dict plus request-specific fields (availability, counts)."""
-    return {**definition.to_dict(), **extra}

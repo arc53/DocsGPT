@@ -131,6 +131,11 @@ class TestAgentWorkflowSwap:
     def test_owner_may_swap_workflow(self, app, pg_conn):
         agent_a, _, _ = self._two_workflow_agents(pg_conn)
         wf_c = str(WorkflowsRepository(pg_conn).create(OWNER, "C")["id"])
+        # A published agent switches only to a graph that passes the full validation.
+        from docsgpt.api.user.workflows.routes import _write_graph
+
+        body = _wf_body()
+        _write_graph(pg_conn, wf_c, 1, body["nodes"], body["edges"])
         assert _status(_put(app, pg_conn, agent_a, OWNER, {"workflow": wf_c})) == 200
         assert str(_row(pg_conn, agent_a)["workflow_id"]) == wf_c
 
@@ -236,3 +241,70 @@ class TestUppercaseIds:
         assert [str(s) for s in row["extra_source_ids"] or []] + (
             [str(row["source_id"])] if row.get("source_id") else []
         ) == [source]
+
+
+class TestRefAttachable:
+    """The one gate agent saves and workflow node saves share for a newly added ref."""
+
+    @pytest.fixture
+    def refs(self, pg_conn):
+        _, team_id = _agent(pg_conn)
+        tool, prompt, source = _owner_private(pg_conn)
+        return team_id, tool, prompt, source
+
+    def test_ids_that_belong_to_no_one_always_pass(self, pg_conn):
+        from docsgpt.agents.default_tools import default_tool_id
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        assert ref_attachable(pg_conn, "tool", default_tool_id("memory"), EDITOR)
+        assert ref_attachable(pg_conn, "source", "default", EDITOR)
+        assert ref_attachable(pg_conn, "source", "", EDITOR)
+        assert ref_attachable(pg_conn, "prompt", None, EDITOR)
+
+    def test_the_callers_own_access_counts_not_the_owners(self, pg_conn, refs):
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        team_id, tool, prompt, source = refs
+        for resource_type, rid in (("tool", tool), ("prompt", prompt), ("source", source)):
+            assert ref_attachable(pg_conn, resource_type, rid, OWNER), resource_type
+            assert not ref_attachable(pg_conn, resource_type, rid, EDITOR), resource_type
+        for resource_type, rid in (("prompt", prompt), ("source", source)):
+            TeamResourceGrantsRepository(pg_conn).grant(
+                team_id, resource_type, rid, OWNER, OWNER, access_level="viewer", target_user_id=EDITOR
+            )
+            assert ref_attachable(pg_conn, resource_type, rid, EDITOR), resource_type
+
+    def test_a_tool_needs_use_in_own(self, pg_conn, refs):
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        team_id, tool, _, _ = refs
+        _share_tool_with_editor(pg_conn, team_id, tool)
+        assert ref_attachable(pg_conn, "tool", tool, EDITOR)
+        assert ref_attachable(pg_conn, "tool", tool.upper(), EDITOR)
+        set_settings(pg_conn, "tool", tool, {"viewers_can_use_in_agents": False}, OWNER)
+        assert not ref_attachable(pg_conn, "tool", tool, EDITOR)
+
+    def test_agent_and_workflow_saves_use_it(self):
+        import inspect
+
+        from docsgpt.api.user.agents import routes as agent_routes
+        from docsgpt.api.user.workflows import routes as workflow_routes
+
+        assert "ref_attachable(" in inspect.getsource(workflow_routes._new_node_ref_denied)
+        source = inspect.getsource(agent_routes)
+        assert "_tool_attachable" not in source and "_ref_attachable" not in source
+
+
+class TestRefAttachableEmptyIds:
+    def test_an_empty_or_non_string_tool_id_is_refused(self, pg_conn):
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        for bad in ("", "  ", None, 0, {"id": "x"}):
+            assert not ref_attachable(pg_conn, "tool", bad, OWNER), bad
+
+    def test_an_empty_source_or_prompt_is_no_reference(self, pg_conn):
+        from docsgpt.api.user.resource_access import ref_attachable
+
+        for resource_type in ("source", "prompt"):
+            assert ref_attachable(pg_conn, resource_type, "", OWNER)
+            assert ref_attachable(pg_conn, resource_type, None, OWNER)

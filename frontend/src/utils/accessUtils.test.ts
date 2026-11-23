@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { can, isOwner, roleOf } from './accessUtils';
+import { can, canOpenShare, canPublish, isOwner, roleOf } from './accessUtils';
 
 describe('can', () => {
   it('reads allowed_actions from the server', () => {
@@ -34,6 +34,8 @@ describe('can', () => {
     expect(can(editor, 'delete')).toBe(false);
     expect(can(editor, 'share')).toBe(false);
     expect(can(editor, 'manage_settings')).toBe(false);
+    // Keys, public links and webhooks wait for the owner's switch.
+    expect(can(editor, 'manage_access_details')).toBe(false);
   });
 
   it('denies a missing item', () => {
@@ -50,5 +52,70 @@ describe('roleOf / isOwner', () => {
     expect(roleOf({})).toBe('owner');
     expect(isOwner({ access: 'editor' })).toBe(false);
     expect(isOwner({})).toBe(true);
+  });
+});
+
+describe('canOpenShare', () => {
+  it('follows the share action on a personal item', () => {
+    expect(
+      canOpenShare({ access: 'owner', allowed_actions: ['share', 'use'] }),
+    ).toBe(true);
+    expect(
+      canOpenShare({
+        access: 'viewer',
+        origin: 'shared',
+        allowed_actions: ['use'],
+      }),
+    ).toBe(false);
+  });
+
+  it("opens a team item's Share for any member, to see where access comes from", () => {
+    // A team role never has `share`: the dialog is read-only for them.
+    expect(
+      canOpenShare({
+        access: 'viewer',
+        origin: 'team',
+        allowed_actions: ['use'],
+      }),
+    ).toBe(true);
+    expect(
+      canOpenShare({
+        access: 'editor',
+        workspace: { kind: 'team', team_id: 't1' },
+        allowed_actions: ['use', 'edit'],
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('canPublish', () => {
+  it('follows the server on an agent read with its access fields', () => {
+    expect(canPublish({ access: 'editor', allowed_actions: [] }, 'admin')).toBe(
+      false,
+    );
+    expect(
+      canPublish({ access: 'editor', allowed_actions: ['publish'] }, 'viewer'),
+    ).toBe(true);
+  });
+
+  it('lets anyone publish a new agent in Personal', () => {
+    expect(canPublish({}, 'owner', null)).toBe(true);
+    expect(canPublish({}, null)).toBe(true);
+  });
+
+  it("follows the team's outside policy on a new team agent", () => {
+    // Admins only: Editors don't publish.
+    expect(canPublish({}, 'editor', 'admins')).toBe(false);
+    expect(canPublish({}, 'admin', 'admins')).toBe(true);
+    // Editors too.
+    expect(canPublish({}, 'editor', 'editors')).toBe(true);
+    expect(canPublish({}, 'viewer', 'editors')).toBe(false);
+    // Locked keeps publishing with Admins (a draft goes live without a key).
+    expect(canPublish({}, 'editor', 'locked')).toBe(false);
+    expect(canPublish({}, 'admin', 'locked')).toBe(true);
+    expect(canPublish({}, 'owner', 'locked')).toBe(true);
+    // A row that doesn't say reads as Admins only.
+    expect(canPublish({}, 'editor', null)).toBe(false);
+    expect(canPublish({}, 'admin')).toBe(true);
   });
 });

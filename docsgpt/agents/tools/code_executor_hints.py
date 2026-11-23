@@ -134,6 +134,40 @@ def error_signature(result: ExecResult) -> Optional[str]:
     return f"{name or 'error'}:{message}"
 
 
+#: Exceptions a failed run can name that are not a bug in its code: the sandbox, a resource limit, a stop or an exit.
+_NOT_SCRIPT_ERRORS = frozenset(
+    {
+        "SandboxError",
+        "SandboxGoneError",
+        "KernelGoneError",
+        "KernelDiedError",
+        "ProtocolError",
+        "MemoryError",
+        "KeyboardInterrupt",
+        "SystemExit",
+        "GeneratorExit",
+    }
+)
+
+
+def script_exception(result: ExecResult) -> Optional[str]:
+    """Name the exception a failed run's own code raised; None for a timeout, kill, exit or sandbox failure."""
+    # Only the code's process can report its own exception: a kernel error reply
+    # (it carries a traceback) or a non-zero exit with the exception in the output.
+    if result.ok or result.sandbox_error or result.out_of_memory or result.runtime_invalidated:
+        return None
+    from_kernel = bool(result.traceback)
+    from_process = result.error_name in GENERIC_ERROR_NAMES and (result.exit_code or 0) > 0
+    if not (from_kernel or from_process):
+        return None
+    name, _ = exception_of(result)
+    if not name or name in GENERIC_ERROR_NAMES or name in _NOT_SCRIPT_ERRORS or "Timeout" in name:
+        return None
+    if not _EXCEPTION_LINE_RE.fullmatch(name):
+        return None
+    return name
+
+
 @dataclass(frozen=True)
 class RunFacts:
     """What one ``run_code`` call did, as the hints need it.

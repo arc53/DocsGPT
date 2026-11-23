@@ -10,14 +10,13 @@ import logging
 import types
 import typing
 import warnings
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from docsgpt.core.settings import SETTINGS_GROUPS, Settings, settings
 from docsgpt.core.docs_pages import read_last_updated
-from docsgpt.core.settings.reference import reference_path, render_reference, updated_reference
+from docsgpt.core.settings.reference import render_reference, updated_reference
 
 SECRET_FIELDS = (
     "API_KEY",
@@ -265,6 +264,21 @@ class TestReference:
         stale = render_reference("2026-10-01").replace("### `API_KEY`", "### `OLD_KEY`")
         assert updated_reference(stale) == render_reference("2026-12-31")
 
+    def test_reference_has_its_sidebar_label(self):
+        assert "\nsidebarTitle: 📖 Settings Reference\n" in render_reference("2026-10-01")
+
+    def test_frontmatter_only_change_keeps_the_date(self, monkeypatch):
+        """A new frontmatter field rewrites the page but leaves its date, as sync-dates does."""
+        monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
+        older_header = render_reference("2026-10-01").replace("sidebarTitle: 📖 Settings Reference\n", "")
+        assert updated_reference(older_header) == render_reference("2026-10-01")
+
+    def test_whitespace_only_change_keeps_the_date(self, monkeypatch):
+        """Whitespace in the body doesn't count, as in sync-dates; the page is rewritten canonically."""
+        monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
+        reflowed = render_reference("2026-10-01").replace("\n## ", "\n\n\n## ", 1)
+        assert updated_reference(reflowed) == render_reference("2026-10-01")
+
     def test_page_without_a_date_gets_todays_date(self, monkeypatch):
         monkeypatch.setattr("docsgpt.core.settings.reference.today", lambda: "2026-12-31")
         undated = render_reference("2026-10-01").replace("lastUpdated: 2026-10-01\n", "")
@@ -279,15 +293,21 @@ class TestReference:
             prose = prose.replace("\\{", "").replace("\\}", "")  # escaped braces are fine
             assert "<" not in prose and "{" not in prose and "}" not in prose, f"line {lineno}: {line}"
 
-    def test_checked_in_reference_is_current(self):
-        path: Path = reference_path()
-        if not path.exists():
-            pytest.skip("docs tree not present (installed package, not a checkout)")
-        current = path.read_text(encoding="utf-8")
-        assert current == updated_reference(current), (
-            "docs/content/Deploying/Settings-Reference.mdx is stale; "
-            "run: python -m docsgpt.core.settings.reference --write"
-        )
+
+@pytest.mark.unit
+class TestReferencePath:
+    def test_the_page_lives_in_the_docs_tree(self, tmp_path):
+        from docsgpt.core.settings.reference import reference_path
+
+        assert reference_path(tmp_path) == tmp_path / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
+
+    def test_the_default_root_is_the_checkout(self):
+        from pathlib import Path
+
+        from docsgpt.core.settings.reference import reference_path
+
+        root = Path(__file__).resolve().parents[2]
+        assert reference_path() == root / "docs" / "content" / "Deploying" / "Settings-Reference.mdx"
 
 
 @pytest.mark.unit

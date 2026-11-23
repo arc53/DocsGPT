@@ -2,12 +2,20 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 
+import type { Agent } from '../agents/types';
 import examples from './insights/fixtures/apiExamples.json';
 import type { DocsGapRow } from './types';
 
+// The drafter's config.
+const store = vi.hoisted(() => ({
+  drafter: null as null | { enabled: boolean },
+}));
 vi.mock('react-redux', () => ({
   useSelector: (selector: (state: unknown) => unknown) =>
     selector({ preference: { token: 'token' } }),
+}));
+vi.mock('../drafter/useDrafterConfig', () => ({
+  useDrafterConfig: () => store.drafter,
 }));
 
 vi.mock('react-i18next', () => ({
@@ -90,6 +98,7 @@ describe('DocsGaps', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    store.drafter = null;
   });
 
   const render = async (
@@ -467,5 +476,115 @@ describe('DocsGaps', () => {
     expect(cells[0]).toBe('installation');
     expect(cells[1]).toBe('2');
     expect(cells[3]).toBe('settings.analytics.gaps.change.new');
+  });
+
+  describe('Improve the agent', () => {
+    const editor = {
+      id: 'a1',
+      name: 'Fintech bot',
+      agent_type: 'classic',
+      allowed_actions: ['edit', 'use', 'view'],
+    } as unknown as Agent;
+    const agentWith = (over: Record<string, unknown>) =>
+      ({ ...editor, ...over }) as unknown as Agent;
+    const openFirst = async () => {
+      await act(async () =>
+        container.querySelector<HTMLTableRowElement>('tbody tr')!.click(),
+      );
+      return document.body.querySelector('[role="dialog"]')!;
+    };
+    const improve = (dialog: Element) =>
+      Array.from(dialog.querySelectorAll('a')).find(
+        (a) => a.textContent === 'drafter.agent.insights.improveAgent',
+      );
+
+    it('opens the agent form on the gap, from the panel header', async () => {
+      store.drafter = { enabled: true };
+      respond({ rows: [row()] });
+      await render({ agent: editor });
+      const dialog = await openFirst();
+      const link = improve(dialog)!;
+      expect(dialog.querySelector('[data-slot="panel-header"]')).toContain(
+        link,
+      );
+      const url = new URL(link.getAttribute('href')!, 'http://x');
+      expect(url.pathname).toBe('/agents/manage/edit/a1');
+      // The page goes with it by the row's key, which the server reads the
+      // gap's questions by.
+      expect(Object.fromEntries(url.searchParams)).toEqual({
+        improve: 'gap',
+        gap_type: 'docs missing',
+        where: 'Installing on Docker',
+        group_by: 'page',
+        group_key: '/install/docker',
+      });
+    });
+
+    it('carries the source, or none for the no-source row', async () => {
+      store.drafter = { enabled: true };
+      localStorage.setItem('DocsGPTDocsGapsGroup', 'source');
+      respond({ rows: [row({ key: null, name: null })] });
+      await render({ agent: editor });
+      const url = new URL(
+        improve(await openFirst())!.getAttribute('href')!,
+        'http://x',
+      );
+      expect(url.searchParams.get('group_by')).toBe('source');
+      expect(url.searchParams.has('group_key')).toBe(false);
+      expect(url.searchParams.has('topic')).toBe(false);
+    });
+
+    it('carries the topic when the rows are topics', async () => {
+      store.drafter = { enabled: true };
+      localStorage.setItem('DocsGPTDocsGapsGroup', 'topic');
+      respond({ rows: [row({ key: 'Returns', name: 'Returns' })] });
+      await render({ agent: editor, hasTopics: true });
+      const url = new URL(
+        improve(await openFirst())!.getAttribute('href')!,
+        'http://x',
+      );
+      expect(url.searchParams.get('topic')).toBe('Returns');
+      expect(url.searchParams.get('where')).toBe('Returns');
+      expect(url.searchParams.get('group_by')).toBe('topic');
+      expect(url.searchParams.has('group_key')).toBe(false);
+    });
+
+    it('offers none to a viewer, a workflow, with the drafter off, before the agent loads, or across agents', async () => {
+      respond({ rows: [row()] });
+      store.drafter = { enabled: true };
+      await render({ agent: agentWith({ allowed_actions: ['use', 'view'] }) });
+      expect(improve(await openFirst())).toBeUndefined();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+
+      await render({ agent: agentWith({ agent_type: 'workflow' }) });
+      expect(improve(await openFirst())).toBeUndefined();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+
+      store.drafter = { enabled: false };
+      await render({ agent: editor });
+      expect(improve(await openFirst())).toBeUndefined();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+
+      // The page's agent hasn't loaded yet.
+      store.drafter = { enabled: true };
+      await render();
+      expect(improve(await openFirst())).toBeUndefined();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+
+      await render({ agentId: undefined, agent: editor });
+      expect(improve(await openFirst())).toBeUndefined();
+    });
+
+    it('goes by the agent the page loaded, not another record of it', async () => {
+      store.drafter = { enabled: true };
+      respond({ rows: [row()] });
+      // Another agent's record, or one the page didn't load, doesn't count.
+      await render({ agent: agentWith({ id: 'a2' }) });
+      expect(improve(await openFirst())).toBeUndefined();
+    });
   });
 });

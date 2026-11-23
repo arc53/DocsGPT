@@ -5,7 +5,6 @@ import { useSelector } from 'react-redux';
 
 import { baseURL } from '../api/client';
 import patService, {
-  canMakeAgentTool,
   AccessTokenApiError,
   AccessTokenPolicy,
   AccessTokenScope,
@@ -461,17 +460,16 @@ export default function PersonalAccessTokens() {
         name={created?.personal_access_token.name ?? ''}
         regenerated={createdByRegenerate}
         onCreateTool={
-          created &&
-          !createdByRegenerate &&
-          canMakeAgentTool(created.personal_access_token.scopes)
+          created && !createdByRegenerate
             ? async () => {
-                await patService.createAgentTool(
+                const tool = await patService.createAgentTool(
                   created.personal_access_token.id,
                   created.token,
                   // Where agents reach the API: the host this app talks to.
                   new URL(baseURL, window.location.href).href,
                   token,
                 );
+                return tool.inactive;
               }
             : undefined
         }

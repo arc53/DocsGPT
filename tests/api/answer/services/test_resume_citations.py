@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 import pytest
@@ -38,13 +39,16 @@ def _state(**agent_config) -> dict:
 
 
 @pytest.fixture
-def resume_kwargs(monkeypatch):
+def resume_kwargs(monkeypatch, pg_conn):
     """Resume a saved state; returns the kwargs the agent was built with."""
     from docsgpt.agents import agent_creator as ac_mod
     from docsgpt.api.answer.services import continuation_service as cont_mod
     from docsgpt.api.answer.services import stream_processor as sp_mod
     from docsgpt.llm import llm_creator as llm_creator_mod
     from docsgpt.llm.handlers import handler_creator as handler_mod
+
+    # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+    monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
     def _run(state: dict) -> dict:
         cont_service = MagicMock()

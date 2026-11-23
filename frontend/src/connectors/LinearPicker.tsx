@@ -19,6 +19,10 @@ import { LoadingState } from '../components/ui/loading-state';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingRow, SettingRows } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from './connectionErrors';
 import type { LinearProject, LinearTeam } from './types';
 
 /** What a Linear source syncs: the picked teams' and projects' issues. */
@@ -61,7 +65,8 @@ export const linearSyncItems = (selection: LinearSelection) => ({
   include_documents: selection.includeDocuments && !!selection.projects.length,
 });
 
-type LoadError = 'reconnect' | 'failed' | null;
+// `refused`: a team's account the caller may not browse, or one paused.
+type LoadError = 'reconnect' | 'refused' | 'failed' | null;
 
 // More rows than this and a search field helps.
 const SEARCH_FROM = 8;
@@ -91,6 +96,8 @@ export default function LinearPicker({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<LoadError>(null);
   const [query, setQuery] = useState('');
+  // A team's account's refusal (its body), worded when shown.
+  const [refusal, setRefusal] = useState<unknown>(null);
   const requestRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -101,6 +108,11 @@ export default function LinearPicker({
       const data = await connectorsService.linearWorkspace(connectionId, token);
       if (request !== requestRef.current) return;
       if (!data?.success) {
+        if (connectionErrorCode(data)) {
+          setRefusal(data);
+          setError('refused');
+          return;
+        }
         setError(data?.code === 'reconnect' ? 'reconnect' : 'failed');
         return;
       }
@@ -154,11 +166,13 @@ export default function LinearPicker({
         title={
           error === 'reconnect'
             ? t('settings.connectors.detail.expired')
-            : t('settings.connectors.linear.loadFailed')
+            : error === 'refused'
+              ? connectionErrorMessage(t, refusal)
+              : t('settings.connectors.linear.loadFailed')
         }
         onRetry={error === 'failed' ? load : undefined}
         action={
-          error !== 'failed' && onReconnect ? (
+          error === 'reconnect' && onReconnect ? (
             <Button
               variant="outline"
               size="sm"

@@ -140,6 +140,26 @@ class TestIssues:
             "team-1", "project-1",
         ]
 
+    def test_overlapping_issues_do_not_count_toward_the_cap(self, monkeypatch):
+        monkeypatch.setattr(linear, "MAX_ISSUES", 3)
+
+        def list_issues(args):
+            if "team" in args:
+                assert args["team"] == "team-1"
+                return {"issues": [{**ISSUE, "id": "ENG-1"}, {**ISSUE, "id": "ENG-2"}]}
+            assert args["project"] == "project-1"
+            cursor = args.get("cursor")
+            if cursor is None:
+                return {"issues": [{**ISSUE, "id": "ENG-1"}], "hasNextPage": True, "cursor": "page-2"}
+            assert cursor == "page-2"
+            return {"issues": [{**ISSUE, "id": "ENG-3"}], "hasNextPage": True, "cursor": "page-3"}
+
+        session = FakeLinear({"list_issues": list_issues})
+        docs = _collect(session, teams=["team-1"], projects=["project-1"], include_comments=False)
+
+        assert [doc.extra_info["linear_id"] for doc in docs] == ["ENG-1", "ENG-2", "ENG-3"]
+        assert [args.get("cursor") for args in session.called("list_issues")] == [None, None, "page-2"]
+
     def test_stops_at_the_cap(self, monkeypatch):
         monkeypatch.setattr(linear, "MAX_ISSUES", 3)
         pages = iter(range(100))

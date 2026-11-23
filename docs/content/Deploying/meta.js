@@ -1,0 +1,30 @@
+// The sidebar for this folder: its title and the order of its pages.
+// A page's own sidebar label is `sidebarTitle` in its frontmatter.
+export default {
+  title: 'Deploy & Operate',
+  pages: [
+    '---Install---',
+    'index',
+    'Docker-Deploying',
+    'Pip-Install',
+    'Kubernetes-Deploying',
+    'Air-Gapped',
+    'Sandbox',
+    'cli',
+    '---Configure---',
+    'DocsGPT-Settings',
+    'Settings-Reference',
+    '---Secure & administer---',
+    'Security',
+    'OIDC-SSO',
+    'Access-Control',
+    'Usage-Quotas',
+    '---Operate---',
+    'Observability',
+    'Background-Jobs',
+    'Postgres-Migration',
+    'Troubleshooting',
+    '---Develop---',
+    'Development-Environment',
+  ],
+};

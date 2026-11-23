@@ -315,6 +315,19 @@ class TestMarkdown:
         out = chunker.chunk([Document(text="plain text no heading", doc_id="d")])
         assert len(out) == 1
 
+    def test_hash_lines_in_fenced_code_are_not_headings(self):
+        text = (
+            "# Install\nSet up a virtualenv first.\n\n"
+            "```bash\n# create the environment\npython -m venv .venv\n"
+            "# install the dependencies\npip install -r requirements.txt\n```\n\n"
+            "## Configure\n~~~yaml\n# the model to use\nmodel: gpt-4o\n~~~\n"
+        )
+        chunker = MarkdownChunker(max_tokens=2000, min_tokens=1)
+        out = chunker.chunk([Document(text=text, doc_id="d")])
+        # Only the real heading starts a section, so both code blocks stay whole.
+        configure = text.index("## Configure")
+        assert [c.text for c in out] == [text[:configure], text[configure:]]
+
 
 @pytest.mark.unit
 class TestParentChild:
@@ -671,3 +684,20 @@ class TestSemanticEmbeddingsResolution:
 
         mock_resolver.assert_called_once_with()
         assert len(out) == 2
+
+
+@pytest.mark.unit
+def test_recursive_merge_seam_does_not_push_a_chunk_over_budget():
+    """Fragment counts do not add up across a seam; the merged chunk is re-checked.
+
+    Found by tests/fuzz/fuzz_chunking.py.
+    """
+    counter = TiktokenCounter()
+    text = "\n中文字符\xa0\xa0x"
+    chunker = RecursiveChunker(max_tokens=5, min_tokens=0, chunk_overlap=0)
+    chunker.counter = counter
+
+    chunks = chunker.chunk([Document(text=text, doc_id="d")])
+
+    assert all(counter.count(c.text) <= 5 for c in chunks)
+    assert "".join("".join(c.text for c in chunks).split()) == "".join(text.split())

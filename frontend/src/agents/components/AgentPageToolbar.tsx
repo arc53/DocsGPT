@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import PageToolbar from '../../components/PageToolbar';
 import { formatDateTime } from '../../utils/dateTimeUtils';
+import OwnerInactiveNotice from '../OwnerInactiveNotice';
 
 type AgentPageToolbarProps = {
   /** The agent's name, first in the byline. */
@@ -70,12 +71,12 @@ export default function AgentPageToolbar({
     </span>
   );
 
-  // The buttons fill the stacked row on a phone (the main one stretches),
+  // The buttons fill the stacked row on a narrow page (the main one stretches),
   // with the ⋯ at its end.
   const action =
     actions && menu ? (
       <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1 sm:flex-none">{actions}</div>
+        <div className="min-w-0 flex-1 @2xl:flex-none">{actions}</div>
         {menu}
       </div>
     ) : (
@@ -85,12 +86,14 @@ export default function AgentPageToolbar({
   return (
     <PageToolbar
       intro={byline}
-      // The spacer only matters beside the byline (sm up); stacked on a
-      // phone it would be an empty band.
-      action={action ?? <div aria-hidden className="hidden h-9.5 sm:block" />}
+      // The spacer only matters beside the byline (a toolbar @2xl wide, as
+      // the row stacks); on a narrower one it would be an empty band.
+      action={action ?? <div aria-hidden className="hidden h-9.5 @2xl:block" />}
       stack={Boolean(actions)}
       divider
     >
+      {/* About the opened agent, on each of its pages. */}
+      <OwnerInactiveNotice className="mb-6" />
       {children}
     </PageToolbar>
   );

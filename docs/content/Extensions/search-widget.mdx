@@ -1,10 +1,9 @@
 ---
 title: Search Widget
+sidebarTitle: 🔎 Search Widget
 description: Embed the DocsGPT Search Bar Widget in your React or HTML projects to provide AI-powered document search functionality to your users.
 lastUpdated: 2026-10-21
 ---
-import { Tabs } from 'nextra/components'
-
 # Search Widget
 
 ## Introduction
@@ -16,7 +15,7 @@ Try out the interactive widget showcase and customize its parameters at the [Doc
 ## Setup
 
 <Tabs items={['React', 'HTML']}>
-  <Tabs.Tab>
+  <Tab>
 ## React Setup
 
 ### Installation
@@ -46,14 +45,14 @@ Now, you can embed the widget within your React component's JSX:
     width="300px"
 />
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
 
 ### Installation
 
 To use the DocsGPT Search Bar Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
-```html filename="html"
+```html title="html"
 <script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
 ```
 
@@ -63,13 +62,13 @@ The bundle defines `renderSearchBar` (and `renderDocsGPTWidget`) on `window`. `0
 
 In your HTML `<body>`, add a `<div>` element where you want to render the Search Bar Widget. Set an `id` for easy targeting.
 
-```html filename="html"
+```html title="html"
 <div id="search-bar-container"></div>
 ```
 
 Then, in a `<script>` block after the widget script, use the `renderSearchBar` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and configure its behaviour, pass the relevant parameters within the configuration object of `renderSearchBar`.
 
-```html filename="html"
+```html title="html"
 <!DOCTYPE html>
 <div id="search-bar-container"></div>
 <script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
@@ -88,7 +87,7 @@ Then, in a `<script>` block after the widget script, use the `renderSearchBar` f
 
 `renderSearchBar` returns an object with a `destroy()` method, which removes the search bar from the page. Calling it again does nothing.
 
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ---

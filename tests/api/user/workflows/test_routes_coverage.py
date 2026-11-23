@@ -7,7 +7,7 @@ Repository classes (WorkflowsRepository, etc.) are patched for dual-write paths.
 """
 
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from unittest.mock import Mock, patch
 
 import pytest
@@ -345,7 +345,7 @@ class TestWorkflowListPost:
 
         assert response.status_code == 400
 
-    def test_create_db_error_returns_400(self, app):
+    def test_create_db_error_returns_400(self, app, pg_conn):
         from docsgpt.api.user.workflows.routes import WorkflowList
 
         @contextmanager
@@ -353,8 +353,11 @@ class TestWorkflowListPost:
             raise RuntimeError("boom")
             yield
 
+        # The workspace is read from a throwaway database; only the write breaks.
         with patch(
             "docsgpt.api.user.workflows.routes.db_session", _broken
+        ), patch(
+            "docsgpt.api.user.workflows.routes.db_readonly", lambda: nullcontext(pg_conn)
         ), app.test_request_context(
             "/api/workflows",
             method="POST",

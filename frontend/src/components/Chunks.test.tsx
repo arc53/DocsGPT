@@ -191,8 +191,8 @@ describe('Chunks', () => {
     expect(footers[1]).toContain('"n":14');
   });
 
-  // Decision 79: text tiles follow the container with an auto-fit track that
-  // can't overflow a container narrower than 400px.
+  // Text tiles follow the container with an auto-fit track that can't
+  // overflow a container narrower than 400px.
   it('lays the tiles out on the guarded auto-fit text-tile grid', async () => {
     await render();
     expect(tile()!.parentElement!.className).toBe(

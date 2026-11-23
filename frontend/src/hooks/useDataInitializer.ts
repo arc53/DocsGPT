@@ -4,22 +4,17 @@ import { useDispatch, useSelector } from 'react-redux';
 import userService from '../api/services/userService';
 import {
   loadConnectors,
+  loadTeamConnectors,
   selectConnectorsEnabled,
   setConnectorsEnabled,
 } from '../connectors/connectorsSlice';
-import { claimLegacySessionTokens } from '../utils/providerUtils';
-import {
-  getDocs,
-  getConversations,
-  getPrompts,
-} from '../preferences/preferenceApi';
+import { initChatPrompt } from '../preferences/chatPrompt';
+import { getDocs, getConversations } from '../preferences/preferenceApi';
 import {
   selectConversations,
   selectToken,
   receiveConversations,
-  setConversations,
   setConversationsLoading,
-  setPrompts,
   setAnalyticsAvailability,
   setAttachmentBudgetShare,
   setAuthRequired,
@@ -28,6 +23,11 @@ import {
 } from '../preferences/preferenceSlice';
 import { analyticsAvailability } from '../settings/insights/useAnalyticsAvailability';
 import type { AppDispatch } from '../store';
+import {
+  captureWorkspace,
+  PERSONAL_WORKSPACE,
+} from '../workspace/requestWorkspace';
+import { loadWorkspaces, selectWorkspaceId } from '../workspace/workspaceSlice';
 
 /**
  * useDataInitializer Hook
@@ -35,17 +35,32 @@ import type { AppDispatch } from '../store';
  * Custom hook responsible for initializing all application data on mount.
  * This hook handles:
  * - Fetching and setting up source documents
- * - Fetching and setting up prompts
+ * - Fetching and setting up prompts, and the chat prompt the server keeps
  * - Fetching and setting up conversations
+ * - Loading the caller's workspaces (Personal and their teams)
  * - Reading which speech features the server has switched on, and whether
  *   conversation insights are, with the insights editor's limits
  *
- * @param isAuthLoading -
+ * The lists load again when the workspace switches; an answer from before a
+ * switch is dropped.
+ *
+ * @param isAuthLoading - Auth is still resolving; nothing loads until it is done.
+ * @param authType - The server's auth mode (`none`, `simple_jwt`, …), once known.
  */
-export default function useDataInitializer(isAuthLoading: boolean) {
+export default function useDataInitializer(
+  isAuthLoading: boolean,
+  authType?: string | null,
+) {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
   const conversations = useSelector(selectConversations);
+  const workspaceId = useSelector(selectWorkspaceId);
+
+  // The workspaces and the caller's role in each; checks a stored team too.
+  useEffect(() => {
+    if (isAuthLoading) return;
+    dispatch(loadWorkspaces({ token }));
+  }, [isAuthLoading, token, dispatch]);
 
   // Speech features and the attachment budget; /api/config needs no auth.
   useEffect(() => {
@@ -81,12 +96,13 @@ export default function useDataInitializer(isAuthLoading: boolean) {
     dispatch(loadConnectors({ token }));
   }, [isAuthLoading, connectorsEnabled, token, dispatch]);
 
-  // Connector sign-ins used to leave a session token in localStorage. Link
-  // each one to its server-side connection once, then forget it.
+  // A team's own connections load on each switch to it (kept per team, so
+  // the last list shows meanwhile); the caller's own list above stays.
   useEffect(() => {
-    if (isAuthLoading) return;
-    claimLegacySessionTokens(token);
-  }, [isAuthLoading, token]);
+    if (isAuthLoading || !connectorsEnabled) return;
+    if (!workspaceId || workspaceId === PERSONAL_WORKSPACE) return;
+    dispatch(loadTeamConnectors({ token, teamId: workspaceId }));
+  }, [isAuthLoading, connectorsEnabled, token, workspaceId, dispatch]);
 
   // Initialize documents
   useEffect(() => {
@@ -96,35 +112,41 @@ export default function useDataInitializer(isAuthLoading: boolean) {
     }
 
     const fetchDocs = async () => {
+      const workspace = captureWorkspace();
       try {
         const data = await getDocs(token);
-        dispatch(setSourceDocs(data));
+        if (workspace.isCurrent()) dispatch(setSourceDocs(data));
       } catch (error) {
         console.error('Failed to fetch documents:', error);
       }
     };
 
     fetchDocs();
-  }, [isAuthLoading, token]);
+  }, [isAuthLoading, token, workspaceId]);
 
-  // Initialize prompts
+  // Initialize prompts and the one chats use. A mode that needs a token
+  // and has none (the sign-in is still to come) asks the server nothing
+  // about the user and keeps default.
+  const signedOut = !token && !!authType && authType !== 'none';
   useEffect(() => {
     // Skip if auth is still loading
     if (isAuthLoading) {
       return;
     }
 
-    const fetchPromptsData = async () => {
-      try {
-        const data = await getPrompts(token);
-        dispatch(setPrompts(data));
-      } catch (error) {
-        console.error('Failed to fetch prompts:', error);
-      }
+    // The server's chat prompt applies as soon as it answers (asked again
+    // if it couldn't); the prompt list names it when it arrives. A renewed
+    // token runs this again; a pick the same user made meanwhile stands.
+    let cancelled = false;
+    dispatch(
+      initChatPrompt(token, { signedOut, cancelled: () => cancelled }),
+    ).catch((error: unknown) =>
+      console.error('Failed to fetch prompts:', error),
+    );
+    return () => {
+      cancelled = true;
     };
-
-    fetchPromptsData();
-  }, [isAuthLoading, token]);
+  }, [isAuthLoading, token, signedOut, workspaceId]);
 
   // Initialize conversations
   useEffect(() => {
@@ -133,19 +155,25 @@ export default function useDataInitializer(isAuthLoading: boolean) {
       return;
     }
 
+    // A switch empties the list, which loads it here again; the workspace
+    // is watched too, since a list that was already empty (its load still
+    // out, or failed) doesn't change.
     const fetchConversationsData = async () => {
       if (!conversations?.data) {
+        const workspace = captureWorkspace();
         dispatch(setConversationsLoading(true));
         try {
           const fetchedConversations = await getConversations(token);
-          dispatch(receiveConversations(fetchedConversations));
+          if (workspace.isCurrent())
+            dispatch(receiveConversations(fetchedConversations));
         } catch (error) {
           console.error('Failed to fetch conversations:', error);
-          dispatch(setConversations({ data: null, loading: false }));
+          if (workspace.isCurrent())
+            dispatch(receiveConversations({ data: null, loading: false }));
         }
       }
     };
 
     fetchConversationsData();
-  }, [isAuthLoading, conversations?.data, token]);
+  }, [isAuthLoading, conversations?.data, token, workspaceId]);
 }

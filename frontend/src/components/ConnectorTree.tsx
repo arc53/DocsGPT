@@ -90,12 +90,14 @@ export function providerLabel(provider: string): string {
 }
 
 /**
- * Why the worker skipped a queued sync, by its failed event's `reason`: the
- * source became a wiki, or was deleted (`busy` is a warning, worded apart).
+ * Why the worker skipped or failed a queued sync, by its failed event's
+ * `reason`: the source became a wiki, was deleted, or its account's sign-in
+ * was rejected (`busy` is a warning, worded apart).
  */
-const SKIPPED_SYNC_KEYS: Record<string, string> = {
+const SYNC_FAILURE_KEYS: Record<string, string> = {
   wiki: 'settings.connectors.detail.syncRefusedWiki',
   gone: 'settings.sources.website.sourceGone',
+  reconnect: 'settings.connectors.detail.expired',
 };
 
 const ConnectorTree: React.FC<ConnectorTreeProps> = ({
@@ -177,7 +179,11 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
         // sync of this same source short-circuiting the current op; a
         // sync's events also carry its task id, which decides when present.
         const opStartedAt = Date.now();
-        const { terminal, reason } = await waitForChange(docId, opStartedAt, {
+        const {
+          terminal,
+          reason,
+          itemsNotDownloaded = 0,
+        } = await waitForChange(docId, opStartedAt, {
           taskId,
         });
 
@@ -194,6 +200,16 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
           // ``completed`` with ``no_changes: true`` — treated as success
           // here; refreshing the directory is cheap and idempotent.
           setSyncProgress(100);
+          // Files that failed to download were left out of the index.
+          if (itemsNotDownloaded > 0)
+            dispatch(
+              showActionToast({
+                variant: 'warning',
+                message: t('modals.uploadDoc.progress.partialDownload', {
+                  count: itemsNotDownloaded,
+                }),
+              }),
+            );
 
           try {
             const refreshed = await controllerRef.current?.refreshDirectory();
@@ -218,10 +234,10 @@ const ConnectorTree: React.FC<ConnectorTreeProps> = ({
             }),
           );
         } else if (terminal === 'failed') {
-          const skipped = reason ? SKIPPED_SYNC_KEYS[reason] : undefined;
-          if (skipped)
+          const failure = reason ? SYNC_FAILURE_KEYS[reason] : undefined;
+          if (failure)
             dispatch(
-              showActionToast({ variant: 'destructive', message: t(skipped) }),
+              showActionToast({ variant: 'destructive', message: t(failure) }),
             );
           else toastSyncFailed();
         }

@@ -1,10 +1,9 @@
 ---
 title: Workflow Nodes
+sidebarTitle: 🧩 Workflow Nodes
 description: The nodes a DocsGPT workflow is built from - Start, AI Agent, End, Note, Set State, If / Else, Code and Loop - and the shared state they read and write.
-lastUpdated: 2026-10-29
+lastUpdated: 2026-10-31
 ---
-
-import { Callout } from 'nextra/components';
 
 # Workflow Nodes
 
@@ -19,13 +18,13 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
   width={1440}
   height={900}
   poster="/workflow-builder-poster.png"
-  aria-label="Screen recording: building, publishing and running a workflow with an AI Agent and an If / Else node"
+  aria-label="Screen recording: building a workflow with an AI Agent and an If / Else node, saving it as a draft, publishing it and running it in Preview"
   style={{ width: '100%', height: 'auto', borderRadius: '0.5rem' }}
 >
   <source src="/workflow-builder.mp4" type="video/mp4" />
 </video>
 
-*The recording starts in a new workflow agent's builder and drags an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette onto the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Espresso One handbook" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Refund" where `query` **contains** `refund`. It clicks **Publish**, opens **Preview** and asks for a refund: the run steps through Start, the AI Agent, If / Else and End, and the answer is quoted from the handbook.*
+*The recording starts in a new workflow agent's builder, adds an **AI Agent** node, an **If / Else** node and two **End** nodes from the palette, and moves them into place on the canvas. It wires Start → AI Agent → If / Else, and the If / Else node's **If** and **Else** branches to one End node each. It gives the AI Agent node the "Policies & Contracts Library" knowledge source, then sets the If / Else node in **Simple** mode to a branch named "Credit claim" where `query` **contains** `credit`. It clicks **Save Draft**, which saves the unfinished agent and adds the **Overview** and **Logs** tabs, then **Publish**. It opens **Preview** and asks what Meridian owes a customer for a late Assured Plus delivery: the run steps through Start, the AI Agent, If / Else and End, and the answer comes from the library's SLA schedule. The model's wait is sped up.*
 
 | Node | Palette group | What it does |
 | --- | --- | --- |
@@ -95,7 +94,11 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 
 - **Agent Type**: **Classic** (retrieves from the node's knowledge before
   answering) or **Research** (plans and searches in several steps).
-- **Model**: the model this node calls. Every agent node needs one.
+- **Model**: the model this node calls. The builder asks for one on every
+  agent node; a node saved through the API without one runs on the agent's
+  model. A [custom model](/Models/custom-models#where-the-model-appears) set
+  here is the workflow owner's: whoever runs the workflow agent, the node calls
+  it with the owner's endpoint and key.
 
 **Prompt**
 
@@ -107,8 +110,16 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 
 **Knowledge**
 
-- **Knowledge**: sources this node searches.
+- **Knowledge**: sources this node searches, or whole Knowledge folders, which
+  stay up to date (see [Pick a whole folder](/Sources/adding-knowledge#pick-a-whole-folder)).
 - **Tools**: tools the node's model can call.
+
+Both are the same pickers as in the agent form: grouped, selected items first,
+with **Go to Knowledge** and **Upload new**, or **Go to Tools** and **Add tool**,
+at the bottom. A tool you add from the node's picker is selected on the node, and
+a [remote device](/Tools/remote-device) shows whether it is online. See
+[Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents)
+and [The Tools page](/Tools/basics#the-tools-page).
 
 <Callout type="warning">
   A tool that requires approval fails the node, and with it the run: a
@@ -141,6 +152,8 @@ The **AI Agent Node** is the core processing unit. It uses a Large Language Mode
 - **Structured Output (JSON Schema)**: makes the model return JSON matching the
   schema. The parsed, validated object is saved as the node's output instead
   of text. The model must support structured output.
+- **Step details in the chat stream**: how much of the finished step the chat
+  stream carries; see [Step details in the stream](#step-details-in-the-stream).
 
 ### Line-numbered documents
 
@@ -313,6 +326,8 @@ The **Code Node** runs a Python script in a sandboxed session bound to the workf
   saved as `node_<node_id>_output`.
 - **Timeout (seconds)**: optional. It can't exceed `SANDBOX_EXEC_TIMEOUT`, which
   is also the default.
+- **Step details in the chat stream**: see
+  [Step details in the stream](#step-details-in-the-stream).
 - **Structured Output (JSON Schema)**: optional; see the output rules below.
 
 What the node outputs:
@@ -360,7 +375,8 @@ inside it connect only to each other.
 - **When an item fails**: **Stop and fail the loop** (the default) fails the
   node and writes nothing; items not yet started don't run and running ones stop
   at their next node. **Leave the item out** drops it from the results. **Keep
-  the error in its place** puts `{"error": "..."}` in that item's slot.
+  the error in its place** puts `{"error": "..."}` in that item's slot. An item
+  whose body is still going after 50 node steps counts as failed too.
 - **Output Variable**: an extra name for the results, which are always saved as
   `node_<node_id>_output`. The results are a list in the same order as the
   items.
@@ -475,8 +491,14 @@ or what still needs doing. It has no effect on a run.
 
 ## Graph rules
 
-The builder checks these before a preview, save or publish, and lists every rule
-a workflow breaks:
+The builder checks these before a preview or publish, and before a save once the
+workflow is published, and lists every rule a workflow breaks. A draft saves
+without them: **Save draft**, beside **Publish** until the workflow is published,
+keeps an unfinished workflow and needs only a name. A chat with a draft whose
+workflow isn't finished, by you or a teammate it is shared with, answers with an
+error instead of running it. The workflow's graph and its
+name, description and image are saved together, so a save either stores all of
+them or none.
 
 - The workflow has a name, exactly one Start node, at least one End node and
   at least one AI Agent node.
@@ -497,8 +519,55 @@ a workflow breaks:
   holds at least one node with exactly one first node. No connection crosses a
   loop's edge.
 
-A run stops after 50 node steps, so a cycle in the graph needs an exit
-condition.
+A run that is still going after 50 node steps stops with an error and is recorded as failed,
+so a cycle in the graph needs an exit condition.
+
+## Step details in the stream
+
+While a workflow runs, the chat stream sends a `workflow_step` event as each
+node starts and finishes. A finished step's event carries the node's output and
+the state it changed, so the chat and the builder's **Execution details** can
+show them. A node that reads documents can produce a lot of both, so the event
+is held to `WORKFLOW_STREAM_MAX_EVENT_BYTES` (32 KB by default):
+
+- When the output and state changes fit, the event carries them. The output is
+  sent once: the `node_<node_id>_output` copy is left out of `state_delta`.
+- When they don't, the event is a summary: `summarized: true`, the output
+  itself when it is small or else `output_preview` (its first 500 characters)
+  with `output_truncated: true`, `output_bytes`, and `state_keys_changed`
+  listing the keys the node set. A very long key list is cut to fit and marked
+  `state_keys_truncated`.
+
+Every finished step's event also carries `step_index`, its place in the run's
+saved steps (a loop item's steps, saved inside the loop's step, carry none). The
+run keeps every step's full output and state changes (except the text and table
+headers of [`documents`](#line-numbered-documents), which runs never store), so
+**Show full output** on a summarized step in **Execution details** loads them
+once the run ends. A preview of a workflow that was never saved stores no run:
+save the workflow and run it again to load a large step's full output. Over the API that is
+`GET /api/workflow_runs/<run_id>/steps/<step_index>` (a
+[personal access token](/API/personal-access-tokens#reading-workflow-runs)
+needs `runs:read`).
+
+Each node can change this with **Step details in the chat stream**
+(`stream_output` in an exported or API-saved workflow; any node type accepts it):
+
+| Setting | The finished step's event carries |
+| --- | --- |
+| **Summary when large** (`summary`, default) | The output and state changes, or a summary when they exceed the limit |
+| **Always full** (`full`) | The output and state changes, whatever their size |
+| **Status only** (`none`) | The status alone, with `output_omitted: true` |
+
+This setting covers the finished step's event only. An AI Agent node's answer
+streams into the chat while **Stream output to user** is on, whatever this
+setting says. To keep a node's output out of the chat stream, set **Status
+only** *and* turn **Stream output to user** off, and make sure no later node
+shows it: an End node's output template, or another node that streams to the
+user, can still put the node's values into the answer. Both settings limit what the
+stream carries, not who can read the output: the run still saves it, and the
+person who started a saved run can read every step through the step route above.
+Use **Always full** only when a client needs every value from the stream itself. An End node's output template is streamed in pieces under
+the same limit.
 
 ## One workflow per agent
 
@@ -507,3 +576,15 @@ deletes its workflow. Over the API, creating an agent (`POST /api/create_agent`)
 with a `workflow` that another agent already uses, or switching an agent to one
 with `PUT /api/update_agent/<agent_id>`, answers `409` with "This workflow
 belongs to another agent". Create a new workflow for the new agent instead.
+
+The builder saves through those same two endpoints: it sends the graph as a
+`workflow_graph` field (`{"nodes": [...], "edges": [...], "retry_defaults": ...}`,
+a JSON string in a multipart form) with the agent's other fields, in one request.
+With `"status": "draft"` only the graph's shape is checked; with `"published"` the
+full graph rules apply. They also apply to a draft that something can still run: an
+agent published before (its API key keeps working), one with a webhook URL, a public
+link or an active or paused schedule, and one whose workflow another such agent also
+runs. A draft holding an unfinished workflow gets no webhook URL, schedule or public
+link (`400` with the broken rules) until its graph passes them. A request can send `workflow_graph` or `workflow`, not
+both. `POST /api/workflows` and `PUT /api/workflows/<id>` keep working for scripts
+that manage the graph on its own.

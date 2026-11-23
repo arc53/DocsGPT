@@ -15,13 +15,14 @@ from typing import Any, Dict, Generator, List, Optional
 
 from flask import Blueprint, current_app, jsonify, make_response, request, Response
 
-from docsgpt.api.answer.routes.base import BaseAnswerResource
+from docsgpt.api.answer.routes.base import BaseAnswerResource, UsageReads, UsageRefused
 from docsgpt.api.answer.services.persistence_policy import resolve_persistence
 from docsgpt.api.answer.services.continuation_service import (
     NOT_PENDING_CODE,
     NOT_PENDING_MESSAGE,
     ContinuationNotPendingError,
     ContinuationService,
+    InvalidToolActionsError,
     RESUME_IN_PROGRESS_MESSAGE,
     ResumeInProgressError,
     answered_call_ids,
@@ -32,6 +33,7 @@ from docsgpt.api.answer.services.stream_processor import (
     flush_trace_after_request,
 )
 from docsgpt.agents.context_overflow import ContextOverflowError
+from docsgpt.api.owner_pause import AgentPausedError, outside_access_refusal
 from docsgpt.api.v1 import idempotency as v1_idempotency
 from docsgpt.api.v1.attachments import NOT_STORED, InlineIngest, start_inline_files
 from docsgpt.api.v1.session_store import (
@@ -80,6 +82,24 @@ def _lookup_agent(api_key: str) -> Optional[Dict]:
             return AgentsRepository(conn).find_by_key(api_key)
     except Exception:
         logger.warning("Failed to look up agent for API key", exc_info=True)
+        return None
+
+
+def _owner_paused(agent: Dict) -> Optional[AgentPausedError]:
+    """Why the key's agent refuses outside traffic: its owner or payer is deactivated, or nobody pays.
+
+    Args:
+        agent: The agent the key resolved to.
+
+    Returns:
+        The refusal (``code``, ``message``), or None. A failed read is not a
+        pause: the run's own check repeats it.
+    """
+    try:
+        with db_readonly() as conn:
+            return outside_access_refusal(conn, agent)
+    except Exception:
+        logger.warning("Failed to read the agent owner's account state", exc_info=True)
         return None
 
 
@@ -305,7 +325,57 @@ def _response_finish_reason(agent: Any) -> str:
 
 class _V1AnswerHelper(BaseAnswerResource):
     """Thin wrapper to access complete_stream / process_response_stream."""
-    pass
+
+    def check_usage(
+        self,
+        agent_config: Dict,
+        decoded_token: Optional[Dict] = None,
+        agent_id: Optional[str] = None,
+        *,
+        reads: Optional[UsageReads] = None,
+    ) -> Optional[Response]:
+        """``BaseAnswerResource.check_usage``, with a paused agent's refusal in the ``/v1`` error shape.
+
+        Args:
+            agent_config: The run's agent config.
+            decoded_token: The run's identity.
+            agent_id: The agent the request runs through.
+            reads: Filled with what the check read, for the turn's billing to reuse.
+
+        Returns:
+            None, or the refusal.
+        """
+        refusal = super().check_usage(agent_config, decoded_token, agent_id=agent_id, reads=reads)
+        return _openai_pause(refusal) if refusal is not None else None
+
+
+def _openai_pause(response: Response) -> Response:
+    """A paused agent's refusal (``agent_paused``, ``no_payer``) in the OpenAI error shape other ``/v1`` errors use.
+
+    The status and the ``Retry-After`` / ``x-should-retry`` headers are kept;
+    any other refusal is returned as it is.
+
+    Args:
+        response: ``check_usage``'s refusal.
+
+    Returns:
+        The refusal to send.
+    """
+    from docsgpt.api.owner_pause import PAUSED_CODE
+    from docsgpt.quotas.payer import NO_PAYER_CODE
+
+    body = response.get_json(silent=True)
+    if not isinstance(body, dict) or body.get("code") not in (PAUSED_CODE, NO_PAYER_CODE):
+        return response
+    kind = "rate_limit_error" if response.status_code == 429 else "permission_error"
+    reshaped = make_response(
+        jsonify({"error": {"message": body.get("message"), "type": kind, "code": body["code"]}}),
+        response.status_code,
+    )
+    for header in ("Retry-After", "x-should-retry"):
+        if header in response.headers:
+            reshaped.headers[header] = response.headers[header]
+    return reshaped
 
 
 @v1_bp.route("/chat/completions", methods=["POST"])
@@ -331,6 +401,12 @@ def chat_completions():
         return make_response(
             jsonify({"error": {"message": "Invalid API key", "type": "auth_error"}}),
             401,
+        )
+    paused = _owner_paused(agent_doc)
+    if paused is not None:
+        return make_response(
+            jsonify({"error": {"message": paused.message, "type": "permission_error", "code": paused.code}}),
+            403,
         )
     options_error = _validate_request_options(data, agent_doc)
     if options_error is not None:
@@ -415,10 +491,14 @@ def chat_completions():
 
     # Storing inline files and queueing their parses costs storage and worker
     # time, so an exhausted quota refuses the request before either happens.
-    # ``_serve`` checks again once the agent is built.
+    # ``_serve`` checks again once the agent is built. The key holder is
+    # outside traffic: a refusal says only that the agent is paused, never
+    # the payer's numbers.
     if internal_data.get("inline_files"):
         usage_error = _V1AnswerHelper().check_usage(
-            {"user_api_key": api_key}, decoded_token, agent_id=agent_id_value or None
+            {"user_api_key": api_key, "external_api_caller": True},
+            decoded_token,
+            agent_id=agent_id_value or None,
         )
         if usage_error:
             # Nothing is claimed or stored yet: the idempotency claim is taken in ``_serve``.
@@ -440,6 +520,10 @@ def chat_completions():
         """Run the request once its files are attachment rows."""
         # Set when this request took the resume claim, so a refusal can release it.
         claimed_conversation_id = None
+        helper = _V1AnswerHelper()
+        # A built agent's limits are checked as soon as the caller and agent
+        # are known, before setup reaches a model.
+        processor.setup_gate = helper.setup_gate
 
         if internal_data.get("tool_actions"):
             conversation_id = internal_data.get("conversation_id")
@@ -511,6 +595,7 @@ def chat_completions():
                 "reserved_message_id": processor.reserved_message_id,
                 "request_id": processor.request_id,
                 "prior_tool_calls": getattr(processor, "prior_tool_calls", []),
+                "prior_turn": getattr(processor, "prior_turn", {}),
             }
             question = ""
         else:
@@ -526,13 +611,14 @@ def chat_completions():
             )
         agent.client_disconnected = client_gone
 
-        helper = _V1AnswerHelper()
         if claimed_conversation_id:
             usage_error = helper.check_usage_on_resume(processor, claimed_conversation_id)
-        else:
+        elif processor.setup_gate_passed is not True:
             usage_error = helper.check_usage(
                 processor.agent_config, processor.decoded_token, agent_id=processor.agent_id
             )
+        else:
+            usage_error = None
         if usage_error:
             return usage_error
 
@@ -624,6 +710,9 @@ def chat_completions():
         """The response for an error raised while setting up or running the request."""
         try:
             raise error
+        except UsageRefused as refused:
+            # A limit used up, found before setup reached a model; nothing was claimed.
+            return refused.response
         except ResumeInProgressError:
             if idem_key:
                 v1_idempotency.release(idem_key)
@@ -652,6 +741,13 @@ def chat_completions():
                 }),
                 409,
             )
+        except InvalidToolActionsError as e:
+            # Actions that don't fit the calls the pause waits on: nothing ran
+            # and the pause still waits.
+            if idem_key:
+                v1_idempotency.release(idem_key)
+            logger.info("/v1/chat/completions tool actions refused: %s", e.message)
+            return _invalid_request(e.message, e.code)
         except ContextOverflowError as e:
             if idem_key:
                 v1_idempotency.release(idem_key)

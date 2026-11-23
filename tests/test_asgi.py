@@ -73,7 +73,7 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
     # A successful initialize returns 200 with a Mcp-Session-Id header.
     assert r.status_code == 200
     assert "mcp-session-id" in {k.lower() for k in r.headers.keys()}
-    assert r.headers.get("access-control-expose-headers") == "Mcp-Session-Id"
+    assert "Mcp-Session-Id" in r.headers.get("access-control-expose-headers", "")
 
 
 @pytest.mark.unit
@@ -156,6 +156,38 @@ def test_cors_preflight_on_mcp_route():
     assert r.status_code in (200, 204)
     assert r.headers.get("access-control-allow-origin") == "*"
     assert "Mcp-Session-Id" in r.headers.get("access-control-allow-headers", "")
+
+
+@pytest.mark.unit
+def test_cors_preflight_allows_workspace_header():
+    """The web app names the workspace in a header on every API call; the preflight must allow it."""
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.options(
+            "/api/health",
+            headers={
+                "Origin": "http://example.com",
+                "Access-Control-Request-Method": "GET",
+                "Access-Control-Request-Headers": "Authorization, X-DocsGPT-Workspace",
+            },
+        )
+    assert r.status_code in (200, 204)
+    assert "x-docsgpt-workspace" in r.headers.get("access-control-allow-headers", "").lower()
+
+
+@pytest.mark.unit
+def test_cors_exposes_the_download_filename():
+    """A web app on another origin reads a download's filename (a team's chat export) from Content-Disposition."""
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.get("/api/health", headers={"Origin": "http://example.com"})
+    assert "content-disposition" in r.headers.get("access-control-expose-headers", "").lower()
 
 
 @pytest.mark.unit

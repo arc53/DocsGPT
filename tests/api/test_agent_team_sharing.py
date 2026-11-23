@@ -76,6 +76,8 @@ def _patches(sub, repo, team_access, *, prompt_name="Resolved Prompt", source_de
         ),
         # Run state reads the grants live; covered in test_resource_states.
         patch("docsgpt.api.user.agents.routes.resource_states", return_value=[]),
+        # The caller has filed nothing (folder_items, covered in test_roles_access).
+        patch("docsgpt.api.user.agents.routes.FolderItemsRepository", return_value=Mock(filing=Mock(return_value=None))),
     ]
 
 
@@ -198,7 +200,7 @@ def _update_patches(sub, repo, team_access, can_access_mock):
         patch("docsgpt.api.user.agents.routes.db_session", lambda: _cm(Mock())),
         patch("docsgpt.api.user.agents.routes.AgentsRepository", return_value=repo),
         *_access_patches(sub, repo, team_access),
-        patch("docsgpt.api.user.agents.routes.can_access", can_access_mock),
+        patch("docsgpt.api.user.agents.routes.ref_attachable", can_access_mock),
         # Sponsor bookkeeping queries the (mocked) connection; covered with a
         # real database in tests/api/user/test_resource_sponsors.py.
         patch("docsgpt.api.user.agents.routes.plan_sponsors", return_value=SponsorPlan()),

@@ -1,5 +1,6 @@
 import type { AnswerSource } from './chatCompanion';
 import { AnswerSegment } from './answerSegments';
+import type { JobArtifact } from './artifactChips';
 import { ToolCallsType } from './types';
 
 // Backend placeholder for a producer that ended before writing an answer.
@@ -9,6 +10,8 @@ export const TERMINATED_RESPONSE_PLACEHOLDER =
 export type MESSAGE_TYPE = 'QUESTION' | 'ANSWER' | 'ERROR';
 export type Status = 'idle' | 'loading' | 'failed' | 'awaiting_tool_actions';
 export type FEEDBACK = 'LIKE' | 'DISLIKE' | null;
+/** What a client tells the server it can render (the request's `capabilities`). */
+export type ClientCapability = 'forms';
 // Mirrors ``conversation_messages.status``.
 export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'failed';
 
@@ -96,6 +99,9 @@ export interface Query {
   thought?: string;
   sources?: AnswerSource[];
   tool_calls?: ToolCallsType[];
+  // Files of the background jobs this answer reports (a continuation turn's
+  // ``metadata.job_artifacts``); the turn that started each job lists them too.
+  job_artifacts?: JobArtifact[];
   // Arrival-ordered layout of the fields above, so answer text, reasoning and
   // tool calls render where they happened. Recorded live, and rebuilt on load
   // from the order the backend saved (``hydrateSegments``); when that is absent
@@ -126,6 +132,9 @@ export interface Query {
   workflow?: WorkflowProgress;
   // WAL placeholder id; lets the client tail an in-flight stream.
   messageId?: string;
+  // A compression summary an earlier version stored as a message. Not shown,
+  // but kept in place: edits and feedback address messages by index.
+  compressionSummary?: boolean;
   messageStatus?: MessageStatus;
   requestId?: string;
   lastHeartbeatAt?: string;
@@ -144,10 +153,11 @@ export interface Query {
 export interface RetrievalPayload {
   question: string;
   active_docs?: string | string[];
+  /** Whole knowledge folders (agentless chats), read live. */
+  active_folders?: string[];
   retriever?: string;
   conversation_id: string | null;
   prompt_id?: string | null;
-  chunks: string;
   isNoneDoc: boolean;
   index?: number;
   agent_id?: string;
@@ -155,4 +165,6 @@ export interface RetrievalPayload {
   save_conversation?: boolean;
   visibility?: 'listed' | 'hidden';
   model_id?: string;
+  /** What the client can render; `forms` lets the model ask clarifying questions. */
+  capabilities?: ClientCapability[];
 }

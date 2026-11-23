@@ -396,3 +396,36 @@ class TestCacheBins:
         repo = TokenUsageRepository(pg_conn)
         repo.insert(user_id="cache-user-2", prompt_tokens=10, generated_tokens=1)
         assert tuple(self._row(pg_conn, "cache-user-2")) == (None, None)
+
+
+class TestOneAgentHoweverReached:
+    """The agent limit's window: rows through the agent's key, or stamped with its id (keyless runs, workflow steps)."""
+
+    def _window(self):
+        return {"start": _now() - timedelta(minutes=1), "end": _now() + timedelta(minutes=1)}
+
+    def _seed(self, conn, repo):
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        self.AGENT = str(AgentsRepository(conn).create("owner", "a", "published", key="k-agent")["id"])
+        self.OTHER = str(AgentsRepository(conn).create("owner", "b", "published", key="k-other")["id"])
+        repo.insert(user_id="caller", api_key="k-agent", agent_id=self.AGENT, prompt_tokens=10, request_id="r1")
+        # A workflow step: the agent's id, no key.
+        repo.insert(user_id="setter", agent_id=self.AGENT, prompt_tokens=20, request_id="r2")
+        repo.insert(user_id="setter", agent_id=self.AGENT, prompt_tokens=20, request_id="r2")
+        # A legacy row with the key only.
+        repo.insert(api_key="k-agent", prompt_tokens=5)
+        repo.insert(user_id="caller", api_key="k-other", agent_id=self.OTHER, prompt_tokens=100, request_id="r3")
+
+    def test_tokens_match_the_key_or_the_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        self._seed(pg_conn, repo)
+        assert repo.sum_tokens_in_range(api_key="k-agent", agent_id=self.AGENT, **self._window()) == 55
+        # The key alone still means what it did.
+        assert repo.sum_tokens_in_range(api_key="k-agent", **self._window()) == 15
+
+    def test_requests_match_the_key_or_the_id(self, pg_conn):
+        repo = _repo(pg_conn)
+        self._seed(pg_conn, repo)
+        assert repo.count_in_range(api_key="k-agent", agent_id=self.AGENT, **self._window()) == 3
+        assert repo.count_in_range(agent_id=self.AGENT, **self._window()) == 2

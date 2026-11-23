@@ -1,6 +1,6 @@
 // A docs page's head metadata: the canonical URL, the share card, the
 // last-updated date and the JSON-LD.
-// app/[[...mdxPath]]/page.jsx and app/sitemap.js both build on these helpers,
+// app/[[...slug]]/page.jsx and app/sitemap.js both build on these helpers,
 // so the date a reader sees, the sitemap's lastmod and the structured data's
 // dateModified always agree.
 
@@ -31,11 +31,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * The route a page is served at.
  *
- * @param {string[] | undefined} mdxPath The catch-all segments.
+ * @param {string[] | undefined} slug The catch-all segments.
  * @returns {string} The route, "/" for the home page.
  */
-export function routeOf(mdxPath) {
-  return mdxPath?.length ? `/${mdxPath.join('/')}` : '/';
+export function routeOf(slug) {
+  return slug?.length ? `/${slug.join('/')}` : '/';
 }
 
 /**
@@ -50,7 +50,7 @@ export function lastUpdatedOf(frontMatter) {
 }
 
 /**
- * The timestamp the theme's "Last updated on" line shows for a date.
+ * The timestamp the page's "Last updated" line shows for a date.
  *
  * Noon UTC, so the calendar day reads the same in every timezone from UTC-11 to UTC+11.
  *
@@ -62,25 +62,10 @@ export function timestampOf(date) {
 }
 
 /**
- * Every page in Nextra's page map, in sidebar order.
- *
- * @param {Array<Record<string, any>>} pageMap The result of getPageMap().
- * @returns {Array<{route: string, frontMatter: Record<string, unknown>}>} One entry per page.
- */
-export function flattenPages(pageMap) {
-  const pages = [];
-  for (const item of pageMap) {
-    if (Array.isArray(item.children)) pages.push(...flattenPages(item.children));
-    else if (item.route && item.frontMatter) pages.push({ route: item.route, frontMatter: item.frontMatter });
-  }
-  return pages;
-}
-
-/**
  * The Next.js metadata for a page: title, description, canonical URL and share card.
  *
  * @param {string} route The page's route.
- * @param {Record<string, any>} metadata The page metadata from Nextra's importPage().
+ * @param {Record<string, any>} metadata The page's frontmatter: title, description, lastUpdated.
  * @returns {import('next').Metadata} The page's metadata.
  */
 export function pageMetadata(route, metadata) {
@@ -129,13 +114,12 @@ function plainTitle(title) {
  *
  * @param {object} args
  * @param {string} args.route The page's route.
- * @param {Record<string, any>} args.metadata The page metadata from Nextra's importPage().
- * @param {Array<Record<string, any>>} args.activePath Nextra's activePath: the sidebar items from the top
- *   level down to this page.
- * @param {Set<string>} args.pageRoutes Every route that is a page, so breadcrumbs skip folders without one.
+ * @param {Record<string, any>} args.metadata The page's frontmatter: title, description, lastUpdated.
+ * @param {Array<{name: unknown, url?: string}>} args.parents The sidebar folders above the page, from the top
+ *   level down (fumadocs-core's getBreadcrumbItems). Folders without a page of their own are skipped.
  * @returns {object[]} The JSON-LD objects to embed.
  */
-export function structuredData({ route, metadata, activePath, pageRoutes }) {
+export function structuredData({ route, metadata, parents }) {
   const url = `${SITE_URL}${route === '/' ? '/' : route}`;
   const website = {
     '@type': 'WebSite',
@@ -167,11 +151,10 @@ export function structuredData({ route, metadata, activePath, pageRoutes }) {
   };
 
   const crumbs = [{ name: SITE_NAME, item: `${SITE_URL}/` }];
-  for (const step of activePath) {
-    if (!step.route || step.route === '/' || step.route === route) continue;
-    if (!pageRoutes.has(step.route)) continue;
-    const name = plainTitle(step.title) ?? plainTitle(step.frontMatter?.title);
-    if (name) crumbs.push({ name, item: `${SITE_URL}${step.route}` });
+  for (const step of parents) {
+    if (!step.url || step.url === '/' || step.url === route) continue;
+    const name = plainTitle(step.name);
+    if (name) crumbs.push({ name, item: `${SITE_URL}${step.url}` });
   }
   crumbs.push({ name: metadata.title, item: url });
   const breadcrumbs = {

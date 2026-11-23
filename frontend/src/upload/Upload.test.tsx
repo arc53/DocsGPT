@@ -22,6 +22,17 @@ const connectorsState = vi.hoisted(() => ({
   catalog: [] as Record<string, unknown>[],
   connections: [] as Record<string, unknown>[],
   enabled: true,
+  // The current workspace; none reads as Personal.
+  workspace: undefined as
+    undefined | { current: string; workspaces?: Record<string, unknown>[] },
+  // Each team's connections and catalog (`owner=team`), by team id.
+  teams: {} as Record<
+    string,
+    {
+      catalog: Record<string, unknown>[];
+      connections: Record<string, unknown>[];
+    }
+  >,
 }));
 
 vi.mock('react-redux', () => ({
@@ -33,9 +44,17 @@ vi.mock('react-redux', () => ({
         connections: connectorsState.connections,
         enabled: connectorsState.enabled,
         loaded: true,
-        loading: false,
         failed: false,
+        teams: Object.fromEntries(
+          Object.entries(connectorsState.teams).map(([id, entry]) => [
+            id,
+            { ...entry, loaded: true, failed: false },
+          ]),
+        ),
       },
+      workspace: connectorsState.workspace
+        ? { workspaces: [], ...connectorsState.workspace }
+        : undefined,
     };
     try {
       return selector(state);
@@ -54,17 +73,29 @@ const fakeStore = vi.hoisted(() => {
   const state = {
     upload: { tasks: [] as Record<string, unknown>[] },
     notifications: { recentEvents: [] as Record<string, unknown>[] },
-    preference: { selectedDocs: [] as { id: string }[] },
+    preference: {
+      selectedDocs: [] as { id: string }[],
+      sourceDocs: null as { id: string }[] | null,
+    },
+  };
+  // Runs thunks and applies the chat selection and the knowledge list;
+  // every other action is ignored.
+  const dispatch = (
+    action:
+      | { type?: string; payload?: unknown }
+      | ((d: unknown, g: unknown) => unknown),
+  ): unknown => {
+    if (typeof action === 'function') return action(dispatch, () => state);
+    if (action?.type === 'preference/setSelectedDocs')
+      state.preference.selectedDocs = action.payload as { id: string }[];
+    if (action?.type === 'preference/setSourceDocs')
+      state.preference.sourceDocs = action.payload as { id: string }[];
+    return action;
   };
   return {
     state,
     getState: () => state,
-    // Applies the chat selection; every other action is ignored.
-    dispatch: (action: { type?: string; payload?: unknown }) => {
-      if (action?.type === 'preference/setSelectedDocs')
-        state.preference.selectedDocs = action.payload as { id: string }[];
-      return action;
-    },
+    dispatch,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -75,6 +106,7 @@ const fakeStore = vi.hoisted(() => {
       state.upload.tasks = [];
       state.notifications.recentEvents = [];
       state.preference.selectedDocs = [];
+      state.preference.sourceDocs = null;
     },
   };
 });
@@ -108,6 +140,8 @@ type LauncherOptions = {
   onConnected?: () => void;
   onCancel?: () => void;
   onSynced?: (sourceIds: string[]) => void;
+  onNavigate?: (to: string) => void;
+  folderId?: string | null;
 };
 const launcher = vi.hoisted(() => ({
   options: undefined as LauncherOptions | undefined,
@@ -120,18 +154,27 @@ vi.mock('../connectors/useConnectorLauncher', () => ({
 }));
 
 import Upload from './Upload';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
 /**
- * Stubs XMLHttpRequest and records each request sent: its URL and form.
+ * Stubs XMLHttpRequest and records each request sent: its URL, form and
+ * headers.
  * With `refusal`, every request is answered 400 with that body.
  */
-function stubXhr(refusal?: string): { url: string; body: FormData }[] {
-  const sent: { url: string; body: FormData }[] = [];
+function stubXhr(
+  refusal?: string,
+): { url: string; body: FormData; headers: Record<string, string> }[] {
+  const sent: {
+    url: string;
+    body: FormData;
+    headers: Record<string, string>;
+  }[] = [];
   class FakeXhr {
     upload = { addEventListener() {} };
     url = '';
+    headers: Record<string, string> = {};
     status = 0;
     statusText = '';
     responseText = '';
@@ -140,9 +183,11 @@ function stubXhr(refusal?: string): { url: string; body: FormData }[] {
     open(_method: string, url: string) {
       this.url = url;
     }
-    setRequestHeader() {}
+    setRequestHeader(name: string, value: string) {
+      this.headers[name] = value;
+    }
     send(body: FormData) {
-      sent.push({ url: this.url, body });
+      sent.push({ url: this.url, body, headers: this.headers });
       if (refusal === undefined) return;
       this.status = 400;
       this.statusText = 'BAD REQUEST';
@@ -194,6 +239,11 @@ describe('Upload source-type tiles', () => {
   });
 
   const close = vi.fn();
+  // The Knowledge folder the dialog was opened in, if any.
+  let folderId: string | undefined;
+  beforeEach(() => {
+    folderId = undefined;
+  });
   const render = async (onBrowseConnectors?: () => void) => {
     await act(async () => {
       root.render(
@@ -204,6 +254,7 @@ describe('Upload source-type tiles', () => {
           renderTab={null}
           close={close}
           onBrowseConnectors={onBrowseConnectors}
+          folderId={folderId}
         />,
       );
     });
@@ -348,6 +399,8 @@ describe('Upload source-type tiles', () => {
     connectorsState.catalog = [];
     connectorsState.connections = [];
     connectorsState.enabled = true;
+    connectorsState.workspace = undefined;
+    connectorsState.teams = {};
   });
 
   // One view: what needs no account, then the services that sync, listed
@@ -491,6 +544,25 @@ describe('Upload source-type tiles', () => {
     expect(close).toHaveBeenCalled();
   });
 
+  // In a builder, a connect run's ways out (Open in Knowledge, Try it in
+  // chat) go through its leave guard.
+  it("hands a connect run the opener's way out", async () => {
+    const onNavigate = vi.fn();
+    await act(async () => {
+      root.render(
+        <Upload
+          receivedFile={[]}
+          setModalState={vi.fn()}
+          isOnboarding={false}
+          renderTab={null}
+          close={close}
+          onNavigate={onNavigate}
+        />,
+      );
+    });
+    expect(launcher.options?.onNavigate).toBe(onNavigate);
+  });
+
   // Two rows at most: services with an account always, then the rest.
   it('shows at most six services, keeping every one with an account', async () => {
     const many = Array.from({ length: 9 }, (_, i) => ({
@@ -568,6 +640,167 @@ describe('Upload source-type tiles', () => {
     connectorsState.enabled = false;
     await render();
     expect(serviceNames()).toEqual(['modals.uploadDoc.ingestors.github.label']);
+  });
+
+  describe('in a team', () => {
+    // The caller connected this Drive for the team: they pick from it.
+    const TEAM_DRIVE = {
+      id: 'team-d1',
+      connector_key: 'google_drive',
+      status: 'connected',
+      owner: 'team',
+      team_id: 't1',
+      allowed_actions: ['view', 'sync', 'manage', 'pick'],
+      can_pick: true,
+    };
+    // A teammate connected this one: the caller can't browse it.
+    const TEAMMATE_SHAREPOINT = {
+      id: 'team-sp1',
+      connector_key: 'share_point',
+      status: 'connected',
+      owner: 'team',
+      team_id: 't1',
+      allowed_actions: ['view', 'sync', 'manage'],
+      can_pick: false,
+    };
+    const inTeam = (
+      role: 'owner' | 'admin' | 'editor' | 'viewer',
+      connections: Record<string, unknown>[],
+    ) => {
+      connectorsState.catalog = CATALOG;
+      // The caller's own accounts never sync a team's source.
+      connectorsState.connections = [
+        { id: 'own-s3', connector_key: 's3', status: 'connected' },
+        { id: 'own-d1', connector_key: 'google_drive', status: 'connected' },
+      ];
+      connectorsState.workspace = {
+        current: 't1',
+        workspaces: [{ id: 't1', kind: 'team', name: 'Ops', role }],
+      };
+      connectorsState.teams = { t1: { catalog: CATALOG, connections } };
+    };
+    const connectForTeam = () =>
+      Array.from(document.body.querySelectorAll('button')).find(
+        (b) => b.textContent === 'settings.connectors.team.connectForTeam',
+      );
+
+    it('lists only the kinds the caller can pick from a team account, and syncs from that account', async () => {
+      inTeam('admin', [TEAM_DRIVE, TEAMMATE_SHAREPOINT]);
+      launch.mockClear();
+      await render(vi.fn());
+      // Never Amazon S3 (the caller's own) or SharePoint (a teammate's).
+      expect(serviceNames()).toEqual([
+        'Google Drive',
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(statusLine('Google Drive')).toBe(
+        'settings.connectors.status.connected',
+      );
+      await act(async () => serviceTile('Google Drive').click());
+      expect(launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        {
+          mode: 'sync',
+          connectionId: 'team-d1',
+          purpose: 'knowledge',
+          owner: 'team',
+        },
+      );
+    });
+
+    // The wizard asks among the team's accounts the caller picks from.
+    it('leaves the team account to the wizard when the caller connected several', async () => {
+      inTeam('admin', [
+        TEAM_DRIVE,
+        { ...TEAM_DRIVE, id: 'team-d2' },
+        TEAMMATE_SHAREPOINT,
+      ]);
+      launch.mockClear();
+      await render(vi.fn());
+      await act(async () => serviceTile('Google Drive').click());
+      expect(launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        { mode: 'sync', purpose: 'knowledge', owner: 'team' },
+      );
+    });
+
+    it('repairs a team account the caller connected that needs signing in again', async () => {
+      inTeam('admin', [{ ...TEAM_DRIVE, status: 'reconnect_needed' }]);
+      launch.mockClear();
+      await render(vi.fn());
+      expect(statusLine('Google Drive')).toBe(
+        'settings.connectors.status.reconnect',
+      );
+      await act(async () => serviceTile('Google Drive').click());
+      expect(launch).toHaveBeenLastCalledWith(
+        expect.objectContaining({ key: 'google_drive' }),
+        {
+          mode: 'reconnect',
+          connectionId: 'team-d1',
+          purpose: 'knowledge',
+          owner: 'team',
+        },
+      );
+    });
+
+    it('never offers to connect a service from here', async () => {
+      inTeam('admin', []);
+      await render(vi.fn());
+      expect(serviceNames()).toEqual([
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(browseLink()).toBeUndefined();
+    });
+
+    it('offers Editors only the team accounts they connected, with no way to connect one', async () => {
+      inTeam('editor', [{ ...TEAM_DRIVE, can_pick: false }]);
+      await render(vi.fn());
+      expect(serviceNames()).toEqual([
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(connectForTeam()).toBeUndefined();
+      expect(browseLink()).toBeUndefined();
+    });
+
+    it.each(['viewer', 'editor'] as const)(
+      'shows a %s no Connect for the team',
+      async (role) => {
+        inTeam(role, []);
+        await render(vi.fn());
+        expect(connectForTeam()).toBeUndefined();
+      },
+    );
+
+    it.each(['admin', 'owner'] as const)(
+      'leads an %s to Connectors to connect an account for the team',
+      async (role) => {
+        inTeam(role, []);
+        close.mockClear();
+        const browse = vi.fn();
+        await render(browse);
+        const link = connectForTeam()!;
+        expect(section()!.contains(link)).toBe(true);
+        await act(async () => link.click());
+        expect(close).toHaveBeenCalled();
+        expect(browse).toHaveBeenCalled();
+      },
+    );
+
+    it('offers no Connect for the team where the opener has no way out', async () => {
+      inTeam('admin', []);
+      await render();
+      expect(connectForTeam()).toBeUndefined();
+    });
+
+    it('lists no team account while connectors are off', async () => {
+      inTeam('admin', [TEAM_DRIVE]);
+      connectorsState.enabled = false;
+      await render(vi.fn());
+      expect(serviceNames()).toEqual([
+        'modals.uploadDoc.ingestors.github.label',
+      ]);
+      expect(connectForTeam()).toBeUndefined();
+    });
   });
 
   describe('GitHub', () => {
@@ -652,6 +885,19 @@ describe('Upload source-type tiles', () => {
       );
       expect(handOver()).toBeUndefined();
     });
+
+    it('offers no hand-over to a private repository in a team', async () => {
+      connectorsState.catalog = [githubConnector];
+      connectorsState.workspace = { current: 't1' };
+      await render();
+      await act(async () =>
+        serviceTile('modals.uploadDoc.ingestors.github.label').click(),
+      );
+      expect(document.body.textContent).toContain(
+        'modals.uploadDoc.ingestors.github.heading',
+      );
+      expect(handOver()).toBeUndefined();
+    });
   });
 
   it('sends a page to the remote ingest as a website source', async () => {
@@ -672,6 +918,53 @@ describe('Upload source-type tiles', () => {
       skip: [],
       keep_links: false,
     });
+  });
+
+  // Add knowledge inside a Knowledge folder files the new source there, by
+  // any route: a remote ingest here, a sync through the launcher.
+  it('files a source added inside a folder into it', async () => {
+    folderId = 'fold-1';
+    const sent = stubXhr();
+    await openType('website');
+    await typeInto(urlInput(), 'docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(sent[0].body.get('folder_id')).toBe('fold-1');
+    expect(launcher.options?.folderId).toBe('fold-1');
+  });
+
+  it('files a wiki made inside a folder into it', async () => {
+    folderId = 'fold-1';
+    createWiki.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, source_id: 'wiki-1' }),
+    });
+    await openType('wiki');
+    await typeInto(nameInput(), 'Handbook');
+    await act(async () => trainButton().click());
+    expect(createWiki.mock.calls.at(-1)?.[0]).toMatchObject({
+      name: 'Handbook',
+      folder_id: 'fold-1',
+    });
+  });
+
+  it('sends no folder from the root of Knowledge', async () => {
+    const sent = stubXhr();
+    await openType('website');
+    await typeInto(urlInput(), 'docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(sent[0].body.has('folder_id')).toBe(false);
+  });
+
+  // A remote ingest creates a source, so it goes to the workspace the
+  // upload started in.
+  it('sends the remote ingest to the current workspace', async () => {
+    setRequestWorkspace('t1', 1);
+    const sent = stubXhr();
+    await openType('website');
+    await typeInto(urlInput(), 'docs.example.com/guide');
+    await act(async () => trainButton().click());
+    expect(sent[0].headers['X-DocsGPT-Workspace']).toBe('t1');
+    setRequestWorkspace('personal', 0);
   });
 
   it('sends a whole site with its scope, synced weekly by default', async () => {
@@ -889,6 +1182,27 @@ describe('Upload source-type tiles', () => {
       'settings.sources.website.siteLimit',
     ],
     [
+      'its own words for a team connection refusal',
+      JSON.stringify({
+        success: false,
+        error: 'connector_personal_only',
+        code: 'connector_personal_only',
+        message: "A team's source can only read through…",
+      }),
+      'settings.connectors.team.errors.personalOnly',
+    ],
+    [
+      'its own words for a paused team account',
+      JSON.stringify({
+        success: false,
+        error: 'connection_paused',
+        code: 'connection_paused',
+        message: 'paused',
+        paused_for: { reason: 'payer_left', left_team: true },
+      }),
+      'settings.connectors.team.errors.paused',
+    ],
+    [
       'a generic line otherwise',
       '<html>Bad Request</html>',
       'common.actionFailed',
@@ -1018,6 +1332,24 @@ describe('Upload connected-service sync', () => {
     ]);
   });
 
+  it('applies no list or selection read for a workspace the app has left', async () => {
+    let answer: ((docs: unknown) => void) | null = null;
+    getDocs.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    setRequestWorkspace('t1', 1);
+    try {
+      await render(vi.fn());
+      await act(async () => launcher.options!.onSynced!(['src-1']));
+      await complete(['src-1']);
+      await vi.waitFor(() => expect(answer).not.toBeNull());
+      setRequestWorkspace('t2', 2);
+      await act(async () => answer!([{ id: 'src-1', name: 'Handbook' }]));
+      expect(fakeStore.state.preference.sourceDocs).toBeNull();
+      expect(fakeStore.state.preference.selectedDocs).toEqual([]);
+    } finally {
+      setRequestWorkspace('personal', 0);
+    }
+  });
+
   it('does not refresh for a sync that failed', async () => {
     const onSuccessfulUpload = vi.fn();
     await render(onSuccessfulUpload);
@@ -1050,7 +1382,7 @@ describe('Upload local file step', () => {
     container.remove();
   });
 
-  const openLocalFile = async () => {
+  const openLocalFile = async (folderId?: string) => {
     await act(async () => {
       root.render(
         <Upload
@@ -1059,6 +1391,7 @@ describe('Upload local file step', () => {
           isOnboarding={false}
           renderTab={null}
           close={vi.fn()}
+          folderId={folderId}
         />,
       );
     });
@@ -1366,5 +1699,25 @@ describe('Upload local file step', () => {
       .map((entry) => (entry as File).name);
     expect(names).toEqual(['Handbook/guide/setup.md', 'Handbook/intro.pdf']);
     expect(sent[0].body.get('name')).toBe('Handbook');
+  });
+
+  it('uploads to the workspace the upload started in', async () => {
+    setRequestWorkspace('t1', 1);
+    const sent = stubXhr();
+    await openLocalFile();
+    await pickFolder([inFolder('Handbook/intro.pdf', 'application/pdf')]);
+    await act(async () => trainButton().click());
+    expect(sent[0].url).toContain('/api/upload');
+    expect(sent[0].headers['X-DocsGPT-Workspace']).toBe('t1');
+    expect(sent[0].headers.Authorization).toBe('Bearer null');
+    setRequestWorkspace('personal', 0);
+  });
+
+  it('uploads into the folder it was opened in', async () => {
+    const sent = stubXhr();
+    await openLocalFile('fold-1');
+    await pickFolder([inFolder('Handbook/intro.pdf', 'application/pdf')]);
+    await act(async () => trainButton().click());
+    expect(sent[0].body.get('folder_id')).toBe('fold-1');
   });
 });

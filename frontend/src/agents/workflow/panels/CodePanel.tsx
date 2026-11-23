@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 import type { RetryConfig } from '../../types/workflow';
 import NodeDocumentsControl from '../components/NodeDocumentsControl';
+import StreamOutputField from '../components/StreamOutputField';
 import NodeRetryControl from '../components/NodeRetryControl';
 import { effectiveRetry } from '../retryConfig';
 import { NO_ESCAPE, schemaErrorText } from '../workflowHelpers';
@@ -123,6 +124,17 @@ export default function CodePanel({
           placeholder={t('agents.workflow.builder.optional')}
         />
       </FormField>
+      <StreamOutputField
+        value={selectedNode.data.config?.stream_output}
+        onChange={(value) =>
+          handleUpdateNodeData({
+            config: {
+              ...(selectedNode.data.config || {}),
+              stream_output: value,
+            },
+          })
+        }
+      />
       <FormField
         labelSurface="background"
         label={t('agents.workflow.builder.structuredOutput')}

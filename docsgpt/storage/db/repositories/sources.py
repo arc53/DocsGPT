@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import case, Connection, func, or_, select, text
+from sqlalchemy import and_, case, Connection, func, or_, select, text
 
 from docsgpt.storage.db.base_repository import like_escape, looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import ingest_chunk_progress_table, sources_table
@@ -17,8 +17,15 @@ _SCALAR_COLUMNS = {
     "name", "type", "retriever", "sync_frequency", "tokens", "file_path",
     "language", "model", "date",
 }
-_JSONB_COLUMNS = {"metadata", "remote_data", "directory_structure", "file_name_map", "config"}
+_JSONB_COLUMNS = {
+    "metadata", "remote_data", "remote_files", "directory_structure", "file_name_map", "sync_manifest", "config",
+}
 _ALLOWED_COLUMNS = _SCALAR_COLUMNS | _JSONB_COLUMNS
+# Every column a listing returns: all but the sync manifest (``remote_files``).
+_LISTED_COLUMNS = tuple(column for column in sources_table.c if column.name != "remote_files")
+# What a row read returns: every column but ``remote_files``, which runs to
+# megabytes for a large selection and only a sync reads (``get_remote_files``).
+_ROW_SELECT = "SELECT " + ", ".join(column.name for column in _LISTED_COLUMNS) + " FROM sources"
 
 # Whitelist for sort columns exposed via ``list_for_user``. Anything not in
 # this set falls back to ``date`` so user-supplied sort params can't be
@@ -43,19 +50,42 @@ def _coerce_uuid_ids(extra_ids: Optional[list]) -> list:
     return out
 
 
-def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list]):
-    """WHERE predicate matching the owner's rows plus any ``extra_ids``.
+# Prefix of a team principal's id (``docsgpt.workspaces.principal.PRINCIPAL_PREFIX``); matched with ``left``,
+# since ``_`` is a LIKE wildcard.
+_PRINCIPAL_PREFIX = "__team__"
+
+
+def _owned_or_shared_scope(user_id: str, extra_ids: Optional[list], received_ids: Optional[list] = None):
+    """WHERE predicate matching the owner's rows plus any ``extra_ids`` and ``received_ids``.
 
     Lets the paginated/count queries include team-shared sources (passed by id)
     alongside owned ones in a single query, so count/sort/search/pagination
-    stay correct across the union.
+    stay correct across the union. An extra id never brings in a row a team
+    workspace owns: those are listed in their team, never by a grant (a stale
+    grant row must not open one to a Personal list). ``received_ids`` are
+    another team's sources that team shares with the team workspace being
+    listed, already checked live by the caller; only teams' rows match them.
     """
     scope = sources_table.c.user_id == user_id
+    is_team_row = func.left(sources_table.c.user_id, len(_PRINCIPAL_PREFIX)) == _PRINCIPAL_PREFIX
     ids = _coerce_uuid_ids(extra_ids)
     if ids:
-        scope = or_(scope, sources_table.c.id.in_(ids))
+        scope = or_(scope, and_(sources_table.c.id.in_(ids), ~is_team_row))
+    received = _coerce_uuid_ids(received_ids)
+    if received:
+        scope = or_(scope, and_(sources_table.c.id.in_(received), is_team_row))
     return scope
 
+
+
+def _name_search(search_term: Optional[str]):
+    """The case-insensitive substring predicate on ``name``, or None for no search.
+
+    ``%`` and ``_`` in the term are escaped so they match literally.
+    """
+    if not search_term:
+        return None
+    return sources_table.c.name.ilike(f"%{like_escape(search_term)}%", escape="\\")
 
 
 def _coerce_jsonb(value: Any) -> Any:
@@ -138,7 +168,17 @@ class SourcesRepository:
         model: Optional[str] = None,
         date: Any = None,
         legacy_mongo_id: Optional[str] = None,
+        created_by: Optional[str] = None,
     ) -> dict:
+        """Insert a source.
+
+        ``created_by`` names the person who added it. Without it the
+        ``fill_created_by`` trigger records the owner, except for a team
+        principal owner, so a create in a team passes the uploader. A
+        principal is never recorded as a creator.
+        """
+        if created_by is not None and str(created_by).startswith(_PRINCIPAL_PREFIX):
+            created_by = None
         result = self._conn.execute(
             text(
                 """
@@ -146,7 +186,7 @@ class SourcesRepository:
                     id, user_id, name, type, metadata, config,
                     retriever, sync_frequency, tokens, file_path,
                     remote_data, directory_structure, file_name_map,
-                    language, model, date, legacy_mongo_id
+                    language, model, date, legacy_mongo_id, created_by
                 )
                 VALUES (
                     COALESCE(CAST(:source_id AS uuid), gen_random_uuid()),
@@ -158,7 +198,7 @@ class SourcesRepository:
                     CAST(:file_name_map AS jsonb),
                     :language, :model,
                     COALESCE(:date, now()),
-                    :legacy_mongo_id
+                    :legacy_mongo_id, :created_by
                 )
                 RETURNING *
                 """
@@ -190,13 +230,14 @@ class SourcesRepository:
                 "model": model,
                 "date": date,
                 "legacy_mongo_id": legacy_mongo_id,
+                "created_by": created_by,
             },
         )
         return row_to_dict(result.fetchone())
 
     def get(self, source_id: str, user_id: str) -> Optional[dict]:
         result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            text(_ROW_SELECT + " WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
             {"id": source_id, "user_id": user_id},
         )
         row = result.fetchone()
@@ -220,7 +261,7 @@ class SourcesRepository:
         """
         if not looks_like_uuid(str(source_id)):
             return None
-        sql = "SELECT * FROM sources WHERE id = CAST(:id AS uuid)"
+        sql = _ROW_SELECT + " WHERE id = CAST(:id AS uuid)"
         params = {"id": str(source_id)}
         if user_id is not None:
             sql += " AND user_id = :user_id"
@@ -250,7 +291,7 @@ class SourcesRepository:
         if not looks_like_uuid(source_id):
             return None
         result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = CAST(:id AS uuid)"),
+            text(_ROW_SELECT + " WHERE id = CAST(:id AS uuid)"),
             {"id": source_id},
         )
         row = result.fetchone()
@@ -262,7 +303,7 @@ class SourcesRepository:
         if not ids:
             return []
         result = self._conn.execute(
-            text("SELECT * FROM sources WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
+            text(_ROW_SELECT + " WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
             {"ids": ids},
         )
         return [row_to_dict(r) for r in result.fetchall()]
@@ -355,7 +396,7 @@ class SourcesRepository:
             return None
         result = self._conn.execute(
             text(
-                "SELECT * FROM sources "
+                _ROW_SELECT + " "
                 "WHERE user_id = :user_id AND lower(name) = lower(:name) "
                 "ORDER BY created_at LIMIT 1"
             ),
@@ -374,6 +415,8 @@ class SourcesRepository:
         sort_field: str = "created_at",
         sort_order: str = "desc",
         extra_ids: Optional[list] = None,
+        only_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
     ) -> list[dict]:
         """Return sources owned by ``user_id``, paginated and optionally filtered.
 
@@ -396,6 +439,11 @@ class SourcesRepository:
                 reaches the emitted SQL as a string.
             sort_order: ``"asc"`` or ``"desc"``; anything else is treated
                 as ``"desc"``.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+            only_ids: When given, keep only these ids (an empty list keeps
+                none); the paginated listing narrows by kind and usage this way.
+            received_ids: Ids of other teams' sources shared with the team
+                workspace ``user_id`` (its principal), to list too.
 
         Returns:
             A list of source rows as plain dicts (via ``row_to_dict``),
@@ -407,7 +455,9 @@ class SourcesRepository:
         ascending = sort_order.lower() == "asc"
 
         stmt = (
-            select(sources_table, _ingest_status_case())
+            # Not ``remote_files``: a large selection's manifest runs to
+            # megabytes, and no listing reads it.
+            select(*_LISTED_COLUMNS, _ingest_status_case())
             .select_from(
                 sources_table.outerjoin(
                     ingest_chunk_progress_table,
@@ -415,15 +465,13 @@ class SourcesRepository:
                     == sources_table.c.id,
                 )
             )
-            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
         )
-        if search_term:
-            stmt = stmt.where(
-                sources_table.c.name.ilike(
-                    f"%{like_escape(search_term)}%",
-                    escape="\\",
-                )
-            )
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
+        if only_ids is not None:
+            stmt = stmt.where(sources_table.c.id.in_(_coerce_uuid_ids(only_ids)))
 
         # ``id`` is appended as a stable tiebreaker so paginated windows
         # are deterministic across equal sort keys.
@@ -438,6 +486,90 @@ class SourcesRepository:
 
         result = self._conn.execute(stmt)
         return [row_to_dict(r) for r in result.fetchall()]
+
+    def list_ids_for_user(self, user_id: str, *, extra_ids: Optional[list] = None) -> list[dict]:
+        """Every source ``list_for_user`` lists, as ``{id, user_id}`` only, in its default order (newest first).
+
+        For a caller that filters and caps the rows itself and then reads
+        the few it keeps (:meth:`list_brief`), without loading any source's
+        JSONB columns.
+
+        Args:
+            user_id: The owner whose rows are listed.
+            extra_ids: Ids of other users' sources (team-shared) to list too.
+
+        Returns:
+            ``{"id", "user_id"}`` dicts with string ids.
+        """
+        stmt = (
+            select(sources_table.c.id, sources_table.c.user_id)
+            .where(_owned_or_shared_scope(user_id, extra_ids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [{"id": str(row.id), "user_id": row.user_id} for row in self._conn.execute(stmt)]
+
+    def list_brief(self, ids: list) -> list[dict]:
+        """The scalar fields of the sources ``ids`` names, with their ingest status, newest first.
+
+        The caller decides which ids it may read (:meth:`list_ids_for_user`); ids that are not uuids are skipped.
+
+        Args:
+            ids: Source ids.
+
+        Returns:
+            ``{"id", "user_id", "name", "type", "tokens", "ingest_status"}`` dicts with string ids.
+        """
+        uuids = _coerce_uuid_ids(ids)
+        if not uuids:
+            return []
+        stmt = (
+            select(
+                sources_table.c.id, sources_table.c.user_id, sources_table.c.name, sources_table.c.type,
+                sources_table.c.tokens, _ingest_status_case(),
+            )
+            .select_from(
+                sources_table.outerjoin(
+                    ingest_chunk_progress_table, ingest_chunk_progress_table.c.source_id == sources_table.c.id
+                )
+            )
+            .where(sources_table.c.id.in_(uuids))
+            .order_by(sources_table.c.created_at.desc(), sources_table.c.id.desc())
+        )
+        return [
+            {"id": str(row.id), "user_id": row.user_id, "name": row.name, "type": row.type,
+             "tokens": row.tokens, "ingest_status": row.ingest_status}
+            for row in self._conn.execute(stmt)
+        ]
+
+    def get_remote_files(self, source_id: str) -> Any:
+        """A source's sync manifest (``remote_files``), which the other reads leave out.
+
+        Args:
+            source_id: The source's uuid.
+
+        Returns:
+            The manifest as stored, or ``None`` (no manifest, or no such source).
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT remote_files FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)},
+        ).scalar()
+
+    def get_directory_structure(self, source_id: str) -> Optional[dict]:
+        """One source's ``directory_structure``, with no access check: the caller has already made one.
+
+        Args:
+            source_id: The source's id.
+
+        Returns:
+            The stored tree, or None when it has none or there is no such source.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return None
+        return self._conn.execute(
+            text("SELECT directory_structure FROM sources WHERE id = CAST(:id AS uuid)"), {"id": str(source_id)}
+        ).scalar()
 
     def count_for_user(
         self,
@@ -464,16 +596,45 @@ class SourcesRepository:
             .select_from(sources_table)
             .where(_owned_or_shared_scope(user_id, extra_ids))
         )
-        if search_term:
-            stmt = stmt.where(
-                sources_table.c.name.ilike(
-                    f"%{like_escape(search_term)}%",
-                    escape="\\",
-                )
-            )
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
         result = self._conn.execute(stmt)
         row = result.fetchone()
         return int(row[0]) if row is not None else 0
+
+    def list_facets_for_user(
+        self,
+        user_id: str,
+        *,
+        search_term: Optional[str] = None,
+        extra_ids: Optional[list] = None,
+        received_ids: Optional[list] = None,
+    ) -> list[dict]:
+        """Every row ``list_for_user`` would match, with only the columns that decide its kind.
+
+        The paginated listing counts sources per kind and per usage over the
+        whole match, not one page, so it reads these light rows (no directory
+        tree or metadata) for all of them.
+
+        Args:
+            user_id: Scope rows to this owner.
+            search_term: Same substring filter as ``list_for_user``.
+            extra_ids: Same union of team-shared ids as ``list_for_user``.
+            received_ids: Same union of other teams' shared ids as ``list_for_user``.
+
+        Returns:
+            Dicts with ``id``, ``user_id``, ``type``, ``remote_data``,
+            ``config``, ``sync_frequency`` and ``connection_id``.
+        """
+        t = sources_table
+        stmt = select(
+            t.c.id, t.c.user_id, t.c.type, t.c.remote_data, t.c.config, t.c.sync_frequency, t.c.connection_id,
+        ).where(_owned_or_shared_scope(user_id, extra_ids, received_ids))
+        search = _name_search(search_term)
+        if search is not None:
+            stmt = stmt.where(search)
+        return [row_to_dict(r) for r in self._conn.execute(stmt).fetchall()]
 
     def update(self, source_id: str, user_id: str, fields: dict) -> None:
         filtered = {k: v for k, v in fields.items() if k in _ALLOWED_COLUMNS}
@@ -493,6 +654,55 @@ class SourcesRepository:
             .values(**values)
         )
         self._conn.execute(stmt)
+
+    def mark_sync_indexed(self, source_id: str, generation: Optional[str]) -> bool:
+        """Record that the index was built from the files of ``generation``.
+
+        Sets ``sync_manifest.indexed_generation``, and only while the
+        manifest's generation is still ``generation`` and no request is
+        changing the files (``writing``): files changed since the reingest
+        read them leave the index marked stale.
+
+        Args:
+            source_id: The source's UUID.
+            generation: The ``sync_manifest.generation`` the reingest read
+                before it looked at the files; ``None`` does nothing.
+
+        Returns:
+            bool: Whether the mark was set.
+        """
+        if not generation or not looks_like_uuid(str(source_id)):
+            return False
+        result = self._conn.execute(
+            text(
+                "UPDATE sources SET sync_manifest = jsonb_set(sync_manifest, '{indexed_generation}', "
+                "to_jsonb(CAST(:generation AS text))) "
+                "WHERE id = CAST(:sid AS uuid) AND sync_manifest ->> 'generation' = :generation "
+                "AND COALESCE(sync_manifest ->> 'writing', 'false') <> 'true'"
+            ),
+            {"sid": str(source_id), "generation": generation},
+        )
+        return result.rowcount > 0
+
+    def clear_sync_indexed(self, source_id: str) -> None:
+        """Forget that the index was built from any generation of the files.
+
+        A reingest calls this before it changes chunks, so a run that stops
+        part way leaves the index marked stale. A source without a sync
+        manifest is left alone.
+
+        Args:
+            source_id: The source's UUID.
+        """
+        if not looks_like_uuid(str(source_id)):
+            return
+        self._conn.execute(
+            text(
+                "UPDATE sources SET sync_manifest = jsonb_set(sync_manifest, '{indexed_generation}', 'null'::jsonb) "
+                "WHERE id = CAST(:sid AS uuid) AND jsonb_typeof(sync_manifest) = 'object'"
+            ),
+            {"sid": str(source_id)},
+        )
 
     def set_metadata_key(self, source_id: str, user_id: str, key: str, value: Any) -> bool:
         """Set one top-level key of ``metadata``, keeping the others.
@@ -567,7 +777,7 @@ class SourcesRepository:
         self, legacy_mongo_id: str, user_id: Optional[str] = None,
     ) -> Optional[dict]:
         legacy_mongo_id = str(legacy_mongo_id) if legacy_mongo_id is not None else None
-        sql = "SELECT * FROM sources WHERE legacy_mongo_id = :legacy_id"
+        sql = _ROW_SELECT + " WHERE legacy_mongo_id = :legacy_id"
         params: dict[str, str] = {"legacy_id": legacy_mongo_id}
         if user_id is not None:
             sql += " AND user_id = :user_id"

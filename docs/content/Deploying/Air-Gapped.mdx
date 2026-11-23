@@ -1,10 +1,9 @@
 ---
 title: Air-Gapped Deployment
+sidebarTitle: 🔒 Air-Gapped Deployment
 description: Run DocsGPT on a network with no internet access.
 lastUpdated: 2026-10-25
 ---
-
-import { Callout } from 'nextra/components'
 
 # Air-Gapped Deployment
 
@@ -102,7 +101,7 @@ pip install --no-index --find-links wheelhouse docsgpt
 
 Run an OpenAI-compatible model server inside the network, such as vLLM, Ollama, a llama.cpp server or Text Generation Inference, and set:
 
-```env
+```dotenv
 LLM_PROVIDER=openai
 OPENAI_BASE_URL=http://llm.internal:8000/v1
 LLM_NAME=your-model-name
@@ -115,7 +114,7 @@ Setting `OPENAI_BASE_URL` also removes DocsGPT's hosted model from the model lis
 
 Add these to `.env`:
 
-```env
+```dotenv
 VERSION_CHECK=0
 TTS_PROVIDER=none
 STT_PROVIDER=none
@@ -198,7 +197,7 @@ Add a rule for your model server if it runs in another namespace.
 
 **Egress proxy.** When some traffic must leave the network, for example to a hosted LLM, send it through a forward proxy that allows only those hosts. The Python HTTP libraries DocsGPT uses honour the standard variables; exclude internal services in `NO_PROXY`:
 
-```env
+```dotenv
 HTTPS_PROXY=http://proxy.internal:3128
 HTTP_PROXY=http://proxy.internal:3128
 NO_PROXY=localhost,127.0.0.1,backend,llm.internal

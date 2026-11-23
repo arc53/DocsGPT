@@ -74,6 +74,18 @@ export type ApprovalItem = {
   expires_at?: string | null;
 };
 
+/** A chat turn paused on the assistant's clarifying questions (`ask_user`). */
+export type QuestionItem = {
+  kind: 'question';
+  id: string;
+  conversation_id: string;
+  title: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  created_at?: string | null;
+  expires_at?: string | null;
+};
+
 export type PausedScheduleItem = {
   kind: 'schedule_paused';
   id: string;
@@ -87,7 +99,7 @@ export type PausedScheduleItem = {
   last_failed_at?: string | null;
 };
 
-export type NeedsYouItem = ApprovalItem | PausedScheduleItem;
+export type NeedsYouItem = ApprovalItem | QuestionItem | PausedScheduleItem;
 
 /** A schedule due in the next day. */
 export type ScheduleUpNext = {

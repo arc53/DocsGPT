@@ -766,7 +766,9 @@ class TestAnydocMixedDocuments:
 
         assert "Digital text page" in content
         assert "skipping that page" in caplog.text
-        assert parser.get_file_metadata(mixed_pdf) == {}
+        # The text pages are kept, and the page left out is counted, so the
+        # partial text is never taken (by the parse cache) for the whole file.
+        assert parser.get_file_metadata(mixed_pdf) == {"ocr_pages_failed": 1}
 
     def test_all_text_document_never_probes_ocr(self, tmp_path):
         pytest.importorskip("anydoc")

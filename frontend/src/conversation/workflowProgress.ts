@@ -13,6 +13,11 @@ export type WorkflowStepEvent = {
   status: 'running' | 'completed' | 'failed';
   output?: unknown;
   state_delta?: Record<string, unknown>;
+  /** Set when the event was too large to send whole: a preview, key names. */
+  summarized?: boolean;
+  output_preview?: string;
+  output_truncated?: boolean;
+  state_keys_changed?: string[];
   error?: string;
   /** Set on the steps of a loop's body: the loop and the item they ran for. */
   parent_node_id?: string;
@@ -56,13 +61,19 @@ function oneLine(value: unknown): string {
  * state values it set (``tone: friendly``). Internal keys are left out.
  */
 export function stepDetail(event: WorkflowStepEvent): string | undefined {
-  const output = oneLine(event.output);
+  const output = oneLine(event.output ?? event.output_preview);
   if (output) return output;
-  const entries = Object.entries(event.state_delta ?? {}).filter(
-    ([key]) =>
-      !['query', 'chat_history', 'input_documents', 'passthrough'].includes(
-        key,
-      ) && !key.startsWith('node_'),
+  const shown = (key: string) =>
+    !['query', 'chat_history', 'input_documents', 'passthrough'].includes(
+      key,
+    ) && !key.startsWith('node_');
+  if (!event.state_delta && event.state_keys_changed) {
+    // A summarized step sent the keys it set, not their values.
+    const keys = event.state_keys_changed.filter(shown);
+    return keys.length ? oneLine(keys.join(' · ')) : undefined;
+  }
+  const entries = Object.entries(event.state_delta ?? {}).filter(([key]) =>
+    shown(key),
   );
   if (entries.length === 0) return undefined;
   return oneLine(

@@ -1,0 +1,10 @@
+key: mcp:twelvedata
+rank: 180
+name: Twelve Data
+description: Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.
+icon: twelvedata
+category: business
+mcp_url: https://mcp.twelvedata.com/mcp
+auth_kind: mcp_oauth
+capabilities: [read]
+docs_url: https://twelvedata.com/docs/mcp

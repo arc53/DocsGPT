@@ -49,6 +49,7 @@ base_url: https://api.mistral.ai/v1
 defaults:
   supports_tools: true
   context_window: 128000
+  send_reasoning_content: false       # Mistral refuses reasoning_content on assistant messages
 models:
   - id: mistral-large-latest
     display_name: Mistral Large
@@ -59,7 +60,8 @@ models:
 `MISTRAL_API_KEY=sk-... ; restart` — Mistral models appear in
 `/api/models` with `provider: "mistral"`. They route through the OpenAI
 wire format (it's `OpenAILLM` under the hood) but with Mistral's
-endpoint and key.
+endpoint and key. A reasoning model's thinking, which Mistral streams as
+typed `thinking` parts of the content, is shown as the answer's thoughts.
 
 Multiple `openai_compatible` YAMLs coexist: each file is one logical
 endpoint with its own `api_key_env` and `base_url`. Drop in
@@ -116,6 +118,7 @@ defaults:                              # optional, applied to every model below
   api_flavor: <string>                  # chat_completions (default) or responses
   tool_result_images: <string>          # default: by API; native (inside the tool result) or follow_up (a user message after it)
   prompt_cache_breakpoints: bool        # default false; responses only: mark explicit prompt-cache breakpoints (GPT-5.6+; earlier models reject them)
+  send_reasoning_content: bool          # default true; chat_completions only: send stored thoughts back as reasoning_content (false for Mistral, which refuses it)
 
 models:                                # required
   - id: <string, required>             # unique registry key; persisted in agent records
@@ -266,3 +269,29 @@ boundary, so a call in flight finishes and the round defers afterwards; in a
 continuation task both timers are capped by the time left before the task
 must save. A stalled provider hands off to the fallback; a run that reaches
 that cutoff stops and saves its partial answer.
+
+Reasoning chunks keep both timers fresh, so a model that thinks without ever
+answering would never trip them. `answer_timeout` (seconds) bounds the time
+from the start of the stream to the first chunk that is not reasoning; past
+it the call hands off to the fallback model, or fails when there is none. It
+overrides `LLM_ANSWER_TIMEOUT` (600 s, `0` turns the global default off),
+and the global default is never shorter than the model's first-token
+timeout. Once the answer has started only the stall timer applies.
+
+## Output-token cap
+
+`max_output_tokens` (a positive integer, per model or in `defaults:`) bounds
+how many tokens one call may generate. It is sent as `max_completion_tokens`
+on Chat Completions, `max_output_tokens` on the Responses API and Gemini, and
+`max_tokens` on Anthropic, where it only lowers the 4096 default. A lower
+per-request limit (`max_tokens` / `max_completion_tokens` from a caller) wins;
+a higher one is lowered to the cap. Unset, requests carry no limit beyond the
+caller's.
+
+A stream that stops on the output limit (`finish_reason: length`, Anthropic
+`max_tokens`, Gemini `MAX_TOKENS`, a Responses `incomplete` for
+`max_output_tokens`) before any answer text or tool call hands off to the
+fallback model like one past its `answer_timeout`, and logs
+`llm_stream_no_answer` with `reason=length_no_answer`; with no fallback the
+turn fails with the `no_answer` error. A stream that has started its answer
+keeps the partial answer.

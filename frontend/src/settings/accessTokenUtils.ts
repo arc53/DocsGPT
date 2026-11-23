@@ -2,6 +2,7 @@ import type {
   AccessTokenPolicy,
   AccessTokenScope,
 } from '../api/services/patService';
+import { isUuid } from '../utils/wireGuards';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -15,13 +16,6 @@ export const EXPIRY_WARNING_DAYS = 7;
 const CHAT_FAMILIES = ['agents', 'sources'];
 /** Scope families whose reads belong to an agent (a workflow run is its agent's). */
 const AGENT_OWNED_FAMILIES = ['runs', 'artifacts'];
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** The server only accepts UUIDs in `resource_filter` (built-ins like `default` are not). */
-export const isUuid = (value: unknown): value is string =>
-  typeof value === 'string' && UUID_REGEX.test(value);
 
 export const scopeFamily = (scope: string): string => scope.split(':')[0];
 export const scopeAction = (scope: string): string => scope.split(':')[1] ?? '';

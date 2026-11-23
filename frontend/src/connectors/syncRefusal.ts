@@ -1,6 +1,10 @@
 import type { TFunction } from 'i18next';
 
 import userService from '../api/services/userService';
+import {
+  connectionErrorCode,
+  connectionErrorMessage,
+} from './connectionErrors';
 
 /** The server's answer to a Sync now (see `requestSync`). */
 export type SyncAnswer = {
@@ -74,6 +78,10 @@ export function syncRefusal(
     forbidden = false,
   }: { status?: number; fallback?: string; forbidden?: boolean } = {},
 ): string {
+  // A team account's refusal (paused, Admins only) says why, even on a 403.
+  const teamCode = connectionErrorCode(data);
+  if (teamCode && !SYNC_REFUSAL_KEYS.has(teamCode))
+    return connectionErrorMessage(t, data);
   if (forbidden && status === 403)
     return t('settings.sources.errors.forbidden');
   const body = (data && typeof data === 'object' ? data : {}) as {
