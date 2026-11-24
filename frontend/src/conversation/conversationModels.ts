@@ -132,6 +132,9 @@ export interface Query {
   workflow?: WorkflowProgress;
   // WAL placeholder id; lets the client tail an in-flight stream.
   messageId?: string;
+  // A compression summary an earlier version stored as a message. Not shown,
+  // but kept in place: edits and feedback address messages by index.
+  compressionSummary?: boolean;
   messageStatus?: MessageStatus;
   requestId?: string;
   lastHeartbeatAt?: string;
@@ -155,7 +158,6 @@ export interface RetrievalPayload {
   retriever?: string;
   conversation_id: string | null;
   prompt_id?: string | null;
-  chunks: string;
   isNoneDoc: boolean;
   index?: number;
   agent_id?: string;

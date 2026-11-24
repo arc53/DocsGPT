@@ -13,7 +13,7 @@ import { Button } from '../components/ui/button';
 import { SectionHeader } from '../components/ui/section-header';
 import { DraftPanel, type DraftPanelHelpers } from '../drafter/DraftPanel';
 import { promptDiffSegments, readPromptProposal } from '../drafter/promptDraft';
-import { DRAFTER_STARTERS } from '../drafter/starters';
+import { FEATURED_STARTERS } from '../drafter/starters';
 import type { PromptDrafter } from '../drafter/usePromptDrafter';
 import SuggestionRows, { suggestionIconClass } from '../hero/SuggestionRows';
 import { formatCount } from '../utils/dateTimeUtils';
@@ -97,7 +97,7 @@ export function PromptDraftPanel({
         : t('drafter.prompt.introImprove');
   const suggestions =
     mode === 'write'
-      ? DRAFTER_STARTERS.map(({ key, Icon }) => {
+      ? FEATURED_STARTERS.map(({ key, Icon }) => {
           const text = t(`drafter.starters.${key}.title`);
           return {
             key,

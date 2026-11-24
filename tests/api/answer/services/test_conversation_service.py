@@ -192,6 +192,39 @@ class TestConversationServiceSave:
         messages = repo.get_messages(conv_id)
         assert messages[0]["prompt"] == "updated"
 
+    def test_rewriting_a_message_drops_the_points_that_cover_it(self, pg_conn):
+        from docsgpt.api.answer.services.conversation_service import (
+            ConversationService,
+        )
+        from docsgpt.storage.db.repositories.conversations import (
+            ConversationsRepository,
+        )
+
+        user = "u-rewrite-points"
+        repo = ConversationsRepository(pg_conn)
+        conv_id = str(repo.create(user, name="edit")["id"])
+        for i in range(3):
+            repo.append_message(conv_id, {"prompt": f"q{i}", "response": f"a{i}"})
+        repo.set_compression_flags(conv_id, is_compressed=True, last_compression_at=None)
+        for point in (
+            {"query_index": 0, "compressed_summary": "keep", "compressed_token_count": 2},
+            {"query_index": 0, "turn_index": 1, "compressed_summary": "mid", "compressed_token_count": 2},
+        ):
+            repo.append_compression_point(conv_id, point, max_points=3)
+
+        with _patch_db(pg_conn):
+            ConversationService().save_conversation(
+                conversation_id=conv_id,
+                question="rewritten", response="reply", thought="",
+                sources=[], tool_calls=[],
+                llm=MagicMock(), model_id="gpt-4",
+                decoded_token={"sub": user},
+                index=1,
+            )
+
+        points = repo.get_any(conv_id, user)["compression_metadata"]["compression_points"]
+        assert [p["compressed_summary"] for p in points] == ["keep"]
+
     def test_raises_when_conversation_missing(self, pg_conn):
         from docsgpt.api.answer.services.conversation_service import (
             ConversationService,
@@ -1115,60 +1148,6 @@ class TestCompressionMetadata:
             _broken,
         ), pytest.raises(RuntimeError):
             ConversationService().update_compression_metadata("abc", {})
-
-    def test_append_compression_message_skips_empty_summary(self, pg_conn):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        with _patch_db(pg_conn):
-            ConversationService().append_compression_message(
-                "any-id", {"compressed_summary": ""}
-            )
-
-    def test_append_compression_message_appends_summary(self, pg_conn):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-        from docsgpt.storage.db.repositories.conversations import (
-            ConversationsRepository,
-        )
-
-        user = "u-append-cs"
-        repo = ConversationsRepository(pg_conn)
-        conv = repo.create(user, name="c")
-        conv_id = str(conv["id"])
-
-        with _patch_db(pg_conn):
-            ConversationService().append_compression_message(
-                conv_id,
-                {
-                    "compressed_summary": "A summary",
-                    "timestamp": datetime.now(timezone.utc),
-                    "model_used": "gpt-4",
-                },
-            )
-
-        messages = repo.get_messages(conv_id)
-        assert any(m["response"] == "A summary" for m in messages)
-
-    def test_append_compression_message_swallows_error(self):
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        @contextmanager
-        def _broken():
-            raise RuntimeError("boom")
-            yield
-
-        with patch(
-            "docsgpt.api.answer.services.conversation_service.db_session",
-            _broken,
-        ):
-            ConversationService().append_compression_message(
-                "abc", {"compressed_summary": "x"}
-            )
 
     def test_get_compression_metadata_returns_none_for_missing(
         self, pg_conn,

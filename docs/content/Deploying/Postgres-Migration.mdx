@@ -1,10 +1,9 @@
 ---
 title: PostgreSQL for User Data
+sidebarTitle: 🐘 PostgreSQL for User Data
 description: PostgreSQL is the user-data store for DocsGPT. Covers auto-bootstrap, production hardening, and the one-shot migration from legacy MongoDB deployments.
 lastUpdated: 2026-10-08
 ---
-
-import { Callout } from 'nextra/components'
 
 # PostgreSQL for User Data
 
@@ -12,7 +11,7 @@ DocsGPT stores conversations, agents, prompts, sources, attachments,
 workflows, logs, and token usage in **PostgreSQL**. MongoDB is no longer
 required.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   Vector stores are independent — `VECTOR_STORE` can still be `pgvector`,
   `faiss`, `qdrant`, `milvus`, `elasticsearch`, or `mongodb`.
 </Callout>
@@ -89,7 +88,7 @@ Concurrent workers serialize through `alembic_version`, so rolling
 restarts are safe. If the role lacks the required privilege, startup
 fails fast with a clear error rather than silently skipping.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   Convenient in dev. In production, disable both and run migrations as
   an explicit step — see [Production hardening](#production-hardening).
 </Callout>
@@ -99,7 +98,7 @@ fails fast with a clear error rather than silently skipping.
 Set the flags to `false` in prod and run migrations as a gated,
 auditable step before rolling out the app.
 
-```env
+```dotenv
 AUTO_MIGRATE=false
 AUTO_CREATE_DB=false
 AUTO_VECTOR_SCHEMA=false
@@ -133,7 +132,7 @@ migrations should gate each rollout, and an explicit step is
 auditable — implicit first-boot bootstrap is fine for dev but muddies
 prod deploys.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
   Migrations are not reversible by the app. Always back up production
   Postgres before running `alembic upgrade head` on a new release.
 </Callout>
@@ -187,7 +186,7 @@ re-running is safe and re-syncs any drifted rows. Keep Mongo online
 until you've verified Postgres is complete; decommission afterwards
 unless you still use it as a vector store.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
   No dual-write window and no runtime flag — on the current version,
   Postgres is the only user-data store the backend reads or writes.
 </Callout>

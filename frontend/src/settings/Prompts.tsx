@@ -66,7 +66,6 @@ import { agentUseCount } from '../utils/resourceUsage';
 import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
 import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
 import { captureWorkspace } from '../workspace/requestWorkspace';
-import WorkspaceLine from '../workspace/WorkspaceLine';
 import {
   type FiledItem,
   filedAt,
@@ -457,7 +456,6 @@ export default function Prompts() {
           <p className="text-muted-foreground text-sm leading-6">
             {t('settings.prompts.subtitle')}
           </p>
-          <WorkspaceLine kind="prompts" />
         </div>
       )}
       <PageToolbar

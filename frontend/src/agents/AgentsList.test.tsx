@@ -11,7 +11,6 @@ const state = vi.hoisted(() => ({
     token: null,
     selectedAgent: null,
     agents: [] as unknown[],
-    templateAgents: [] as unknown[],
     sharedAgents: [] as unknown[],
   },
   // Personal: the page's workspace line and create buttons read it.
@@ -48,7 +47,6 @@ vi.mock('react-i18next', () => ({
 
 const search = vi.hoisted(() => ({ query: '', total: 0 }));
 const sections = vi.hoisted(() => ({
-  template: [] as unknown[],
   user: [] as unknown[],
   sharedWithYou: [] as unknown[],
   shared: [] as unknown[],
@@ -60,7 +58,6 @@ vi.mock('./hooks/useAgentSearch', async (importOriginal) => ({
     setSearchQuery: () => undefined,
     filteredAgentsBySection: sections,
     totalAgentsBySection: {
-      template: 0,
       user: search.total,
       sharedWithYou: sections.sharedWithYou.length,
       shared: 0,
@@ -69,7 +66,6 @@ vi.mock('./hooks/useAgentSearch', async (importOriginal) => ({
     hasFilteredResults:
       sections.user.length > 0 || sections.sharedWithYou.length > 0,
     isDataLoaded: {
-      template: true,
       user: true,
       sharedWithYou: true,
       shared: true,
@@ -79,7 +75,6 @@ vi.mock('./hooks/useAgentSearch', async (importOriginal) => ({
 vi.mock('./hooks/useAgentsFetch', () => ({
   useAgentsFetch: () => ({
     isLoading: {
-      template: false,
       user: false,
       sharedWithYou: false,
       shared: false,

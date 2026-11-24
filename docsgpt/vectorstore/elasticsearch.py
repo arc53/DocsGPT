@@ -1,3 +1,5 @@
+from typing import Iterable, List, Tuple
+
 from docsgpt.vectorstore.base import BaseVectorStore
 from docsgpt.core.settings import settings
 from docsgpt.vectorstore.document_class import Document
@@ -223,3 +225,25 @@ class ElasticsearchStore(BaseVectorStore):
     def delete_index(self):
         self._es_connection.delete_by_query(index=self.index_name, query={"match": {
                                       "metadata.source_id.keyword": self.source_id}},)
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Clear parent metadata from these source's documents without embedding."""
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        result = self.docsearch.update_by_query(
+            index=self.index_name,
+            query={
+                "bool": {
+                    "filter": [
+                        {"term": {"metadata.source_id.keyword": self.source_id}},
+                        {"ids": {"values": ids}},
+                    ]
+                }
+            },
+            script={"lang": "painless", "source": "ctx._source.metadata.remove('parent_text')"},
+            refresh=True,
+        )
+        if result.get("timed_out") or result.get("failures"):
+            raise RuntimeError("Elasticsearch parent metadata update was incomplete")
+        return [(chunk_id, chunk_id) for chunk_id in ids]

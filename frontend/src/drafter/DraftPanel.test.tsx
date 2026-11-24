@@ -382,6 +382,36 @@ describe('DraftPanel', () => {
     );
   });
 
+  it('counts knowledge folders after sources, only when it found some', async () => {
+    stream.scripts = [
+      [
+        {
+          type: 'status',
+          step: 'reading',
+          counts: { tools: 11, folders: 2, sources: 6 },
+        },
+        { type: 'end' },
+      ],
+      [
+        {
+          type: 'status',
+          step: 'reading',
+          counts: { sources: 6, folders: 0 },
+        },
+        { type: 'end' },
+      ],
+    ];
+    await ask('Draft it');
+    expect(container.querySelector('[data-item="status"]')!.textContent).toBe(
+      'drafter.lookedAtWorkspaceCounts:drafter.counts.sources:6 · drafter.counts.folders:2 · drafter.counts.tools:11',
+    );
+    await ask('Again');
+    const lines = container.querySelectorAll('[data-item="status"]');
+    expect(lines[lines.length - 1].textContent).toBe(
+      'drafter.lookedAtWorkspaceCounts:drafter.counts.sources:6',
+    );
+  });
+
   it('asks questions, sends the answers as one message, then shows the proposal', async () => {
     const questions: DrafterEvent = {
       type: 'questions',

@@ -116,10 +116,6 @@ const userService = {
     apiClient.put(endpoints.USER.SHARE_AGENT, data, token),
   removeSharedAgent: (id: string, token: string | null): Promise<any> =>
     apiClient.delete(endpoints.USER.REMOVE_SHARED_AGENT(id), token),
-  getTemplateAgents: (token: string | null): Promise<any> =>
-    throttledApiClient.get(endpoints.USER.TEMPLATE_AGENTS, token),
-  adoptAgent: (id: string, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.ADOPT_AGENT(id), {}, token),
   getAgentWebhook: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.AGENT_WEBHOOK(id), token),
   regenerateAgentKey: (id: string, token: string | null): Promise<any> =>
@@ -562,12 +558,6 @@ const userService = {
     ),
   getWorkflow: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.WORKFLOW(id), token),
-  createWorkflow: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.WORKFLOWS, data, token),
-  updateWorkflow: (id: string, data: any, token: string | null): Promise<any> =>
-    apiClient.put(endpoints.USER.WORKFLOW(id), data, token),
-  deleteWorkflow: (id: string, token: string | null): Promise<any> =>
-    apiClient.delete(endpoints.USER.WORKFLOW(id), token),
 };
 
 export default userService;

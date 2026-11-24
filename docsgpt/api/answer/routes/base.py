@@ -242,26 +242,6 @@ def _stream_billing_inputs(arguments: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _stream_billing(arguments: Dict[str, Any]) -> Tuple[Optional[str], str, Optional[str]]:
-    """Who a stream bills, what kind of run it is, and which workspace its spend belongs to.
-
-    A person chatting pays for their own chat, in the conversation's
-    workspace; a signed-in visitor on a public link too, in their own
-    Personal workspace. Key, widget and ``/v1`` callers run as the agent's
-    owner (a team agent's owner is its principal), but the agent's
-    published-access payer pays for that traffic, which is the agent's team's.
-
-    Args:
-        arguments: ``complete_stream``'s bound arguments.
-
-    Returns:
-        ``(payer, run_kind, team_id)``. The payer is the token's ``sub`` for a
-        chat, and for outside traffic whose payer can't be read (``check_usage``
-        already refused traffic nobody pays for; the usage guard reports a principal).
-    """
-    return _run_billing(**_stream_billing_inputs(arguments))
-
-
 def _run_billing(
     *,
     outside: bool,
@@ -271,7 +251,13 @@ def _run_billing(
     user_api_key: Optional[str],
     reads: Optional[UsageReads] = None,
 ) -> Tuple[Optional[str], str, Optional[str]]:
-    """Who a turn bills, its run kind and its workspace, from what the turn is (see :func:`_stream_billing`).
+    """Who a turn bills, its run kind and its workspace, from what the turn is.
+
+    A person chatting pays for their own chat, in the conversation's
+    workspace; a signed-in visitor on a public link too, in their own
+    Personal workspace. Key, widget and ``/v1`` callers run as the agent's
+    owner (a team agent's owner is its principal), but the agent's
+    published-access payer pays for that traffic, which is the agent's team's.
 
     Args:
         outside: Traffic its agent's publisher pays for (:func:`_publisher_pays`).
@@ -348,7 +334,7 @@ def _stream_limits(
 
     Args:
         arguments: ``complete_stream``'s bound arguments.
-        payer: The stream's payer (:func:`_stream_billing`).
+        payer: The stream's payer (:func:`_run_billing`).
         run_kind: ``chat`` or ``published`` (outside traffic, told only that the agent is paused).
         reads: What the turn's usage check read; its agent row and policy rows are reused.
 
@@ -388,7 +374,7 @@ def _traced_stream(
     one the processor handed the agent (holding any decisions made during
     setup, and a resumed turn's earlier rounds), or a new one. Every stream
     runs billed to its payer for its whole length, with its run kind and
-    workspace (:func:`_stream_billing`): the person chatting, or for outside
+    workspace (:func:`_run_billing`): the person chatting, or for outside
     traffic on an agent its published-access payer. Each model call of the
     stream is checked against that payer's allowance and the agent's limit
     (:func:`_stream_limits`); a stream whose payer would be a team principal
@@ -1328,6 +1314,10 @@ class BaseAnswerResource:
                 logger.debug(
                     "Could not set tool_executor.conversation_id post-reserve",
                 )
+        # A compression during the turn loads the conversation by this id; left
+        # unset in a new chat, it fell back to a point it could not index.
+        if conversation_id and not getattr(agent, "conversation_id", None):
+            agent.conversation_id = str(conversation_id)
         # A slow tool call in this turn may be handed off to a background job.
         # A resumed round with no row of its own (the first /v1 pause finalized
         # it) has nothing to report back to: its jobs are poll-only.
@@ -2062,26 +2052,6 @@ class BaseAnswerResource:
                         status="failed" if errored_empty else "complete",
                         **team_kwargs,
                     )
-                # Persist compression metadata/summary if it exists and wasn't saved mid-execution
-                compression_meta = getattr(agent, "compression_metadata", None)
-                compression_saved = getattr(agent, "compression_saved", False)
-                if conversation_id and compression_meta and not compression_saved:
-                    try:
-                        self.conversation_service.update_compression_metadata(
-                            conversation_id, compression_meta
-                        )
-                        self.conversation_service.append_compression_message(
-                            conversation_id, compression_meta
-                        )
-                        agent.compression_saved = True
-                        logger.info(
-                            f"Persisted compression metadata for conversation {conversation_id}"
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Failed to persist compression metadata: {str(e)}",
-                            exc_info=True,
-                        )
             else:
                 conversation_id = None
             # Resume finished cleanly; drop the continuation row.
@@ -2252,25 +2222,6 @@ class BaseAnswerResource:
                         # No journal row to gate, but flag the save as
                         # successful for symmetry with the WAL path.
                         finalized_complete = True
-                    compression_meta = getattr(agent, "compression_metadata", None)
-                    compression_saved = getattr(agent, "compression_saved", False)
-                    if conversation_id and compression_meta and not compression_saved:
-                        try:
-                            self.conversation_service.update_compression_metadata(
-                                conversation_id, compression_meta
-                            )
-                            self.conversation_service.append_compression_message(
-                                conversation_id, compression_meta
-                            )
-                            agent.compression_saved = True
-                            logger.info(
-                                f"Persisted compression metadata for conversation {conversation_id} (partial stream)"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to persist compression metadata (partial stream): {str(e)}",
-                                exc_info=True,
-                            )
                 except Exception as e:
                     logger.error(
                         f"Error saving partial response: {str(e)}", exc_info=True

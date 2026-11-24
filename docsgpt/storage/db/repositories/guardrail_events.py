@@ -221,17 +221,3 @@ class GuardrailEventsRepository:
             {"days": str(max(1, days))},
         )
         return result.rowcount or 0
-
-    def list_for_message(self, message_id: str) -> List[dict]:
-        """Decisions recorded against one message, for the conversation view."""
-        result = self._conn.execute(
-            text(
-                f"""
-                SELECT {self._PUBLIC_COLUMNS} FROM guardrail_events
-                WHERE message_id = CAST(:message_id AS uuid)
-                ORDER BY created_at
-                """
-            ),
-            {"message_id": message_id},
-        )
-        return [dict(row._mapping) for row in result.fetchall()]

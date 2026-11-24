@@ -14,9 +14,6 @@ export const ITEM_KINDS: readonly ItemKind[] = [
   'prompt',
 ];
 
-/** @deprecated Folders hold every kind now; use `ItemKind`. */
-export type FolderType = ItemKind;
-
 /**
  * A folder of the current workspace's one tree, as `GET /api/folders` lists
  * it: the caller's own in Personal, the team's in a team. It holds items of

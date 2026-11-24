@@ -64,9 +64,6 @@ _OPERATOR_ALIASES = {
 
 DEFAULT_APPROVAL_OPTIONS = ("approve", "reject")
 
-#: Placeholders a tool source's string arguments may hold, replaced on every check.
-PLACEHOLDERS = ("{{now}}", "{{last_checked_at}}", "{{last_changed_at}}", "{{last_checked_date}}")
-
 _MAX_DESCRIPTION = 200
 _MAX_ON_MATCH = 2000
 _MAX_CONDITION = 1000

@@ -18,9 +18,6 @@ from sqlalchemy import Connection, text
 
 from docsgpt.storage.db.base_repository import looks_like_uuid
 
-#: Usage buckets: every row, rows through an agent (a key or an agent id), rows with neither.
-USAGE_BUCKETS = ("all", "agent", "direct")
-
 #: The row filter of each bucket (``usage_totals``).
 _BUCKET_FILTERS = {
     "all": "TRUE",

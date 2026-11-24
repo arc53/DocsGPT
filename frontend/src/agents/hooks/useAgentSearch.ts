@@ -4,7 +4,6 @@ import { useSelector } from 'react-redux';
 import {
   selectAgents,
   selectSharedAgents,
-  selectTemplateAgents,
 } from '../../preferences/preferenceSlice';
 import { splitByOrigin } from '../../workspace/itemOrigin';
 import { AgentSectionId } from '../agents.config';
@@ -53,7 +52,6 @@ export function useAgentSearch(
 ): UseAgentSearchResult {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const templateAgents = useSelector(selectTemplateAgents);
   const allUserAgents = useSelector(selectAgents);
   const sharedAgents = useSelector(selectSharedAgents);
 
@@ -78,41 +76,26 @@ export function useAgentSearch(
 
   const isDataLoaded = useMemo(
     (): Record<AgentSectionId, boolean> => ({
-      template: templateAgents !== null,
       user: userAgents !== null,
       teamShared: teamSharedAgents !== null,
       sharedWithYou: sharedWithYouAgents !== null,
       shared: sharedAgents !== null,
     }),
-    [
-      templateAgents,
-      userAgents,
-      teamSharedAgents,
-      sharedWithYouAgents,
-      sharedAgents,
-    ],
+    [userAgents, teamSharedAgents, sharedWithYouAgents, sharedAgents],
   );
 
   const totalAgentsBySection = useMemo(
     (): Record<AgentSectionId, number> => ({
-      template: templateAgents?.length ?? 0,
       user: userAgents?.length ?? 0,
       teamShared: teamSharedAgents?.length ?? 0,
       sharedWithYou: sharedWithYouAgents?.length ?? 0,
       shared: sharedAgents?.length ?? 0,
     }),
-    [
-      templateAgents,
-      userAgents,
-      teamSharedAgents,
-      sharedWithYouAgents,
-      sharedAgents,
-    ],
+    [userAgents, teamSharedAgents, sharedWithYouAgents, sharedAgents],
   );
 
   const filteredAgentsBySection = useMemo((): AgentsBySection => {
     const filtered = {
-      template: filterAgentsByQuery(templateAgents, searchQuery),
       user: filterAgentsByQuery(userAgents, searchQuery),
       teamShared: filterAgentsByQuery(teamSharedAgents, searchQuery),
       sharedWithYou: filterAgentsByQuery(sharedWithYouAgents, searchQuery),
@@ -124,7 +107,6 @@ export function useAgentSearch(
     }
 
     return {
-      template: activeFilter === 'template' ? filtered.template : [],
       user: activeFilter === 'user' ? filtered.user : [],
       teamShared: activeFilter === 'teamShared' ? filtered.teamShared : [],
       sharedWithYou:
@@ -132,7 +114,6 @@ export function useAgentSearch(
       shared: activeFilter === 'shared' ? filtered.shared : [],
     };
   }, [
-    templateAgents,
     userAgents,
     teamSharedAgents,
     sharedWithYouAgents,
@@ -143,7 +124,6 @@ export function useAgentSearch(
 
   const hasAnyAgents = useMemo(() => {
     return (
-      totalAgentsBySection.template > 0 ||
       totalAgentsBySection.user > 0 ||
       totalAgentsBySection.teamShared > 0 ||
       totalAgentsBySection.sharedWithYou > 0 ||
@@ -153,7 +133,6 @@ export function useAgentSearch(
 
   const hasFilteredResults = useMemo(() => {
     return (
-      filteredAgentsBySection.template.length > 0 ||
       filteredAgentsBySection.user.length > 0 ||
       filteredAgentsBySection.teamShared.length > 0 ||
       filteredAgentsBySection.sharedWithYou.length > 0 ||

@@ -9,6 +9,7 @@ from flask_restx import fields, inputs, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.answer.services.compression.types import is_compression_summary_row
 from docsgpt.api.user.resource_access import borrowed_refs, borrowed_refusal
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
@@ -546,7 +547,11 @@ class GetPubliclySharedConversations(Resource):
                 messages = conv_repo.get_messages(conv_pg_id)
                 first_n = shared.get("first_n_queries") or 0
                 conversation_queries = []
+                # ``first_n_queries`` counts stored rows, so slice before
+                # dropping the compression summaries earlier versions stored.
                 for msg in messages[:first_n]:
+                    if is_compression_summary_row(msg):
+                        continue
                     wake = _shared_wake(msg.get("metadata"))
                     query = {
                         # A woken turn's prompt is the event text written for the model; the share shows the event.

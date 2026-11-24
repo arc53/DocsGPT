@@ -1,7 +1,7 @@
 import logging
 import math
 import re
-from typing import Iterable, List, Optional, Any, Dict
+from typing import Iterable, List, Optional, Any, Dict, Tuple
 
 from psycopg.types.json import Jsonb
 
@@ -581,6 +581,10 @@ class PGVectorStore(BaseVectorStore):
 
         texts = [strip_null_bytes(text) for text in texts]
         embeddings = self._embedding.embed_documents(texts)
+        if len(embeddings) != len(texts):
+            # A short answer from the embeddings service: write nothing, rather
+            # than commit fewer rows than the caller believes it added.
+            raise ValueError(f"Got {len(embeddings)} embeddings for {len(texts)} texts")
         metadatas = [strip_null_bytes(metadata or {}) for metadata in (metadatas or [{}] * len(texts))]
 
         self._ensure_schema_once()
@@ -831,6 +835,54 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             conn.rollback()
             logging.error(f"Error updating chunk: {e}")
+            raise
+        finally:
+            cursor.close()
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Clear parent metadata for this source's chunk IDs in one SQL update."""
+        ids = list(dict.fromkeys(int(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        self._run_statement(
+            f"UPDATE {self._table_name} "
+            f"SET {self._metadata_column} = {self._metadata_column} - 'parent_text' "
+            f"WHERE id = ANY(%s) AND source_id = %s;",
+            (ids, self._source_id),
+        )
+        return [(str(chunk_id), str(chunk_id)) for chunk_id in ids]
+
+    def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
+        """Replace several chunks' metadata in one transaction, without embedding their text again.
+
+        Args:
+            updates: ``{chunk id: complete new metadata}``; ``source_id`` is
+                stamped on each as :meth:`add_chunk` does.
+
+        Returns:
+            How many rows of this source were updated.
+        """
+        rows = [
+            (Jsonb({**strip_null_bytes(dict(metadata or {})), "source_id": self._source_id}), int(chunk_id))
+            for chunk_id, metadata in updates.items()
+            if str(chunk_id).isdigit()
+        ]
+        if not rows:
+            return 0
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        # Only internal names are interpolated; every value is a bound parameter.
+        statement = (
+            f"UPDATE {self._table_name} SET {self._metadata_column} = %s "  # nosec B608
+            "WHERE id = %s AND source_id = %s;"
+        )
+        try:
+            cursor.executemany(statement, [(metadata, chunk_id, self._source_id) for metadata, chunk_id in rows])
+            updated = max(0, cursor.rowcount or 0)
+            conn.commit()
+            return updated
+        except Exception:
+            conn.rollback()
             raise
         finally:
             cursor.close()

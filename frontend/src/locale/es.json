@@ -324,7 +324,6 @@
     "exportAgentFailed": "No se pudo exportar el agente",
     "filters": {
       "all": "Todos",
-      "byDocsGPT": "Por DocsGPT",
       "byMe": "Por mí",
       "shared": "Compartidos conmigo"
     },
@@ -981,11 +980,6 @@
         "description": "Agentes que otros equipos compartieron con este equipo. Todos sus miembros pueden chatear con ellos.",
         "emptyState": "Ningún otro equipo ha compartido aún un agente con este equipo."
       },
-      "template": {
-        "description": "Agentes proporcionados por DocsGPT",
-        "emptyState": "No se encontraron agentes de plantilla.",
-        "title": "Por DocsGPT"
-      },
       "user": {
         "description": "Agentes creados o publicados por ti",
         "emptyState": "Aún no tienes agentes creados.",
@@ -1008,9 +1002,16 @@
     "title": "Agentes",
     "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
     "typeModal": {
+      "blankAgent": "Agente en blanco",
+      "blankWorkflow": "Flujo en blanco",
       "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
       "classicTitle": "Agente clásico",
+      "describeLabel": "Describe el agente",
+      "describePlaceholder": "Un agente en nuestro sitio web que responde preguntas sobre envíos",
       "description": "Elige el tipo de agente que quieres crear",
+      "draftDescription": "Di para qué es y DocsGPT lo construye contigo, paso a paso.",
+      "newTitle": "Nuevo agente",
+      "templatesLabel": "O empieza con una plantilla",
       "title": "Crear un agente nuevo",
       "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado",
       "workflowTitle": "Agente de flujo de trabajo"
@@ -1847,7 +1848,7 @@
         "finish": "Terminar",
         "folded": "{{step}}: {{result}}",
         "goTo": "Ir a {{field}}",
-        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige una plantilla o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
         "missing": {
           "agentType": "un tipo de agente",
           "contextLimit": "un límite de contexto válido",
@@ -1902,6 +1903,7 @@
         "other_step": "un cambio para otro paso"
       },
       "fields": {
+        "folders": "Carpetas de conocimiento",
         "limits": "Límite de uso"
       },
       "formEdited": "Cambiaste {{fields}} en el formulario.",
@@ -1978,6 +1980,9 @@
       "agents_many": "{{count}} agentes",
       "agents_one": "{{count}} agente",
       "agents_other": "{{count}} agentes",
+      "folders_many": "{{count}} carpetas",
+      "folders_one": "{{count}} carpeta",
+      "folders_other": "{{count}} carpetas",
       "models_many": "{{count}} modelos",
       "models_one": "{{count}} modelo",
       "models_other": "{{count}} modelos",
@@ -2150,15 +2155,54 @@
     "startOver": "Empezar de nuevo",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Recursos humanos",
+              "it": "TI",
+              "office": "Oficina e instalaciones",
+              "policies": "Políticas de la empresa"
+            },
+            "text": "¿Qué áreas cubre?"
+          }
+        },
         "description": "Preguntas de RR. HH., TI y políticas de tu equipo",
+        "short": "Mesa de ayuda interna",
         "title": "Mesa de ayuda interna"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Expedientes",
+              "contracts": "Contratos",
+              "papers": "Artículos",
+              "reports": "Informes"
+            },
+            "text": "¿Qué documentos son?"
+          },
+          "users": {
+            "options": {
+              "clients": "Clientes",
+              "me": "Solo yo",
+              "team": "Mi equipo"
+            },
+            "text": "¿Quién lo usa?"
+          }
+        },
         "description": "Busca en tus documentos y los cita",
+        "short": "Asistente de investigación",
         "title": "Asistente de investigación"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "¿Cómo se llama la empresa o el producto?"
+          }
+        },
         "description": "Responde a visitantes y deriva si no está seguro",
+        "short": "Chat web",
         "title": "Chat web para clientes"
       }
     },
@@ -2172,6 +2216,24 @@
     "stop": "Detener",
     "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado.",
     "suggestionsLabel": "Formas de empezar",
+    "templates": {
+      "browse": "Ver todas las plantillas",
+      "categories": {
+        "all": "Todas",
+        "customerSupport": "Atención al cliente",
+        "internal": "Interno",
+        "research": "Investigación"
+      },
+      "categoriesLabel": "Categorías de plantillas",
+      "description_many": "{{formatted}} de plantillas. Elige una y DocsGPT la construye contigo.",
+      "description_one": "{{formatted}} plantilla. Elige una y DocsGPT la construye contigo.",
+      "description_other": "{{formatted}} plantillas. Elige una y DocsGPT la construye contigo.",
+      "empty": "Ninguna plantilla coincide",
+      "search": "Buscar plantillas",
+      "showAll": "Todas las plantillas",
+      "showMore": "Mostrar más",
+      "title": "Plantillas"
+    },
     "title": "Redactar con DocsGPT",
     "topics": {
       "add_many": "Añadir {{formatted}} temas",
@@ -2458,11 +2520,6 @@
       "type": "Tipo"
     },
     "createAPIKey": {
-      "apiKeyName": "Nombre de la Clave de API",
-      "chunks": "Fragmentos procesados por consulta",
-      "create": "Crear",
-      "label": "Crear Nueva Clave de API",
-      "prompt": "Selecciona el prompt activo",
       "sourceDoc": "Documento Fuente"
     },
     "deleteConv": {
@@ -2560,12 +2617,8 @@
       "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable."
     },
     "saveKey": {
-      "apiKeyLabel": "Clave de API",
-      "confirm": "He guardado la Clave",
       "copied": "Copiado",
-      "copy": "Copiar",
-      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
-      "note": "Por favor, guarda tu Clave"
+      "copy": "Copiar"
     },
     "searchConversations": {
       "noResults": "No se encontraron resultados",
@@ -2578,7 +2631,6 @@
       "option": "Permitir a los usuarios realizar más consultas"
     },
     "uploadDoc": {
-      "cancel": "Cancelar",
       "choose": "Seleccionar Archivos",
       "connectors": {
         "auth": {
@@ -2643,9 +2695,7 @@
         }
       },
       "label": "Añadir conocimiento",
-      "link": "Enlace",
       "name": "Nombre",
-      "noFilesSelected": "No hay archivos seleccionados",
       "progress": {
         "clear": "Limpiar",
         "collapseDetails": "Contraer detalles de subida",
@@ -2656,11 +2706,10 @@
         "failed": "Error al subir",
         "ingestionFailed": "La ingesta falló.",
         "parsing": "Analizando archivos...",
-        "partialDownload_many": "No se pudieron descargar {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
-        "partialDownload_one": "No se pudo descargar {{count}} elemento, así que se omitió. Sincroniza la fuente para volver a intentarlo.",
-        "partialDownload_other": "No se pudieron descargar {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_many": "No se pudieron leer {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_one": "No se pudo leer {{count}} elemento, así que se omitió. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_other": "No se pudieron leer {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
         "preparing": "Preparando subida",
-        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",
         "tooManyFiles": "Esta fuente tiene más de {{limit}} archivos, el máximo que admite una fuente. Elige una carpeta, ruta o selección más pequeña.",
         "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas.",
         "training": "Subida en progreso",
@@ -2668,18 +2717,13 @@
         "uploadProgress": "Progreso de subida {{progress}}%",
         "wait": "Esto puede tardar varios minutos"
       },
-      "remote": "Recoger desde un sitio web",
       "removeFile": "Quitar {{name}}",
       "repoUrl": "URL del Repositorio",
       "select": "Elige cómo cargar tu documento en DocsGPT",
       "selectFolder": "O elige una carpeta entera",
       "selectSource": "Añadir conocimiento",
       "selectedFiles": "Archivos Seleccionados",
-      "start": "Comenzar a chatear",
       "train": "Añadir al conocimiento",
-      "uploadedFiles": "Archivos Subidos",
-      "urlLink": "Enlace URL",
-      "wait": "Por favor espera ...",
       "website": {
         "addAnotherPage": "Añadir otra página",
         "discovery": {
@@ -3221,7 +3265,6 @@
     "analytics": {
       "completed": "Completadas",
       "failed": "Fallidas",
-      "filterByChatbot": "Filtrar por chatbot",
       "filterOptions": {
         "hour": "Hora",
         "last15Days": "15 días",
@@ -3482,7 +3525,6 @@
         "usedOf": "{{used}} de {{limit}}"
       },
       "scheduledRuns": "Ejecuciones programadas",
-      "selectChatbot": "Seleccionar chatbot",
       "skipped": "Omitidas",
       "stats": {
         "feedback": "Retroalimentación",
@@ -3635,6 +3677,7 @@
       "fieldHints": {
         "github_access_token": "Detallado, con acceso de lectura a Contents y Metadata. Para que los agentes hagan cambios, también lectura y escritura en Issues y Pull requests. <link>Crear un token en GitHub</link>",
         "mcp_supabase_project_ref": "Cópialo desde Project Settings > General en tu panel de Supabase. La conexión solo accede a este proyecto.",
+        "ntfy_server_url": "Si se indica, todos los mensajes y el token de acceso van a este servidor. Si está vacío, el token va solo a ntfy.sh.",
         "telegram_chat_id": "Los mensajes van solo a este chat. Añade el bot, envíale un mensaje y busca el ID del chat con <link>getUpdates</link>."
       },
       "fields": {
@@ -3647,6 +3690,7 @@
         "endpoint_url": "URL de endpoint personalizada",
         "github_access_token": "Token de acceso personal",
         "mcp_supabase_project_ref": "ID del proyecto",
+        "ntfy_server_url": "URL del servidor",
         "ntfy_token": "Token de acceso",
         "number_posts": "Número de publicaciones",
         "postgres_token": "Cadena de conexión",
@@ -4088,21 +4132,13 @@
       "subtitle": "Empareja máquinas remotas que los agentes pueden controlar mediante comandos de shell."
     },
     "general": {
-      "addNew": "Añadir Nuevo",
-      "chunks": "Fragmentos procesados por consulta",
-      "convHistory": "Historial de conversaciones",
       "dark": "Oscuro",
-      "default": "Predeterminado",
       "deleteAllInWorkspace": "Elimina de forma permanente todos los chats que iniciaste en {{name}}. No se puede deshacer.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
-      "high": "Alto",
       "label": "General",
       "language": "Idioma",
       "languageDescription": "Idioma de los menús y las etiquetas.",
       "light": "Claro",
-      "low": "Bajo",
-      "medium": "Medio",
-      "none": "Ninguno",
       "sections": {
         "appearance": "Apariencia",
         "dangerZone": "Zona de peligro",
@@ -4113,15 +4149,12 @@
       "taskModelDescription": "Redacta formularios, crea grafos de conocimiento y revisa monitores. Los chats usan el modelo del agente.",
       "taskModelFailed": "{{model}} no pudo ejecutar tu última tarea: su proveedor rechazó la clave de API. Elige otro modelo o pide a un administrador que revise la clave.",
       "taskModelFailedItem": "· clave rechazada",
-      "taskModelInstanceDefault": "Usar el valor predeterminado de la instancia ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Usar el valor predeterminado de la instancia",
       "taskModelLoadError": "No se pudo cargar el modelo de tareas.",
       "taskModelSaveFailed": "No se pudo guardar el modelo de tareas. Inténtalo de nuevo.",
       "taskModelUnavailable": "Tu modelo de tareas ya no puede ejecutarse (se desactivó o se eliminó), así que se usa el valor predeterminado de la instancia. Si el modelo vuelve, se usará de nuevo; elige una opción aquí para reemplazarlo.",
       "taskModelUnavailableValue": "Modelo no disponible",
       "theme": "Tema",
-      "themeDescription": "Interfaz clara u oscura.",
-      "unlimited": "Ilimitado"
+      "themeDescription": "Interfaz clara u oscura."
     },
     "insights": {
       "label": "Información"
@@ -4158,7 +4191,6 @@
         "dislike": "No me gusta",
         "like": "Me gusta"
       },
-      "filterByChatbot": "Filtrar por chatbot",
       "label": "Registros",
       "labels": {
         "asksHuman": "Pidió una persona",
@@ -4196,7 +4228,6 @@
       "retriedStep_other": "{{node}}: {{count}} intentos",
       "running": "en curso",
       "searchPlaceholder": "Buscar registros...",
-      "selectChatbot": "Seleccionar chatbot",
       "subtitle": "Visualiza y monitorea las llamadas a la API y los registros de conversaciones",
       "trace": {
         "chips": {
@@ -4450,7 +4481,6 @@
       "deleteWarning": "¿Eliminar \"{{name}}\"?",
       "deleting": "Eliminando…",
       "deletingTitle": "Eliminando...",
-      "editAlt": "Editar",
       "editChunk": "Editar fragmento",
       "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
       "editChunkDescriptionUnplaced": "{{file}} · fragmento editado · {{tokens}} tokens",
@@ -4471,15 +4501,16 @@
         "sync": "No se pudo sincronizar la fuente.",
         "syncFrequency": "No se pudo cambiar la frecuencia de sincronización."
       },
-      "fileAlt": "Archivo",
       "fileName": "Nombre",
       "files": "Archivos",
       "filesByline_many": "{{files}} archivos · {{tokens}} tokens",
       "filesByline_one": "{{files}} archivo · {{tokens}} tokens",
       "filesByline_other": "{{files}} archivos · {{tokens}} tokens",
+      "filesFailed_many": "No se pudo indexar la última versión de {{count}} archivos en la última sincronización. Los que ya estaban indexados pueden seguir mostrando su contenido anterior en las búsquedas.",
+      "filesFailed_one": "No se pudo indexar la última versión de {{count}} archivo en la última sincronización. Si ya estaba indexado, las búsquedas pueden seguir mostrando su contenido anterior.",
+      "filesFailed_other": "No se pudo indexar la última versión de {{count}} archivos en la última sincronización. Los que ya estaban indexados pueden seguir mostrando su contenido anterior en las búsquedas.",
       "filesLoadError": "No se pudieron cargar los archivos",
       "filterFiles": "Filtrar archivos",
-      "folderAlt": "Carpeta",
       "folders": {
         "emptyHint": "Añade conocimiento aquí o mueve fuentes desde su menú ⋯.",
         "noMatchIn": "Nada en {{name}} coincide con «{{query}}».",
@@ -4609,18 +4640,14 @@
       "needsAttention": "Requiere atención",
       "nextChunk": "Fragmento siguiente",
       "noChunks": "No se encontraron fragmentos",
-      "noChunksAlt": "No se encontraron fragmentos",
       "noData": "Aún no hay conocimiento",
       "noKnowledgeFound": "No se encontró conocimiento",
       "noResults": "No se encontraron resultados",
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} fuentes",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} fuente",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} fuentes",
-      "parentFolderAlt": "Carpeta padre",
       "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
-      "preLoaded": "Precargado",
       "previousChunk": "Fragmento anterior",
-      "private": "Privado",
       "queued": "En cola: {{count}}",
       "reingest": "Reindexar",
       "retrievalOptions": {
@@ -4729,7 +4756,7 @@
         },
         "title": "Configuración avanzada"
       },
-      "searchAlt": "Buscar",
+      "retryFailedFiles": "Reintentar ahora",
       "searchChunks": "Buscar fragmentos",
       "searchPlaceholder": "Buscar conocimiento…",
       "sections": {
@@ -5754,7 +5781,6 @@
       },
       "mismatch": "Este agente pertenece a otro espacio de trabajo que este chat.",
       "notFound": "Ya no estás en este equipo, así que el chat no puede continuar aquí.",
-      "onlyYou": "Solo tú puedes ver este chat",
       "switchTo": "Cambiar a {{name}}",
       "thisTeam": "este equipo"
     },
@@ -5770,14 +5796,6 @@
     },
     "folders": {
       "alsoInFolder": "También en esta carpeta"
-    },
-    "line": {
-      "people_many": "{{count}} personas",
-      "people_one": "{{count}} persona",
-      "people_other": "{{count}} personas",
-      "personal": "Personal",
-      "personalScope": "Solo tú, salvo que compartas un elemento",
-      "teamScope": "Todo el equipo puede usar lo que hay aquí"
     },
     "menu": {
       "moveToPersonal": "Mover a Personal…",

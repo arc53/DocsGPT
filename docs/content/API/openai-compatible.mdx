@@ -1,10 +1,9 @@
 ---
 title: OpenAI-Compatible API
+sidebarTitle: 🔄 OpenAI-Compatible API
 description: Connect any OpenAI-compatible client to DocsGPT Agents via /v1/chat/completions — streaming, structured output, files and images, tool calling, reasoning, and idempotent retries.
 lastUpdated: 2026-10-27
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # OpenAI-Compatible API
 
@@ -13,7 +12,7 @@ DocsGPT exposes `/v1/chat/completions` following the standard chat completions p
 ## Quick Start
 
 <Tabs items={['Python', 'cURL']}>
-  <Tabs.Tab>
+  <Tab>
     ```python
     from openai import OpenAI
 
@@ -28,15 +27,15 @@ DocsGPT exposes `/v1/chat/completions` following the standard chat completions p
     )
     print(response.choices[0].message.content)
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```bash
     curl -X POST http://localhost:7091/v1/chat/completions \
       -H "Authorization: Bearer your_agent_api_key" \
       -H "Content-Type: application/json" \
       -d '{"model":"docsgpt-agent","messages":[{"role":"user","content":"Summarize our refund policy"}]}'
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 The `model` field is accepted but ignored — the agent bound to your API key determines the model. The agent's prompt, sources, tools, and default model are loaded automatically.
@@ -100,7 +99,7 @@ Options DocsGPT can't honor are rejected with HTTP `400` (`invalid_request_error
 You can force the model to return JSON matching a schema, using either the OpenAI `response_format` field or the `response_schema` convenience field.
 
 <Tabs items={['response_format', 'response_schema']}>
-  <Tabs.Tab>
+  <Tab>
     ```json
     {
       "model": "docsgpt-agent",
@@ -122,8 +121,8 @@ You can force the model to return JSON matching a schema, using either the OpenA
       }
     }
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```json
     {
       "model": "docsgpt-agent",
@@ -138,7 +137,7 @@ You can force the model to return JSON matching a schema, using either the OpenA
       }
     }
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 - `response_format` follows OpenAI Structured Outputs. `strict` defaults to `true`; set `strict: false` to relax enforcement.

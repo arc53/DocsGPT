@@ -805,3 +805,23 @@ class TestConnectorUnparsedFiles:
         assert json.loads(uploads[0]["remote_data"])["sync_fingerprint"] == worker._connector_sync_fingerprint(
             "fp-2", None
         )
+
+
+
+@pytest.mark.unit
+def test_a_partly_ocrd_file_keeps_no_fingerprint_without_a_listing(task_self, monkeypatch, _mock_connector_pipeline):
+    """A loader that can't list can't retry one file: missing pages mean the next sync reads everything."""
+    import json
+
+    _mock_connector_pipeline.download_to_directory.return_value = {
+        "files_downloaded": 1, "empty_result": False, "sync_fingerprint": "fp-2",
+    }
+    monkeypatch.setattr(
+        worker, "_incomplete_files",
+        lambda docs, base_dir=None: {"connector/file.md": ("transient", "1 page(s) could not be OCR'd")},
+    )
+    uploads = _uploads(monkeypatch)
+
+    _upload_ingest(task_self)
+
+    assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])

@@ -221,6 +221,18 @@ class TestFinish:
         assert summary["retrieval_calls"] == 1
         assert summary["errors"] == 1
         assert summary["retrieval_ms"] >= 0
+        assert summary["cost_usd"] == 0
+
+    def test_summary_adds_up_llm_cost(self):
+        trace = tracing.start_trace(source="stream")
+        with tracing.activate(trace):
+            for cost in (0.0012, 0.0003, None):
+                with tracing.span(tracing.KIND_LLM, "chat", attributes={"docsgpt.cost_usd": cost}):
+                    pass
+            with tracing.span(tracing.KIND_TOOL, "t", attributes={"docsgpt.cost_usd": 5.0}):
+                pass
+        trace.finish()
+        assert trace.summary()["cost_usd"] == 0.0015
 
 
 class TestCap:

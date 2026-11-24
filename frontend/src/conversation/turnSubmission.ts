@@ -1,5 +1,6 @@
 import type { Query } from './conversationModels';
 import { pendingQuestionCall } from './questionCall';
+import { lastShownIndex } from './shownQueries';
 
 /** How a retry or an edit of an existing turn goes out. */
 export interface ResendPlan {
@@ -90,7 +91,7 @@ export function composerSubmitTarget(options: {
   if (!lastQueryReturnedErr || queries.length === 0 || composerFileCount > 0) {
     return { kind: 'new' };
   }
-  const index = queries.length - 1;
+  const index = lastShownIndex(queries);
   return {
     kind: 'retry',
     index,

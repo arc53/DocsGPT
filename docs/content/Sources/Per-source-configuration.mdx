@@ -1,10 +1,10 @@
 ---
 title: Per-Source Configuration
+sidebarTitle: 🎛️ Per-Source Configuration
 description: Tune how each knowledge source is chunked at ingest time and retrieved at query time — chunking strategy, retriever, exposure, top-k, relevance, LLM screening, review of chunks flagged for prompt injection, defaults for new sources and more.
 lastUpdated: 2026-10-24
 ---
 
-import { Callout } from 'nextra/components'
 import Image from 'next/image'
 
 # Per-Source Configuration
@@ -20,7 +20,7 @@ You edit this config from a source's **Settings** in the UI (shown below), or th
   height={862}
 />
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Per-source retrieval is enabled by default. Operators can turn it off instance-wide with `PER_SOURCE_RETRIEVAL_ENABLED=false`, in which case all sources fall back to the classic retriever regardless of their stored config. Pre-screening and [relevance](#relevance) then do not run either, and the decision model is never called for retrieval.
 </Callout>
 
@@ -69,7 +69,7 @@ Chunking decides how a document is split into the pieces that get embedded and s
 | `parent_child` | Embeds small **child** chunks for precise matching but carries a larger **parent** window in metadata, so the model still sees surrounding context. |
 | `semantic` | Embeds sentences and splits where meaning shifts (at the 95th-percentile cosine-distance gap between adjacent sentences), falling back to `recursive` on failure. Produces topically coherent chunks at the cost of extra embedding calls during ingest. |
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Chunking is bake-time. After changing `strategy`, `max_tokens`, `min_tokens`, `chunk_overlap`,
 or `duplicate_headers`, re-ingest the source so existing chunks are rebuilt. The first re-ingest of an uploaded
 source after the change rebuilds the chunks of every file; later ones re-embed only changed files. Re-ingesting a
@@ -133,7 +133,7 @@ Requests are also bounded: `chunks` is clamped to 0–500, and `0` still means
 - **`hybrid`** — Fuses vector search with full-text keyword search using Reciprocal Rank Fusion, which improves recall for exact terms, codes, and names that pure vector search can miss.
 - **`graphrag`** — Knowledge-graph retrieval. Set indirectly when you enable GraphRAG on a source. See [GraphRAG](/Sources/GraphRAG).
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Keyword search for the **hybrid** retriever is currently implemented only for the **pgvector** vector store. On other stores (FAISS, Qdrant, Milvus, etc.) the keyword half returns nothing, so `hybrid` quietly behaves like `classic` (vector-only).
 </Callout>
 

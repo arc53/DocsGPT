@@ -3,12 +3,11 @@
 Additional coverage beyond tests/api/answer/services/test_conversation_service.py:
   - save_conversation: index-based update, metadata persistence, agent key tracking
   - update_compression_metadata
-  - append_compression_message
   - get_compression_metadata
   - Edge cases: None token, empty summary, shared_with access
 """
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -98,16 +97,3 @@ class TestGetCompressionMetadata:
 class TestConversationServiceGaps:
     pass
 
-    def test_append_compression_message_empty_summary_skips(self, mock_mongo_db):
-        """Cover: empty summary does not insert."""
-        from docsgpt.api.answer.services.conversation_service import (
-            ConversationService,
-        )
-
-        service = ConversationService()
-        service.conversations_collection = MagicMock()
-
-        service.append_compression_message(
-            "507f1f77bcf86cd799439011", {"compressed_summary": ""}
-        )
-        service.conversations_collection.update_one.assert_not_called()

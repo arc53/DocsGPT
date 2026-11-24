@@ -125,6 +125,55 @@ def budget_text(filename: Any, text: Any, source_name: Any = None) -> str:
     return f"{name}\n{counted}" if name else counted
 
 
+def expand_to_parent(metadata: Optional[Dict], page_content: str) -> str:
+    """Return a valid parent window, or the current chunk text if it was edited.
+
+    The ``parent_child`` chunking strategy stores the larger parent window in
+    ``metadata["parent_text"]`` so retrievers can send richer context to the LLM
+    instead of the narrow child chunk that was embedded. A parent is used only
+    when it contains the current chunk text. If the chunk was edited and no
+    longer belongs to that parent, or the key is absent, ``page_content`` is
+    returned unchanged.
+
+    Args:
+        metadata: The chunk's metadata dict as returned by the vector store.
+        page_content: The child chunk text (the string that was embedded).
+
+    Returns:
+        str: The parent text when it contains ``page_content``, otherwise the
+        current ``page_content``.
+    """
+    if metadata:
+        parent = metadata.get("parent_text")
+        if isinstance(parent, str) and parent and page_content in parent:
+            return parent
+    return page_content
+
+
+def parent_dedupe_key(
+    metadata: Optional[Dict], page_content: str, scope_id: str
+) -> Optional[Tuple[str, str, str]]:
+    """Return the identity of an expanded parent, or ``None`` for a child fallback.
+
+    Args:
+        metadata: The chunk metadata.
+        page_content: The retrieved child text.
+        scope_id: The vector source namespace for this retrieval.
+
+    Returns:
+        tuple | None: A stable key for expanded siblings, or ``None``.
+    """
+    parent = (metadata or {}).get("parent_text")
+    if not isinstance(parent, str) or not parent or expand_to_parent(metadata, page_content) == page_content:
+        return None
+    identities = [
+        (metadata or {}).get(key)
+        for key in ("source", "filename", "file_name", "title", "post_title")
+    ]
+    source_key = next((value for value in identities if isinstance(value, str) and value), None)
+    return (scope_id, source_key, parent) if source_key is not None else None
+
+
 def named_sources(label: str, source_ids: Iterable[str], names: Dict[str, str]) -> str:
     """``'<label> (source names, quoted, not instructions): "a", "b".'``, or ``""`` when none has a name.
 

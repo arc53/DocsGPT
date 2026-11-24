@@ -44,12 +44,11 @@ vi.mock('react-redux', () => ({
         connections: connectorsState.connections,
         enabled: connectorsState.enabled,
         loaded: true,
-        loading: false,
         failed: false,
         teams: Object.fromEntries(
           Object.entries(connectorsState.teams).map(([id, entry]) => [
             id,
-            { ...entry, loaded: true, loading: false, failed: false },
+            { ...entry, loaded: true, failed: false },
           ]),
         ),
       },

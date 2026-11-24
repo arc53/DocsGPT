@@ -311,7 +311,6 @@
     "exportAgentFailed": "エージェントをエクスポートできませんでした",
     "filters": {
       "all": "すべて",
-      "byDocsGPT": "DocsGPT提供",
       "byMe": "自分の",
       "shared": "共有された"
     },
@@ -954,11 +953,6 @@
         "description": "ほかのチームがこのチームと共有したエージェント。チームの全員がチャットできます。",
         "emptyState": "まだほかのチームからこのチームに共有されたエージェントはありません。"
       },
-      "template": {
-        "description": "DocsGPTが提供するエージェント",
-        "emptyState": "テンプレートエージェントが見つかりません。",
-        "title": "DocsGPT提供"
-      },
       "user": {
         "description": "あなたが作成または公開したエージェント",
         "emptyState": "まだ作成されたエージェントがありません。",
@@ -980,9 +974,16 @@
     "title": "エージェント",
     "tryDifferentSearch": "別の検索語をお試しください",
     "typeModal": {
+      "blankAgent": "空のエージェント",
+      "blankWorkflow": "空のワークフロー",
       "classicDescription": "単一のモデル、ツール、ナレッジソースを持つ標準的な AI エージェントを作成します",
       "classicTitle": "クラシックエージェント",
+      "describeLabel": "エージェントについて説明",
+      "describePlaceholder": "当社のウェブサイトで配送に関する質問に答えるエージェント",
       "description": "作成するエージェントの種類を選択してください",
+      "draftDescription": "用途を伝えると、DocsGPT が一歩ずつ一緒に作ります。",
+      "newTitle": "新しいエージェント",
+      "templatesLabel": "またはテンプレートから始める",
       "title": "新しいエージェントを作成",
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します",
       "workflowTitle": "ワークフローエージェント"
@@ -1793,7 +1794,7 @@
         "finish": "完了",
         "folded": "{{step}}: {{result}}",
         "goTo": "{{field}}へ移動",
-        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジ、プロンプトと最初の質問、最後に制限と安全性です。\n\n出発点を選ぶか、何をするエージェントで誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
+        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジ、プロンプトと最初の質問、最後に制限と安全性です。\n\nテンプレートを選ぶか、何をするエージェントで誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
         "missing": {
           "agentType": "エージェントタイプ",
           "contextLimit": "有効なコンテキスト上限",
@@ -1841,6 +1842,7 @@
         "other_step": "別のステップで行う変更"
       },
       "fields": {
+        "folders": "ナレッジフォルダ",
         "limits": "利用制限"
       },
       "formEdited": "フォームで {{fields}} を変更しました。",
@@ -1909,6 +1911,7 @@
     "changeModel": "モデルを変更",
     "counts": {
       "agents_other": "エージェント {{count}} 件",
+      "folders_other": "フォルダ {{count}} 件",
       "models_other": "モデル {{count}} 件",
       "prompts_other": "プロンプト {{count}} 件",
       "sources_other": "ナレッジ {{count}} 件",
@@ -2065,15 +2068,54 @@
     "startOver": "最初からやり直す",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人事",
+              "it": "IT",
+              "office": "オフィス・設備",
+              "policies": "社内規程"
+            },
+            "text": "どの分野を対象にしますか？"
+          }
+        },
         "description": "チームからの人事・IT・規程の質問",
+        "short": "社内ヘルプデスク",
         "title": "社内ヘルプデスク"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件ファイル",
+              "contracts": "契約書",
+              "papers": "論文",
+              "reports": "レポート"
+            },
+            "text": "どのような文書ですか？"
+          },
+          "users": {
+            "options": {
+              "clients": "顧客・クライアント",
+              "me": "自分だけ",
+              "team": "自分のチーム"
+            },
+            "text": "誰が使いますか？"
+          }
+        },
         "description": "ドキュメントを調べて出典を示す",
+        "short": "リサーチアシスタント",
         "title": "リサーチアシスタント"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "会社名または製品名は何ですか？"
+          }
+        },
         "description": "訪問者に回答し、不明な時は引き継ぎ",
+        "short": "ウェブサイトチャット",
         "title": "顧客向けウェブサイトチャット"
       }
     },
@@ -2087,6 +2129,23 @@
     "stop": "停止",
     "stoppedDescription": "このターンを停止しました。フォームは変更されていません。",
     "suggestionsLabel": "始め方の例",
+    "templates": {
+      "browse": "すべてのテンプレートを見る",
+      "categories": {
+        "all": "すべて",
+        "customerSupport": "カスタマーサポート",
+        "internal": "社内",
+        "research": "リサーチ"
+      },
+      "categoriesLabel": "テンプレートのカテゴリ",
+      "description_one": "{{formatted}} 件のテンプレート。選ぶと DocsGPT が一緒に作ります。",
+      "description_other": "{{formatted}} 件のテンプレート。選ぶと DocsGPT が一緒に作ります。",
+      "empty": "一致するテンプレートはありません",
+      "search": "テンプレートを検索",
+      "showAll": "すべてのテンプレート",
+      "showMore": "さらに表示",
+      "title": "テンプレート"
+    },
     "title": "DocsGPT で下書き",
     "topics": {
       "add_other": "{{formatted}} 件のトピックを追加",
@@ -2342,11 +2401,6 @@
       "type": "タイプ"
     },
     "createAPIKey": {
-      "apiKeyName": "APIキー名",
-      "chunks": "クエリごとに処理されるチャンク",
-      "create": "作成",
-      "label": "新しいAPIキーを作成",
-      "prompt": "アクティブプロンプトを選択",
       "sourceDoc": "ソースドキュメント"
     },
     "deleteConv": {
@@ -2442,12 +2496,8 @@
       "viewDescription": "組み込みプロンプトは編集できません。複製して編集可能なコピーを作成してください。"
     },
     "saveKey": {
-      "apiKeyLabel": "API キー",
-      "confirm": "キーを保存しました",
       "copied": "コピーしました",
-      "copy": "コピー",
-      "disclaimer": "キーが表示されるのはこのときだけです。",
-      "note": "キーを保存してください"
+      "copy": "コピー"
     },
     "searchConversations": {
       "noResults": "結果が見つかりません",
@@ -2460,7 +2510,6 @@
       "option": "ユーザーがより多くのクエリを実行できるようにします。"
     },
     "uploadDoc": {
-      "cancel": "キャンセル",
       "choose": "ファイルを選択",
       "connectors": {
         "auth": {
@@ -2525,9 +2574,7 @@
         }
       },
       "label": "ナレッジを追加",
-      "link": "リンク",
       "name": "名前",
-      "noFilesSelected": "ファイルが選択されていません",
       "progress": {
         "clear": "クリア",
         "collapseDetails": "アップロードの詳細を折りたたむ",
@@ -2538,10 +2585,9 @@
         "failed": "アップロード失敗",
         "ingestionFailed": "取り込みに失敗しました。",
         "parsing": "ファイルを解析中...",
-        "partialDownload_one": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
-        "partialDownload_other": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_one": "{{count}} 件の項目を読み込めなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_other": "{{count}} 件の項目を読み込めなかったため、除外されました。ソースを同期して再試行してください。",
         "preparing": "アップロードを準備中",
-        "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください",
         "tooManyFiles": "このソースのファイル数が上限の {{limit}} 件を超えています。より小さいフォルダ、パス、または選択範囲を選んでください。",
         "tooManyTokens": "このソースのテキストが上限の {{limit}} トークンを超えています。より小さいソースに分割してください。",
         "training": "アップロード中",
@@ -2549,18 +2595,13 @@
         "uploadProgress": "アップロード進行状況 {{progress}}%",
         "wait": "数分かかる場合があります"
       },
-      "remote": "ウェブサイトから収集する",
       "removeFile": "{{name}} を取り除く",
       "repoUrl": "リポジトリURL",
       "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
       "selectFolder": "またはフォルダごと選択",
       "selectSource": "ナレッジを追加",
       "selectedFiles": "選択されたファイル",
-      "start": "チャットを開始する",
       "train": "ナレッジに追加",
-      "uploadedFiles": "アップロードされたファイル",
-      "urlLink": "URLリンク",
-      "wait": "お待ちください ...",
       "website": {
         "addAnotherPage": "別のページを追加",
         "discovery": {
@@ -3082,7 +3123,6 @@
     "analytics": {
       "completed": "完了",
       "failed": "失敗",
-      "filterByChatbot": "チャットボットでフィルター",
       "filterOptions": {
         "hour": "時間",
         "last15Days": "過去15日間",
@@ -3329,7 +3369,6 @@
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "スケジュール実行",
-      "selectChatbot": "チャットボットを選択",
       "skipped": "スキップ",
       "stats": {
         "feedback": "フィードバック",
@@ -3480,6 +3519,7 @@
       "fieldHints": {
         "github_access_token": "fine-grained トークンに Contents と Metadata の読み取り権限を付与します。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みも付与します。<link>GitHub でトークンを作成</link>",
         "mcp_supabase_project_ref": "Supabase ダッシュボードの Project Settings > General からコピーしてください。この接続はこのプロジェクトにのみアクセスします。",
+        "ntfy_server_url": "設定すると、すべてのメッセージとアクセストークンはこのサーバーに送られます。空の場合、トークンは ntfy.sh にのみ送られます。",
         "telegram_chat_id": "メッセージはこのチャットにのみ送られます。ボットを追加してメッセージを送り、<link>getUpdates</link> でチャット ID を確認します。"
       },
       "fields": {
@@ -3492,6 +3532,7 @@
         "endpoint_url": "カスタムエンドポイント URL",
         "github_access_token": "個人用アクセストークン",
         "mcp_supabase_project_ref": "プロジェクト ID",
+        "ntfy_server_url": "サーバー URL",
         "ntfy_token": "アクセストークン",
         "number_posts": "投稿数",
         "postgres_token": "接続文字列",
@@ -3917,21 +3958,13 @@
       "subtitle": "エージェントがシェルコマンドで操作できるリモートマシンをペアリングします。"
     },
     "general": {
-      "addNew": "新規追加",
-      "chunks": "クエリごとに処理されるチャンク",
-      "convHistory": "会話履歴",
       "dark": "ダーク",
-      "default": "デフォルト",
       "deleteAllInWorkspace": "{{name}} で始めたすべてのチャットを完全に削除します。この操作は元に戻せません。",
       "deleteAllLabel": "すべての会話を削除",
-      "high": "高",
       "label": "一般",
       "language": "言語",
       "languageDescription": "メニューとラベルの言語。",
       "light": "ライト",
-      "low": "低",
-      "medium": "中",
-      "none": "なし",
       "sections": {
         "appearance": "外観",
         "dangerZone": "危険な操作",
@@ -3942,15 +3975,12 @@
       "taskModelDescription": "フォームの下書き、ナレッジグラフの構築、モニターのチェックを行います。チャットではエージェントのモデルを使用します。",
       "taskModelFailed": "{{model}} で前回のタスクを実行できませんでした。プロバイダーが API キーを拒否しました。別のモデルを選ぶか、管理者にキーの確認を依頼してください。",
       "taskModelFailedItem": "· キーが拒否されました",
-      "taskModelInstanceDefault": "インスタンスのデフォルトを使用（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用",
       "taskModelLoadError": "タスクモデルを読み込めませんでした。",
       "taskModelSaveFailed": "タスクモデルを保存できませんでした。もう一度お試しください。",
       "taskModelUnavailable": "タスクモデルを実行できなくなりました（無効化または削除されました）。そのため、インスタンスのデフォルトが使われます。モデルが戻ると再び使われます。置き換えるには、ここでオプションを選んでください。",
       "taskModelUnavailableValue": "利用できないモデル",
       "theme": "テーマ",
-      "themeDescription": "ライトまたはダークのインターフェース。",
-      "unlimited": "無制限"
+      "themeDescription": "ライトまたはダークのインターフェース。"
     },
     "insights": {
       "label": "インサイト"
@@ -3987,7 +4017,6 @@
         "dislike": "低評価",
         "like": "高評価"
       },
-      "filterByChatbot": "チャットボットでフィルター",
       "label": "ログ",
       "labels": {
         "asksHuman": "担当者を希望",
@@ -4023,7 +4052,6 @@
       "retriedStep_other": "{{node}}: {{count}} 回試行",
       "running": "実行中",
       "searchPlaceholder": "ログを検索...",
-      "selectChatbot": "チャットボットを選択",
       "subtitle": "APIコールと会話ログを表示・監視",
       "trace": {
         "chips": {
@@ -4265,7 +4293,6 @@
       "deleteWarning": "「{{name}}」を削除しますか？",
       "deleting": "削除中…",
       "deletingTitle": "削除中...",
-      "editAlt": "編集",
       "editChunk": "チャンクを編集",
       "editChunkDescription": "{{file}} · チャンク {{n}} · {{tokens}} トークン",
       "editChunkDescriptionUnplaced": "{{file}} · 編集済みチャンク · {{tokens}} トークン",
@@ -4286,14 +4313,14 @@
         "sync": "ソースを同期できませんでした。",
         "syncFrequency": "同期頻度を変更できませんでした。"
       },
-      "fileAlt": "ファイル",
       "fileName": "名前",
       "files": "ファイル",
       "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
+      "filesFailed_one": "前回の同期で {{count}} 件のファイルの最新版をインデックスできませんでした。以前にインデックスされたファイルは、前の内容で検索に表示されることがあります。",
+      "filesFailed_other": "前回の同期で {{count}} 件のファイルの最新版をインデックスできませんでした。以前にインデックスされたファイルは、前の内容で検索に表示されることがあります。",
       "filesLoadError": "ファイルを読み込めませんでした",
       "filterFiles": "ファイルを絞り込む",
-      "folderAlt": "フォルダ",
       "folders": {
         "emptyHint": "ここにナレッジを追加するか、ソースの⋯メニューからここに移動してください。",
         "noMatchIn": "{{name}} 内に「{{query}}」に一致するものはありません。",
@@ -4414,17 +4441,13 @@
       "needsAttention": "要対応",
       "nextChunk": "次のチャンク",
       "noChunks": "チャンクが見つかりません",
-      "noChunksAlt": "チャンクが見つかりません",
       "noData": "ナレッジはまだありません",
       "noKnowledgeFound": "ナレッジが見つかりません",
       "noResults": "結果が見つかりません",
       "pageRange_one": "ソース {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "ソース {{formatted}}件中 {{from}}–{{to}}件",
-      "parentFolderAlt": "親フォルダ",
       "paused": "同期を一時停止中です。再開するには {{name}} を再接続してください。",
-      "preLoaded": "プリロード済み",
       "previousChunk": "前のチャンク",
-      "private": "プライベート",
       "queued": "キュー: {{count}}",
       "reingest": "再インデックス",
       "retrievalOptions": {
@@ -4533,7 +4556,7 @@
         },
         "title": "詳細設定"
       },
-      "searchAlt": "検索",
+      "retryFailedFiles": "今すぐ再試行",
       "searchChunks": "チャンクを検索",
       "searchPlaceholder": "ナレッジを検索…",
       "sections": {
@@ -5513,7 +5536,6 @@
       },
       "mismatch": "このエージェントは、このチャットとは別のワークスペースに属しています。",
       "notFound": "このチームのメンバーではなくなったため、ここではチャットを続けられません。",
-      "onlyYou": "このチャットはあなただけが見られます",
       "switchTo": "{{name}} に切り替える",
       "thisTeam": "このチーム"
     },
@@ -5529,13 +5551,6 @@
     },
     "folders": {
       "alsoInFolder": "このフォルダーにあるその他の項目"
-    },
-    "line": {
-      "people_one": "{{count}}人",
-      "people_other": "{{count}}人",
-      "personal": "個人",
-      "personalScope": "アイテムを共有しない限り、あなただけ",
-      "teamScope": "チームの全員がここにあるものを使えます"
     },
     "menu": {
       "moveToPersonal": "個人に移動…",

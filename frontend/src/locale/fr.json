@@ -324,7 +324,6 @@
     "exportAgentFailed": "Échec de l’exportation de l’agent",
     "filters": {
       "all": "Tous",
-      "byDocsGPT": "Modèles",
       "byMe": "Mes agents",
       "shared": "Découverts"
     },
@@ -981,11 +980,6 @@
         "description": "Agents que d’autres équipes ont partagés avec cette équipe. Tous ses membres peuvent discuter avec eux.",
         "emptyState": "Aucune autre équipe n’a encore partagé d’agent avec cette équipe."
       },
-      "template": {
-        "description": "Agents fournis par DocsGPT",
-        "emptyState": "Aucun modèle d’agent trouvé.",
-        "title": "Modèles"
-      },
       "user": {
         "description": "Agents que vous avez créés ou publiés",
         "emptyState": "Vous n’avez encore créé aucun agent.",
@@ -1008,9 +1002,16 @@
     "title": "Agents",
     "tryDifferentSearch": "Essayez un autre terme de recherche",
     "typeModal": {
+      "blankAgent": "Agent vide",
+      "blankWorkflow": "Workflow vide",
       "classicDescription": "Créez un agent IA standard avec un seul modèle, des outils et des sources de connaissances",
       "classicTitle": "Agent classique",
+      "describeLabel": "Décrivez l’agent",
+      "describePlaceholder": "Un agent sur notre site web qui répond aux questions sur la livraison",
       "description": "Choisissez le type d’agent à créer",
+      "draftDescription": "Dites à quoi il sert et DocsGPT le construit avec vous, étape par étape.",
+      "newTitle": "Nouvel agent",
+      "templatesLabel": "Ou partez d’un modèle",
       "title": "Créer un agent",
       "workflowDescription": "Concevez des workflows complexes en plusieurs étapes avec différents modèles, une logique conditionnelle et une gestion d’état",
       "workflowTitle": "Agent workflow"
@@ -1847,7 +1848,7 @@
         "finish": "Terminer",
         "folded": "{{step}} : {{result}}",
         "goTo": "Aller à {{field}}",
-        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un point de départ, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
+        "intro": "Construisons cet agent ensemble, une partie à la fois : les informations de base, les connaissances, le prompt et les questions de départ, puis les limites et la sécurité.\n\nChoisissez un modèle, ou dites-moi ce qu’il doit faire et qui l’utilisera. Plus vous en dites, moins je poserai de questions.",
         "missing": {
           "agentType": "de type d’agent",
           "contextLimit": "de limite de contexte valide",
@@ -1902,6 +1903,7 @@
         "other_step": "une modification pour une autre étape"
       },
       "fields": {
+        "folders": "Dossiers de connaissances",
         "limits": "Limite d’utilisation"
       },
       "formEdited": "Vous avez modifié {{fields}} dans le formulaire.",
@@ -1978,6 +1980,9 @@
       "agents_many": "{{count}} agents",
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
+      "folders_many": "{{count}} dossiers",
+      "folders_one": "{{count}} dossier",
+      "folders_other": "{{count}} dossiers",
       "models_many": "{{count}} modèles",
       "models_one": "{{count}} modèle",
       "models_other": "{{count}} modèles",
@@ -2150,15 +2155,54 @@
     "startOver": "Recommencer",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "RH",
+              "it": "Informatique",
+              "office": "Bureaux et locaux",
+              "policies": "Politiques de l’entreprise"
+            },
+            "text": "Quels domaines couvre-t-il ?"
+          }
+        },
         "description": "Questions RH, IT et règlements de votre équipe",
+        "short": "Assistance interne",
         "title": "Assistance interne"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Dossiers",
+              "contracts": "Contrats",
+              "papers": "Articles",
+              "reports": "Rapports"
+            },
+            "text": "De quels documents s’agit-il ?"
+          },
+          "users": {
+            "options": {
+              "clients": "Des clients",
+              "me": "Moi uniquement",
+              "team": "Mon équipe"
+            },
+            "text": "Qui l’utilise ?"
+          }
+        },
         "description": "Fouille vos documents et les cite",
+        "short": "Assistant de recherche",
         "title": "Assistant de recherche"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "Comment s’appelle l’entreprise ou le produit ?"
+          }
+        },
         "description": "Répond aux visiteurs, passe la main en cas de doute",
+        "short": "Chat web",
         "title": "Chat web pour les clients"
       }
     },
@@ -2172,6 +2216,24 @@
     "stop": "Arrêter",
     "stoppedDescription": "Vous avez arrêté ce tour. Le formulaire n’a pas changé.",
     "suggestionsLabel": "Pour commencer",
+    "templates": {
+      "browse": "Parcourir tous les modèles",
+      "categories": {
+        "all": "Tous",
+        "customerSupport": "Support client",
+        "internal": "Interne",
+        "research": "Recherche"
+      },
+      "categoriesLabel": "Catégories de modèles",
+      "description_many": "{{formatted}} de modèles. Choisissez-en un et DocsGPT le construit avec vous.",
+      "description_one": "{{formatted}} modèle. Choisissez-en un et DocsGPT le construit avec vous.",
+      "description_other": "{{formatted}} modèles. Choisissez-en un et DocsGPT le construit avec vous.",
+      "empty": "Aucun modèle ne correspond",
+      "search": "Rechercher des modèles",
+      "showAll": "Tous les modèles",
+      "showMore": "Afficher plus",
+      "title": "Modèles"
+    },
     "title": "Rédiger avec DocsGPT",
     "topics": {
       "add_many": "Ajouter {{formatted}} sujets",
@@ -2458,11 +2520,6 @@
       "type": "Type"
     },
     "createAPIKey": {
-      "apiKeyName": "Nom de la clé API",
-      "chunks": "Fragments traités par requête",
-      "create": "Créer",
-      "label": "Créer une clé API",
-      "prompt": "Sélectionner le prompt actif",
       "sourceDoc": "Document source"
     },
     "deleteConv": {
@@ -2560,12 +2617,8 @@
       "viewDescription": "Les prompts intégrés ne sont pas modifiables. Dupliquez-les pour créer votre propre copie modifiable."
     },
     "saveKey": {
-      "apiKeyLabel": "Clé API",
-      "confirm": "J’ai enregistré la clé",
       "copied": "Copié",
-      "copy": "Copier",
-      "disclaimer": "C’est la seule fois où votre clé sera affichée.",
-      "note": "Veuillez enregistrer votre clé"
+      "copy": "Copier"
     },
     "searchConversations": {
       "noResults": "Aucun résultat",
@@ -2578,7 +2631,6 @@
       "option": "Autoriser les utilisateurs à poursuivre la conversation"
     },
     "uploadDoc": {
-      "cancel": "Annuler",
       "choose": "Choisir des fichiers",
       "connectors": {
         "auth": {
@@ -2643,9 +2695,7 @@
         }
       },
       "label": "Ajouter des connaissances",
-      "link": "Lien",
       "name": "Nom",
-      "noFilesSelected": "Aucun fichier sélectionné",
       "progress": {
         "clear": "Effacer",
         "collapseDetails": "Masquer les détails de l’import",
@@ -2656,11 +2706,10 @@
         "failed": "Échec de l’import",
         "ingestionFailed": "Échec de l’ingestion.",
         "parsing": "Analyse des fichiers…",
-        "partialDownload_many": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer.",
-        "partialDownload_one": "{{count}} élément n’a pas pu être téléchargé et a été ignoré. Synchronisez la source pour réessayer.",
-        "partialDownload_other": "{{count}} éléments n’ont pas pu être téléchargés et ont été ignorés. Synchronisez la source pour réessayer.",
+        "partialDownload_many": "{{count}} éléments n’ont pas pu être lus et ont été ignorés. Synchronisez la source pour réessayer.",
+        "partialDownload_one": "{{count}} élément n’a pas pu être lu et a été ignoré. Synchronisez la source pour réessayer.",
+        "partialDownload_other": "{{count}} éléments n’ont pas pu être lus et ont été ignorés. Synchronisez la source pour réessayer.",
         "preparing": "Préparation de l’import",
-        "tokenLimit": "Limite de jetons dépassée, essayez d’importer un document plus petit",
         "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
         "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
         "training": "Import en cours",
@@ -2668,18 +2717,13 @@
         "uploadProgress": "Progression de l’import {{progress}} %",
         "wait": "Cela peut prendre plusieurs minutes"
       },
-      "remote": "Collecter depuis un site web",
       "removeFile": "Retirer {{name}}",
       "repoUrl": "URL du dépôt",
       "select": "Choisissez comment importer votre document dans DocsGPT",
       "selectFolder": "Ou choisissez un dossier entier",
       "selectSource": "Ajouter des connaissances",
       "selectedFiles": "Fichiers sélectionnés",
-      "start": "Commencer à discuter",
       "train": "Ajouter aux connaissances",
-      "uploadedFiles": "Fichiers importés",
-      "urlLink": "Lien URL",
-      "wait": "Veuillez patienter…",
       "website": {
         "addAnotherPage": "Ajouter une autre page",
         "discovery": {
@@ -3221,7 +3265,6 @@
     "analytics": {
       "completed": "Terminées",
       "failed": "Échecs",
-      "filterByChatbot": "Filtrer par chatbot",
       "filterOptions": {
         "hour": "Heure",
         "last15Days": "15 jours",
@@ -3482,7 +3525,6 @@
         "usedOf": "{{used}} sur {{limit}}"
       },
       "scheduledRuns": "Exécutions planifiées",
-      "selectChatbot": "Sélectionner un chatbot",
       "skipped": "Ignorées",
       "stats": {
         "feedback": "Retours",
@@ -3635,6 +3677,7 @@
       "fieldHints": {
         "github_access_token": "Précis (fine-grained), avec accès en lecture à Contents et Metadata. Pour les modifications par l’agent, ajoutez aussi la lecture et l’écriture sur Issues et Pull requests. <link>Créer un jeton sur GitHub</link>",
         "mcp_supabase_project_ref": "Copiez-le depuis Project Settings > General dans votre tableau de bord Supabase. La connexion n’accède qu’à ce projet.",
+        "ntfy_server_url": "Si renseigné, tous les messages et le jeton d’accès sont envoyés à ce serveur. Si vide, le jeton n’est envoyé qu’à ntfy.sh.",
         "telegram_chat_id": "Les messages sont envoyés uniquement à cette conversation. Ajoutez le bot, envoyez-lui un message, puis trouvez l’ID de la conversation avec <link>getUpdates</link>."
       },
       "fields": {
@@ -3647,6 +3690,7 @@
         "endpoint_url": "URL de point de terminaison personnalisée",
         "github_access_token": "Jeton d’accès personnel",
         "mcp_supabase_project_ref": "ID du projet",
+        "ntfy_server_url": "URL du serveur",
         "ntfy_token": "Jeton d’accès",
         "number_posts": "Nombre de publications",
         "postgres_token": "Chaîne de connexion",
@@ -4088,21 +4132,13 @@
       "subtitle": "Associez des machines distantes que les agents peuvent piloter via des commandes shell."
     },
     "general": {
-      "addNew": "Ajouter",
-      "chunks": "Fragments traités par requête",
-      "convHistory": "Historique des conversations",
       "dark": "Sombre",
-      "default": "Par défaut",
       "deleteAllInWorkspace": "Supprime définitivement tous les chats que vous avez commencés dans {{name}}. Cette action est irréversible.",
       "deleteAllLabel": "Supprimer toutes les conversations",
-      "high": "Élevé",
       "label": "Général",
       "language": "Langue",
       "languageDescription": "Langue des menus et des libellés.",
       "light": "Clair",
-      "low": "Faible",
-      "medium": "Moyen",
-      "none": "Aucun",
       "sections": {
         "appearance": "Apparence",
         "dangerZone": "Zone de danger",
@@ -4113,15 +4149,12 @@
       "taskModelDescription": "Rédige des formulaires, construit des graphes de connaissances et vérifie les moniteurs. Les conversations utilisent le modèle de l’agent.",
       "taskModelFailed": "{{model}} n’a pas pu exécuter votre dernière tâche : son fournisseur a refusé la clé d’API. Choisissez un autre modèle, ou demandez à un administrateur de vérifier la clé.",
       "taskModelFailedItem": "· clé refusée",
-      "taskModelInstanceDefault": "Utiliser la valeur par défaut de l’instance ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Utiliser la valeur par défaut de l’instance",
       "taskModelLoadError": "Impossible de charger le modèle de tâches.",
       "taskModelSaveFailed": "Impossible d’enregistrer le modèle de tâches. Réessayez.",
       "taskModelUnavailable": "Votre modèle de tâches ne peut plus s’exécuter (il a été désactivé ou supprimé) ; la valeur par défaut de l’instance est donc utilisée. Si le modèle revient, il sera de nouveau utilisé ; choisissez une option ici pour le remplacer.",
       "taskModelUnavailableValue": "Modèle indisponible",
       "theme": "Thème",
-      "themeDescription": "Interface claire ou sombre.",
-      "unlimited": "Illimité"
+      "themeDescription": "Interface claire ou sombre."
     },
     "insights": {
       "label": "Analyses"
@@ -4158,7 +4191,6 @@
         "dislike": "Pas aimé",
         "like": "Aimé"
       },
-      "filterByChatbot": "Filtrer par chatbot",
       "label": "Journaux",
       "labels": {
         "asksHuman": "Demande d’un humain",
@@ -4196,7 +4228,6 @@
       "retriedStep_other": "{{node}} : {{count}} tentatives",
       "running": "en cours",
       "searchPlaceholder": "Rechercher dans les journaux…",
-      "selectChatbot": "Sélectionner un chatbot",
       "subtitle": "Consultez et surveillez les appels API, les exécutions planifiées et les erreurs de votre compte",
       "trace": {
         "chips": {
@@ -4450,7 +4481,6 @@
       "deleteWarning": "Supprimer « {{name}} » ?",
       "deleting": "Suppression…",
       "deletingTitle": "Suppression…",
-      "editAlt": "Modifier",
       "editChunk": "Modifier le fragment",
       "editChunkDescription": "{{file}} · fragment {{n}} · {{tokens}} jetons",
       "editChunkDescriptionUnplaced": "{{file}} · fragment modifié · {{tokens}} jetons",
@@ -4471,15 +4501,16 @@
         "sync": "Impossible de synchroniser la source.",
         "syncFrequency": "Impossible de modifier la fréquence de synchronisation."
       },
-      "fileAlt": "Fichier",
       "fileName": "Nom",
       "files": "Fichiers",
       "filesByline_many": "{{files}} fichiers · {{tokens}} jetons",
       "filesByline_one": "{{files}} fichier · {{tokens}} jetons",
       "filesByline_other": "{{files}} fichiers · {{tokens}} jetons",
+      "filesFailed_many": "La dernière version de {{count}} fichiers n’a pas pu être indexée lors de la dernière synchronisation. Ceux déjà indexés peuvent encore apparaître avec leur contenu précédent.",
+      "filesFailed_one": "La dernière version de {{count}} fichier n’a pas pu être indexée lors de la dernière synchronisation. S’il était déjà indexé, la recherche peut encore renvoyer son contenu précédent.",
+      "filesFailed_other": "La dernière version de {{count}} fichiers n’a pas pu être indexée lors de la dernière synchronisation. Ceux déjà indexés peuvent encore apparaître avec leur contenu précédent.",
       "filesLoadError": "Impossible de charger les fichiers",
       "filterFiles": "Filtrer les fichiers",
-      "folderAlt": "Dossier",
       "folders": {
         "emptyHint": "Ajoutez des connaissances ici ou déplacez des sources depuis leur menu ⋯.",
         "noMatchIn": "Rien dans {{name}} ne correspond à « {{query}} ».",
@@ -4609,18 +4640,14 @@
       "needsAttention": "À traiter",
       "nextChunk": "Fragment suivant",
       "noChunks": "Aucun fragment trouvé",
-      "noChunksAlt": "Aucun fragment trouvé",
       "noData": "Aucune connaissance pour l’instant",
       "noKnowledgeFound": "Aucune connaissance trouvée",
       "noResults": "Aucun résultat trouvé",
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} sources",
       "pageRange_one": "{{from}}–{{to}} sur {{formatted}} source",
       "pageRange_other": "{{from}}–{{to}} sur {{formatted}} sources",
-      "parentFolderAlt": "Dossier parent",
       "paused": "Synchronisation en pause. Reconnectez {{name}} pour reprendre.",
-      "preLoaded": "Préchargé",
       "previousChunk": "Fragment précédent",
-      "private": "Privé",
       "queued": "En file d’attente : {{count}}",
       "reingest": "Réindexer",
       "retrievalOptions": {
@@ -4729,7 +4756,7 @@
         },
         "title": "Paramètres avancés"
       },
-      "searchAlt": "Rechercher",
+      "retryFailedFiles": "Réessayer maintenant",
       "searchChunks": "Rechercher dans les fragments",
       "searchPlaceholder": "Rechercher des connaissances…",
       "sections": {
@@ -5754,7 +5781,6 @@
       },
       "mismatch": "Cet agent appartient à un autre espace de travail que ce chat.",
       "notFound": "Vous ne faites plus partie de cette équipe ; le chat ne peut pas continuer ici.",
-      "onlyYou": "Vous seul voyez ce chat",
       "switchTo": "Passer à {{name}}",
       "thisTeam": "cette équipe"
     },
@@ -5770,14 +5796,6 @@
     },
     "folders": {
       "alsoInFolder": "Aussi dans ce dossier"
-    },
-    "line": {
-      "people_many": "{{count}} personnes",
-      "people_one": "{{count}} personne",
-      "people_other": "{{count}} personnes",
-      "personal": "Personnel",
-      "personalScope": "Vous seul, sauf si vous partagez un élément",
-      "teamScope": "Toute l’équipe peut utiliser ce qui se trouve ici"
     },
     "menu": {
       "moveToPersonal": "Déplacer vers Personnel…",

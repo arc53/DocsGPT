@@ -42,7 +42,6 @@ import SpeakButton from '../components/TextToSpeechButton';
 import ToolIcon from '../components/ToolIcon';
 import { useOutsideAlerter } from '../hooks';
 import {
-  selectChunks,
   selectSelectedDocs,
   selectToken,
   selectTtsAvailable,
@@ -180,7 +179,6 @@ const ConversationBubble = forwardRef<
 ) {
   const { t } = useTranslation();
   // const bubbleRef = useRef<HTMLDivElement | null>(null);
-  const chunks = useSelector(selectChunks);
   const selectedDocs = useSelector(selectSelectedDocs);
   const ttsAvailable = useSelector(selectTtsAvailable);
   const [isEditClicked, setIsEditClicked] = useState(false);

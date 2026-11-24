@@ -1,5 +1,6 @@
 ---
 title: Context Compression
+sidebarTitle: 🗜️ Context Compression
 description: How DocsGPT summarizes long conversations to stay within the model's context window, and the settings that control it.
 lastUpdated: 2026-10-26
 ---
@@ -22,6 +23,12 @@ The compression system operates on a "summarize and truncate" principle:
 *   **Recursive Summarization**: New summaries incorporate previous summaries, ensuring that information from the very beginning of a long chat is not lost.
 *   **Tool Call Support**: The compression logic explicitly handles tool calls and their outputs (e.g., file readings, search results), summarizing their results so the agent retains knowledge of what it has already done.
 *   **"Needle in a Haystack" Preservation**: The prompts are designed to identify and preserve specific, critical details (like passwords, keys, or specific user instructions) even when compressing large amounts of text.
+
+### Compression during a turn
+
+A turn that calls tools can fill the context window on its own, for example by reading several large files. Before each tool call the agent checks the threshold again, and when it is reached it summarizes the earlier conversation together with the tool results the turn has gathered so far, then carries on with the summary. The summary is saved with the conversation's other compression points; it does not appear as a message in the chat. The turn's question and final answer stay word for word, so the next message still sees the answer.
+
+Editing or retrying a message removes the summaries that cover that message or anything after it, so the conversation does not keep a summary of turns that were replaced.
 
 ## Configuration
 

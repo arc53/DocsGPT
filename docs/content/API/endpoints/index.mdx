@@ -1,0 +1,17 @@
+---
+title: REST API Endpoints
+description: A page for each endpoint of the DocsGPT REST API, with its parameters, request body, personal access token scope, request examples and a playground that calls your own instance.
+lastUpdated: 2026-11-23
+---
+
+import { EndpointIndex } from '../../../components/EndpointIndex'
+
+# REST API Endpoints
+
+Each page below documents one endpoint of the REST API: its parameters and request body, the [personal access token](/API/personal-access-tokens) scope it needs, request examples in several languages, and a playground. The pages are built from the same Swagger document as the [REST API reference](/API/reference), which lists every endpoint on one page.
+
+To try an endpoint, open **Try in Playground** on its page, set the server to your instance's API URL (for example `http://localhost:7091`), and enter a session token or a personal access token. Leave the token empty when your instance runs without authentication (`AUTH_TYPE` unset). Requests go from your browser straight to your instance.
+
+{/* The list below is built from docs/data/swagger.json at build time. */}
+
+<EndpointIndex />

@@ -83,5 +83,3 @@ export function useFolderPage(
     dialogs,
   };
 }
-
-export default useFolderPage;

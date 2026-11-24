@@ -115,6 +115,14 @@ export type DrafterSession = {
   closeQuestions: (state: 'skipped') => void;
   /** Add an assistant message the client wrote; the server never sees it. */
   addMessage: (text: string) => void;
+  /**
+   * Open a round of questions the client already knows the drafter would ask
+   * (a starting point's), without a turn: `text` shows as the user's message
+   * and the round goes into the history as the drafter's own, so the answer
+   * is the first turn the server runs. Does nothing once a conversation has
+   * begun, or with no text or questions.
+   */
+  ask: (text: string, questions: DrafterQuestion[]) => void;
   /** What the user wrote in this conversation, in order. */
   userTexts: () => string[];
   /** Stop the running turn; what arrived so far stays, then a `stopped` item. */
@@ -398,6 +406,25 @@ export function useDrafterSession({
     [push],
   );
 
+  const ask = useCallback(
+    (text: string, questions: DrafterQuestion[]) => {
+      const message = text.trim().slice(0, DRAFTER_USER_MESSAGE_CHARS);
+      if (!message || questions.length === 0) return;
+      if (history.current.length > 0 || pending.current) return;
+      history.current.push(
+        { role: 'user', content: message },
+        {
+          role: 'assistant',
+          content: JSON.stringify({ type: 'questions', questions }),
+        },
+      );
+      userWords.current.push(message);
+      push({ kind: 'user', text: message });
+      push({ kind: 'questions', questions });
+    },
+    [push],
+  );
+
   const userTexts = useCallback(() => [...userWords.current], []);
 
   const stop = useCallback(() => {
@@ -437,6 +464,7 @@ export function useDrafterSession({
     send,
     closeQuestions,
     addMessage,
+    ask,
     userTexts,
     stop,
     retry,

@@ -68,6 +68,7 @@ import {
   type QuestionAction,
   resumeQuestionCall,
 } from './questionCall';
+import { lastShownIndex } from './shownQueries';
 import { ToolCallsType } from './types';
 import { readJobArtifacts } from './artifactChips';
 import {
@@ -140,6 +141,7 @@ export function mapServerQueryToClient(raw: any): Query {
     lastHeartbeatAt: raw?.last_heartbeat_at ?? undefined,
   };
 
+  if (raw?.compression_summary) query.compressionSummary = true;
   const wake = wakeFromMetadata(metadata);
   if (wake) query.wake = wake;
   const jobArtifacts = readJobArtifacts(metadata.job_artifacts);
@@ -475,7 +477,7 @@ async function answerQuestion(
     if (USE_V1_API && agentKey) {
       // Build history from prior queries for v1 format
       const v1History = state.conversation.queries
-        .filter((q) => q.response)
+        .filter((q) => q.response && !q.compressionSummary)
         .map((q) => ({ prompt: q.prompt, response: q.response || '' }));
 
       await handleV1ChatCompletionStreaming(
@@ -613,7 +615,6 @@ async function answerQuestion(
         state.preference.selectedDocs || [],
         currentConversationId,
         state.preference.prompt.id,
-        state.preference.chunks,
         (event) => {
           const data = JSON.parse(event.data);
           const targetIndex = indx ?? state.conversation.queries.length - 1;
@@ -812,7 +813,6 @@ async function answerQuestion(
         state.preference.selectedDocs || [],
         state.conversation.conversationId,
         state.preference.prompt.id,
-        state.preference.chunks,
         state.preference.selectedAgent?.id,
         attachmentIds,
         true,
@@ -987,6 +987,8 @@ export const tailInFlightMessage = createAsyncThunk<
 
 type SubmitToolActionsArgs = {
   toolActions: ToolAction[];
+  // The paused turn; the latest shown turn when not given.
+  index?: number;
 };
 
 /**
@@ -1028,7 +1030,10 @@ export const resumeQuestion = createAsyncThunk<
       ),
     send: async () => {
       const sent = await dispatch(
-        submitToolActions({ toolActions: [{ call_id: callId, ...action }] }),
+        submitToolActions({
+          toolActions: [{ call_id: callId, ...action }],
+          index,
+        }),
       );
       return submitToolActions.rejected.match(sent)
         ? !sent.meta.aborted
@@ -1038,7 +1043,7 @@ export const resumeQuestion = createAsyncThunk<
 });
 
 async function sendToolActions(
-  { toolActions }: SubmitToolActionsArgs,
+  { toolActions, index }: SubmitToolActionsArgs,
   {
     dispatch,
     getState,
@@ -1047,8 +1052,10 @@ async function sendToolActions(
 ): Promise<ToolActionsOutcome> {
   const state = getState() as RootState;
   const conversationId = state.conversation.conversationId;
+  // A stored compression summary after the paused turn is not the turn.
+  const pausedIndex = index ?? lastShownIndex(state.conversation.queries);
   if (!conversationId) {
-    const targetIndex = state.conversation.queries.length - 1;
+    const targetIndex = pausedIndex;
     if (targetIndex >= 0) {
       dispatch(
         conversationSlice.actions.raiseError({
@@ -1075,7 +1082,7 @@ async function sendToolActions(
     signal,
     (event) => {
       const data = JSON.parse(event.data);
-      const targetIndex = state.conversation.queries.length - 1;
+      const targetIndex = pausedIndex;
       // The first frame tells whether the server took the request.
       if (outcome === null)
         outcome =
@@ -1631,8 +1638,9 @@ export const conversationSlice = createSlice({
       .addCase(submitToolActions.rejected, (state, action) => {
         if (action.meta.aborted) return;
         state.status = 'failed';
-        const last = state.queries[state.queries.length - 1];
-        if (last) last.error = 'Something went wrong';
+        const paused =
+          state.queries[action.meta.arg.index ?? lastShownIndex(state.queries)];
+        if (paused) paused.error = 'Something went wrong';
       });
   },
 });

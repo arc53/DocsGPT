@@ -57,7 +57,6 @@ const makeStore = () =>
   configureStore({
     reducer: {
       preference: () => ({
-        chunks: '2',
         selectedDocs: [],
         token: null,
         ttsAvailable: false,

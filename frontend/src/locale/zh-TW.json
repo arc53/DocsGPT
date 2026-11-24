@@ -311,7 +311,6 @@
     "exportAgentFailed": "無法匯出代理",
     "filters": {
       "all": "全部",
-      "byDocsGPT": "由DocsGPT提供",
       "byMe": "我的",
       "shared": "與我共享"
     },
@@ -954,11 +953,6 @@
         "description": "其他團隊與此團隊分享的代理，團隊中的每個人都可以與之聊天。",
         "emptyState": "還沒有其他團隊與此團隊分享代理。"
       },
-      "template": {
-        "description": "DocsGPT提供的代理",
-        "emptyState": "未找到範本代理。",
-        "title": "由DocsGPT提供"
-      },
       "user": {
         "description": "您創建或發佈的代理",
         "emptyState": "您還沒有創建任何代理。",
@@ -980,9 +974,16 @@
     "title": "代理",
     "tryDifferentSearch": "請嘗試不同的搜尋詞",
     "typeModal": {
+      "blankAgent": "空白代理",
+      "blankWorkflow": "空白工作流程",
       "classicDescription": "建立一個使用單一模型、工具和知識來源的標準 AI 代理",
       "classicTitle": "經典代理",
+      "describeLabel": "描述這個代理",
+      "describePlaceholder": "我們網站上回答配送問題的代理",
       "description": "選擇要建立的代理類型",
+      "draftDescription": "說說它的用途，DocsGPT 會和你一起一步步建置。",
+      "newTitle": "新增代理",
+      "templatesLabel": "或從範本開始",
       "title": "建立新代理",
       "workflowDescription": "設計包含不同模型、條件邏輯和狀態管理的複雜多步驟工作流程",
       "workflowTitle": "工作流程代理"
@@ -1793,7 +1794,7 @@
         "finish": "完成",
         "folded": "{{step}}：{{result}}",
         "goTo": "前往{{field}}",
-        "intro": "我們一起一步步建立這個代理：基本資訊、知識、提示詞與開場問題，最後是限制與安全。\n\n選擇一個起點，或告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
+        "intro": "我們一起一步步建立這個代理：基本資訊、知識、提示詞與開場問題，最後是限制與安全。\n\n選擇一個範本，或告訴我它要做什麼、誰會使用它。你說得越詳細，我要問的問題就越少。",
         "missing": {
           "agentType": "代理類型",
           "contextLimit": "有效的上下文上限",
@@ -1841,6 +1842,7 @@
         "other_step": "屬於其他步驟的變更"
       },
       "fields": {
+        "folders": "知識庫資料夾",
         "limits": "使用限制"
       },
       "formEdited": "你在表單中變更了 {{fields}}。",
@@ -1909,6 +1911,7 @@
     "changeModel": "更換模型",
     "counts": {
       "agents_other": "{{count}} 個代理",
+      "folders_other": "{{count}} 個資料夾",
       "models_other": "{{count}} 個模型",
       "prompts_other": "{{count}} 個提示詞",
       "sources_other": "{{count}} 個知識來源",
@@ -2065,15 +2068,54 @@
     "startOver": "重新開始",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人力資源",
+              "it": "IT",
+              "office": "辦公與設施",
+              "policies": "公司政策"
+            },
+            "text": "它涵蓋哪些領域？"
+          }
+        },
         "description": "團隊的人資、IT 和規章問題",
+        "short": "內部服務台",
         "title": "內部服務台"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件檔案",
+              "contracts": "合約",
+              "papers": "論文",
+              "reports": "報告"
+            },
+            "text": "這些是什麼文件？"
+          },
+          "users": {
+            "options": {
+              "clients": "客戶",
+              "me": "只有我",
+              "team": "我的團隊"
+            },
+            "text": "誰會使用它？"
+          }
+        },
         "description": "檢索你的文件並註明出處",
+        "short": "研究助理",
         "title": "研究助理"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "公司或產品叫什麼名稱？"
+          }
+        },
         "description": "回答訪客問題，不確定時轉真人",
+        "short": "網站聊天",
         "title": "面向客戶的網站聊天"
       }
     },
@@ -2087,6 +2129,23 @@
     "stop": "停止",
     "stoppedDescription": "你停止了這一輪。表單沒有變更。",
     "suggestionsLabel": "開始方式",
+    "templates": {
+      "browse": "瀏覽全部範本",
+      "categories": {
+        "all": "全部",
+        "customerSupport": "客戶支援",
+        "internal": "內部",
+        "research": "研究"
+      },
+      "categoriesLabel": "範本類別",
+      "description_one": "{{formatted}} 個範本。選擇一個，DocsGPT 會和你一起建置。",
+      "description_other": "{{formatted}} 個範本。選擇一個，DocsGPT 會和你一起建置。",
+      "empty": "沒有符合的範本",
+      "search": "搜尋範本",
+      "showAll": "全部範本",
+      "showMore": "顯示更多",
+      "title": "範本"
+    },
     "title": "用 DocsGPT 起草",
     "topics": {
       "add_other": "加入 {{formatted}} 個主題",
@@ -2342,11 +2401,6 @@
       "type": "類型"
     },
     "createAPIKey": {
-      "apiKeyName": "API 金鑰名稱",
-      "chunks": "每次查詢處理的區塊數",
-      "create": "建立",
-      "label": "建立新的 API 金鑰",
-      "prompt": "選擇使用中的提示",
       "sourceDoc": "來源文件"
     },
     "deleteConv": {
@@ -2442,12 +2496,8 @@
       "viewDescription": "內建提示無法編輯。建立副本後即可自行編輯。"
     },
     "saveKey": {
-      "apiKeyLabel": "API 金鑰",
-      "confirm": "我已儲存金鑰",
       "copied": "已複製",
-      "copy": "複製",
-      "disclaimer": "這是唯一一次顯示您的金鑰。",
-      "note": "請儲存您的金鑰"
+      "copy": "複製"
     },
     "searchConversations": {
       "noResults": "未找到結果",
@@ -2460,7 +2510,6 @@
       "option": "允許使用者進行更多查詢"
     },
     "uploadDoc": {
-      "cancel": "取消",
       "choose": "選擇檔案",
       "connectors": {
         "auth": {
@@ -2525,9 +2574,7 @@
         }
       },
       "label": "新增知識",
-      "link": "連結",
       "name": "名稱",
-      "noFilesSelected": "未選擇檔案",
       "progress": {
         "clear": "清除",
         "collapseDetails": "摺疊上傳詳情",
@@ -2538,10 +2585,9 @@
         "failed": "上傳失敗",
         "ingestionFailed": "匯入失敗。",
         "parsing": "正在解析檔案...",
-        "partialDownload_one": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
-        "partialDownload_other": "有 {{count}} 個項目無法下載，已略過。請同步此來源以重試。",
+        "partialDownload_one": "有 {{count}} 個項目無法讀取，已略過。請同步此來源以重試。",
+        "partialDownload_other": "有 {{count}} 個項目無法讀取，已略過。請同步此來源以重試。",
         "preparing": "準備上傳",
-        "tokenLimit": "超出令牌限制，請考慮上傳較小的文檔",
         "tooManyFiles": "此來源的檔案數超過上限 {{limit}} 個。請選擇較小的資料夾、路徑或選取範圍。",
         "tooManyTokens": "此來源的文字超過 {{limit}} 個令牌的上限。請將其拆分為較小的來源。",
         "training": "正在上傳",
@@ -2549,18 +2595,13 @@
         "uploadProgress": "上傳進度 {{progress}}%",
         "wait": "這可能需要幾分鐘"
       },
-      "remote": "遠端",
       "removeFile": "移除 {{name}}",
       "repoUrl": "儲存庫 URL",
       "select": "選擇如何將文件上傳到 DocsGPT",
       "selectFolder": "或選擇整個資料夾",
       "selectSource": "新增知識",
       "selectedFiles": "已選擇的檔案",
-      "start": "開始對話",
       "train": "新增到知識庫",
-      "uploadedFiles": "已上傳檔案",
-      "urlLink": "URL 連結",
-      "wait": "請稍候...",
       "website": {
         "addAnotherPage": "再新增一個頁面",
         "discovery": {
@@ -3082,7 +3123,6 @@
     "analytics": {
       "completed": "已完成",
       "failed": "失敗",
-      "filterByChatbot": "按聊天機器人篩選",
       "filterOptions": {
         "hour": "小時",
         "last15Days": "15 天",
@@ -3329,7 +3369,6 @@
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "排程執行",
-      "selectChatbot": "選擇聊天機器人",
       "skipped": "已略過",
       "stats": {
         "feedback": "回饋",
@@ -3480,6 +3519,7 @@
       "fieldHints": {
         "github_access_token": "細部權杖，授予 Contents 和 Metadata 的讀取權限。如要讓代理進行變更，還需授予 Issues 和 Pull requests 的讀寫權限。<link>在 GitHub 上建立權杖</link>",
         "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中複製。此連線只能存取該專案。",
+        "ntfy_server_url": "設定後，所有訊息和存取權杖都會傳送到此伺服器。留空時，權杖只會傳送到 ntfy.sh。",
         "telegram_chat_id": "訊息只會傳送到此聊天。加入機器人並傳送一則訊息給它，然後用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
@@ -3492,6 +3532,7 @@
         "endpoint_url": "自訂端點 URL",
         "github_access_token": "個人存取權杖",
         "mcp_supabase_project_ref": "專案 ID",
+        "ntfy_server_url": "伺服器 URL",
         "ntfy_token": "存取權杖",
         "number_posts": "貼文數量",
         "postgres_token": "連線字串",
@@ -3917,21 +3958,13 @@
       "subtitle": "配對遠端機器，讓代理能透過 shell 指令操作。"
     },
     "general": {
-      "addNew": "新增",
-      "chunks": "每次查詢處理的區塊數",
-      "convHistory": "對話歷史記錄",
       "dark": "深色",
-      "default": "預設",
       "deleteAllInWorkspace": "永久刪除您在 {{name}} 中開始的所有聊天。此操作無法復原。",
       "deleteAllLabel": "刪除所有對話",
-      "high": "高",
       "label": "一般",
       "language": "語言",
       "languageDescription": "選單和標籤的語言。",
       "light": "淺色",
-      "low": "低",
-      "medium": "中",
-      "none": "無",
       "sections": {
         "appearance": "外觀",
         "dangerZone": "危險操作",
@@ -3942,15 +3975,12 @@
       "taskModelDescription": "用於草擬表單、建立知識圖譜和檢查監控。對話使用代理的模型。",
       "taskModelFailed": "{{model}} 無法執行你的上一個任務：其提供者拒絕了 API 金鑰。請選擇其他模型，或請管理員檢查金鑰。",
       "taskModelFailedItem": "· 金鑰遭拒絕",
-      "taskModelInstanceDefault": "使用執行個體預設值（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "使用執行個體預設值",
       "taskModelLoadError": "無法載入任務模型。",
       "taskModelSaveFailed": "無法儲存任務模型，請再試一次。",
       "taskModelUnavailable": "你的任務模型已無法執行（已被停用或移除），因此改用執行個體預設值。如果該模型恢復，會再次使用它；在此選擇一個選項即可取代它。",
       "taskModelUnavailableValue": "模型無法使用",
       "theme": "主題",
-      "themeDescription": "淺色或深色介面。",
-      "unlimited": "無限制"
+      "themeDescription": "淺色或深色介面。"
     },
     "insights": {
       "label": "洞察"
@@ -3987,7 +4017,6 @@
         "dislike": "倒讚",
         "like": "讚"
       },
-      "filterByChatbot": "按聊天機器人篩選",
       "label": "日誌",
       "labels": {
         "asksHuman": "要求真人",
@@ -4023,7 +4052,6 @@
       "retriedStep_other": "{{node}}：嘗試 {{count}} 次",
       "running": "執行中",
       "searchPlaceholder": "搜尋日誌...",
-      "selectChatbot": "選擇聊天機器人",
       "subtitle": "查看和監控 API 呼叫及會話日誌",
       "trace": {
         "chips": {
@@ -4265,7 +4293,6 @@
       "deleteWarning": "要刪除「{{name}}」嗎？",
       "deleting": "正在刪除…",
       "deletingTitle": "正在刪除...",
-      "editAlt": "編輯",
       "editChunk": "編輯文本塊",
       "editChunkDescription": "{{file}} · 第 {{n}} 個文本塊 · {{tokens}} Token",
       "editChunkDescriptionUnplaced": "{{file}} · 已編輯的文本塊 · {{tokens}} Token",
@@ -4286,14 +4313,14 @@
         "sync": "無法同步來源。",
         "syncFrequency": "無法變更同步頻率。"
       },
-      "fileAlt": "檔案",
       "fileName": "名稱",
       "files": "檔案",
       "filesByline_one": "{{files}} 個檔案 · {{tokens}} Token",
       "filesByline_other": "{{files}} 個檔案 · {{tokens}} Token",
+      "filesFailed_one": "上次同步時有 {{count}} 個檔案的最新版本無法編入索引。先前已編入索引的檔案可能仍以舊內容出現在搜尋中。",
+      "filesFailed_other": "上次同步時有 {{count}} 個檔案的最新版本無法編入索引。先前已編入索引的檔案可能仍以舊內容出現在搜尋中。",
       "filesLoadError": "無法載入檔案",
       "filterFiles": "篩選檔案",
-      "folderAlt": "資料夾",
       "folders": {
         "emptyHint": "在此新增知識，或透過來源的 ⋯ 選單將其移入。",
         "noMatchIn": "{{name}}中沒有符合「{{query}}」的內容。",
@@ -4414,17 +4441,13 @@
       "needsAttention": "需要處理",
       "nextChunk": "下一個文本塊",
       "noChunks": "未找到文本塊",
-      "noChunksAlt": "未找到文本塊",
       "noData": "還沒有知識",
       "noKnowledgeFound": "找不到知識",
       "noResults": "未找到結果",
       "pageRange_one": "第 {{from}}–{{to}} 個，共 {{formatted}} 個來源",
       "pageRange_other": "第 {{from}}–{{to}} 個，共 {{formatted}} 個來源",
-      "parentFolderAlt": "上層資料夾",
       "paused": "同步已暫停。重新連線 {{name}} 以繼續。",
-      "preLoaded": "預載入",
       "previousChunk": "上一個文本塊",
-      "private": "私人",
       "queued": "已排隊：{{count}}",
       "reingest": "重新索引",
       "retrievalOptions": {
@@ -4533,7 +4556,7 @@
         },
         "title": "進階設定"
       },
-      "searchAlt": "搜尋",
+      "retryFailedFiles": "立即重試",
       "searchChunks": "搜尋文本塊",
       "searchPlaceholder": "搜尋知識…",
       "sections": {
@@ -5513,7 +5536,6 @@
       },
       "mismatch": "此代理屬於與此聊天不同的工作區。",
       "notFound": "您已不在此團隊中，因此無法在這裡繼續聊天。",
-      "onlyYou": "只有您能看到此聊天",
       "switchTo": "切換到 {{name}}",
       "thisTeam": "此團隊"
     },
@@ -5529,13 +5551,6 @@
     },
     "folders": {
       "alsoInFolder": "此資料夾中的其他內容"
-    },
-    "line": {
-      "people_one": "{{count}} 人",
-      "people_other": "{{count}} 人",
-      "personal": "個人",
-      "personalScope": "僅限您本人，除非您分享某個項目",
-      "teamScope": "團隊中的每個人都可以使用這裡的內容"
     },
     "menu": {
       "moveToPersonal": "移至個人…",

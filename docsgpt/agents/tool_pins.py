@@ -55,11 +55,6 @@ def is_pinned(details: Mapping) -> bool:
     return not llm_fills(details) and has_value(details)
 
 
-def pinned_names(action: Mapping) -> list[str]:
-    """Names of the parameters of ``action`` that carry a pinned value."""
-    return [name for _section, name, details in iter_parameters(action) if is_pinned(details)]
-
-
 def resolve_arguments(
     action: Mapping,
     llm_arguments: Mapping[str, Any],

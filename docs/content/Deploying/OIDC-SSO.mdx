@@ -1,5 +1,6 @@
 ---
 title: SSO with OIDC
+sidebarTitle: 🔐 SSO with OIDC
 description: Sign users into DocsGPT through any OpenID Connect identity provider (Authentik, Keycloak, Microsoft Entra ID, Okta, ...) — with group allowlists, silent session renewal, back-channel logout, and SCIM provisioning.
 lastUpdated: 2026-10-13
 ---
@@ -64,7 +65,7 @@ Sessions last `OIDC_SESSION_LIFETIME_SECONDS` (8 hours by default) and renew wit
    ```
    (the trailing slash is part of the issuer — copy it exactly; the discovery document lives at `.../<application-slug>/.well-known/openid-configuration`).
 4. **Configure DocsGPT** in `.env` and restart:
-   ```env
+   ```dotenv
    AUTH_TYPE=oidc
    OIDC_ISSUER=https://auth.example.com/application/o/docsgpt/
    OIDC_CLIENT_ID=<client id from step 1>
@@ -83,7 +84,7 @@ Authentik's provider setting **Subject mode** controls what lands in the `sub` c
 
 Any OIDC provider with discovery works the same way. For Keycloak:
 
-```env
+```dotenv
 OIDC_ISSUER=https://keycloak.example.com/realms/<realm>
 OIDC_CLIENT_ID=<client id>
 ```
@@ -110,7 +111,7 @@ Microsoft Entra ID (formerly Azure Active Directory) signs users in through the 
 
 ### Configure DocsGPT for Entra [#entra-id-configure]
 
-```env
+```dotenv
 AUTH_TYPE=oidc
 OIDC_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
 OIDC_CLIENT_ID=<application (client) id>
@@ -143,7 +144,7 @@ By default every user in the tenant can sign in. Entra offers three ways to narr
 1. In the app registration, open **App roles → Create app role** and create one role per access level, with **Allowed member types** set to *Users/Groups* — for example the values `DocsGPT.User` and `DocsGPT.Admin`.
 2. Under **Enterprise apps → *your app* → Users and groups → Add user/group**, assign users or groups to those roles. Assigning a *group* to a role requires Microsoft Entra ID P1 or P2; assigning individual users works on every tier. Group assignment reaches **direct** members only: someone who belongs to the assigned group only through a nested group gets no role. Assign such users directly, or assign a group they're a direct member of.
 3. Point DocsGPT at the `roles` claim:
-   ```env
+   ```dotenv
    OIDC_GROUPS_CLAIM=roles
    OIDC_ALLOWED_GROUPS=DocsGPT.User,DocsGPT.Admin
    OIDC_ADMIN_GROUPS=DocsGPT.Admin
@@ -151,7 +152,7 @@ By default every user in the tenant can sign in. Entra offers three ways to narr
 
 **Security groups.** In the app registration, open **Token configuration → Add groups claim** and choose *Security groups* or *Groups assigned to the application*. Entra emits group **object IDs**, not display names, so list the IDs shown on each group's **Overview** page:
 
-```env
+```dotenv
 OIDC_ALLOWED_GROUPS=<object id of the users group>
 OIDC_ADMIN_GROUPS=<object id of the admins group>
 ```
@@ -198,7 +199,7 @@ Entra reports its own errors as `AADSTS` codes, either on the Microsoft sign-in 
 
 By default any user who can authenticate at the IdP may use DocsGPT. To restrict access to specific IdP groups:
 
-```env
+```dotenv
 OIDC_ALLOWED_GROUPS=docsgpt-users,platform-admins
 # OIDC_GROUPS_CLAIM=groups   # only if your IdP uses a different claim name
 ```
@@ -217,7 +218,7 @@ Getting groups into the token:
 
 Separately from *who may sign in*, you can map an IdP group to the global **admin** role with `OIDC_ADMIN_GROUPS`:
 
-```env
+```dotenv
 OIDC_ADMIN_GROUPS=platform-admins
 ```
 
@@ -235,7 +236,7 @@ Getting a refresh token:
 - **Keycloak** issues refresh tokens for the authorization-code flow by default — nothing to change.
 - **Microsoft Entra ID** issues refresh tokens when `offline_access` is in `OIDC_SCOPES`, as in the [Entra configuration](#entra-id-configure).
 - **Authentik** only issues refresh tokens when the `offline_access` scope is requested:
-  ```env
+  ```dotenv
   OIDC_SCOPES=openid profile email offline_access
   ```
 

@@ -332,7 +332,6 @@
     "exportAgentFailed": "Failed to export agent",
     "filters": {
       "all": "All",
-      "byDocsGPT": "Templates",
       "byMe": "My agents",
       "shared": "Discovered"
     },
@@ -976,11 +975,6 @@
         "description": "Agents other teams shared with this team. Everyone in it can chat with them.",
         "emptyState": "No other team has shared an agent with this team yet."
       },
-      "template": {
-        "description": "Agents provided by DocsGPT",
-        "emptyState": "No template agents found.",
-        "title": "Templates"
-      },
       "user": {
         "description": "Agents created or published by you",
         "emptyState": "You don't have any created agents yet.",
@@ -1002,9 +996,16 @@
     "title": "Agents",
     "tryDifferentSearch": "Try a different search term",
     "typeModal": {
+      "blankAgent": "Blank agent",
+      "blankWorkflow": "Blank workflow",
       "classicDescription": "Create a standard AI agent with a single model, tools, and knowledge sources",
       "classicTitle": "Classic Agent",
+      "describeLabel": "Describe the agent",
+      "describePlaceholder": "An agent on our website that answers shipping questions",
       "description": "Choose the type of agent you want to create",
+      "draftDescription": "Say what it's for and DocsGPT builds it with you, one step at a time.",
+      "newTitle": "New agent",
+      "templatesLabel": "Or start from a template",
       "title": "Create New Agent",
       "workflowDescription": "Design complex multi-step workflows with different models, conditional logic, and state management",
       "workflowTitle": "Workflow Agent"
@@ -1824,7 +1825,7 @@
         "finish": "Finish",
         "folded": "{{step}}: {{result}}",
         "goTo": "Go to {{field}}",
-        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a starting point, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
+        "intro": "Let's build this agent together, one part at a time: basics, knowledge, the prompt and starters, then limits and safety.\n\nPick a template, or tell me what it should do and who will use it. The more you say, the fewer questions I'll ask.",
         "missing": {
           "agentType": "an agent type",
           "contextLimit": "a valid context limit",
@@ -1873,6 +1874,7 @@
         "other_step": "a change for another step"
       },
       "fields": {
+        "folders": "Knowledge folders",
         "limits": "Usage limit"
       },
       "formEdited": "You changed {{fields}} in the form.",
@@ -1942,6 +1944,8 @@
     "counts": {
       "agents_one": "{{count}} agent",
       "agents_other": "{{count}} agents",
+      "folders_one": "{{count}} folder",
+      "folders_other": "{{count}} folders",
       "models_one": "{{count}} model",
       "models_other": "{{count}} models",
       "prompts_one": "{{count}} prompt",
@@ -2102,15 +2106,54 @@
     "startOver": "Start over",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "HR",
+              "it": "IT",
+              "office": "Office and facilities",
+              "policies": "Company policies"
+            },
+            "text": "Which areas does it cover?"
+          }
+        },
         "description": "HR, IT and policy questions from your team",
+        "short": "Internal helpdesk",
         "title": "Internal helpdesk"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Case files",
+              "contracts": "Contracts",
+              "papers": "Papers",
+              "reports": "Reports"
+            },
+            "text": "What are the documents?"
+          },
+          "users": {
+            "options": {
+              "clients": "Customers or clients",
+              "me": "Just me",
+              "team": "My team"
+            },
+            "text": "Who uses it?"
+          }
+        },
         "description": "Digs through your documents and cites them",
+        "short": "Research assistant",
         "title": "Research assistant"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "What is the company or product called?"
+          }
+        },
         "description": "Answers visitors and hands off when unsure",
+        "short": "Website chat",
         "title": "Website chat for customers"
       }
     },
@@ -2124,6 +2167,23 @@
     "stop": "Stop",
     "stoppedDescription": "You stopped this turn. Nothing in the form changed.",
     "suggestionsLabel": "Ways to start",
+    "templates": {
+      "browse": "Browse all templates",
+      "categories": {
+        "all": "All",
+        "customerSupport": "Customer support",
+        "internal": "Internal",
+        "research": "Research"
+      },
+      "categoriesLabel": "Template categories",
+      "description_one": "{{formatted}} template. Pick one and DocsGPT builds it with you.",
+      "description_other": "{{formatted}} templates. Pick one and DocsGPT builds it with you.",
+      "empty": "No templates match",
+      "search": "Search templates",
+      "showAll": "All templates",
+      "showMore": "Show more",
+      "title": "Templates"
+    },
     "title": "Draft with DocsGPT",
     "topics": {
       "add_one": "Add {{formatted}} topic",
@@ -2387,11 +2447,6 @@
       "type": "Type"
     },
     "createAPIKey": {
-      "apiKeyName": "API Key Name",
-      "chunks": "Chunks processed per query",
-      "create": "Create",
-      "label": "Create New API Key",
-      "prompt": "Select active prompt",
       "sourceDoc": "Source document"
     },
     "deleteConv": {
@@ -2488,12 +2543,8 @@
       "viewDescription": "Built-in prompts can't be edited. Duplicate to create your own editable copy."
     },
     "saveKey": {
-      "apiKeyLabel": "API Key",
-      "confirm": "I saved the Key",
       "copied": "Copied",
-      "copy": "Copy",
-      "disclaimer": "This is the only time your key will be shown.",
-      "note": "Please save your Key"
+      "copy": "Copy"
     },
     "searchConversations": {
       "noResults": "No results found",
@@ -2506,7 +2557,6 @@
       "option": "Allow users to prompt further"
     },
     "uploadDoc": {
-      "cancel": "Cancel",
       "choose": "Choose Files",
       "connectors": {
         "auth": {
@@ -2571,9 +2621,7 @@
         }
       },
       "label": "Add knowledge",
-      "link": "Link",
       "name": "Name",
-      "noFilesSelected": "No files selected",
       "progress": {
         "clear": "Clear",
         "collapseDetails": "Collapse upload details",
@@ -2584,10 +2632,9 @@
         "failed": "Upload failed",
         "ingestionFailed": "Ingestion failed.",
         "parsing": "Parsing files…",
-        "partialDownload_one": "{{count}} item couldn’t be downloaded, so it was left out. Sync the source to try it again.",
-        "partialDownload_other": "{{count}} items couldn’t be downloaded, so they were left out. Sync the source to try them again.",
+        "partialDownload_one": "{{count}} item couldn’t be read, so it was left out. Sync the source to try it again.",
+        "partialDownload_other": "{{count}} items couldn’t be read, so they were left out. Sync the source to try them again.",
         "preparing": "Preparing upload",
-        "tokenLimit": "Over the token limit, please consider uploading a smaller document",
         "tooManyFiles": "This source has more than {{limit}} files, the most one source can hold. Choose a smaller folder, path or selection.",
         "tooManyTokens": "This source has more than {{limit}} tokens of text, the most one source can hold. Split it into smaller sources.",
         "training": "Upload is in progress",
@@ -2595,18 +2642,13 @@
         "uploadProgress": "Upload progress {{progress}}%",
         "wait": "This may take several minutes"
       },
-      "remote": "Collect from website",
       "removeFile": "Remove {{name}}",
       "repoUrl": "Repository URL",
       "select": "Choose how to upload your document to DocsGPT",
       "selectFolder": "Or choose a whole folder",
       "selectSource": "Add knowledge",
       "selectedFiles": "Selected Files",
-      "start": "Start Chatting",
       "train": "Add to Knowledge",
-      "uploadedFiles": "Uploaded Files",
-      "urlLink": "URL Link",
-      "wait": "Please wait ...",
       "website": {
         "addAnotherPage": "Add another page",
         "discovery": {
@@ -3129,7 +3171,6 @@
     "analytics": {
       "completed": "Completed",
       "failed": "Failed",
-      "filterByChatbot": "Filter by chatbot",
       "filterOptions": {
         "hour": "Hour",
         "last15Days": "15 days",
@@ -3376,7 +3417,6 @@
         "usedOf": "{{used}} of {{limit}}"
       },
       "scheduledRuns": "Scheduled runs",
-      "selectChatbot": "Select chatbot",
       "skipped": "Skipped",
       "stats": {
         "feedback": "Feedback",
@@ -3527,6 +3567,7 @@
       "fieldHints": {
         "github_access_token": "Fine-grained, with read access to Contents and Metadata. For agent changes, also read and write on Issues and Pull requests. <link>Create a token on GitHub</link>",
         "mcp_supabase_project_ref": "Copy it from Project Settings > General in your Supabase dashboard. The connection reaches this project only.",
+        "ntfy_server_url": "When set, every message and the access token go to this server. When empty, the token goes only to ntfy.sh.",
         "telegram_chat_id": "Messages go only to this chat. Add the bot, send it a message, then find the chat ID with <link>getUpdates</link>."
       },
       "fields": {
@@ -3539,6 +3580,7 @@
         "endpoint_url": "Custom endpoint URL",
         "github_access_token": "Personal access token",
         "mcp_supabase_project_ref": "Project ID",
+        "ntfy_server_url": "Server URL",
         "ntfy_token": "Access token",
         "number_posts": "Number of posts",
         "postgres_token": "Connection string",
@@ -3970,21 +4012,13 @@
       "subtitle": "Pair remote machines that agents can drive via shell commands."
     },
     "general": {
-      "addNew": "Add New",
-      "chunks": "Chunks processed per query",
-      "convHistory": "Conversation History",
       "dark": "Dark",
-      "default": "Default",
       "deleteAllInWorkspace": "Permanently deletes every chat you started in {{name}}. This can't be undone.",
       "deleteAllLabel": "Delete all conversations",
-      "high": "High",
       "label": "General",
       "language": "Language",
       "languageDescription": "Language of menus and labels.",
       "light": "Light",
-      "low": "Low",
-      "medium": "Medium",
-      "none": "None",
       "sections": {
         "appearance": "Appearance",
         "dangerZone": "Danger zone",
@@ -3995,15 +4029,12 @@
       "taskModelDescription": "Drafts forms, builds knowledge graphs and checks monitors. Chats use the agent's model.",
       "taskModelFailed": "{{model}} couldn't run your last task: its provider refused the API key. Pick another model, or ask an admin to check the key.",
       "taskModelFailedItem": "· key refused",
-      "taskModelInstanceDefault": "Use instance default ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Use instance default",
       "taskModelLoadError": "Could not load the task model.",
       "taskModelSaveFailed": "Couldn't save the task model. Try again.",
       "taskModelUnavailable": "Your task model can't run any more (it was disabled or removed), so the instance default runs. If the model comes back, it runs again; pick an option here to replace it.",
       "taskModelUnavailableValue": "Unavailable model",
       "theme": "Theme",
-      "themeDescription": "Light or dark interface.",
-      "unlimited": "Unlimited"
+      "themeDescription": "Light or dark interface."
     },
     "insights": {
       "label": "Insights"
@@ -4040,7 +4071,6 @@
         "dislike": "Disliked",
         "like": "Liked"
       },
-      "filterByChatbot": "Filter by chatbot",
       "label": "Logs",
       "labels": {
         "asksHuman": "Asked for a person",
@@ -4077,7 +4107,6 @@
       "retriedStep_other": "{{node}}: {{count}} attempts",
       "running": "running",
       "searchPlaceholder": "Search logs...",
-      "selectChatbot": "Select chatbot",
       "subtitle": "View and monitor API calls, scheduled runs and errors across your account",
       "trace": {
         "chips": {
@@ -4319,7 +4348,6 @@
       "deleteWarning": "Delete \"{{name}}\"?",
       "deleting": "Deleting…",
       "deletingTitle": "Deleting...",
-      "editAlt": "Edit",
       "editChunk": "Edit chunk",
       "editChunkDescription": "{{file}} · chunk {{n}} · {{tokens}} tokens",
       "editChunkDescriptionUnplaced": "{{file}} · edited chunk · {{tokens}} tokens",
@@ -4340,14 +4368,14 @@
         "sync": "Couldn't sync the source.",
         "syncFrequency": "Couldn't change the sync frequency."
       },
-      "fileAlt": "File",
       "fileName": "Name",
       "files": "Files",
       "filesByline_one": "{{files}} file · {{tokens}} tokens",
       "filesByline_other": "{{files}} files · {{tokens}} tokens",
+      "filesFailed_one": "{{count}} file couldn’t be indexed in its latest version when this source last synced. If it was indexed before, search may still return its earlier content.",
+      "filesFailed_other": "{{count}} files couldn’t be indexed in their latest version when this source last synced. Files indexed before may still show their earlier content in search.",
       "filesLoadError": "Could not load the files",
       "filterFiles": "Filter files",
-      "folderAlt": "Folder",
       "folders": {
         "emptyHint": "Add knowledge here, or move sources in from their ⋯ menu.",
         "noMatchIn": "Nothing in {{name}} matches “{{query}}”.",
@@ -4468,17 +4496,13 @@
       "needsAttention": "Needs attention",
       "nextChunk": "Next chunk",
       "noChunks": "No chunks found",
-      "noChunksAlt": "No chunks found",
       "noData": "No knowledge yet",
       "noKnowledgeFound": "No knowledge found",
       "noResults": "No results found",
       "pageRange_one": "{{from}}–{{to}} of {{formatted}} source",
       "pageRange_other": "{{from}}–{{to}} of {{formatted}} sources",
-      "parentFolderAlt": "Parent folder",
       "paused": "Sync paused. Reconnect {{name}} to resume.",
-      "preLoaded": "Pre-loaded",
       "previousChunk": "Previous chunk",
-      "private": "Private",
       "queued": "Queued: {{count}}",
       "reingest": "Reingest",
       "retrievalOptions": {
@@ -4587,7 +4611,7 @@
         },
         "title": "Advanced settings"
       },
-      "searchAlt": "Search",
+      "retryFailedFiles": "Try again now",
       "searchChunks": "Search chunks",
       "searchPlaceholder": "Search knowledge…",
       "sections": {
@@ -5569,7 +5593,6 @@
       },
       "mismatch": "This agent belongs to another workspace than this chat.",
       "notFound": "You're no longer in this team, so the chat can't continue here.",
-      "onlyYou": "Only you can see this chat",
       "switchTo": "Switch to {{name}}",
       "thisTeam": "this team"
     },
@@ -5585,13 +5608,6 @@
     },
     "folders": {
       "alsoInFolder": "Also in this folder"
-    },
-    "line": {
-      "people_one": "{{count}} person",
-      "people_other": "{{count}} people",
-      "personal": "Personal",
-      "personalScope": "Only you, unless you share an item",
-      "teamScope": "Everyone in the team can use what's here"
     },
     "menu": {
       "moveToPersonal": "Move to Personal…",

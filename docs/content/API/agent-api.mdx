@@ -1,10 +1,9 @@
 ---
 title: Interacting with Agents via API
+sidebarTitle: 🔌 Agent API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
 lastUpdated: 2026-11-01
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # Interacting with Agents via API
 
@@ -119,14 +118,14 @@ An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with 
 ### Examples
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     curl -X POST http://localhost:7091/api/answer \
     -H "Content-Type: application/json" \
     -d '{"question":"your question here","api_key":"your_agent_api_key"}'
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
 
@@ -145,8 +144,8 @@ An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with 
         print(f"Error: {response.status_code}")
         print(response.text)
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const apiUrl = 'http://localhost:7091/api/answer';
     const apiKey = 'your_agent_api_key';
@@ -175,7 +174,7 @@ An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with 
 
     getAnswer();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ---
@@ -221,15 +220,15 @@ If the connection drops, the answer keeps generating on the server. Reopen it wi
 ### Examples
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     curl -X POST http://localhost:7091/stream \
     -H "Content-Type: application/json" \
     -H "Accept: text/event-stream" \
     -d '{"question":"your question here","api_key":"your_agent_api_key"}'
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
     import json
@@ -251,8 +250,8 @@ If the connection drops, the answer keeps generating on the server. Reopen it wi
                     except json.JSONDecodeError:
                         pass
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const apiUrl = 'http://localhost:7091/stream';
     const apiKey = 'your_agent_api_key';
@@ -304,7 +303,7 @@ If the connection drops, the answer keeps generating on the server. Reopen it wi
 
     getStream();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ---

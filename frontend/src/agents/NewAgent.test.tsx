@@ -130,6 +130,25 @@ type SentRequest = {
     form: Record<string, unknown>;
   };
 };
+// Today's three templates, or a fourth beyond the featured ones.
+const templates = vi.hoisted(() => ({ more: false }));
+vi.mock('../drafter/starters', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../drafter/starters')>();
+  const extra = [
+    ...real.DRAFTER_STARTERS,
+    { ...real.DRAFTER_STARTERS[0], key: 'orders' },
+  ];
+  return {
+    ...real,
+    get DRAFTER_STARTERS() {
+      return templates.more ? extra : real.DRAFTER_STARTERS;
+    },
+    get HAS_MORE_STARTERS() {
+      return templates.more;
+    },
+  };
+});
+
 vi.mock('../drafter/useDrafterConfig', () => ({
   useDrafterConfig: () => drafter.config,
   // Insights' topic suggestions read it with the token they were handed.
@@ -423,7 +442,7 @@ const nameInput = (root: ParentNode) =>
  *   root: The test's root.
  *   mode: The form's mode.
  *   options: `entries` and `initialIndex`, the router's history (the saved
- *     agent's address by default); `beside`, drawn next to the form in its
+ *     agent's address by default); `newEntries`, a new agent's history; `beside`, drawn next to the form in its
  *     route; `after`, drawn after the routes.
  */
 const mountForm = (
@@ -431,11 +450,13 @@ const mountForm = (
   mode: 'new' | 'edit' | 'draft' = 'new',
   {
     entries = ['/agents/edit/agent-1'],
+    newEntries,
     initialIndex,
     beside,
     after,
   }: {
     entries?: ComponentProps<typeof MemoryRouter>['initialEntries'];
+    newEntries?: ComponentProps<typeof MemoryRouter>['initialEntries'];
     initialIndex?: number;
     beside?: ReactNode;
     after?: ReactNode;
@@ -444,7 +465,7 @@ const mountForm = (
   act(async () => {
     root.render(
       mode === 'new' ? (
-        <MemoryRouter>
+        <MemoryRouter initialEntries={newEntries}>
           <NewAgent mode="new" />
           {after}
         </MemoryRouter>
@@ -2547,6 +2568,7 @@ describe('NewAgent drafter', () => {
     mocks.tools = null;
     media.isMobile = false;
     media.isDesktop = true;
+    templates.more = false;
   });
 
   const render = async () => {
@@ -2711,6 +2733,113 @@ describe('NewAgent drafter', () => {
     expect(items[0].textContent).toBe('agents.form.sections.preview');
   });
 
+  describe('opened from the New agent modal', () => {
+    const state = { value: undefined as unknown };
+    function StateProbe() {
+      state.value = useLocation().state;
+      return null;
+    }
+    const renderFrom = async (draftStart: unknown) => {
+      await mountForm(root, 'new', {
+        newEntries: [{ pathname: '/agents/manage/new', state: { draftStart } }],
+        after: <StateProbe />,
+      });
+    };
+
+    it('starts the build from a starting point, and drops the router state', async () => {
+      await renderFrom({ starter: 'helpdesk' });
+      expect(panel()).not.toBeNull();
+      expect(state.value).toBeNull();
+      // The starting point's question is there before any turn.
+      expect(stream.requests).toHaveLength(0);
+      expect(panel()!.textContent).toContain(
+        'drafter.starters.helpdesk.ask.areas.text',
+      );
+      expect(panel()!.textContent).toContain(
+        'drafter.starters.helpdesk.ask.areas.options.hr',
+      );
+      // Skip and draft runs the first turn, from the starting point.
+      await click(buttonByText('drafter.skipQuestions', panel()!)!);
+      expect(stream.requests).toHaveLength(1);
+      expect(stream.requests[0]).toMatchObject({
+        recipe: 'agent',
+        context: {
+          agent_id: null,
+          step: 'basics',
+          starter: 'helpdesk',
+          skip_questions: true,
+        },
+      });
+      expect((stream.requests[0] as SentRequest).messages[0]).toEqual({
+        role: 'user',
+        content: 'drafter.starters.helpdesk.title',
+      });
+    });
+
+    it('starts the build from a description', async () => {
+      await renderFrom({ text: 'Answers shipping questions' });
+      expect(stream.requests).toHaveLength(1);
+      expect(stream.requests[0]).toMatchObject({
+        messages: [{ role: 'user', content: 'Answers shipping questions' }],
+        context: { step: 'basics', starter: null },
+      });
+    });
+
+    it('opens the drawer and sends nothing when there is nothing to send', async () => {
+      await renderFrom({});
+      expect(panel()!.textContent).toContain('drafter.agent.build.intro');
+      expect(stream.requests).toHaveLength(0);
+    });
+
+    it('opens the plain form when the drafter is off', async () => {
+      drafter.config = { enabled: false, model: null, reason: null };
+      await renderFrom({ starter: 'helpdesk' });
+      expect(panel()).toBeNull();
+      expect(stream.requests).toHaveLength(0);
+      expect(state.value).toBeNull();
+    });
+  });
+
+  it('offers no Browse all templates while the three rows are all of them', async () => {
+    await render();
+    await click(wand()!);
+    expect(buttonByText('drafter.templates.browse', panel()!)).toBeFalsy();
+  });
+
+  it('lists the featured three and opens the rest from Browse all templates', async () => {
+    templates.more = true;
+    await render();
+    await click(wand()!);
+    const shown = () =>
+      Array.from(
+        panel()!.querySelectorAll<HTMLButtonElement>('[data-suggestion]'),
+      ).map((row) => row.dataset.suggestion);
+    expect(shown()).toEqual(['website', 'helpdesk', 'research']);
+    await click(buttonByText('drafter.templates.browse', panel()!)!);
+    const dialog = () =>
+      Array.from(
+        document.body.querySelectorAll<HTMLElement>(
+          '[data-slot="modal-content"]',
+        ),
+      ).find((node) => node.textContent?.includes('drafter.templates.title'));
+    const rows = Array.from(
+      dialog()!.querySelectorAll<HTMLButtonElement>('[data-suggestion]'),
+    );
+    expect(rows.map((row) => row.dataset.suggestion)).toEqual([
+      'website',
+      'helpdesk',
+      'research',
+      'orders',
+    ]);
+    await click(rows[2]);
+    expect(dialog()).toBeUndefined();
+    // The picked template starts as a row would: its questions at once.
+    expect(stream.requests).toHaveLength(0);
+    expect(
+      panel()!.querySelector('[data-slot="question-cards"]')!.textContent,
+    ).toContain('drafter.starters.research.ask.documents.text');
+  });
+
   it('greets an empty new agent with the plan and starts at Basics', async () => {
     await render();
     expect(wand()!.textContent).toContain('drafter.build');
@@ -2728,10 +2857,38 @@ describe('NewAgent drafter', () => {
       'drafter.starters.website.titledrafter.starters.website.description',
     );
     await click(buttonByText('drafter.starters.website.title', panel()!)!);
+    // Its first question shows at once, with no turn.
+    expect(stream.requests).toHaveLength(0);
+    const cards = panel()!.querySelector('[data-slot="question-cards"]')!;
+    expect(cards.textContent).toContain(
+      'drafter.starters.website.ask.company.text',
+    );
+    expect(panel()!.textContent).toContain('drafter.agent.build.progress');
+    await type(cards.querySelector('input')!, 'Acme Freight');
+    await click(buttonByText('questions.sendAnswers', panel()!)!);
+    // The answer is the first turn; the round went before it as the drafter's.
     expect(stream.requests).toHaveLength(1);
+    const sent = stream.requests[0] as SentRequest;
+    expect(sent.messages).toHaveLength(3);
+    expect(sent.messages[0]).toEqual({
+      role: 'user',
+      content: 'drafter.starters.website.title',
+    });
+    expect(sent.messages[1].role).toBe('assistant');
+    expect(JSON.parse(sent.messages[1].content)).toMatchObject({
+      type: 'questions',
+      questions: [
+        {
+          id: 'company',
+          text: 'drafter.starters.website.ask.company.text',
+          options: [],
+        },
+      ],
+    });
+    expect(sent.messages[2].role).toBe('user');
+    expect(sent.messages[2].content).toContain('Acme Freight');
     expect(stream.requests[0]).toMatchObject({
       recipe: 'agent',
-      messages: [{ role: 'user', content: 'drafter.starters.website.title' }],
       context: {
         agent_id: null,
         step: 'basics',
@@ -3293,6 +3450,75 @@ describe('NewAgent drafter', () => {
     expect(drafted()).toEqual([]);
   });
 
+  /** The knowledge picker's drafted frame. */
+  const knowledgeField = () =>
+    Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="drafted-field"]'),
+    ).find(
+      (el) =>
+        el.querySelector('label')?.textContent === 'agents.form.labels.sources',
+    )!;
+
+  it('fills the knowledge picker from drafted sources and folders under one mark, and undoes both', async () => {
+    stream.scripts = [
+      [proposal({ sources: ['s1'], folders: ['ops'] }), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view']);
+    await ask('Use the ops folder');
+    // One mark on the picker for both fields.
+    expect(drafted()).toEqual(['agents.form.labels.sources']);
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: ['s1'],
+      folders: ['ops'],
+      folders_offered: true,
+    });
+    await click(buttonByLabel('drafter.undoField', knowledgeField())!);
+    expect(drafted()).toEqual([]);
+    await ask('And now?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: [],
+      folders: [],
+    });
+  });
+
+  it('drops the knowledge mark when the folder list is edited by hand', async () => {
+    stream.scripts = [
+      [proposal({ sources: ['s1'], folders: ['ops', 'f2'] }), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await ask('Add the handbook and the policies folder');
+    expect(drafted()).toEqual(['agents.form.labels.sources']);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    expect(drafted()).toEqual([]);
+  });
+
+  it('leaves drafted folders off an agent whose picker offers none', async () => {
+    stream.scripts = [
+      [proposal({ name: 'Team desk', folders: ['ops'] }), { type: 'end' }],
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      workspace: { kind: 'team', team_id: 'team-elsewhere' },
+    });
+    await ask('Use the ops folder');
+    expect(drafted()).toEqual(['agents.form.labels.name']);
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      folders: [],
+      folders_offered: false,
+    });
+  });
+
   // A prompt it writes opens in the prompt view beside the drawer; Use this
   // prompt saves it and sets it on the agent.
   describe('the prompt step', () => {
@@ -3729,6 +3955,41 @@ describe('NewAgent drafter', () => {
         .closest('[data-slot="drafted-field"]')!
         .hasAttribute('data-drafted'),
     ).toBe(false);
+  });
+
+  it('keeps drafted sources and folders off the picker when it was edited while the turn ran', async () => {
+    let land: (events: DrafterEvent[]) => void = () => undefined;
+    stream.scripts = [
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+      [proposal({}), { type: 'end' }],
+    ];
+    await renderEdit(['edit', 'publish', 'use', 'view'], {
+      folders: ['ops'],
+      folder_details: [{ id: 'ops', name: 'Ops', source_count: 2 }],
+    });
+    await ask('Add the policies folder and the handbook');
+    // Taken off by hand while the draft runs.
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-toggle="folder:ops"]')!
+        .click(),
+    );
+    await act(async () =>
+      land([
+        proposal({ sources: ['s1'], folders: ['ops', 'policies'] }),
+        { type: 'end' },
+      ]),
+    );
+    // Neither half lands: the sources were trimmed for those folders.
+    expect(drafted()).not.toContain('agents.form.labels.sources');
+    expect(panel()!.textContent).toContain('drafter.agent.formEdited');
+    await ask('Anything else?');
+    expect(lastRequest().context.form).toMatchObject({
+      sources: [],
+      folders: [],
+    });
   });
 
   it('steps the sheet aside on a phone and keeps the step in a strip', async () => {

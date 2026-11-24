@@ -13,7 +13,6 @@ vi.mock('react-redux', () => ({
 
 vi.mock('../preferences/preferenceSlice', () => ({
   selectToken: () => null,
-  selectChunks: () => '2',
   selectPrompt: () => ({ id: 'default' }),
   selectSelectedDocs: () => null,
   selectSourceDocs: () => [],

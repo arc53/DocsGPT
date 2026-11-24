@@ -1,10 +1,9 @@
 ---
 title: Using the Web App
-description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders, pinning and templates, importing an agent from YAML, and the General settings for theme and language, and the clarifying questions an assistant can ask in a chat.
+sidebarTitle: 🧭 Using the Web App
+description: Find your way around the DocsGPT web app - the sidebar, conversation search with Ctrl/Cmd+K, the agent library with folders and pinning, importing an agent from YAML, and the General settings for theme and language, and the clarifying questions an assistant can ask in a chat.
 lastUpdated: 2026-10-30
 ---
-
-import { Callout } from 'nextra/components'
 
 # Using the Web App
 
@@ -31,16 +30,11 @@ Open **Manage Agents** to see your agents in tabs:
 | Tab | Holds |
 | --- | --- |
 | **All** | Every tab's agents on one page. |
-| **Templates** | Agents provided by DocsGPT, seeded by your operator (see [Seeding premade agents](/Agents/basics#seeding-premade-agents-from-yaml)). |
 | **My agents** | Agents you created, published or imported, and your folders. |
 | **Team** | Agents your teammates shared with you (see [Teams and sharing](/Using/teams-and-sharing)). |
 | **Discovered** | Public agents you opened through a link. **Remove** takes one off the list. |
 
 **Search...** filters the agents by name and description. Each agent card has a menu with the actions your access allows: **Logs**, **Edit** (or **View**), **Export as YAML**, **Share**, **Pin agent**, **Move to folder** and **Delete**.
-
-### Use a template
-
-A template can't be edited directly. Choose **Duplicate** from its menu to get your own published copy in **My agents**, with a new API key. Tools you don't have access to are left off the copy, so check its tools before you use it.
 
 ### Organize agents in folders
 
@@ -93,9 +87,9 @@ Theme and language are saved in your browser, so set them again on another brows
 
 The task model runs the work DocsGPT does for you outside a chat: drafting an agent, a prompt or Insights topics with [Draft with DocsGPT](/Agents/draft-with-docsgpt), extracting the knowledge graph of a [GraphRAG](/Sources/GraphRAG) source, and judging whether a [monitor](/Tools/monitors)'s condition is met. Chats keep the agent's model.
 
-The list starts with **Use instance default**, which names in brackets the model that runs without a choice of yours (the order is below), and names none when no model can run. It is picked until you choose another, and it follows the instance: when an admin changes the task model, your tasks move with it. After it come the built-in models and your own [custom models](/Models/custom-models). Choosing a named model, even the one the instance runs, makes it your choice, and later admin changes no longer reach you; choose **Use instance default** to follow the instance again. A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors. It is saved as you pick; if you pick several models quickly, the last one is the one saved.
+The list holds the built-in models and your own [custom models](/Models/custom-models), like the model list of a chat. Until you choose one, the picked model is the one the instance runs for you (the order is below), and it follows the instance: when an admin changes the task model, the picked model and your tasks move with it. Choosing another model makes it your choice, and later admin changes no longer reach you; choose the instance's model to follow the instance again. A choice you already have stays yours if the instance later moves to the same model. When no model can run, none is picked. A custom model runs with your own key and endpoint. Your choice applies to your own drafts, to graph builds of the sources you own and to your monitors. It is saved as you pick; if you pick several models quickly, the last one is the one saved.
 
-Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model, unless it is disabled. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. Settings then shows **Unavailable model** and a note that the instance default runs; your choice is kept and runs again if the model comes back, until you pick **Use instance default** or another model. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
+Without a choice of yours, DocsGPT uses, in order: the model an admin set under **Admin → Defaults**, **Models**; the `TASK_MODEL_ID` setting; the instance's default model, unless it is disabled. A choice that stops working (the model leaves the catalog, or you delete or turn off your custom model) is skipped the same way, with no error. Settings then shows **Unavailable model** and a note that the instance default runs; your choice is kept and runs again if the model comes back, until you pick a model: the instance's to follow the instance again, or another to make it your choice. A source's own extraction model and the `GRAPHRAG_EXTRACTION_MODEL` and `MONITOR_JUDGE_MODEL` settings still come first for their task.
 
 When a draft fails because the model's provider refused its API key, DocsGPT remembers it: the list marks that model **· key refused** (you can still pick it, since an admin may fix the key), and while it is the model that runs, a warning under the field names it. The mark goes once a draft on that model works or you pick a model; the instance's task model gets the same mark under **Admin → Defaults**.
 

@@ -1,7 +1,7 @@
 # DocsGPT documentation site
 
 The source of [docs.docsgpt.cloud](https://docs.docsgpt.cloud). It is a
-[Nextra 4](https://nextra.site) site on the Next.js App Router, installed with npm.
+[Fumadocs](https://fumadocs.dev) site on the Next.js App Router, installed with npm.
 
 ## Run it locally
 
@@ -15,11 +15,10 @@ npm install
 npm run dev      # http://localhost:3000, reloads as you edit
 ```
 
-Search is turned off in the dev server. To check a change the way it ships, build the
-site:
+To check a change the way it ships, build the site:
 
 ```bash
-npm run build    # next build, then pagefind indexes the output for search
+npm run build    # next build; also builds the search index and the REST endpoint pages
 npm run start    # serve the production build
 node scripts/check-links.mjs   # after a build: check internal links and #anchors, offline
 ```
@@ -34,21 +33,29 @@ that already exists.
 
 - `content/`: the pages, as `.mdx` (or `.md`) files. A file's path is its URL:
   `content/Deploying/Docker-Deploying.mdx` is served at `/Deploying/Docker-Deploying`.
-- `content/**/_meta.js`: the sidebar order and titles of each folder. Add an entry when you
-  add a page so it lands where you want it.
-- `app/layout.jsx`: the navbar, the footer and the page head.
-  `app/[[...mdxPath]]/page.jsx` renders every page.
-- `theme.config.jsx`: the Nextra theme options that `app/layout.jsx` passes on (edit links,
-  sidebar, table of contents).
+- `content/**/meta.js`: each folder's sidebar title (`title`) and the order of its pages
+  (`pages`; `---Label---` adds a separator). A page that isn't listed there isn't shown, so add
+  it when you add a page. A page's own sidebar label is `sidebarTitle` in its frontmatter.
+- `lib/source.js`: the content source (Fumadocs MDX) and the page tree, including the REST
+  endpoint pages from `lib/openapi.js`.
+- `app/layout.jsx`: the page head and the providers. `components/DocsShell.jsx` is the sidebar,
+  navbar links and search, used by `app/(docs)/layout.jsx` (every docs page) and
+  `app/API/endpoints/layout.jsx` (the endpoint pages, the only ones whose sidebar lists every
+  endpoint). `app/(docs)/[[...slug]]/page.jsx` renders the docs pages and
+  `app/API/endpoints/[...slug]/page.jsx` the endpoint pages.
 - `content/API/`: the API section: an overview, DocsGPT's MCP server, and the REST API reference
-  (`reference.mdx`), which renders every endpoint from the snapshot below.
+  (`reference.mdx`), which renders every endpoint from the snapshot below. `/API/endpoints`
+  (`API/endpoints/index.mdx`) lists one interactive page per endpoint (with a request
+  playground), built from the same snapshot by `lib/openapi.js` and `lib/source.js`; those
+  pages are not files under `content/`.
 - `data/swagger.json`: a generated snapshot of the REST API's flask-restx Swagger document, rendered by
-  `components/ApiReference.jsx`. Don't edit it by hand; see [Generated pages](#generated-pages).
-- `mdx-components.jsx` and `components/`: React components available to the pages.
+  `components/ApiReference.jsx` and `lib/openapi.js`. Don't edit it by hand; see [Generated pages](#generated-pages).
+- `mdx-components.jsx` and `components/`: React components available to the pages. Callouts,
+  tabs, steps, cards and Mermaid diagrams need no import; [AGENTS.md](AGENTS.md) lists them.
 - `public/`: images and other static files, served from the site root. `public/llms.txt`
   lists the pages for LLM readers and is generated; see [Generated pages](#generated-pages).
 - `scripts/generate-llms.mjs`: the generator for `public/llms.txt`.
-- `next.config.js`: the Next.js config, including `redirects()`. When you move or delete a
+- `next.config.mjs`: the Next.js config, including `redirects()`. When you move or delete a
   page, add a permanent redirect from the old URL there.
 - `page-meta.js`: each page's canonical URL, share card and JSON-LD, built from its frontmatter.
   `app/sitemap.js` serves `/sitemap.xml` from the same data; `public/robots.txt` and the share
@@ -88,7 +95,7 @@ repository because the site builds on Vercel without the backend.
 | `content/Deploying/Settings-Reference.mdx` | the settings definitions in `docsgpt/core/settings/` | `python -m docsgpt.core.settings.reference --write` |
 | `data/swagger.json` | the backend's routes | `python -m docsgpt.api.reference --write` |
 | `data/mcp-presets.json` | the preset files in `docsgpt/connectors/presets/mcp/` | `python -m docsgpt.connectors.reference --write` |
-| `public/llms.txt` | the sidebar (`content/**/_meta.js`) and each page's `description` | `npm run llms` |
+| `public/llms.txt` | the sidebar (`content/**/meta.js` and each page's `sidebarTitle`) and each page's `description` | `npm run llms` |
 
 The Python commands run from the repository root with the backend environment active.
 Without `--write` they print the result, which is how you preview it. The two generated pages

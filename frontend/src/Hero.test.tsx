@@ -99,7 +99,6 @@ const makeStore = ({
           token: null,
           selectedModel: null,
           availableModels,
-          modelsLoading: false,
           sourceDocs,
           sourceDocsFailed,
           selectedDocs,
@@ -115,7 +114,6 @@ const makeStore = ({
     preloadedState: {
       connectors: {
         enabled: true,
-        loading: false,
         loaded: connectorsLoaded,
         failed: false,
         settled: connectorsLoaded,

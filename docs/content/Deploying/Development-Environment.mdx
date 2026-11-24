@@ -1,10 +1,9 @@
 ---
 title: Setting Up a Development Environment
+sidebarTitle: 🛠️ Development Environment
 description: "Set up a DocsGPT development environment: Postgres and Redis, the backend API and Celery worker, the Vite frontend, the docsgpt dev loop and troubleshooting."
 lastUpdated: 2026-11-10
 ---
-
-import { Callout } from 'nextra/components'
 
 # Setting Up a Development Environment
 
@@ -28,7 +27,7 @@ You can find the `docker-compose-dev.yaml` file [here](https://github.com/arc53/
 
     This starts Postgres and Redis in detached mode, running in the background. When the API boots against the fresh Postgres instance, it will automatically create the database (if missing) and apply the current Alembic schema.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   MongoDB is not needed for a default DocsGPT install. The MongoDB vector store (`VECTOR_STORE=mongodb`)
   runs its searches with Atlas `$vectorSearch`, so `MONGO_URI` must point at MongoDB Atlas (or a local
   Atlas deployment with search); a plain `mongo` container does not provide it. The client library is not

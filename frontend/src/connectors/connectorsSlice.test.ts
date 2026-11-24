@@ -46,17 +46,16 @@ describe('connectorsSlice loadConnectors', () => {
       loadConnectors.fulfilled(payload(['before-connect']), 'old', arg),
     );
     expect(state.connections.map((c) => c.id)).toEqual(['after-connect']);
-    expect(state.loading).toBe(false);
   });
 
-  it('stays loading while the latest request is still running', () => {
+  it('stays unloaded while the latest request is still running', () => {
     let state = pending(undefined, 'old');
     state = pending(state, 'new');
     state = reducer(
       state,
       loadConnectors.fulfilled(payload(['stale']), 'old', arg),
     );
-    expect(state.loading).toBe(true);
+    expect(state.loaded).toBe(false);
     expect(state.connections).toEqual([]);
   });
 
@@ -73,7 +72,6 @@ describe('connectorsSlice loadConnectors', () => {
       loadConnectors.rejected(new Error('boom'), 'new', arg),
     );
     expect(state.failed).toBe(true);
-    expect(state.loading).toBe(false);
   });
 
   // A reload clears `failed` while it runs; what reads the list once it has
@@ -231,7 +229,6 @@ describe('team connections, kept per team', () => {
     ).toEqual(['drive-2']);
     expect(selectTeamConnectors({ connectors: state }, 't1')).toMatchObject({
       loaded: true,
-      loading: false,
       failed: false,
     });
   });

@@ -1,10 +1,9 @@
 ---
 title: Upgrading DocsGPT
+sidebarTitle: Upgrading
 description: "Upgrade DocsGPT installed with the installer, pip, Docker Compose or Kubernetes: back up, run database migrations, roll back, and read each release's notes."
 lastUpdated: 2026-11-01
 ---
-
-import { Callout } from 'nextra/components'
 
 # Upgrading DocsGPT
 
@@ -168,6 +167,37 @@ docker compose run --rm backend alembic -c docsgpt/alembic.ini downgrade <revisi
 ## Upgrade notes
 
 Newest first. Each note says what an existing deployment has to do.
+
+### Upgrading to 1.2.0
+
+These apply to the release after 1.1.0.
+
+#### The `application` alias is gone
+
+The `application` import alias that kept old entry points working since 0.20.0
+is removed. Entry points must use `docsgpt`: `celery -A docsgpt.app.celery`,
+`uvicorn docsgpt.asgi:asgi_app`, `python -m docsgpt.scripts.<name>`. An old
+`application.…` spelling now stops at start-up with a `ModuleNotFoundError`
+(`No module named 'application'`, or `'application.app'` in a checkout that
+still holds data under `application/`). The compose files,
+Kubernetes manifests and setup scripts in the repository already use the new
+names; only custom copies need editing.
+
+Workers also stop accepting the task names from before 0.20.0
+(`application.api.user.tasks.ingest` and so on). Upgrading straight from
+0.19.x or earlier, let the queue drain before the upgrade, or upgrade through
+1.1.0 first.
+
+Data directories do not move: the checkout Compose files still keep indexes,
+inputs and vectors under `application/`.
+
+#### Chats without an agent use the source's chunk count
+
+The web app no longer sends a `chunks` value with a chat. The setting that
+chose it left the UI in 0.18.0, but a value saved in the browser before then
+was still sent, and could be neither seen nor changed; a saved `0` turned
+retrieval off. A chat without an agent now uses each source's own **Chunks**
+setting, or 6. Agents are unchanged, and API callers can still send `chunks`.
 
 ### Upgrading to 1.1.0
 
@@ -491,8 +521,9 @@ need attention:
 #### Backend package renamed to `docsgpt`
 
 The backend's Python package is `docsgpt` (it was `application`), the name it
-will carry on PyPI. For one release the old name keeps working through an
-alias, so nothing breaks on upgrade, but update these before the alias goes:
+will carry on PyPI. Through 1.1.0 the old name keeps working through an
+alias, so nothing breaks on upgrade, but update these before the alias goes
+(it is removed in 1.2.0; see [The `application` alias is gone](#the-application-alias-is-gone)):
 
 - Entry points: `celery -A docsgpt.app.celery worker`,
   `uvicorn docsgpt.asgi:asgi_app`, `python -m docsgpt.scripts.<name>`. The

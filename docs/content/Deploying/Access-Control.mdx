@@ -1,10 +1,9 @@
 ---
 title: Access Control, Roles & Teams
+sidebarTitle: 👥 Access Control & Teams
 description: How DocsGPT models permissions — global admin/user roles (RBAC), the admin dashboard, teams with per-team roles, and sharing agents, sources, prompts, and tools.
 lastUpdated: 2026-10-31
 ---
-
-import { Callout } from 'nextra/components'
 
 # Access Control, Roles & Teams
 
@@ -15,7 +14,7 @@ DocsGPT has two independent permission planes:
 
 The two planes never mix: a global `admin` can manage every team's members and settings, but a team `admin` is **not** a global admin. A global admin gets no role in a team's workspace from being an admin: they see its items and chats only as a member.
 
-<Callout type="info" emoji="🔒">
+<Callout type="info">
 Roles are resolved **server-side on every request** and are never trusted from the JWT. The frontend route guards are cosmetic — the server-side decorators are the real boundary. Persisted roles apply under `AUTH_TYPE=oidc`; token-only modes (`simple_jwt`, `session_jwt`) can never hold the admin role.
 </Callout>
 
@@ -48,7 +47,7 @@ There are four ways an account becomes an admin:
 | `OIDC_ADMIN_GROUPS` | — | Comma-separated IdP groups whose members are granted the global `admin` role. Re-checked at every login and silent renewal. Unset = no OIDC admin mapping. |
 | `LOCAL_MODE_ADMIN` | `false` | Grants admin in no-auth mode only (`AUTH_TYPE=None`). |
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 **Never set `LOCAL_MODE_ADMIN=true` on a networked deployment.** It only makes sense for a single-user local install with `AUTH_TYPE=None`, where there is no identity to check.
 </Callout>
 
@@ -85,7 +84,7 @@ For a `docsgpt up` stack, replace `--env-file .env -f deployment/docker-compose-
 
 When `OIDC_ADMIN_GROUPS` is set, group membership is mapped to the admin role at every sign-in *and* every [silent renewal](/Deploying/OIDC-SSO#silent-session-renewal) — so removing a user from the admin group revokes their admin at the next renewal, just like the [sign-in allowlist](/Deploying/OIDC-SSO#restricting-sign-in-by-group). It is independent of `OIDC_ALLOWED_GROUPS` (which controls *whether* a user may sign in at all). Leaving `OIDC_ADMIN_GROUPS` unset never mass-revokes admin.
 
-```env
+```dotenv
 OIDC_ADMIN_GROUPS=platform-admins
 # OIDC_GROUPS_CLAIM=groups   # only if your IdP uses a different claim name
 ```
@@ -94,7 +93,7 @@ If your IdP only exposes groups via the userinfo endpoint, DocsGPT backfills the
 
 ## Admin dashboard
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 The dashboard needs an admin, and an admin exists only under `AUTH_TYPE=oidc`, or in a single-user install with no authentication and `LOCAL_MODE_ADMIN=true`. Under `simple_jwt` and `session_jwt` nobody can open it.
 </Callout>
 
@@ -128,7 +127,7 @@ Admins get a dashboard backed by a REST surface under `/api/admin` (every endpoi
 | `GET` `PUT` | `/api/admin/defaults/agents` | **Admin → Defaults**, new agents: the [guardrails new agents start with](/Agents/guardrails#defaults-for-new-agents). Saving never changes an existing agent. |
 | `GET` `PUT` | `/api/admin/defaults/models` | **Admin → Defaults**, models: the instance [task model](/Using/web-app#task-model), a built-in model for users who picked none (`{"task_model_id": null}` or a blank id clears it; spaces around an id are ignored). It applies at once. A stored model that can no longer run reads as `task_model_id: null` with `task_model_unavailable: true`, and the page shows **Unavailable model** until it is replaced. `task_model_error` is `{"model_id", "code", "at"}` when the model that runs for users without a choice failed a draft because its provider refused the key (code `model_auth`), else `null`; the page then marks it **· key refused**, and a draft that works on it or any change here clears it. |
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Deactivating a user (from the dashboard or through [SCIM](/Deploying/OIDC-SSO#scim-user-provisioning)) blocks their sign-in, revokes their live sessions and disables their personal access tokens. It takes effect under `AUTH_TYPE=oidc`, the only mode with separate accounts to deactivate.
 </Callout>
 
@@ -172,7 +171,7 @@ A team always keeps at least one `admin`: demoting or removing the last one retu
 
 A team that still owns items, connections or custom models can't be deleted: `DELETE /api/teams/<id>` returns `409` with `"error": "team_not_empty"` and counts what is left (connections under `connection`, custom models under `custom_model`). Move the items out or delete them, and remove the connections and custom models, first.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Members are added by email (or subject id). The invitee **must have signed in at least once** so DocsGPT can resolve them to a user account.
 </Callout>
 
@@ -288,7 +287,7 @@ A save that needs confirmation returns:
 
 Owners and editors see sponsored resources on the agent's edit page and in `resource_sponsors` from `GET /api/get_agent` (and `GET /api/workflows/<id>`). Viewers get an empty list. Each entry has the resource (`key`, `type`, `id`, `name`), the sponsor (`user_id`, `label`, both `null` for someone you don't know; see [Sharing agents and what they use](#sharing-agents-and-what-they-use)), `state` (`active` or `inactive`), `reason` when inactive (`sponsor_cannot_edit_agent` or `sponsor_cannot_edit_resource`), and `can_confirm`, which says whether you may take an inactive one over.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 After upgrading, resources sponsored by someone with only `viewer` access to them stop running. An editor who owns or can edit such a resource can choose **Run … with my access** on the agent's edit page to start it again.
 </Callout>
 
