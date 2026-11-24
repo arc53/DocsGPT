@@ -1074,13 +1074,10 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
         }),
       );
     const sent = await dispatch(submitToolActions({ toolActions, index }));
-    // Nothing ran: let the user decide again, on this turn only.
-    const refused =
-      submitToolActions.rejected.match(sent) || sent.payload === 'refused';
-    if (
-      refused &&
-      (getState() as RootState).conversation.conversationId === conversationId
-    )
+    // Only on this turn of the chat that sent them.
+    const stillOpen = () =>
+      (getState() as RootState).conversation.conversationId === conversationId;
+    const clearDecisions = () =>
       toolActions.forEach((action) =>
         dispatch(
           conversationSlice.actions.setToolDecision({
@@ -1090,6 +1087,34 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
           }),
         ),
       );
+    const unsettled = () =>
+      stillOpen() &&
+      Boolean(
+        (getState() as RootState).conversation.queries[index]?.tool_calls?.some(
+          (call) =>
+            call.status === 'awaiting_approval' && call.local_decision?.sent,
+        ),
+      );
+    if (!stillOpen()) return;
+    // Turned away before anything ran: let the user decide again.
+    if (submitToolActions.fulfilled.match(sent) && sent.payload === 'refused') {
+      clearDecisions();
+      return;
+    }
+    // The request ended without settling the cards: stopped or dropped
+    // before an answer, so the server may or may not have taken it. Its
+    // record says which; when it cannot be read, the cards ask again (a
+    // decision the server already took is answered "not pending", which
+    // reloads the chat).
+    if (!unsettled() || !conversationId) return;
+    await dispatch(
+      loadConversation({
+        id: conversationId,
+        force: true,
+        unlessStreaming: true,
+      }),
+    );
+    if (unsettled()) clearDecisions();
   },
 );
 

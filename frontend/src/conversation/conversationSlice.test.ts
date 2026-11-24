@@ -1738,9 +1738,77 @@ describe('approval decisions in a turn with several waiting calls', () => {
       .conversation.queries[0].tool_calls?.find((c) => c.call_id === callId)
       ?.local_decision;
 
+  // The server's record when a request ends without settling the cards.
+  let load: ReturnType<typeof vi.spyOn>;
   beforeEach(() => {
     vi.mocked(handleSubmitToolActions).mockReset();
     vi.mocked(handleSubmitToolActions).mockResolvedValue(undefined as never);
+    load = vi
+      .spyOn(conversationService, 'getConversation')
+      .mockResolvedValue({ ok: false } as Response);
+  });
+  afterEach(() => load.mockRestore());
+
+  // The resumed stream reports each call it settled.
+  const settles =
+    (...callIds: string[]): typeof handleSubmitToolActions =>
+    async (_conversationId, _actions, _token, _signal, onEvent) => {
+      callIds.forEach((call_id) =>
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({
+              type: 'tool_call',
+              data: { call_id, status: 'completed' },
+            }),
+          }),
+        ),
+      );
+      return undefined as never;
+    };
+
+  it('a request that settles the cards needs no reload', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      settles('a', 'b', 'c'),
+    );
+    const store = storeWithTurn();
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it('a request stopped before any answer reloads the chat, and the cards ask again', async () => {
+    load.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        queries: [
+          {
+            prompt: 'create three tasks',
+            response: '',
+            tool_calls: [approval('a'), approval('b'), approval('c')],
+          },
+        ],
+      }),
+    } as Response);
+    const store = storeWithTurn();
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(load.mock.calls[0]?.[0]).toBe('conv-1');
+    expect(decisionOf(store, 'a')).toBeUndefined();
+    expect(decisionOf(store, 'c')).toBeUndefined();
+  });
+
+  it('a request that failed and a chat that cannot be read leave the cards to decide again', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(new Error('down'));
+    const store = storeWithTurn();
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(decisionOf(store, 'a')).toBeUndefined();
+    expect(decisionOf(store, 'b')).toBeUndefined();
   });
 
   it('holds a decision until every waiting call has one, then sends them together', async () => {
