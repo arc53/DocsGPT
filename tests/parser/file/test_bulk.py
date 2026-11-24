@@ -288,6 +288,16 @@ class TestSimpleDirectoryReaderLoadData:
         assert {doc.text for doc in reader.load_data()} == expected
         assert not reader.failed_files
 
+    @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"])
+    def test_load_data_reads_json_with_wide_bom(self, tmp_path, encoding):
+        from docsgpt.parser.file.bulk import SimpleDirectoryReader
+
+        (tmp_path / "inventory.json").write_bytes('\ufeff{"product": "Café"}'.encode(encoding))
+
+        reader = SimpleDirectoryReader(input_dir=str(tmp_path))
+        assert [doc.text for doc in reader.load_data()] == ["{'product': 'Café'}"]
+        assert not reader.failed_files
+
     def test_single_malformed_json_still_raises_document_parse_error(self, tmp_path):
         """The attachment path fails loudly, as ``DocumentParseError``.
 
