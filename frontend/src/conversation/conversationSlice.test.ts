@@ -1969,6 +1969,86 @@ describe('approval decisions in a turn with several waiting calls', () => {
       expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d2']);
     });
 
+    it('after a dropped send, a call missing from its turn is not taken for one of the same id in another', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+      load.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'earlier',
+              response: '',
+              message_id: 'm-earlier',
+              tool_calls: [{ ...deviceCall('d1'), status: 'completed' }],
+            },
+            {
+              prompt: 'list',
+              response: '',
+              message_id: 'm-sent',
+              tool_calls: [{ ...deviceCall('d2'), status: 'completed' }],
+            },
+          ],
+        }),
+      } as Response);
+      const store = storeWithTurn();
+      store.dispatch(
+        setConversation([
+          {
+            prompt: 'earlier',
+            messageId: 'm-earlier',
+            tool_calls: [{ ...deviceCall('d1'), status: 'completed' }],
+          },
+          {
+            prompt: 'list',
+            messageId: 'm-sent',
+            tool_calls: [deviceCall('d1'), deviceCall('d2')],
+          },
+        ]),
+      );
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved', sticky: true }),
+      );
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d2']);
+    });
+
+    it('after a dropped send, registers a call that ran even when another still waits', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+      load.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'list',
+              response: '',
+              tool_calls: [
+                { ...deviceCall('d1'), status: 'completed' },
+                deviceCall('d2'),
+              ],
+            },
+          ],
+        }),
+      } as Response);
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved', sticky: true }),
+      );
+
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d1']);
+      expect(decisionOf(store, 'd2')).toBeUndefined();
+    });
+
     it('a refused send registers nothing', async () => {
       vi.mocked(handleSubmitToolActions).mockImplementation(
         async (_conversationId, _actions, _token, _signal, onEvent) => {

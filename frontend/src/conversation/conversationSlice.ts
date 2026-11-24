@@ -1129,15 +1129,21 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
           }),
         ),
       );
-    // A call of this request the open chat still shows waiting.
-    const ids = new Set(toolActions.map((action) => action.call_id));
+    // The sent turn as the open chat now shows it: found by its message
+    // after a reload (a provider may reuse a call id in another turn).
+    const { messageId } = queries[index];
+    const sentTurn = () => {
+      if (!stillOpen()) return undefined;
+      const now = (getState() as RootState).conversation.queries;
+      return messageId
+        ? now.find((query) => query.messageId === messageId)
+        : now[index];
+    };
+    const callNow = (callId: string) =>
+      sentTurn()?.tool_calls?.find((call) => call.call_id === callId);
     const stillWaiting = () =>
-      stillOpen() &&
-      (getState() as RootState).conversation.queries.some((query) =>
-        query.tool_calls?.some(
-          (call) =>
-            ids.has(call.call_id) && call.status === 'awaiting_approval',
-        ),
+      toolActions.some(
+        (action) => callNow(action.call_id)?.status === 'awaiting_approval',
       );
     // Turned away before anything ran: let the user decide again.
     if (outcome === 'refused') {
@@ -1160,32 +1166,23 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
       }),
     );
     if (!stillOpen()) return;
-    if (stillWaiting()) {
-      clearDecisions();
-      return;
-    }
-    if (outcome === 'ran') return;
-    // Taken after all, with no answer to say so on the way: only a call the
-    // record shows run (not expired, moved on or missing) is auto-approved.
-    const { queries: after, conversationId: afterId } = (
-      getState() as RootState
-    ).conversation;
+    // Taken after all, with no answer to say so on the way: only a call
+    // the record shows run in this turn (not expired, moved on, missing or
+    // still waiting) is auto-approved.
     const ran = (callId: string) => {
-      const call = after
-        .findLast((query) =>
-          query.tool_calls?.some((c) => c.call_id === callId),
-        )
-        ?.tool_calls?.find((c) => c.call_id === callId);
+      const call = callNow(callId);
       return (
-        afterId === conversationId &&
         !!call &&
         !call.not_run &&
         call.status !== 'awaiting_approval' &&
         call.status !== 'denied'
       );
     };
+    const taken =
+      outcome === 'ran' ? [] : autoApprove.filter((item) => ran(item.callId));
+    if (stillWaiting()) clearDecisions();
     await registerAutoApprove(
-      autoApprove.filter((item) => ran(item.callId)),
+      taken,
       (getState() as RootState).preference.token,
     );
   },
