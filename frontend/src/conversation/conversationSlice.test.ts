@@ -16,6 +16,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import activityService from '../api/services/activityService';
 
 import conversationService from '../api/services/conversationService';
+import devicesService from '../api/services/devicesService';
 import type { Agent } from '../agents/types';
 import preferenceReducer, {
   setSelectedAgent,
@@ -38,6 +39,7 @@ import reducer, {
   raiseNotice,
   resendQuery,
   stopAnswer,
+  resetConversation,
   updateQuery,
   retractResponse,
   setWorkflowRunId,
@@ -1778,26 +1780,185 @@ describe('approval decisions in a turn with several waiting calls', () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it('a request stopped before any answer reloads the chat, and the cards ask again', async () => {
-    load.mockResolvedValue({
+  const serverRecord = (calls: ReturnType<typeof approval>[]) =>
+    ({
       ok: true,
       json: async () => ({
         queries: [
-          {
-            prompt: 'create three tasks',
-            response: '',
-            tool_calls: [approval('a'), approval('b'), approval('c')],
-          },
+          { prompt: 'from the server', response: '', tool_calls: calls },
         ],
       }),
-    } as Response);
+    }) as Response;
+  // The connection drops before the server answers.
+  const lostFrame: typeof handleSubmitToolActions = async (
+    _conversationId,
+    _actions,
+    _token,
+    _signal,
+    onEvent,
+  ) => {
+    onEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'error',
+          error: 'Connection lost.',
+          code: 'connection_lost',
+        }),
+      }),
+    );
+    return undefined as never;
+  };
+
+  it('Stop before any answer reloads the chat, and cards still waiting ask again', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      (_conversationId, _actions, _token, signal) =>
+        new Promise((resolve) =>
+          signal.addEventListener('abort', () => resolve(undefined as never)),
+        ),
+    );
+    load.mockResolvedValue(
+      serverRecord([approval('a'), approval('b'), approval('c')]),
+    );
+    const store = storeWithTurn();
+
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    await store.dispatch(stopAnswer());
+    await sending;
+
+    expect(load.mock.calls[0]?.[0]).toBe('conv-1');
+    expect(store.getState().conversation.queries[0].prompt).toBe(
+      'from the server',
+    );
+    expect(decisionOf(store, 'a')).toBeUndefined();
+    expect(decisionOf(store, 'c')).toBeUndefined();
+  });
+
+  it('a dropped connection is not taken for a refusal: the server record decides', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+    load.mockResolvedValue(
+      serverRecord(
+        ['a', 'b', 'c'].map((id) => ({
+          ...approval(id),
+          status: 'completed' as never,
+        })),
+      ),
+    );
     const store = storeWithTurn();
 
     await store.dispatch(approveAllToolCalls({ callId: 'a' }));
 
     expect(load.mock.calls[0]?.[0]).toBe('conv-1');
-    expect(decisionOf(store, 'a')).toBeUndefined();
-    expect(decisionOf(store, 'c')).toBeUndefined();
+    const calls = store.getState().conversation.queries[0].tool_calls;
+    expect(calls?.map((call) => call.status)).toEqual([
+      'completed',
+      'completed',
+      'completed',
+    ]);
+  });
+
+  it('a reload that lands after the user started a new chat is dropped', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+    let answer: (response: Response) => void = () => {};
+    load.mockReturnValue(
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const store = storeWithTurn();
+
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+    expect(load).toHaveBeenCalledTimes(1);
+    store.dispatch(resetConversation());
+    answer(serverRecord([approval('a'), approval('b'), approval('c')]));
+    await sending;
+
+    const state = store.getState().conversation;
+    expect(state.conversationId).toBeNull();
+    expect(state.queries).toEqual([]);
+  });
+
+  describe("Approve, don't ask again", () => {
+    let addPattern: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      addPattern = vi
+        .spyOn(devicesService, 'addAutoApprovePattern')
+        .mockResolvedValue({ pattern: 'ls *' });
+    });
+    afterEach(() => addPattern.mockRestore());
+    const deviceCall = (call_id: string) => ({
+      ...approval(call_id),
+      tool_name: 'remote_device',
+      device_id: 'dev-1',
+      arguments: { command: `ls ${call_id}` },
+    });
+    const storeWithDeviceTurn = () => {
+      const store = storeWithTurn();
+      store.dispatch(
+        setConversation([
+          { prompt: 'list', tool_calls: [deviceCall('d1'), deviceCall('d2')] },
+        ]),
+      );
+      return store;
+    };
+
+    it('an undone one registers nothing', async () => {
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      store.dispatch(setToolDecision({ callId: 'd1', decision: null }));
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'denied' }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved' }),
+      );
+
+      expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+      expect(addPattern).not.toHaveBeenCalled();
+    });
+
+    it('registers the command once, when the server takes the turn', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(
+        settles('d1', 'd2'),
+      );
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      expect(addPattern).not.toHaveBeenCalled();
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'denied' }),
+      );
+
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d1']);
+    });
+
+    it('a refused send registers nothing', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(
+        async (_conversationId, _actions, _token, _signal, onEvent) => {
+          onEvent(
+            new MessageEvent('message', {
+              data: JSON.stringify({ type: 'error', error: 'busy' }),
+            }),
+          );
+          return undefined as never;
+        },
+      );
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(approveAllToolCalls({ callId: 'd2' }));
+
+      expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+      expect(addPattern).not.toHaveBeenCalled();
+    });
   });
 
   it('a request that failed and a chat that cannot be read leave the cards to decide again', async () => {

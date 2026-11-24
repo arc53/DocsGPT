@@ -21,6 +21,12 @@ export type ToolCallsType = {
     comment?: string;
     /** Sent with the turn's other decisions; the request is still open. */
     sent?: boolean;
+    /**
+     * Approve, don't ask again: the device learns the command once the
+     * server has taken the approval, not on the click, so an undone or
+     * refused one leaves nothing behind.
+     */
+    sticky?: boolean;
   };
   /**
    * A call its turn waited on that never ran: the user started a new message

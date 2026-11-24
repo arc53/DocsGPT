@@ -10,6 +10,7 @@ import {
 import type { Agent } from '../agents/types';
 import activityService from '../api/services/activityService';
 import conversationService from '../api/services/conversationService';
+import devicesService from '../api/services/devicesService';
 import {
   sseEventReceived,
   type SSEEvent,
@@ -43,6 +44,7 @@ import {
   recordToolCall,
 } from './answerSegments';
 import {
+  CONNECTION_LOST,
   type ErrorParams,
   readStreamError,
   setErrorDetail,
@@ -319,6 +321,9 @@ export type LoadConversationArgs = {
   // A refresh nobody asked for (an event): dropped when this tab starts
   // streaming an answer before it lands, which it would otherwise overwrite.
   unlessStreaming?: boolean;
+  // A reload of the open chat: dropped when another chat (or a new one) is
+  // open by the time it lands, which it would otherwise replace.
+  whileOpen?: boolean;
 };
 
 let loadSeq = 0;
@@ -336,7 +341,7 @@ export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
 >('loadConversation', async (args, { dispatch, getState }) => {
-  const { id, force, resolveAgent, unlessStreaming } = args;
+  const { id, force, resolveAgent, unlessStreaming, whileOpen } = args;
   const seq = ++loadSeq;
   const workspace = captureWorkspace();
   const state = getState() as RootState;
@@ -386,6 +391,8 @@ export const loadConversation = createAsyncThunk<
   ) {
     return { data: null, stale: true };
   }
+  if (whileOpen && (getState() as RootState).conversation.conversationId !== id)
+    return { data: null, stale: true };
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
   if (agent !== undefined) dispatch(setSelectedAgent(agent));
@@ -985,19 +992,39 @@ export const tailInFlightMessage = createAsyncThunk<
   },
 );
 
+/** A remote device's command approved with "don't ask again". */
+type AutoApprove = { deviceId: string; command: string };
+
 type SubmitToolActionsArgs = {
   toolActions: ToolAction[];
   // The paused turn; the latest shown turn when not given.
   index?: number;
+  // Auto-approved on their device once the server takes the request.
+  autoApprove?: AutoApprove[];
 };
+
+/** Let each device run its approved command without asking again. */
+async function registerAutoApprove(
+  commands: AutoApprove[],
+  token: string | null,
+): Promise<void> {
+  for (const { deviceId, command } of commands) {
+    try {
+      await devicesService.addAutoApprovePattern(deviceId, command, token);
+    } catch (err) {
+      console.error('auto-approve register failed', err);
+    }
+  }
+}
 
 /**
  * How a tool-actions request went: `ran` once the server took it (the resumed
  * run may still fail later) or the pause was already over (the turn reloads),
  * `refused` when it was turned away before anything ran (an error frame
- * first: a 400, a 429).
+ * first: a 400, a 429), `lost` when the connection dropped before the server
+ * answered, so it may or may not have taken it.
  */
-export type ToolActionsOutcome = 'ran' | 'refused';
+export type ToolActionsOutcome = 'ran' | 'refused' | 'lost';
 
 export const submitToolActions = createAsyncThunk<
   ToolActionsOutcome,
@@ -1073,7 +1100,22 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
           },
         }),
       );
-    const sent = await dispatch(submitToolActions({ toolActions, index }));
+    // The commands to auto-approve on their device once this is taken.
+    const autoApprove = turn.waiting.flatMap((call): AutoApprove[] => {
+      const command = call.arguments?.command;
+      return call.local_decision!.decision === 'approved' &&
+        call.local_decision!.sticky &&
+        call.device_id &&
+        typeof command === 'string' &&
+        command
+        ? [{ deviceId: call.device_id, command }]
+        : [];
+    });
+    const sent = await dispatch(
+      submitToolActions({ toolActions, index, autoApprove }),
+    );
+    const outcome: ToolActionsOutcome | 'failed' =
+      submitToolActions.fulfilled.match(sent) ? sent.payload : 'failed';
     // Only on this turn of the chat that sent them.
     const stillOpen = () =>
       (getState() as RootState).conversation.conversationId === conversationId;
@@ -1087,44 +1129,60 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
           }),
         ),
       );
-    const unsettled = () =>
+    // A call of this request the open chat still shows waiting.
+    const ids = new Set(toolActions.map((action) => action.call_id));
+    const stillWaiting = () =>
       stillOpen() &&
-      Boolean(
-        (getState() as RootState).conversation.queries[index]?.tool_calls?.some(
+      (getState() as RootState).conversation.queries.some((query) =>
+        query.tool_calls?.some(
           (call) =>
-            call.status === 'awaiting_approval' && call.local_decision?.sent,
+            ids.has(call.call_id) && call.status === 'awaiting_approval',
         ),
       );
-    if (!stillOpen()) return;
     // Turned away before anything ran: let the user decide again.
-    if (submitToolActions.fulfilled.match(sent) && sent.payload === 'refused') {
-      clearDecisions();
+    if (outcome === 'refused') {
+      if (stillOpen()) clearDecisions();
       return;
     }
+    if (outcome === 'ran' && !stillWaiting()) return;
     // The request ended without settling the cards: stopped or dropped
     // before an answer, so the server may or may not have taken it. Its
     // record says which; when it cannot be read, the cards ask again (a
     // decision the server already took is answered "not pending", which
     // reloads the chat).
-    if (!unsettled() || !conversationId) return;
+    if (!stillOpen() || !conversationId) return;
     await dispatch(
       loadConversation({
         id: conversationId,
         force: true,
         unlessStreaming: true,
+        whileOpen: true,
       }),
     );
-    if (unsettled()) clearDecisions();
+    if (!stillOpen()) return;
+    if (stillWaiting()) clearDecisions();
+    // Taken after all, with no answer to say so on the way.
+    else if (outcome !== 'ran')
+      await registerAutoApprove(
+        autoApprove,
+        (getState() as RootState).preference.token,
+      );
   },
 );
 
 /** Record one approval decision; the turn resumes when all are decided. */
 export const decideToolCall = createAsyncThunk<
   void,
-  { callId: string; decision: 'approved' | 'denied'; comment?: string }
+  {
+    callId: string;
+    decision: 'approved' | 'denied';
+    comment?: string;
+    /** Approve, don't ask again (a remote device's command). */
+    sticky?: boolean;
+  }
 >(
   'decideToolCall',
-  async ({ callId, decision, comment }, { dispatch, getState }) => {
+  async ({ callId, decision, comment, sticky }, { dispatch, getState }) => {
     const turn = approvalTurn(
       (getState() as RootState).conversation.queries,
       callId,
@@ -1136,7 +1194,11 @@ export const decideToolCall = createAsyncThunk<
       conversationSlice.actions.setToolDecision({
         callId,
         index: turn.index,
-        decision: { decision, ...(comment ? { comment } : {}) },
+        decision: {
+          decision,
+          ...(comment ? { comment } : {}),
+          ...(sticky && decision === 'approved' ? { sticky } : {}),
+        },
       }),
     );
     await dispatch(submitTurnDecisions({ callId }));
@@ -1204,13 +1266,13 @@ export const resumeQuestion = createAsyncThunk<
       );
       return submitToolActions.rejected.match(sent)
         ? !sent.meta.aborted
-        : sent.payload === 'refused';
+        : sent.payload !== 'ran';
     },
   });
 });
 
 async function sendToolActions(
-  { toolActions, index }: SubmitToolActionsArgs,
+  { toolActions, index, autoApprove }: SubmitToolActionsArgs,
   {
     dispatch,
     getState,
@@ -1251,11 +1313,17 @@ async function sendToolActions(
       const data = JSON.parse(event.data);
       const targetIndex = pausedIndex;
       // The first frame tells whether the server took the request.
-      if (outcome === null)
+      if (outcome === null) {
         outcome =
           data.type !== 'error' || data.code === NOT_PENDING_CODE
             ? 'ran'
-            : 'refused';
+            : data.code === CONNECTION_LOST
+              ? 'lost'
+              : 'refused';
+        // Taken: from here on the device runs these commands unasked.
+        if (data.type !== 'error' && autoApprove?.length)
+          void registerAutoApprove(autoApprove, state.preference.token);
+      }
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));

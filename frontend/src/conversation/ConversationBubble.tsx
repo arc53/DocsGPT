@@ -43,7 +43,6 @@ import ToolIcon from '../components/ToolIcon';
 import { useOutsideAlerter } from '../hooks';
 import {
   selectSelectedDocs,
-  selectToken,
   selectTtsAvailable,
 } from '../preferences/preferenceSlice';
 import {
@@ -79,7 +78,7 @@ import ToolCallCard from './ToolCallCard';
 import QuestionBlock from './QuestionBlock';
 import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
-import { approveAllToolCalls } from './conversationSlice';
+import { approveAllToolCalls, decideToolCall } from './conversationSlice';
 import { formatCount } from '../utils/dateTimeUtils';
 import {
   HeldDecisionBadge,
@@ -836,7 +835,6 @@ function ToolCallApprovalBar({
   const dispatch = useDispatch<AppDispatch>();
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
-  const token = useSelector(selectToken);
   // The other cards this call's turn waits on (see useTurnApprovals).
   const { undecided, approvable } = useTurnApprovals(toolCall.call_id);
   const held = toolCall.local_decision;
@@ -852,24 +850,17 @@ function ToolCallApprovalBar({
   const secretRefs = toolCall.secret_refs ?? [];
   // A call that fills in a link secret is approved one at a time, never as a sticky pattern.
   const offerSticky = isRemoteDevice && secretRefs.length === 0;
-  const handleApproveSticky = async () => {
-    if (!isRemoteDevice || !toolCall.device_id) return;
-    const command =
-      (toolCall.arguments && (toolCall.arguments.command as string)) || '';
-    if (command) {
-      try {
-        const { default: devicesService } =
-          await import('../api/services/devicesService');
-        await devicesService.addAutoApprovePattern(
-          toolCall.device_id,
-          command,
-          token,
-        );
-      } catch (err) {
-        console.error('auto-approve register failed', err);
-      }
-    }
-    onToolAction?.(toolCall.call_id, 'approved');
+  // The command is auto-approved on the device only once the server has
+  // taken this approval (see submitTurnDecisions), so Undo leaves nothing.
+  const handleApproveSticky = () => {
+    if (!onToolAction) return;
+    void dispatch(
+      decideToolCall({
+        callId: toolCall.call_id,
+        decision: 'approved',
+        sticky: true,
+      }),
+    );
   };
 
   return (
@@ -941,9 +932,7 @@ function ToolCallApprovalBar({
                 variant="outline"
                 size="xs"
                 shape="pill"
-                onClick={() => {
-                  void handleApproveSticky();
-                }}
+                onClick={handleApproveSticky}
               >
                 {t('conversation.toolApproval.approveAlways')}
               </Button>
