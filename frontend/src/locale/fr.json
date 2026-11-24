@@ -1708,7 +1708,7 @@
     },
     "toolApproval": {
       "approve": "Approuver",
-      "approveAll": "Tout approuver ({{count}})",
+      "approveAll": "Tout approuver ({{formatted}})",
       "approveAlways": "Approuver, ne plus demander",
       "connect": "Connecter {{name}}",
       "connectTitle": "Cet outil a besoin de votre compte {{name}}.",

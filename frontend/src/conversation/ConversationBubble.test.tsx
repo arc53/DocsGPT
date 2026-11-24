@@ -608,9 +608,28 @@ describe('ConversationBubble', () => {
       ).filter(
         (b) =>
           b.textContent?.trim() ===
-          tr('conversation.toolApproval.approveAll').replace('{{count}}', '2'),
+          tr('conversation.toolApproval.approveAll').replace(
+            '{{formatted}}',
+            '2',
+          ),
       );
       expect(approveAll).toHaveLength(2);
+    });
+
+    it('offers no Undo once the decisions are sent', async () => {
+      const store = chatStore();
+      store.dispatch(
+        setToolDecision({
+          callId: 'p1',
+          decision: { decision: 'approved', sent: true },
+        }),
+      );
+      await renderTurn(store);
+
+      expect(container.textContent).toContain(
+        tr('conversation.toolApproval.state.approved'),
+      );
+      expect(buttonByText(tr('conversation.toolApproval.undo'))).toBeFalsy();
     });
 
     it('shows a held decision with Undo, and Undo asks again', async () => {

@@ -1749,7 +1749,7 @@
     },
     "toolApproval": {
       "approve": "Одобрить",
-      "approveAll": "Одобрить все ({{count}})",
+      "approveAll": "Одобрить все ({{formatted}})",
       "approveAlways": "Одобрить и больше не спрашивать",
       "connect": "Подключить {{name}}",
       "connectTitle": "Этому инструменту нужен ваш аккаунт {{name}}.",

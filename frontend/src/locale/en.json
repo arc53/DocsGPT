@@ -1688,7 +1688,7 @@
     },
     "toolApproval": {
       "approve": "Approve",
-      "approveAll": "Approve all ({{count}})",
+      "approveAll": "Approve all ({{formatted}})",
       "approveAlways": "Approve, don't ask again",
       "connect": "Connect {{name}}",
       "connectTitle": "This tool needs your {{name}} account.",

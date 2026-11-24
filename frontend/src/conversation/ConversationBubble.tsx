@@ -80,6 +80,7 @@ import QuestionBlock from './QuestionBlock';
 import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
 import { approveAllToolCalls } from './conversationSlice';
+import { formatCount } from '../utils/dateTimeUtils';
 import {
   HeldDecisionBadge,
   UndoDecisionButton,
@@ -902,7 +903,7 @@ function ToolCallApprovalBar({
       }
       actions={
         held ? (
-          <UndoDecisionButton callId={toolCall.call_id} />
+          !held.sent && <UndoDecisionButton callId={toolCall.call_id} />
         ) : (
           <>
             <Button
@@ -930,7 +931,7 @@ function ToolCallApprovalBar({
                 }}
               >
                 {t('conversation.toolApproval.approveAll', {
-                  count: approvable,
+                  formatted: formatCount(approvable),
                 })}
               </Button>
             )}

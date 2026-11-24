@@ -1659,7 +1659,7 @@
     },
     "toolApproval": {
       "approve": "承認",
-      "approveAll": "すべて承認 ({{count}})",
+      "approveAll": "すべて承認 ({{formatted}})",
       "approveAlways": "承認し、今後は確認しない",
       "connect": "{{name}} に接続",
       "connectTitle": "このツールには {{name}} アカウントが必要です。",

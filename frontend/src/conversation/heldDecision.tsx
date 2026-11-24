@@ -52,7 +52,10 @@ export function HeldDecisionBadge({
   );
 }
 
-/** Takes a held decision back, so the card asks again. */
+/**
+ * Takes a held decision back, so the card asks again. A card shows none once
+ * its decision is sent: the request is open, and a second would replace it.
+ */
 export function UndoDecisionButton({ callId }: { callId: string }) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();

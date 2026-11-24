@@ -1667,7 +1667,7 @@
     },
     "toolApproval": {
       "approve": "Genehmigen",
-      "approveAll": "Alle genehmigen ({{count}})",
+      "approveAll": "Alle genehmigen ({{formatted}})",
       "approveAlways": "Genehmigen, nicht mehr fragen",
       "connect": "{{name}} verbinden",
       "connectTitle": "Dieses Werkzeug braucht dein {{name}}-Konto.",

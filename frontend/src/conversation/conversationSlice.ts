@@ -1032,33 +1032,64 @@ function approvalTurn(
 const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
   'submitTurnDecisions',
   async ({ callId }, { dispatch, getState }) => {
-    const turn = approvalTurn(
-      (getState() as RootState).conversation.queries,
-      callId,
-    );
+    const { conversationId, queries } = (getState() as RootState).conversation;
+    const turn = approvalTurn(queries, callId);
     if (!turn || !turn.waiting.length) return;
-    if (turn.waiting.some((call) => !call.local_decision)) return;
-    const toolActions = turn.waiting.map((call) => ({
-      call_id: call.call_id,
-      decision: call.local_decision!.decision,
-      ...(call.local_decision!.comment
-        ? { comment: call.local_decision!.comment }
-        : {}),
-    }));
-    const sent = await dispatch(
-      submitToolActions({ toolActions, index: turn.index }),
+    // Every card decided, and not already on its way.
+    if (
+      turn.waiting.some(
+        (call) => !call.local_decision || call.local_decision.sent,
+      )
+    )
+      return;
+    const { index } = turn;
+    const toolActions = turn.waiting.map((call) => {
+      const { decision, comment } = call.local_decision!;
+      return {
+        call_id: call.call_id,
+        decision,
+        ...(comment ? { comment } : {}),
+      };
+    });
+    // Sent: no Undo or second decision while the request is open.
+    turn.waiting.forEach((call) =>
+      dispatch(
+        conversationSlice.actions.setToolDecision({
+          callId: call.call_id,
+          index,
+          decision: { ...call.local_decision!, sent: true },
+        }),
+      ),
     );
-    // Nothing ran: let the user decide again.
-    if (submitToolActions.rejected.match(sent) || sent.payload === 'refused') {
+    // A refused try's error leaves the turn: deciding again is the retry.
+    if (queries[index].error)
+      dispatch(
+        conversationSlice.actions.updateQuery({
+          index,
+          query: {
+            error: undefined,
+            errorCode: undefined,
+            errorParams: undefined,
+          },
+        }),
+      );
+    const sent = await dispatch(submitToolActions({ toolActions, index }));
+    // Nothing ran: let the user decide again, on this turn only.
+    const refused =
+      submitToolActions.rejected.match(sent) || sent.payload === 'refused';
+    if (
+      refused &&
+      (getState() as RootState).conversation.conversationId === conversationId
+    )
       toolActions.forEach((action) =>
         dispatch(
           conversationSlice.actions.setToolDecision({
             callId: action.call_id,
+            index,
             decision: null,
           }),
         ),
       );
-    }
   },
 );
 
@@ -1066,15 +1097,26 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
 export const decideToolCall = createAsyncThunk<
   void,
   { callId: string; decision: 'approved' | 'denied'; comment?: string }
->('decideToolCall', async ({ callId, decision, comment }, { dispatch }) => {
-  dispatch(
-    conversationSlice.actions.setToolDecision({
+>(
+  'decideToolCall',
+  async ({ callId, decision, comment }, { dispatch, getState }) => {
+    const turn = approvalTurn(
+      (getState() as RootState).conversation.queries,
       callId,
-      decision: { decision, ...(comment ? { comment } : {}) },
-    }),
-  );
-  await dispatch(submitTurnDecisions({ callId }));
-});
+    );
+    const call = turn?.waiting.find((c) => c.call_id === callId);
+    // Already sent with the turn's other decisions.
+    if (!turn || call?.local_decision?.sent) return;
+    dispatch(
+      conversationSlice.actions.setToolDecision({
+        callId,
+        index: turn.index,
+        decision: { decision, ...(comment ? { comment } : {}) },
+      }),
+    );
+    await dispatch(submitTurnDecisions({ callId }));
+  },
+);
 
 /**
  * Approve every undecided approval of the turn holding ``callId``, and resume
@@ -1095,6 +1137,7 @@ export const approveAllToolCalls = createAsyncThunk<void, { callId: string }>(
         dispatch(
           conversationSlice.actions.setToolDecision({
             callId: call.call_id,
+            index: turn.index,
             decision: { decision: 'approved' },
           }),
         ),
@@ -1402,15 +1445,18 @@ export const conversationSlice = createSlice({
       action: PayloadAction<{
         callId: string;
         decision: ToolCallsType['local_decision'] | null;
+        /** The turn; the latest one holding the call when not given. */
+        index?: number;
       }>,
     ) {
-      const { callId, decision } = action.payload;
-      // The latest turn holding the call, as approvalTurn reads it.
-      const call = state.queries
-        .findLast((query) =>
-          query.tool_calls?.some((c) => c.call_id === callId),
-        )
-        ?.tool_calls?.find((c) => c.call_id === callId);
+      const { callId, decision, index } = action.payload;
+      const turn =
+        index === undefined
+          ? state.queries.findLast((query) =>
+              query.tool_calls?.some((c) => c.call_id === callId),
+            )
+          : state.queries[index];
+      const call = turn?.tool_calls?.find((c) => c.call_id === callId);
       if (!call) return;
       if (decision) call.local_decision = decision;
       else delete call.local_decision;

@@ -1659,7 +1659,7 @@
     },
     "toolApproval": {
       "approve": "核准",
-      "approveAll": "全部核准 ({{count}})",
+      "approveAll": "全部核准 ({{formatted}})",
       "approveAlways": "核准，不再詢問",
       "connect": "連線 {{name}}",
       "connectTitle": "此工具需要你的 {{name}} 帳號。",

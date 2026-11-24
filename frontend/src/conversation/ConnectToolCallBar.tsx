@@ -182,7 +182,7 @@ export default function ConnectToolCallBar({
       state={held ? <HeldDecisionBadge decision={held} /> : state}
       actions={
         held ? (
-          <UndoDecisionButton callId={toolCall.call_id} />
+          !held.sent && <UndoDecisionButton callId={toolCall.call_id} />
         ) : (
           <>
             {primary}

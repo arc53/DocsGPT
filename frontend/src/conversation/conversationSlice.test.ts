@@ -1898,11 +1898,76 @@ describe('approval decisions in a turn with several waiting calls', () => {
       },
     );
     const store = storeWithTurn();
+    store.dispatch(
+      raiseError({ conversationId: 'conv-1', index: 0, message: 'earlier' }),
+    );
 
     await store.dispatch(approveAllToolCalls({ callId: 'a' }));
 
     expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
     expect(decisionOf(store, 'a')).toBeUndefined();
     expect(decisionOf(store, 'c')).toBeUndefined();
+    // This try's error replaced the earlier one; the cards wait again.
+    expect(store.getState().conversation.queries[0].error).toBe('busy');
+  });
+
+  it('a sent decision cannot be undone or sent again while the request is open', async () => {
+    let finish: () => void = () => {};
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(undefined as never);
+        }),
+    );
+    const store = storeWithTurn();
+
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    expect(decisionOf(store, 'a')).toEqual({
+      decision: 'approved',
+      sent: true,
+    });
+    await store.dispatch(decideToolCall({ callId: 'a', decision: 'denied' }));
+    expect(decisionOf(store, 'a')).toEqual({
+      decision: 'approved',
+      sent: true,
+    });
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+
+    finish();
+    await sending;
+  });
+
+  it('a refusal arriving after the user opened another chat leaves that chat alone', async () => {
+    let refuse: () => void = () => {};
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        await new Promise<void>((resolve) => {
+          refuse = resolve;
+        });
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'error', error: 'busy' }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const store = storeWithTurn();
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    // Another chat, whose waiting turn reuses a call id and holds a decision.
+    store.dispatch(
+      setConversation([
+        { prompt: 'other', tool_calls: [approval('a'), approval('z')] },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-2'));
+    store.dispatch(
+      setToolDecision({ callId: 'a', decision: { decision: 'denied' } }),
+    );
+
+    refuse();
+    await sending;
+    expect(decisionOf(store, 'a')).toEqual({ decision: 'denied' });
   });
 });
