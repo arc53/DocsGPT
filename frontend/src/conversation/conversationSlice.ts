@@ -10,6 +10,7 @@ import {
 import type { Agent } from '../agents/types';
 import activityService from '../api/services/activityService';
 import conversationService from '../api/services/conversationService';
+import devicesService from '../api/services/devicesService';
 import {
   sseEventReceived,
   type SSEEvent,
@@ -43,6 +44,7 @@ import {
   recordToolCall,
 } from './answerSegments';
 import {
+  CONNECTION_LOST,
   type ErrorParams,
   readStreamError,
   setErrorDetail,
@@ -319,6 +321,9 @@ export type LoadConversationArgs = {
   // A refresh nobody asked for (an event): dropped when this tab starts
   // streaming an answer before it lands, which it would otherwise overwrite.
   unlessStreaming?: boolean;
+  // A reload of the open chat: dropped when another chat (or a new one) is
+  // open by the time it lands, which it would otherwise replace.
+  whileOpen?: boolean;
 };
 
 let loadSeq = 0;
@@ -336,7 +341,7 @@ export const loadConversation = createAsyncThunk<
   LoadConversationResult,
   LoadConversationArgs
 >('loadConversation', async (args, { dispatch, getState }) => {
-  const { id, force, resolveAgent, unlessStreaming } = args;
+  const { id, force, resolveAgent, unlessStreaming, whileOpen } = args;
   const seq = ++loadSeq;
   const workspace = captureWorkspace();
   const state = getState() as RootState;
@@ -386,6 +391,8 @@ export const loadConversation = createAsyncThunk<
   ) {
     return { data: null, stale: true };
   }
+  if (whileOpen && (getState() as RootState).conversation.conversationId !== id)
+    return { data: null, stale: true };
 
   const mappedQueries = (data.queries || []).map(mapServerQueryToClient);
   if (agent !== undefined) dispatch(setSelectedAgent(agent));
@@ -985,24 +992,264 @@ export const tailInFlightMessage = createAsyncThunk<
   },
 );
 
+/** A remote device's command approved with "don't ask again". */
+type AutoApprove = { callId: string; deviceId: string; command: string };
+
 type SubmitToolActionsArgs = {
   toolActions: ToolAction[];
   // The paused turn; the latest shown turn when not given.
   index?: number;
+  // Auto-approved on their device once the server takes the request.
+  autoApprove?: AutoApprove[];
 };
+
+/** Let each device run its approved command without asking again. */
+async function registerAutoApprove(
+  commands: AutoApprove[],
+  token: string | null,
+): Promise<void> {
+  for (const { deviceId, command } of commands) {
+    try {
+      await devicesService.addAutoApprovePattern(deviceId, command, token);
+    } catch (err) {
+      console.error('auto-approve register failed', err);
+    }
+  }
+}
 
 /**
  * How a tool-actions request went: `ran` once the server took it (the resumed
  * run may still fail later) or the pause was already over (the turn reloads),
  * `refused` when it was turned away before anything ran (an error frame
- * first: a 400, a 429).
+ * first: a 400, a 429), `lost` when the connection dropped before the server
+ * answered, so it may or may not have taken it.
  */
-export type ToolActionsOutcome = 'ran' | 'refused';
+export type ToolActionsOutcome = 'ran' | 'refused' | 'lost';
 
 export const submitToolActions = createAsyncThunk<
   ToolActionsOutcome,
   SubmitToolActionsArgs
 >('submitToolActions', streamed(sendToolActions));
+
+/**
+ * The latest turn holding ``callId`` (a provider may reuse a call id across
+ * turns) and its calls still waiting on an approval or a Connect card.
+ */
+function approvalTurn(
+  queries: Query[],
+  callId: string,
+): { index: number; waiting: ToolCallsType[] } | null {
+  const index = queries.findLastIndex((query) =>
+    query.tool_calls?.some((call) => call.call_id === callId),
+  );
+  if (index === -1) return null;
+  return {
+    index,
+    waiting: (queries[index].tool_calls ?? []).filter(
+      (call) => call.status === 'awaiting_approval',
+    ),
+  };
+}
+
+/**
+ * Send the turn's approval decisions once every waiting call has one. The
+ * server settles a paused turn in one resume and denies any call the request
+ * leaves out, so deciding one card must not resume the turn on its own.
+ */
+const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
+  'submitTurnDecisions',
+  async ({ callId }, { dispatch, getState }) => {
+    const { conversationId, queries } = (getState() as RootState).conversation;
+    const turn = approvalTurn(queries, callId);
+    if (!turn || !turn.waiting.length) return;
+    // Every card decided, and not already on its way.
+    if (
+      turn.waiting.some(
+        (call) => !call.local_decision || call.local_decision.sent,
+      )
+    )
+      return;
+    const { index } = turn;
+    const toolActions = turn.waiting.map((call) => {
+      const { decision, comment } = call.local_decision!;
+      return {
+        call_id: call.call_id,
+        decision,
+        ...(comment ? { comment } : {}),
+      };
+    });
+    // Sent: no Undo or second decision while the request is open.
+    turn.waiting.forEach((call) =>
+      dispatch(
+        conversationSlice.actions.setToolDecision({
+          callId: call.call_id,
+          index,
+          decision: { ...call.local_decision!, sent: true },
+        }),
+      ),
+    );
+    // A refused try's error leaves the turn: deciding again is the retry.
+    if (queries[index].error)
+      dispatch(
+        conversationSlice.actions.updateQuery({
+          index,
+          query: {
+            error: undefined,
+            errorCode: undefined,
+            errorParams: undefined,
+          },
+        }),
+      );
+    // The commands to auto-approve on their device once this is taken.
+    const autoApprove = turn.waiting.flatMap((call): AutoApprove[] => {
+      const command = call.arguments?.command;
+      return call.local_decision!.decision === 'approved' &&
+        call.local_decision!.sticky &&
+        call.device_id &&
+        typeof command === 'string' &&
+        command
+        ? [{ callId: call.call_id, deviceId: call.device_id, command }]
+        : [];
+    });
+    const sent = await dispatch(
+      submitToolActions({ toolActions, index, autoApprove }),
+    );
+    const outcome: ToolActionsOutcome | 'failed' =
+      submitToolActions.fulfilled.match(sent) ? sent.payload : 'failed';
+    // Only on this turn of the chat that sent them.
+    const stillOpen = () =>
+      (getState() as RootState).conversation.conversationId === conversationId;
+    const clearDecisions = () =>
+      toolActions.forEach((action) =>
+        dispatch(
+          conversationSlice.actions.setToolDecision({
+            callId: action.call_id,
+            index,
+            decision: null,
+          }),
+        ),
+      );
+    // The sent turn as the open chat now shows it: found by its message
+    // after a reload (a provider may reuse a call id in another turn).
+    const { messageId } = queries[index];
+    const sentTurn = () => {
+      if (!stillOpen()) return undefined;
+      const now = (getState() as RootState).conversation.queries;
+      return messageId
+        ? now.find((query) => query.messageId === messageId)
+        : now[index];
+    };
+    const callNow = (callId: string) =>
+      sentTurn()?.tool_calls?.find((call) => call.call_id === callId);
+    const stillWaiting = () =>
+      toolActions.some(
+        (action) => callNow(action.call_id)?.status === 'awaiting_approval',
+      );
+    // Turned away before anything ran: let the user decide again.
+    if (outcome === 'refused') {
+      if (stillOpen()) clearDecisions();
+      return;
+    }
+    if (outcome === 'ran' && !stillWaiting()) return;
+    // The request ended without settling the cards: stopped or dropped
+    // before an answer, so the server may or may not have taken it. Its
+    // record says which; when it cannot be read, the cards ask again (a
+    // decision the server already took is answered "not pending", which
+    // reloads the chat).
+    if (!stillOpen() || !conversationId) return;
+    await dispatch(
+      loadConversation({
+        id: conversationId,
+        force: true,
+        unlessStreaming: true,
+        whileOpen: true,
+      }),
+    );
+    if (!stillOpen()) return;
+    // Taken after all, with no answer to say so on the way: only a call
+    // the record shows run in this turn (not expired, moved on, missing or
+    // still waiting) is auto-approved.
+    const ran = (callId: string) => {
+      const call = callNow(callId);
+      return (
+        !!call &&
+        !call.not_run &&
+        call.status !== 'awaiting_approval' &&
+        call.status !== 'denied'
+      );
+    };
+    const taken =
+      outcome === 'ran' ? [] : autoApprove.filter((item) => ran(item.callId));
+    if (stillWaiting()) clearDecisions();
+    await registerAutoApprove(
+      taken,
+      (getState() as RootState).preference.token,
+    );
+  },
+);
+
+/** Record one approval decision; the turn resumes when all are decided. */
+export const decideToolCall = createAsyncThunk<
+  void,
+  {
+    callId: string;
+    decision: 'approved' | 'denied';
+    comment?: string;
+    /** Approve, don't ask again (a remote device's command). */
+    sticky?: boolean;
+  }
+>(
+  'decideToolCall',
+  async ({ callId, decision, comment, sticky }, { dispatch, getState }) => {
+    const turn = approvalTurn(
+      (getState() as RootState).conversation.queries,
+      callId,
+    );
+    const call = turn?.waiting.find((c) => c.call_id === callId);
+    // Already sent with the turn's other decisions.
+    if (!turn || call?.local_decision?.sent) return;
+    dispatch(
+      conversationSlice.actions.setToolDecision({
+        callId,
+        index: turn.index,
+        decision: {
+          decision,
+          ...(comment ? { comment } : {}),
+          ...(sticky && decision === 'approved' ? { sticky } : {}),
+        },
+      }),
+    );
+    await dispatch(submitTurnDecisions({ callId }));
+  },
+);
+
+/**
+ * Approve every undecided approval of the turn holding ``callId``, and resume
+ * it once nothing else in the turn is left to decide.
+ */
+export const approveAllToolCalls = createAsyncThunk<void, { callId: string }>(
+  'approveAllToolCalls',
+  async ({ callId }, { dispatch, getState }) => {
+    const turn = approvalTurn(
+      (getState() as RootState).conversation.queries,
+      callId,
+    );
+    if (!turn) return;
+    // A Connect card waits on an account, not a yes: it is left to the user.
+    turn.waiting
+      .filter((call) => !call.local_decision && !call.connection_required)
+      .forEach((call) =>
+        dispatch(
+          conversationSlice.actions.setToolDecision({
+            callId: call.call_id,
+            index: turn.index,
+            decision: { decision: 'approved' },
+          }),
+        ),
+      );
+    await dispatch(submitTurnDecisions({ callId }));
+  },
+);
 
 /**
  * Resume a turn paused on clarifying questions (`ask_user`) with the user's
@@ -1037,13 +1284,13 @@ export const resumeQuestion = createAsyncThunk<
       );
       return submitToolActions.rejected.match(sent)
         ? !sent.meta.aborted
-        : sent.payload === 'refused';
+        : sent.payload !== 'ran';
     },
   });
 });
 
 async function sendToolActions(
-  { toolActions, index }: SubmitToolActionsArgs,
+  { toolActions, index, autoApprove }: SubmitToolActionsArgs,
   {
     dispatch,
     getState,
@@ -1084,11 +1331,17 @@ async function sendToolActions(
       const data = JSON.parse(event.data);
       const targetIndex = pausedIndex;
       // The first frame tells whether the server took the request.
-      if (outcome === null)
+      if (outcome === null) {
         outcome =
           data.type !== 'error' || data.code === NOT_PENDING_CODE
             ? 'ran'
-            : 'refused';
+            : data.code === CONNECTION_LOST
+              ? 'lost'
+              : 'refused';
+        // Taken: from here on the device runs these commands unasked.
+        if (data.type !== 'error' && autoApprove?.length)
+          void registerAutoApprove(autoApprove, state.preference.token);
+      }
 
       if (data.type === 'end') {
         dispatch(conversationSlice.actions.setStatus('idle'));
@@ -1296,6 +1549,28 @@ export const conversationSlice = createSlice({
       const { index, query } = action.payload;
       if (query.sources !== undefined)
         state.queries[index].sources = query.sources;
+    },
+    // Hold (or with ``null`` clear) the user's decision on a waiting approval.
+    setToolDecision(
+      state,
+      action: PayloadAction<{
+        callId: string;
+        decision: ToolCallsType['local_decision'] | null;
+        /** The turn; the latest one holding the call when not given. */
+        index?: number;
+      }>,
+    ) {
+      const { callId, decision, index } = action.payload;
+      const turn =
+        index === undefined
+          ? state.queries.findLast((query) =>
+              query.tool_calls?.some((c) => c.call_id === callId),
+            )
+          : state.queries[index];
+      const call = turn?.tool_calls?.find((c) => c.call_id === callId);
+      if (!call) return;
+      if (decision) call.local_decision = decision;
+      else delete call.local_decision;
     },
     updateToolCall(state, action) {
       const { index, tool_call } = action.payload;
@@ -1649,6 +1924,20 @@ export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
 
+const NO_CALLS: ToolCallsType[] = [];
+
+/**
+ * The calls of the latest turn holding ``callId``. Shared and embedded views
+ * render the approval cards without the chat slice, and get none.
+ */
+export const selectTurnToolCalls = (
+  state: RootState,
+  callId: string,
+): ToolCallsType[] =>
+  (state.conversation?.queries ?? []).findLast((query) =>
+    query.tool_calls?.some((call) => call.call_id === callId),
+  )?.tool_calls ?? NO_CALLS;
+
 export const {
   addQuery,
   updateQuery,
@@ -1658,6 +1947,7 @@ export const {
   updateThought,
   updateStreamingSource,
   updateToolCall,
+  setToolDecision,
   setWorkflowRunId,
   updateWorkflowStep,
   updateWorkflowLoopItem,

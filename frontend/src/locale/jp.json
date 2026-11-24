@@ -1659,6 +1659,7 @@
     },
     "toolApproval": {
       "approve": "承認",
+      "approveAll": "すべて承認 ({{formatted}})",
       "approveAlways": "承認し、今後は確認しない",
       "connect": "{{name}} に接続",
       "connectTitle": "このツールには {{name}} アカウントが必要です。",
@@ -1677,9 +1678,13 @@
       "skip": "スキップ",
       "state": {
         "approval": "承認が必要",
+        "approved": "承認済み",
+        "denied": "拒否済み",
         "notConnected": "未接続"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "元に戻す",
+      "waitingForOthers": "この回答の他のリクエストがすべて決定されると送信されます。"
     },
     "toolChip": {
       "accessingMemory": "メモリにアクセス済み",

@@ -1659,6 +1659,7 @@
     },
     "toolApproval": {
       "approve": "批准",
+      "approveAll": "全部批准 ({{formatted}})",
       "approveAlways": "批准，不再询问",
       "connect": "连接 {{name}}",
       "connectTitle": "此工具需要你的 {{name}} 账号。",
@@ -1677,9 +1678,13 @@
       "skip": "跳过",
       "state": {
         "approval": "需要批准",
+        "approved": "已批准",
+        "denied": "已拒绝",
         "notConnected": "未连接"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "撤销",
+      "waitingForOthers": "此回答中的其他请求都决定后才会发送。"
     },
     "toolChip": {
       "accessingMemory": "已访问记忆",

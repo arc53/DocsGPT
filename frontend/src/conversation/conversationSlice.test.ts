@@ -16,6 +16,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import activityService from '../api/services/activityService';
 
 import conversationService from '../api/services/conversationService';
+import devicesService from '../api/services/devicesService';
 import type { Agent } from '../agents/types';
 import preferenceReducer, {
   setSelectedAgent,
@@ -38,6 +39,7 @@ import reducer, {
   raiseNotice,
   resendQuery,
   stopAnswer,
+  resetConversation,
   updateQuery,
   retractResponse,
   setWorkflowRunId,
@@ -47,6 +49,9 @@ import reducer, {
   setStatus,
   resumeQuestion,
   submitToolActions,
+  decideToolCall,
+  approveAllToolCalls,
+  setToolDecision,
   tailInFlightMessage,
   updateConversationId,
 } from './conversationSlice';
@@ -1695,5 +1700,614 @@ describe('resumeQuestion', () => {
       status: 'denied',
       not_run: 'moved_on',
     });
+  });
+});
+
+describe('approval decisions in a turn with several waiting calls', () => {
+  const approval = (call_id: string) => ({
+    tool_name: 'api_tool',
+    action_name: 'task_create',
+    call_id,
+    arguments: {},
+    status: 'awaiting_approval' as const,
+  });
+  const storeWithTurn = () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        {
+          prompt: 'create three tasks',
+          tool_calls: [approval('a'), approval('b'), approval('c')],
+        },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+    return store;
+  };
+  const decisionOf = (
+    store: ReturnType<typeof storeWithTurn>,
+    callId: string,
+  ) =>
+    store
+      .getState()
+      .conversation.queries[0].tool_calls?.find((c) => c.call_id === callId)
+      ?.local_decision;
+
+  // The server's record when a request ends without settling the cards.
+  let load: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    vi.mocked(handleSubmitToolActions).mockReset();
+    vi.mocked(handleSubmitToolActions).mockResolvedValue(undefined as never);
+    load = vi
+      .spyOn(conversationService, 'getConversation')
+      .mockResolvedValue({ ok: false } as Response);
+  });
+  afterEach(() => load.mockRestore());
+
+  // The resumed stream reports each call it settled.
+  const settles =
+    (...callIds: string[]): typeof handleSubmitToolActions =>
+    async (_conversationId, _actions, _token, _signal, onEvent) => {
+      callIds.forEach((call_id) =>
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({
+              type: 'tool_call',
+              data: { call_id, status: 'completed' },
+            }),
+          }),
+        ),
+      );
+      return undefined as never;
+    };
+
+  it('a request that settles the cards needs no reload', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      settles('a', 'b', 'c'),
+    );
+    const store = storeWithTurn();
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  const serverRecord = (calls: ReturnType<typeof approval>[]) =>
+    ({
+      ok: true,
+      json: async () => ({
+        queries: [
+          { prompt: 'from the server', response: '', tool_calls: calls },
+        ],
+      }),
+    }) as Response;
+  // The connection drops before the server answers.
+  const lostFrame: typeof handleSubmitToolActions = async (
+    _conversationId,
+    _actions,
+    _token,
+    _signal,
+    onEvent,
+  ) => {
+    onEvent(
+      new MessageEvent('message', {
+        data: JSON.stringify({
+          type: 'error',
+          error: 'Connection lost.',
+          code: 'connection_lost',
+        }),
+      }),
+    );
+    return undefined as never;
+  };
+
+  it('Stop before any answer reloads the chat, and cards still waiting ask again', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      (_conversationId, _actions, _token, signal) =>
+        new Promise((resolve) =>
+          signal.addEventListener('abort', () => resolve(undefined as never)),
+        ),
+    );
+    load.mockResolvedValue(
+      serverRecord([approval('a'), approval('b'), approval('c')]),
+    );
+    const store = storeWithTurn();
+
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    await store.dispatch(stopAnswer());
+    await sending;
+
+    expect(load.mock.calls[0]?.[0]).toBe('conv-1');
+    expect(store.getState().conversation.queries[0].prompt).toBe(
+      'from the server',
+    );
+    expect(decisionOf(store, 'a')).toBeUndefined();
+    expect(decisionOf(store, 'c')).toBeUndefined();
+  });
+
+  it('a dropped connection is not taken for a refusal: the server record decides', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+    load.mockResolvedValue(
+      serverRecord(
+        ['a', 'b', 'c'].map((id) => ({
+          ...approval(id),
+          status: 'completed' as never,
+        })),
+      ),
+    );
+    const store = storeWithTurn();
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(load.mock.calls[0]?.[0]).toBe('conv-1');
+    const calls = store.getState().conversation.queries[0].tool_calls;
+    expect(calls?.map((call) => call.status)).toEqual([
+      'completed',
+      'completed',
+      'completed',
+    ]);
+  });
+
+  it('a reload that lands after the user started a new chat is dropped', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+    let answer: (response: Response) => void = () => {};
+    load.mockReturnValue(
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const store = storeWithTurn();
+
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    for (let i = 0; i < 4; i += 1) await new Promise((r) => setTimeout(r, 0));
+    expect(load).toHaveBeenCalledTimes(1);
+    store.dispatch(resetConversation());
+    answer(serverRecord([approval('a'), approval('b'), approval('c')]));
+    await sending;
+
+    const state = store.getState().conversation;
+    expect(state.conversationId).toBeNull();
+    expect(state.queries).toEqual([]);
+  });
+
+  describe("Approve, don't ask again", () => {
+    let addPattern: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      addPattern = vi
+        .spyOn(devicesService, 'addAutoApprovePattern')
+        .mockResolvedValue({ pattern: 'ls *' });
+    });
+    afterEach(() => addPattern.mockRestore());
+    const deviceCall = (call_id: string) => ({
+      ...approval(call_id),
+      tool_name: 'remote_device',
+      device_id: 'dev-1',
+      arguments: { command: `ls ${call_id}` },
+    });
+    const storeWithDeviceTurn = () => {
+      const store = storeWithTurn();
+      store.dispatch(
+        setConversation([
+          { prompt: 'list', tool_calls: [deviceCall('d1'), deviceCall('d2')] },
+        ]),
+      );
+      return store;
+    };
+
+    it('an undone one registers nothing', async () => {
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      store.dispatch(setToolDecision({ callId: 'd1', decision: null }));
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'denied' }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved' }),
+      );
+
+      expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+      expect(addPattern).not.toHaveBeenCalled();
+    });
+
+    it('registers the command once, when the server takes the turn', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(
+        settles('d1', 'd2'),
+      );
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      expect(addPattern).not.toHaveBeenCalled();
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'denied' }),
+      );
+
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d1']);
+    });
+
+    it('after a dropped send, registers only the calls the record shows run', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+      load.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'list',
+              response: '',
+              tool_calls: [
+                { ...deviceCall('d1'), status: 'denied', not_run: 'expired' },
+                { ...deviceCall('d2'), status: 'completed' },
+              ],
+            },
+          ],
+        }),
+      } as Response);
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved', sticky: true }),
+      );
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d2']);
+    });
+
+    it('after a dropped send, a call missing from its turn is not taken for one of the same id in another', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+      load.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'earlier',
+              response: '',
+              message_id: 'm-earlier',
+              tool_calls: [{ ...deviceCall('d1'), status: 'completed' }],
+            },
+            {
+              prompt: 'list',
+              response: '',
+              message_id: 'm-sent',
+              tool_calls: [{ ...deviceCall('d2'), status: 'completed' }],
+            },
+          ],
+        }),
+      } as Response);
+      const store = storeWithTurn();
+      store.dispatch(
+        setConversation([
+          {
+            prompt: 'earlier',
+            messageId: 'm-earlier',
+            tool_calls: [{ ...deviceCall('d1'), status: 'completed' }],
+          },
+          {
+            prompt: 'list',
+            messageId: 'm-sent',
+            tool_calls: [deviceCall('d1'), deviceCall('d2')],
+          },
+        ]),
+      );
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved', sticky: true }),
+      );
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d2']);
+    });
+
+    it('after a dropped send, registers a call that ran even when another still waits', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+      load.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'list',
+              response: '',
+              tool_calls: [
+                { ...deviceCall('d1'), status: 'completed' },
+                deviceCall('d2'),
+              ],
+            },
+          ],
+        }),
+      } as Response);
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved', sticky: true }),
+      );
+
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d1']);
+      expect(decisionOf(store, 'd2')).toBeUndefined();
+    });
+
+    it('a refused send registers nothing', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(
+        async (_conversationId, _actions, _token, _signal, onEvent) => {
+          onEvent(
+            new MessageEvent('message', {
+              data: JSON.stringify({ type: 'error', error: 'busy' }),
+            }),
+          );
+          return undefined as never;
+        },
+      );
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(approveAllToolCalls({ callId: 'd2' }));
+
+      expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+      expect(addPattern).not.toHaveBeenCalled();
+    });
+  });
+
+  it('a request that failed and a chat that cannot be read leave the cards to decide again', async () => {
+    vi.mocked(handleSubmitToolActions).mockRejectedValue(new Error('down'));
+    const store = storeWithTurn();
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(decisionOf(store, 'a')).toBeUndefined();
+    expect(decisionOf(store, 'b')).toBeUndefined();
+  });
+
+  it('holds a decision until every waiting call has one, then sends them together', async () => {
+    const store = storeWithTurn();
+
+    await store.dispatch(decideToolCall({ callId: 'a', decision: 'approved' }));
+    await store.dispatch(
+      decideToolCall({ callId: 'b', decision: 'denied', comment: 'no' }),
+    );
+    expect(handleSubmitToolActions).not.toHaveBeenCalled();
+    expect(decisionOf(store, 'a')).toEqual({ decision: 'approved' });
+
+    await store.dispatch(decideToolCall({ callId: 'c', decision: 'approved' }));
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(handleSubmitToolActions).mock.calls[0][1]).toEqual([
+      { call_id: 'a', decision: 'approved' },
+      { call_id: 'b', decision: 'denied', comment: 'no' },
+      { call_id: 'c', decision: 'approved' },
+    ]);
+  });
+
+  it('approve all approves the undecided calls and keeps decisions already made', async () => {
+    const store = storeWithTurn();
+
+    await store.dispatch(decideToolCall({ callId: 'b', decision: 'denied' }));
+    await store.dispatch(approveAllToolCalls({ callId: 'b' }));
+
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(handleSubmitToolActions).mock.calls[0][1]).toEqual([
+      { call_id: 'a', decision: 'approved' },
+      { call_id: 'b', decision: 'denied' },
+      { call_id: 'c', decision: 'approved' },
+    ]);
+  });
+
+  it('an undone decision is asked again before the turn resumes', async () => {
+    const store = storeWithTurn();
+
+    await store.dispatch(decideToolCall({ callId: 'a', decision: 'approved' }));
+    store.dispatch(setToolDecision({ callId: 'a', decision: null }));
+    await store.dispatch(decideToolCall({ callId: 'b', decision: 'approved' }));
+    await store.dispatch(decideToolCall({ callId: 'c', decision: 'approved' }));
+
+    expect(handleSubmitToolActions).not.toHaveBeenCalled();
+    expect(decisionOf(store, 'a')).toBeUndefined();
+  });
+
+  it('a single waiting call is sent at once', async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([{ prompt: 'one', tool_calls: [approval('solo')] }]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+
+    await store.dispatch(
+      decideToolCall({ callId: 'solo', decision: 'approved' }),
+    );
+    expect(vi.mocked(handleSubmitToolActions).mock.calls[0][1]).toEqual([
+      { call_id: 'solo', decision: 'approved' },
+    ]);
+  });
+
+  it('approve all leaves a Connect card to the user and waits for it', async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        {
+          prompt: 'two tools',
+          tool_calls: [
+            approval('a'),
+            {
+              ...approval('connect'),
+              connection_required: {
+                connector_key: 'mcp:notion',
+                connector_name: 'Notion',
+                status: 'missing',
+              },
+            },
+            approval('b'),
+          ],
+        },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+    const decision = (callId: string) =>
+      store
+        .getState()
+        .conversation.queries[0].tool_calls?.find((c) => c.call_id === callId)
+        ?.local_decision;
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    expect(decision('a')).toEqual({ decision: 'approved' });
+    expect(decision('connect')).toBeUndefined();
+    expect(handleSubmitToolActions).not.toHaveBeenCalled();
+
+    await store.dispatch(
+      decideToolCall({ callId: 'connect', decision: 'denied' }),
+    );
+    expect(vi.mocked(handleSubmitToolActions).mock.calls[0][1]).toEqual([
+      { call_id: 'a', decision: 'approved' },
+      { call_id: 'connect', decision: 'denied' },
+      { call_id: 'b', decision: 'approved' },
+    ]);
+  });
+
+  it('decides the call in the latest turn when an earlier turn reused its id', async () => {
+    const store = configureStore({
+      reducer: {
+        conversation: reducer,
+        upload: uploadReducer,
+        preference: preferenceReducer,
+      },
+    });
+    store.dispatch(
+      setConversation([
+        {
+          prompt: 'earlier',
+          tool_calls: [{ ...approval('a'), status: 'completed' as const }],
+        },
+        { prompt: 'now', tool_calls: [approval('a'), approval('b')] },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-1'));
+
+    await store.dispatch(decideToolCall({ callId: 'a', decision: 'approved' }));
+    const [earlier, latest] = store.getState().conversation.queries;
+    expect(earlier.tool_calls?.[0].local_decision).toBeUndefined();
+    expect(latest.tool_calls?.[0].local_decision).toEqual({
+      decision: 'approved',
+    });
+    expect(handleSubmitToolActions).not.toHaveBeenCalled();
+  });
+
+  it('clears the held decisions when the request is turned away, so the user can decide again', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'error', error: 'busy' }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const store = storeWithTurn();
+    store.dispatch(
+      raiseError({ conversationId: 'conv-1', index: 0, message: 'earlier' }),
+    );
+
+    await store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+    expect(decisionOf(store, 'a')).toBeUndefined();
+    expect(decisionOf(store, 'c')).toBeUndefined();
+    // This try's error replaced the earlier one; the cards wait again.
+    expect(store.getState().conversation.queries[0].error).toBe('busy');
+  });
+
+  it('a sent decision cannot be undone or sent again while the request is open', async () => {
+    let finish: () => void = () => {};
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(undefined as never);
+        }),
+    );
+    const store = storeWithTurn();
+
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+    expect(decisionOf(store, 'a')).toEqual({
+      decision: 'approved',
+      sent: true,
+    });
+    await store.dispatch(decideToolCall({ callId: 'a', decision: 'denied' }));
+    expect(decisionOf(store, 'a')).toEqual({
+      decision: 'approved',
+      sent: true,
+    });
+    expect(handleSubmitToolActions).toHaveBeenCalledTimes(1);
+
+    finish();
+    await sending;
+  });
+
+  it('a refusal arriving after the user opened another chat leaves that chat alone', async () => {
+    let refuse: () => void = () => {};
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        await new Promise<void>((resolve) => {
+          refuse = resolve;
+        });
+        onEvent(
+          new MessageEvent('message', {
+            data: JSON.stringify({ type: 'error', error: 'busy' }),
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const store = storeWithTurn();
+    const sending = store.dispatch(approveAllToolCalls({ callId: 'a' }));
+
+    // Another chat, whose waiting turn reuses a call id and holds a decision.
+    store.dispatch(
+      setConversation([
+        { prompt: 'other', tool_calls: [approval('a'), approval('z')] },
+      ]),
+    );
+    store.dispatch(setConversationId('conv-2'));
+    store.dispatch(
+      setToolDecision({ callId: 'a', decision: { decision: 'denied' } }),
+    );
+
+    refuse();
+    await sending;
+    expect(decisionOf(store, 'a')).toEqual({ decision: 'denied' });
   });
 });

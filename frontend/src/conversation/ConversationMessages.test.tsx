@@ -676,6 +676,30 @@ describe('ConversationMessages', () => {
     ).toBeNull();
   });
 
+  // The same for approvals: deciding the cards again is the retry.
+  it('keeps waiting approvals in view beside a refused resume error', () => {
+    render([
+      {
+        prompt: 'create two issues',
+        error: 'Too many requests',
+        tool_calls: [
+          {
+            call_id: 'approve-1',
+            tool_name: 'github',
+            action_name: 'create_issue',
+            arguments: {},
+            status: 'awaiting_approval',
+          },
+        ],
+      },
+    ]);
+    expect(container.textContent).toContain('approve-1');
+    expect(container.textContent).toContain('Too many requests');
+    expect(
+      container.querySelector('[aria-label="conversation.retry"]'),
+    ).toBeNull();
+  });
+
   it('keeps a timed-out message partial answer visible beside its error', () => {
     render([
       {

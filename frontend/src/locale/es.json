@@ -1708,6 +1708,7 @@
     },
     "toolApproval": {
       "approve": "Aprobar",
+      "approveAll": "Aprobar todo ({{formatted}})",
       "approveAlways": "Aprobar y no volver a preguntar",
       "connect": "Conectar {{name}}",
       "connectTitle": "Esta herramienta necesita tu cuenta de {{name}}.",
@@ -1726,9 +1727,13 @@
       "skip": "Omitir",
       "state": {
         "approval": "Requiere aprobación",
+        "approved": "Aprobado",
+        "denied": "Denegado",
         "notConnected": "No conectado"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "Deshacer",
+      "waitingForOthers": "Se enviará cuando se decidan las demás solicitudes de esta respuesta."
     },
     "toolChip": {
       "accessingMemory": "Memoria consultada",

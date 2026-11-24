@@ -24,7 +24,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { ArtifactCardList } from '../components/ArtifactCard';
 import CopyButton from '../components/CopyButton';
@@ -43,7 +43,6 @@ import ToolIcon from '../components/ToolIcon';
 import { useOutsideAlerter } from '../hooks';
 import {
   selectSelectedDocs,
-  selectToken,
   selectTtsAvailable,
 } from '../preferences/preferenceSlice';
 import {
@@ -79,6 +78,15 @@ import ToolCallCard from './ToolCallCard';
 import QuestionBlock from './QuestionBlock';
 import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
+import { approveAllToolCalls, decideToolCall } from './conversationSlice';
+import { formatCount } from '../utils/dateTimeUtils';
+import {
+  HeldDecisionBadge,
+  UndoDecisionButton,
+  useTurnApprovals,
+  WaitingForOthersNote,
+} from './heldDecision';
+import type { AppDispatch } from '../store';
 import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
@@ -824,9 +832,12 @@ function ToolCallApprovalBar({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
-  const token = useSelector(selectToken);
+  // The other cards this call's turn waits on (see useTurnApprovals).
+  const { undecided, approvable } = useTurnApprovals(toolCall.call_id);
+  const held = toolCall.local_decision;
   const argPreview = JSON.stringify(shownArguments(toolCall));
   const truncated =
     argPreview.length > 60 ? argPreview.slice(0, 57) + '…' : argPreview;
@@ -839,24 +850,17 @@ function ToolCallApprovalBar({
   const secretRefs = toolCall.secret_refs ?? [];
   // A call that fills in a link secret is approved one at a time, never as a sticky pattern.
   const offerSticky = isRemoteDevice && secretRefs.length === 0;
-  const handleApproveSticky = async () => {
-    if (!isRemoteDevice || !toolCall.device_id) return;
-    const command =
-      (toolCall.arguments && (toolCall.arguments.command as string)) || '';
-    if (command) {
-      try {
-        const { default: devicesService } =
-          await import('../api/services/devicesService');
-        await devicesService.addAutoApprovePattern(
-          toolCall.device_id,
-          command,
-          token,
-        );
-      } catch (err) {
-        console.error('auto-approve register failed', err);
-      }
-    }
-    onToolAction?.(toolCall.call_id, 'approved');
+  // The command is auto-approved on the device only once the server has
+  // taken this approval (see submitTurnDecisions), so Undo leaves nothing.
+  const handleApproveSticky = () => {
+    if (!onToolAction) return;
+    void dispatch(
+      decideToolCall({
+        callId: toolCall.call_id,
+        decision: 'approved',
+        sticky: true,
+      }),
+    );
   };
 
   return (
@@ -880,72 +884,97 @@ function ToolCallApprovalBar({
         </span>
       }
       state={
-        <Badge variant="info">
-          {t('conversation.toolApproval.state.approval')}
-        </Badge>
+        held ? (
+          <HeldDecisionBadge decision={held} />
+        ) : (
+          <Badge variant="info">
+            {t('conversation.toolApproval.state.approval')}
+          </Badge>
+        )
       }
       actions={
-        <>
-          <Button
-            type="button"
-            size="xs"
-            shape="pill"
-            disabled={Boolean(comment)}
-            onClick={() => {
-              if (!comment) onToolAction?.(toolCall.call_id, 'approved');
-            }}
-          >
-            {t('conversation.toolApproval.approve')}
-          </Button>
-          {offerSticky && (
+        held ? (
+          !held.sent && <UndoDecisionButton callId={toolCall.call_id} />
+        ) : (
+          <>
             <Button
               type="button"
-              variant="outline"
+              size="xs"
+              shape="pill"
+              disabled={Boolean(comment)}
+              onClick={() => {
+                if (!comment) onToolAction?.(toolCall.call_id, 'approved');
+              }}
+            >
+              {t('conversation.toolApproval.approve')}
+            </Button>
+            {onToolAction && approvable > 1 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                shape="pill"
+                disabled={Boolean(comment)}
+                onClick={() => {
+                  void dispatch(
+                    approveAllToolCalls({ callId: toolCall.call_id }),
+                  );
+                }}
+              >
+                {t('conversation.toolApproval.approveAll', {
+                  formatted: formatCount(approvable),
+                })}
+              </Button>
+            )}
+            {offerSticky && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                shape="pill"
+                onClick={handleApproveSticky}
+              >
+                {t('conversation.toolApproval.approveAlways')}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant={comment ? 'destructive-outline' : 'outline'}
               size="xs"
               shape="pill"
               onClick={() => {
-                void handleApproveSticky();
+                if (expanded && comment) {
+                  onToolAction?.(toolCall.call_id, 'denied', comment);
+                } else if (expanded) {
+                  onToolAction?.(toolCall.call_id, 'denied');
+                } else {
+                  setExpanded(true);
+                }
               }}
             >
-              {t('conversation.toolApproval.approveAlways')}
+              {t('conversation.toolApproval.deny')}
             </Button>
-          )}
-          <Button
-            type="button"
-            variant={comment ? 'destructive-outline' : 'outline'}
-            size="xs"
-            shape="pill"
-            onClick={() => {
-              if (expanded && comment) {
-                onToolAction?.(toolCall.call_id, 'denied', comment);
-              } else if (expanded) {
-                onToolAction?.(toolCall.call_id, 'denied');
-              } else {
-                setExpanded(true);
-              }
-            }}
-          >
-            {t('conversation.toolApproval.deny')}
-          </Button>
-          <IconButton
-            label={t('conversation.toolApproval.details')}
-            variant="ghost-muted"
-            size="icon-xs"
-            shape="pill"
-            onClick={() => setExpanded(!expanded)}
-            aria-expanded={expanded}
-          >
-            <ChevronDown
-              aria-hidden
-              className={cn(
-                'transition-transform duration-200',
-                expanded && 'rotate-180',
-              )}
-            />
-          </IconButton>
-        </>
+            <IconButton
+              label={t('conversation.toolApproval.details')}
+              variant="ghost-muted"
+              size="icon-xs"
+              shape="pill"
+              onClick={() => setExpanded(!expanded)}
+              aria-expanded={expanded}
+            >
+              <ChevronDown
+                aria-hidden
+                className={cn(
+                  'transition-transform duration-200',
+                  expanded && 'rotate-180',
+                )}
+              />
+            </IconButton>
+          </>
+        )
       }
     >
+      {held && undecided > 0 && <WaitingForOthersNote />}
       {secretRefs.length > 0 && (
         <p
           className="text-muted-foreground text-xs"
@@ -968,7 +997,7 @@ function ToolCallApprovalBar({
           })}
         </p>
       )}
-      {expanded && (
+      {expanded && !held && (
         <div className="flex flex-col gap-2">
           <p className="text-muted-foreground text-xs font-medium">
             {t('conversation.inlineSteps.arguments')}
