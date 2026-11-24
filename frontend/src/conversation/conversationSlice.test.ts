@@ -1938,6 +1938,37 @@ describe('approval decisions in a turn with several waiting calls', () => {
       expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d1']);
     });
 
+    it('after a dropped send, registers only the calls the record shows run', async () => {
+      vi.mocked(handleSubmitToolActions).mockImplementation(lostFrame);
+      load.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          queries: [
+            {
+              prompt: 'list',
+              response: '',
+              tool_calls: [
+                { ...deviceCall('d1'), status: 'denied', not_run: 'expired' },
+                { ...deviceCall('d2'), status: 'completed' },
+              ],
+            },
+          ],
+        }),
+      } as Response);
+      const store = storeWithDeviceTurn();
+
+      await store.dispatch(
+        decideToolCall({ callId: 'd1', decision: 'approved', sticky: true }),
+      );
+      await store.dispatch(
+        decideToolCall({ callId: 'd2', decision: 'approved', sticky: true }),
+      );
+
+      expect(load).toHaveBeenCalledTimes(1);
+      expect(addPattern).toHaveBeenCalledTimes(1);
+      expect(addPattern.mock.calls[0].slice(0, 2)).toEqual(['dev-1', 'ls d2']);
+    });
+
     it('a refused send registers nothing', async () => {
       vi.mocked(handleSubmitToolActions).mockImplementation(
         async (_conversationId, _actions, _token, _signal, onEvent) => {

@@ -993,7 +993,7 @@ export const tailInFlightMessage = createAsyncThunk<
 );
 
 /** A remote device's command approved with "don't ask again". */
-type AutoApprove = { deviceId: string; command: string };
+type AutoApprove = { callId: string; deviceId: string; command: string };
 
 type SubmitToolActionsArgs = {
   toolActions: ToolAction[];
@@ -1108,7 +1108,7 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
         call.device_id &&
         typeof command === 'string' &&
         command
-        ? [{ deviceId: call.device_id, command }]
+        ? [{ callId: call.call_id, deviceId: call.device_id, command }]
         : [];
     });
     const sent = await dispatch(
@@ -1160,13 +1160,34 @@ const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
       }),
     );
     if (!stillOpen()) return;
-    if (stillWaiting()) clearDecisions();
-    // Taken after all, with no answer to say so on the way.
-    else if (outcome !== 'ran')
-      await registerAutoApprove(
-        autoApprove,
-        (getState() as RootState).preference.token,
+    if (stillWaiting()) {
+      clearDecisions();
+      return;
+    }
+    if (outcome === 'ran') return;
+    // Taken after all, with no answer to say so on the way: only a call the
+    // record shows run (not expired, moved on or missing) is auto-approved.
+    const { queries: after, conversationId: afterId } = (
+      getState() as RootState
+    ).conversation;
+    const ran = (callId: string) => {
+      const call = after
+        .findLast((query) =>
+          query.tool_calls?.some((c) => c.call_id === callId),
+        )
+        ?.tool_calls?.find((c) => c.call_id === callId);
+      return (
+        afterId === conversationId &&
+        !!call &&
+        !call.not_run &&
+        call.status !== 'awaiting_approval' &&
+        call.status !== 'denied'
       );
+    };
+    await registerAutoApprove(
+      autoApprove.filter((item) => ran(item.callId)),
+      (getState() as RootState).preference.token,
+    );
   },
 );
 
