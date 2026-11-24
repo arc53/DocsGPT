@@ -18,6 +18,12 @@ import useConnectorLauncher from '../connectors/useConnectorLauncher';
 import { selectToken } from '../preferences/preferenceSlice';
 import type { AppDispatch } from '../store';
 import { toolCallTitle } from '../utils/streamingStatusUtils';
+import {
+  HeldDecisionBadge,
+  UndoDecisionButton,
+  useTurnApprovals,
+  WaitingForOthersNote,
+} from './heldDecision';
 import ToolCallCard from './ToolCallCard';
 import type { ToolCallsType } from './types';
 
@@ -26,6 +32,8 @@ import type { ToolCallsType } from './types';
  * whose account needs signing in. Connecting keeps the call pending; Continue
  * resumes it with the new connection, Skip denies it. A tool that runs on its
  * owner's account can only be fixed by the owner, so it offers Skip alone.
+ * Beside other cards in the same turn, Continue or Skip is held until they
+ * are decided too, and can be undone until then.
  */
 export default function ConnectToolCallBar({
   toolCall,
@@ -61,6 +69,8 @@ export default function ConnectToolCallBar({
   const ownerAccount = !!required?.owner_account;
   const missing = required?.status === 'missing';
   const noEscape = { interpolation: { escapeValue: false } } as const;
+  const held = toolCall.local_decision;
+  const { undecided } = useTurnApprovals(toolCall.call_id);
   useEffect(() => {
     if (!loaded) dispatch(loadConnectors({ token }));
   }, [loaded, dispatch, token]);
@@ -169,23 +179,28 @@ export default function ConnectToolCallBar({
         { ...toolCall, connector_name: toolCall.connector_name ?? name },
         t,
       )}
-      state={state}
+      state={held ? <HeldDecisionBadge decision={held} /> : state}
       actions={
-        <>
-          {primary}
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            shape="pill"
-            onClick={() => onToolAction?.(toolCall.call_id, 'denied')}
-          >
-            {t('conversation.toolApproval.skip')}
-          </Button>
-        </>
+        held ? (
+          <UndoDecisionButton callId={toolCall.call_id} />
+        ) : (
+          <>
+            {primary}
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              shape="pill"
+              onClick={() => onToolAction?.(toolCall.call_id, 'denied')}
+            >
+              {t('conversation.toolApproval.skip')}
+            </Button>
+          </>
+        )
       }
     >
       <p>{message}</p>
+      {held && undecided > 0 && <WaitingForOthersNote />}
       {modals}
     </ToolCallCard>
   );

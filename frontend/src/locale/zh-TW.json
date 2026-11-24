@@ -1659,6 +1659,7 @@
     },
     "toolApproval": {
       "approve": "核准",
+      "approveAll": "全部核准 ({{count}})",
       "approveAlways": "核准，不再詢問",
       "connect": "連線 {{name}}",
       "connectTitle": "此工具需要你的 {{name}} 帳號。",
@@ -1677,9 +1678,13 @@
       "skip": "略過",
       "state": {
         "approval": "需要核准",
+        "approved": "已核准",
+        "denied": "已拒絕",
         "notConnected": "未連線"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "復原",
+      "waitingForOthers": "此回答中的其他請求都決定後才會送出。"
     },
     "toolChip": {
       "accessingMemory": "已存取記憶",

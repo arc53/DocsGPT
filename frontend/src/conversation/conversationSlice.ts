@@ -1005,6 +1005,105 @@ export const submitToolActions = createAsyncThunk<
 >('submitToolActions', streamed(sendToolActions));
 
 /**
+ * The latest turn holding ``callId`` (a provider may reuse a call id across
+ * turns) and its calls still waiting on an approval or a Connect card.
+ */
+function approvalTurn(
+  queries: Query[],
+  callId: string,
+): { index: number; waiting: ToolCallsType[] } | null {
+  const index = queries.findLastIndex((query) =>
+    query.tool_calls?.some((call) => call.call_id === callId),
+  );
+  if (index === -1) return null;
+  return {
+    index,
+    waiting: (queries[index].tool_calls ?? []).filter(
+      (call) => call.status === 'awaiting_approval',
+    ),
+  };
+}
+
+/**
+ * Send the turn's approval decisions once every waiting call has one. The
+ * server settles a paused turn in one resume and denies any call the request
+ * leaves out, so deciding one card must not resume the turn on its own.
+ */
+const submitTurnDecisions = createAsyncThunk<void, { callId: string }>(
+  'submitTurnDecisions',
+  async ({ callId }, { dispatch, getState }) => {
+    const turn = approvalTurn(
+      (getState() as RootState).conversation.queries,
+      callId,
+    );
+    if (!turn || !turn.waiting.length) return;
+    if (turn.waiting.some((call) => !call.local_decision)) return;
+    const toolActions = turn.waiting.map((call) => ({
+      call_id: call.call_id,
+      decision: call.local_decision!.decision,
+      ...(call.local_decision!.comment
+        ? { comment: call.local_decision!.comment }
+        : {}),
+    }));
+    const sent = await dispatch(
+      submitToolActions({ toolActions, index: turn.index }),
+    );
+    // Nothing ran: let the user decide again.
+    if (submitToolActions.rejected.match(sent) || sent.payload === 'refused') {
+      toolActions.forEach((action) =>
+        dispatch(
+          conversationSlice.actions.setToolDecision({
+            callId: action.call_id,
+            decision: null,
+          }),
+        ),
+      );
+    }
+  },
+);
+
+/** Record one approval decision; the turn resumes when all are decided. */
+export const decideToolCall = createAsyncThunk<
+  void,
+  { callId: string; decision: 'approved' | 'denied'; comment?: string }
+>('decideToolCall', async ({ callId, decision, comment }, { dispatch }) => {
+  dispatch(
+    conversationSlice.actions.setToolDecision({
+      callId,
+      decision: { decision, ...(comment ? { comment } : {}) },
+    }),
+  );
+  await dispatch(submitTurnDecisions({ callId }));
+});
+
+/**
+ * Approve every undecided approval of the turn holding ``callId``, and resume
+ * it once nothing else in the turn is left to decide.
+ */
+export const approveAllToolCalls = createAsyncThunk<void, { callId: string }>(
+  'approveAllToolCalls',
+  async ({ callId }, { dispatch, getState }) => {
+    const turn = approvalTurn(
+      (getState() as RootState).conversation.queries,
+      callId,
+    );
+    if (!turn) return;
+    // A Connect card waits on an account, not a yes: it is left to the user.
+    turn.waiting
+      .filter((call) => !call.local_decision && !call.connection_required)
+      .forEach((call) =>
+        dispatch(
+          conversationSlice.actions.setToolDecision({
+            callId: call.call_id,
+            decision: { decision: 'approved' },
+          }),
+        ),
+      );
+    await dispatch(submitTurnDecisions({ callId }));
+  },
+);
+
+/**
  * Resume a turn paused on clarifying questions (`ask_user`) with the user's
  * answers, or with Just answer. The cards fold into their record at once
  * (`answeredCall`); the resumed stream then writes the answer below them.
@@ -1296,6 +1395,25 @@ export const conversationSlice = createSlice({
       const { index, query } = action.payload;
       if (query.sources !== undefined)
         state.queries[index].sources = query.sources;
+    },
+    // Hold (or with ``null`` clear) the user's decision on a waiting approval.
+    setToolDecision(
+      state,
+      action: PayloadAction<{
+        callId: string;
+        decision: ToolCallsType['local_decision'] | null;
+      }>,
+    ) {
+      const { callId, decision } = action.payload;
+      // The latest turn holding the call, as approvalTurn reads it.
+      const call = state.queries
+        .findLast((query) =>
+          query.tool_calls?.some((c) => c.call_id === callId),
+        )
+        ?.tool_calls?.find((c) => c.call_id === callId);
+      if (!call) return;
+      if (decision) call.local_decision = decision;
+      else delete call.local_decision;
     },
     updateToolCall(state, action) {
       const { index, tool_call } = action.payload;
@@ -1649,6 +1767,20 @@ export const selectQueries = (state: RootState) => state.conversation.queries;
 
 export const selectStatus = (state: RootState) => state.conversation.status;
 
+const NO_CALLS: ToolCallsType[] = [];
+
+/**
+ * The calls of the latest turn holding ``callId``. Shared and embedded views
+ * render the approval cards without the chat slice, and get none.
+ */
+export const selectTurnToolCalls = (
+  state: RootState,
+  callId: string,
+): ToolCallsType[] =>
+  (state.conversation?.queries ?? []).findLast((query) =>
+    query.tool_calls?.some((call) => call.call_id === callId),
+  )?.tool_calls ?? NO_CALLS;
+
 export const {
   addQuery,
   updateQuery,
@@ -1658,6 +1790,7 @@ export const {
   updateThought,
   updateStreamingSource,
   updateToolCall,
+  setToolDecision,
   setWorkflowRunId,
   updateWorkflowStep,
   updateWorkflowLoopItem,

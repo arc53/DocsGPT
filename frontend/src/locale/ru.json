@@ -1749,6 +1749,7 @@
     },
     "toolApproval": {
       "approve": "Одобрить",
+      "approveAll": "Одобрить все ({{count}})",
       "approveAlways": "Одобрить и больше не спрашивать",
       "connect": "Подключить {{name}}",
       "connectTitle": "Этому инструменту нужен ваш аккаунт {{name}}.",
@@ -1767,9 +1768,13 @@
       "skip": "Пропустить",
       "state": {
         "approval": "Нужно одобрение",
+        "approved": "Одобрено",
+        "denied": "Отклонено",
         "notConnected": "Не подключено"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "Отменить",
+      "waitingForOthers": "Отправится, когда будут приняты решения по остальным запросам в этом ответе."
     },
     "toolChip": {
       "accessingMemory": "Обращение к памяти выполнено",

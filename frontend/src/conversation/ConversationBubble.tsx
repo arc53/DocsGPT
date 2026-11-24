@@ -24,7 +24,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSelector } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { ArtifactCardList } from '../components/ArtifactCard';
 import CopyButton from '../components/CopyButton';
@@ -79,6 +79,14 @@ import ToolCallCard from './ToolCallCard';
 import QuestionBlock from './QuestionBlock';
 import type { QuestionAction } from './questionCall';
 import { shownArguments, ToolCallsType } from './types';
+import { approveAllToolCalls } from './conversationSlice';
+import {
+  HeldDecisionBadge,
+  UndoDecisionButton,
+  useTurnApprovals,
+  WaitingForOthersNote,
+} from './heldDecision';
+import type { AppDispatch } from '../store';
 import { useRunArtifacts } from './useRunArtifacts';
 import { wikiWriteActionKey, wikiWritePath } from './wikiToolCall';
 
@@ -824,9 +832,13 @@ function ToolCallApprovalBar({
   ) => void;
 }) {
   const { t } = useTranslation();
+  const dispatch = useDispatch<AppDispatch>();
   const [expanded, setExpanded] = useState(false);
   const [comment, setComment] = useState('');
   const token = useSelector(selectToken);
+  // The other cards this call's turn waits on (see useTurnApprovals).
+  const { undecided, approvable } = useTurnApprovals(toolCall.call_id);
+  const held = toolCall.local_decision;
   const argPreview = JSON.stringify(shownArguments(toolCall));
   const truncated =
     argPreview.length > 60 ? argPreview.slice(0, 57) + '…' : argPreview;
@@ -880,72 +892,99 @@ function ToolCallApprovalBar({
         </span>
       }
       state={
-        <Badge variant="info">
-          {t('conversation.toolApproval.state.approval')}
-        </Badge>
+        held ? (
+          <HeldDecisionBadge decision={held} />
+        ) : (
+          <Badge variant="info">
+            {t('conversation.toolApproval.state.approval')}
+          </Badge>
+        )
       }
       actions={
-        <>
-          <Button
-            type="button"
-            size="xs"
-            shape="pill"
-            disabled={Boolean(comment)}
-            onClick={() => {
-              if (!comment) onToolAction?.(toolCall.call_id, 'approved');
-            }}
-          >
-            {t('conversation.toolApproval.approve')}
-          </Button>
-          {offerSticky && (
+        held ? (
+          <UndoDecisionButton callId={toolCall.call_id} />
+        ) : (
+          <>
             <Button
               type="button"
-              variant="outline"
+              size="xs"
+              shape="pill"
+              disabled={Boolean(comment)}
+              onClick={() => {
+                if (!comment) onToolAction?.(toolCall.call_id, 'approved');
+              }}
+            >
+              {t('conversation.toolApproval.approve')}
+            </Button>
+            {onToolAction && approvable > 1 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                shape="pill"
+                disabled={Boolean(comment)}
+                onClick={() => {
+                  void dispatch(
+                    approveAllToolCalls({ callId: toolCall.call_id }),
+                  );
+                }}
+              >
+                {t('conversation.toolApproval.approveAll', {
+                  count: approvable,
+                })}
+              </Button>
+            )}
+            {offerSticky && (
+              <Button
+                type="button"
+                variant="outline"
+                size="xs"
+                shape="pill"
+                onClick={() => {
+                  void handleApproveSticky();
+                }}
+              >
+                {t('conversation.toolApproval.approveAlways')}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant={comment ? 'destructive-outline' : 'outline'}
               size="xs"
               shape="pill"
               onClick={() => {
-                void handleApproveSticky();
+                if (expanded && comment) {
+                  onToolAction?.(toolCall.call_id, 'denied', comment);
+                } else if (expanded) {
+                  onToolAction?.(toolCall.call_id, 'denied');
+                } else {
+                  setExpanded(true);
+                }
               }}
             >
-              {t('conversation.toolApproval.approveAlways')}
+              {t('conversation.toolApproval.deny')}
             </Button>
-          )}
-          <Button
-            type="button"
-            variant={comment ? 'destructive-outline' : 'outline'}
-            size="xs"
-            shape="pill"
-            onClick={() => {
-              if (expanded && comment) {
-                onToolAction?.(toolCall.call_id, 'denied', comment);
-              } else if (expanded) {
-                onToolAction?.(toolCall.call_id, 'denied');
-              } else {
-                setExpanded(true);
-              }
-            }}
-          >
-            {t('conversation.toolApproval.deny')}
-          </Button>
-          <IconButton
-            label={t('conversation.toolApproval.details')}
-            variant="ghost-muted"
-            size="icon-xs"
-            shape="pill"
-            onClick={() => setExpanded(!expanded)}
-            aria-expanded={expanded}
-          >
-            <ChevronDown
-              aria-hidden
-              className={cn(
-                'transition-transform duration-200',
-                expanded && 'rotate-180',
-              )}
-            />
-          </IconButton>
-        </>
+            <IconButton
+              label={t('conversation.toolApproval.details')}
+              variant="ghost-muted"
+              size="icon-xs"
+              shape="pill"
+              onClick={() => setExpanded(!expanded)}
+              aria-expanded={expanded}
+            >
+              <ChevronDown
+                aria-hidden
+                className={cn(
+                  'transition-transform duration-200',
+                  expanded && 'rotate-180',
+                )}
+              />
+            </IconButton>
+          </>
+        )
       }
     >
+      {held && undecided > 0 && <WaitingForOthersNote />}
       {secretRefs.length > 0 && (
         <p
           className="text-muted-foreground text-xs"
@@ -968,7 +1007,7 @@ function ToolCallApprovalBar({
           })}
         </p>
       )}
-      {expanded && (
+      {expanded && !held && (
         <div className="flex flex-col gap-2">
           <p className="text-muted-foreground text-xs font-medium">
             {t('conversation.inlineSteps.arguments')}

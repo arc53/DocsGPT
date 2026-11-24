@@ -117,6 +117,18 @@ describe('ConnectToolCallBar', () => {
       (b) => b.textContent === text,
     )!;
 
+  it('shows a held Skip with Undo instead of its actions', async () => {
+    await render({
+      ...call('missing'),
+      local_decision: { decision: 'denied' },
+    });
+    expect(container.textContent).toContain(
+      'conversation.toolApproval.state.denied',
+    );
+    expect(button('conversation.toolApproval.undo')).toBeDefined();
+    expect(button('conversation.toolApproval.skip')).toBeUndefined();
+  });
+
   it('a cancelled connect does not offer Continue', async () => {
     await render(call('missing'), vi.fn(), { catalog: [] });
     // The launcher reports every close, cancelled or not.

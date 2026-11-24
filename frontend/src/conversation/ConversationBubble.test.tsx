@@ -40,6 +40,10 @@ import { useState } from 'react';
 import type { ArtifactCardItem } from './artifactCards';
 import { ChatCompanionContext } from './chatCompanion';
 import ConversationBubble from './ConversationBubble';
+import conversationReducer, {
+  setConversation,
+  setToolDecision,
+} from './conversationSlice';
 import { ToolCallsType } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -563,6 +567,81 @@ describe('ConversationBubble', () => {
     expect(toggle.querySelector('img')).toBeNull();
     expect(toggle.querySelector('svg')).not.toBeNull();
   });
+  describe('several approvals in one turn', () => {
+    const calls: ToolCallsType[] = [
+      { ...pendingCall, call_id: 'p1' },
+      { ...pendingCall, call_id: 'p2' },
+    ];
+    const chatStore = () => {
+      const store = configureStore({
+        reducer: {
+          conversation: conversationReducer,
+          preference: () => ({
+            chunks: '2',
+            selectedDocs: [],
+            token: null,
+            ttsAvailable: false,
+          }),
+        },
+      });
+      store.dispatch(setConversation([{ prompt: 'q', tool_calls: calls }]));
+      return store;
+    };
+    const renderTurn = async (store: ReturnType<typeof chatStore>) => {
+      await act(async () => {
+        root.render(
+          <Provider store={store}>
+            <ConversationBubble
+              type="ANSWER"
+              toolCalls={store.getState().conversation.queries[0].tool_calls}
+              onToolAction={() => {}}
+            />
+          </Provider>,
+        );
+      });
+    };
+
+    it('offers Approve all with the number of undecided calls', async () => {
+      await renderTurn(chatStore());
+      const approveAll = Array.from(
+        container.querySelectorAll('button'),
+      ).filter(
+        (b) =>
+          b.textContent?.trim() ===
+          tr('conversation.toolApproval.approveAll').replace('{{count}}', '2'),
+      );
+      expect(approveAll).toHaveLength(2);
+    });
+
+    it('shows a held decision with Undo, and Undo asks again', async () => {
+      const store = chatStore();
+      store.dispatch(
+        setToolDecision({ callId: 'p1', decision: { decision: 'approved' } }),
+      );
+      await renderTurn(store);
+
+      expect(container.textContent).toContain(
+        tr('conversation.toolApproval.state.approved'),
+      );
+      expect(container.textContent).toContain(
+        tr('conversation.toolApproval.waitingForOthers'),
+      );
+      // The other card has one undecided call left: no Approve all.
+      expect(
+        Array.from(container.querySelectorAll('button')).some((b) =>
+          b.textContent?.startsWith('Approve all'),
+        ),
+      ).toBe(false);
+
+      await act(async () => {
+        buttonByText(tr('conversation.toolApproval.undo')).click();
+      });
+      expect(
+        store.getState().conversation.queries[0].tool_calls?.[0].local_decision,
+      ).toBeUndefined();
+    });
+  });
+
   describe('approval card', () => {
     const githubCall: ToolCallsType = {
       tool_name: 'github',
