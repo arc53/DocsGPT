@@ -59,6 +59,42 @@ class TestPlan:
         for child in children:
             assert child.env["DOCSGPT_HOME"] == str(home)
 
+    def test_the_children_reach_the_api_on_the_port_it_was_given(self, tmp_path, monkeypatch):
+        """The worker posts FAISS indexes back to the API, and the UI talks to it, on the chosen port."""
+        monkeypatch.delenv("WORKER_API_URL", raising=False)
+        monkeypatch.delenv("VITE_API_HOST", raising=False)
+        (tmp_path / "frontend" / "node_modules").mkdir(parents=True)
+        monkeypatch.setattr(dev.shutil, "which", lambda name: f"/usr/bin/{name}")
+        children = dev.plan(_args(port=7291, ui=True), tmp_path, watching=False, platform="linux")
+        assert _named(children) == ["api", "worker", "ui"]
+        for child in children:
+            assert child.env["WORKER_API_URL"] == "http://127.0.0.1:7291"
+            assert child.env["VITE_API_HOST"] == "http://127.0.0.1:7291"
+
+    @pytest.mark.parametrize(
+        ("host", "expected"),
+        [
+            ("0.0.0.0", "http://127.0.0.1:7091"),
+            ("::", "http://127.0.0.1:7091"),
+            ("localhost", "http://localhost:7091"),
+            ("192.168.1.5", "http://192.168.1.5:7091"),
+            ("::1", "http://[::1]:7091"),
+        ],
+    )
+    def test_the_api_address_follows_the_host_it_binds(self, tmp_path, monkeypatch, host, expected):
+        """A wildcard bind is reached on loopback; a specific interface only on that interface."""
+        monkeypatch.delenv("WORKER_API_URL", raising=False)
+        api = dev.plan(_args(host=host), tmp_path, watching=False)[0]
+        assert api.env["WORKER_API_URL"] == expected
+
+    def test_an_address_set_in_the_shell_is_kept(self, tmp_path, monkeypatch):
+        """The children inherit the shell; an explicit choice there is not overridden."""
+        monkeypatch.setenv("WORKER_API_URL", "http://api.internal:9000")
+        monkeypatch.setenv("VITE_API_HOST", "https://example.test")
+        for child in dev.plan(_args(port=7291), tmp_path, watching=False):
+            assert "WORKER_API_URL" not in child.env
+            assert "VITE_API_HOST" not in child.env
+
     def test_the_worker_restarts_on_save_when_watchfiles_is_there(self, tmp_path):
         """Celery has no reloader of its own, so it is wrapped in one."""
         worker = dev.plan(_args(), tmp_path, watching=True)[1]

@@ -76,6 +76,15 @@ def analytics_enabled(home: Path) -> bool:
         return True
 
 
+def api_address(host: str, port: int) -> str:
+    """Where the other children reach an API bound to ``host:port``; a wildcard bind answers on loopback."""
+    if host in ("", "0.0.0.0", "::"):
+        host = "127.0.0.1"
+    elif ":" in host:
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
+
+
 def _reloading_command(command: list[str], watched: Path) -> list[str]:
     """``command`` under watchfiles, restarted when a Python file under ``watched`` changes."""
     return [sys.executable, "-m", "watchfiles", "--filter", "python", shlex.join(command), str(watched)]
@@ -112,6 +121,12 @@ def plan(
     watching = watchfiles_available() if watching is None else watching
     package = checkout / "docsgpt"
     environment = {"DOCSGPT_HOME": os.environ.get("DOCSGPT_HOME") or str(checkout)}
+    # The worker posts indexes back to the API and the UI calls it; both default to port 7091, so a
+    # --port elsewhere left them talking to nothing. A value exported in the shell still wins.
+    address = api_address(args.host, args.port)
+    for key in ("WORKER_API_URL", "VITE_API_HOST"):
+        if not os.environ.get(key):
+            environment[key] = address
     children: list[Child] = []
 
     if getattr(args, "mock_llm", False):

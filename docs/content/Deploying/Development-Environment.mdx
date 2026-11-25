@@ -337,6 +337,11 @@ docsgpt dev --port 7092                      # a second checkout, second termina
 docsgpt up --native --dir ~/.docsgpt/review --port 7092   # or a second installed copy
 ```
 
+`docsgpt dev` points its worker (`WORKER_API_URL`) and the UI (`VITE_API_HOST`) at the port you give it,
+unless you exported either in your shell. Give the second checkout its own Redis databases as well
+(`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CACHE_REDIS_URL`): two workers on one broker take each
+other's tasks.
+
 A native install in another directory gets its own service names, so the two never write over each
 other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alone.
 
