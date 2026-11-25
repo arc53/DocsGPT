@@ -1542,7 +1542,9 @@ def _prompt_spec(spec: dict) -> Optional[tuple[str, str]]:
     return prompt_spec.get("name") or "Imported prompt", prompt_spec.get("content") or ""
 
 
-def _editable_prompt(conn, owner: str, agent_id: Optional[str], name: str) -> Optional[dict]:
+def _editable_prompt(
+    conn, owner: str, agent_id: Optional[str], name: str, *, for_update: bool = False
+) -> Optional[dict]:
     """The updated agent's own prompt, when the file keeps its name and no other agent uses it.
 
     Re-applying an edited file then changes that prompt in place, as an edit in the UI would, instead
@@ -1553,6 +1555,10 @@ def _editable_prompt(conn, owner: str, agent_id: Optional[str], name: str) -> Op
         owner: The workspace's owner.
         agent_id: The agent the file updates; None when it creates one.
         name: The file's prompt name.
+        for_update: Lock the prompt before counting its agents, for a caller that then edits it.
+            Pointing an agent at a prompt takes a key-share lock on it through the foreign key,
+            which this lock waits for and then blocks, so the count stays true until the edit
+            commits.
 
     Returns:
         The prompt row, or None.
@@ -1564,7 +1570,7 @@ def _editable_prompt(conn, owner: str, agent_id: Optional[str], name: str) -> Op
     prompt_id = str((agent or {}).get("prompt_id") or "")
     if not prompt_id or prompt_id in STORED_PROMPT_PRESETS:
         return None
-    row = PromptsRepository(conn).get(prompt_id, owner)
+    row = PromptsRepository(conn).get(prompt_id, owner, for_update=for_update)
     if row is None or row.get("name") != name:
         return None
     if agents.count_by_prompt(prompt_id, exclude_agent_id=agent_id):
@@ -1600,7 +1606,7 @@ def _apply_prompt(
     repo = PromptsRepository(conn)
     row = repo.find(user, name, content)
     if row is None:
-        row = _editable_prompt(conn, user, agent_id, name)
+        row = _editable_prompt(conn, user, agent_id, name, for_update=True)
         if row is not None:
             repo.update(str(row["id"]), user, name, content)
     # A team's prompt names who added it: the trigger fills that in for a person only.

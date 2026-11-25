@@ -66,9 +66,15 @@ class PromptsRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def get(self, prompt_id: str, user_id: str) -> Optional[dict]:
+    def get(self, prompt_id: str, user_id: str, *, for_update: bool = False) -> Optional[dict]:
+        """Fetch a user's prompt; ``for_update`` row-locks it until the transaction ends.
+
+        The lock conflicts with the key-share lock the ``agents.prompt_id`` foreign key takes, so
+        no agent can be pointed at the prompt while it is held.
+        """
+        sql = "SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
         result = self._conn.execute(
-            text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            text(sql + (" FOR UPDATE" if for_update else "")),
             {"id": prompt_id, "user_id": user_id},
         )
         row = result.fetchone()

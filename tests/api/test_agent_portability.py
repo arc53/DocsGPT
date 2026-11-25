@@ -664,6 +664,33 @@ def test_an_unchanged_prompt_is_reused(pg_conn):
     assert str(AgentsRepository(pg_conn).get(str(agent["id"]), user)["prompt_id"]) == str(prompt["id"])
 
 
+@pytest.mark.fresh_db
+def test_no_agent_can_take_the_prompt_while_an_import_edits_it(pg_engine):
+    """The import locks the prompt before counting its agents; an agent pointed at it waits for the edit."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    user = "u_prompt_lock"
+    with pg_engine.begin() as conn:
+        agent, prompt, slug = _agent_with_prompt(conn, user)
+        other = AgentsRepository(conn).create(user, "Other", "published")
+
+    with pg_engine.connect() as importer, pg_engine.connect() as writer:
+        importer.begin()
+        apply_import(importer, user, _prompt_doc(slug, "Sys", "Be brief"))
+        writer.execute(text("SET lock_timeout = '200ms'"))
+        with pytest.raises(OperationalError, match="lock timeout"):
+            writer.execute(
+                text("UPDATE agents SET prompt_id = CAST(:p AS uuid) WHERE id = CAST(:a AS uuid)"),
+                {"p": str(prompt["id"]), "a": str(other["id"])},
+            )
+        writer.rollback()
+        importer.commit()
+
+    with pg_engine.connect() as conn:
+        assert PromptsRepository(conn).get(str(prompt["id"]), user)["content"] == "Be brief"
+
+
 def test_tool_skipped_when_encryption_fails(pg_conn, monkeypatch):
     user = "u_encfail"
     fake_tool = Mock()
