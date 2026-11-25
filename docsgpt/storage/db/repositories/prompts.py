@@ -278,12 +278,19 @@ class PromptsRepository:
         )
         return result.rowcount > 0
 
-    def find(self, user_id: str, name: str, content: str) -> Optional[dict]:
-        """Return a prompt exactly matching (user, name, content), or None."""
+    def find(self, user_id: str, name: str, content: str, *, for_update: bool = False) -> Optional[dict]:
+        """Return the oldest prompt exactly matching (user, name, content), or None.
+
+        ``for_update`` row-locks the match until the transaction ends. A row edited while this
+        waited is matched again against its new text, so a prompt that no longer has ``content``
+        is not returned.
+        """
+        sql = (
+            "SELECT * FROM prompts WHERE user_id = :user_id AND name = :name AND content = :content "
+            "ORDER BY created_at, id LIMIT 1"
+        )
         result = self._conn.execute(
-            text(
-                "SELECT * FROM prompts WHERE user_id = :user_id AND name = :name AND content = :content"
-            ),
+            text(sql + (" FOR UPDATE" if for_update else "")),
             {"user_id": user_id, "name": name, "content": content},
         )
         row = result.fetchone()

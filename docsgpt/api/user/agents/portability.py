@@ -1604,7 +1604,9 @@ def _apply_prompt(
         return None
     name, content = stored
     repo = PromptsRepository(conn)
-    row = repo.find(user, name, content)
+    # Locked until the agent points at it: another import editing it in place waits, then
+    # counts this agent and leaves it alone; one that edited it first leaves it unmatched here.
+    row = repo.find(user, name, content, for_update=True)
     if row is None:
         row = _editable_prompt(conn, user, agent_id, name, for_update=True)
         if row is not None:

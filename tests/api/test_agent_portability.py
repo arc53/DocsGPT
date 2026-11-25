@@ -691,6 +691,46 @@ def test_no_agent_can_take_the_prompt_while_an_import_edits_it(pg_engine):
         assert PromptsRepository(conn).get(str(prompt["id"]), user)["content"] == "Be brief"
 
 
+@pytest.mark.fresh_db
+def test_a_prompt_an_import_reuses_cannot_be_edited_under_it(pg_engine, monkeypatch):
+    """Between finding a prompt and pointing its new agent at it, another import's edit of it waits."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    from docsgpt.api.user.agents import portability
+
+    user = "u_prompt_reuse_lock"
+    with pg_engine.begin() as conn:
+        _agent, prompt, slug = _agent_with_prompt(conn, user)
+
+    apply_sources = portability._apply_sources
+    edits = []
+
+    def edit_meanwhile(*args, **kwargs):
+        if edits:  # the editor's own import passes through here too
+            return apply_sources(*args, **kwargs)
+        edits.append("started")
+        with pg_engine.connect() as editor:
+            editor.execute(text("SET lock_timeout = '200ms'"))
+            try:
+                apply_import(editor, user, _prompt_doc(slug, "Sys", "Be brief"))
+                editor.commit()
+                edits.append("committed")
+            except OperationalError:
+                editor.rollback()
+                edits.append("waited")
+        return apply_sources(*args, **kwargs)
+
+    monkeypatch.setattr(portability, "_apply_sources", edit_meanwhile)
+    with pg_engine.begin() as reuser:
+        created = apply_import(reuser, user, _prompt_doc("another-bot", "Sys", "Be terse"))
+
+    assert edits == ["started", "waited"]
+    with pg_engine.connect() as conn:
+        new_agent = AgentsRepository(conn).get(created["agent_id"], user)
+        assert PromptsRepository(conn).get(str(new_agent["prompt_id"]), user)["content"] == "Be terse"
+
+
 def test_tool_skipped_when_encryption_fails(pg_conn, monkeypatch):
     user = "u_encfail"
     fake_tool = Mock()
