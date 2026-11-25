@@ -343,5 +343,201 @@ class TestOneBadItemDoesNotStopTheSync:
             ]},
             "get_document": self._refuse,
         })
-        docs = _collect(session, projects=[{"id": "project-1", "name": "Acme"}], include_documents=True)
+        docs = _collect(
+            session,
+            projects=[{"id": "project-1", "name": "Acme"}],
+            include_documents=True,
+        )
         assert [d.text.splitlines()[0] for d in docs] == ["# Plan"]
+
+    def test_skipped_documents_do_not_count_toward_the_sync_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Skipped documents must not consume the import limit."""
+        monkeypatch.setattr(linear, "MAX_DOCUMENTS", 2)
+
+        def list_documents(args: dict) -> dict:
+            assert args["projectId"] == "project-1"
+            assert args["limit"] == linear.PAGE_SIZE
+
+            cursor = args.get("cursor")
+
+            if cursor is None:
+                return {
+                    "documents": [
+                        {"id": "d1", "title": "Gone"},
+                        {
+                            "id": "d2",
+                            "title": "Plan",
+                            "content": "We ship on Monday.",
+                        },
+                    ],
+                    "nextCursor": "page-2",
+                }
+
+            if cursor == "page-2":
+                return {
+                    "documents": [
+                        {
+                            "id": "d3",
+                            "title": "Notes",
+                            "content": "Follow up on Friday.",
+                        },
+                        {
+                            "id": "d4",
+                            "title": "Extra",
+                            "content": "Beyond the limit.",
+                        },
+                    ],
+                    "nextCursor": "page-3",
+                }
+
+            pytest.fail(f"Unexpected page requested: {cursor}")
+
+        session = FakeLinear({
+            "list_issues": lambda args: {"issues": []},
+            "list_documents": list_documents,
+            "get_document": self._refuse,
+        })
+
+        docs = _collect(
+            session,
+            projects=["project-1", "project-2"],
+            include_documents=True,
+        )
+
+        assert [d.text.splitlines()[0] for d in docs] == [
+            "# Plan",
+            "# Notes",
+        ]
+        assert len(docs) == linear.MAX_DOCUMENTS
+
+        assert session.called("list_documents") == [
+            {
+                "projectId": "project-1",
+                "limit": linear.PAGE_SIZE,
+            },
+            {
+                "projectId": "project-1",
+                "limit": linear.PAGE_SIZE,
+                "cursor": "page-2",
+            },
+        ]
+
+    def test_document_limit_counts_imports_across_projects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The accepted-document cap applies across selected projects."""
+        monkeypatch.setattr(linear, "MAX_DOCUMENTS", 2)
+
+        def list_documents(args: dict) -> dict:
+            assert args.get("cursor") is None
+            assert args["limit"] == linear.PAGE_SIZE
+
+            if args["projectId"] == "project-1":
+                return {
+                    "documents": [
+                        {"id": "d1", "title": "Unavailable"},
+                        {
+                            "id": "d2",
+                            "title": "Project One",
+                            "content": "First accepted document.",
+                        },
+                    ],
+                }
+
+            if args["projectId"] == "project-2":
+                return {
+                    "documents": [
+                        {
+                            "id": "d3",
+                            "title": "Project Two",
+                            "content": "Second accepted document.",
+                        },
+                    ],
+                    "nextCursor": "unused-next-page",
+                }
+
+            pytest.fail(
+                f"Unexpected project: {args['projectId']}"
+            )
+
+        session = FakeLinear({
+            "list_issues": lambda args: {"issues": []},
+            "list_documents": list_documents,
+            "get_document": self._refuse,
+        })
+
+        docs = _collect(
+            session,
+            projects=["project-1", "project-2", "project-3"],
+            include_documents=True,
+        )
+
+        assert [d.text.splitlines()[0] for d in docs] == [
+            "# Project One",
+            "# Project Two",
+        ]
+        assert len(docs) == linear.MAX_DOCUMENTS
+
+        assert session.called("list_documents") == [
+            {
+                "projectId": "project-1",
+                "limit": linear.PAGE_SIZE,
+            },
+            {
+                "projectId": "project-2",
+                "limit": linear.PAGE_SIZE,
+            },
+        ]
+
+    def test_document_limit_stops_after_first_accepted_document(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Stop at the cap without fetching more pages or projects."""
+        monkeypatch.setattr(linear, "MAX_DOCUMENTS", 1)
+
+        def list_documents(args: dict) -> dict:
+            assert args["projectId"] == "project-1"
+            assert args["limit"] == linear.PAGE_SIZE
+            assert args.get("cursor") is None
+
+            return {
+                "documents": [
+                    {
+                        "id": "d1",
+                        "title": "First",
+                        "content": "The first document.",
+                    },
+                    {
+                        "id": "d2",
+                        "title": "Second",
+                        "content": "Beyond the limit.",
+                    },
+                ],
+                "nextCursor": "page-2",
+            }
+
+        session = FakeLinear({
+            "list_issues": lambda args: {"issues": []},
+            "list_documents": list_documents,
+            "get_document": self._refuse,
+        })
+
+        docs = _collect(
+            session,
+            projects=["project-1", "project-2"],
+            include_documents=True,
+        )
+
+        assert [d.text.splitlines()[0] for d in docs] == [
+            "# First",
+        ]
+        assert len(docs) == 1
+
+        assert session.called("list_documents") == [
+            {
+                "projectId": "project-1",
+                "limit": linear.PAGE_SIZE,
+            },
+        ]
