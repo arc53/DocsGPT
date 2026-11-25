@@ -1453,11 +1453,16 @@ def plan_import(conn, user: str, doc: dict, *, workspace: Optional[Workspace] = 
         tools.append(entry)
 
     prompt_spec = spec.get("prompt")
-    if isinstance(prompt_spec, dict):
-        existing = PromptsRepository(conn).find(
-            owner, prompt_spec.get("name") or "", prompt_spec.get("content") or ""
-        )
-        prompt = {"status": "reuse" if existing else "create", "name": prompt_spec.get("name") or ""}
+    stored = _prompt_spec(spec)
+    if stored is not None:
+        name, content = stored
+        if PromptsRepository(conn).find(owner, name, content):
+            status = "reuse"
+        elif _editable_prompt(conn, owner, target.get("agent_id"), name):
+            status = "update"
+        else:
+            status = "create"
+        prompt = {"status": status, "name": name}
     elif prompt_spec in STORED_PROMPT_PRESETS:
         prompt = {"status": "preset", "name": prompt_spec}
     else:
@@ -1529,7 +1534,47 @@ def plan_import(conn, user: str, doc: dict, *, workspace: Optional[Workspace] = 
 # ---------------------------------------------------------------------------
 
 
-def _apply_prompt(conn, user: str, spec: dict, created_by: Optional[str] = None) -> Optional[str]:
+def _prompt_spec(spec: dict) -> Optional[tuple[str, str]]:
+    """The file's stored prompt as ``(name, content)``, or None for a preset or the default."""
+    prompt_spec = spec.get("prompt")
+    if not isinstance(prompt_spec, dict):
+        return None
+    return prompt_spec.get("name") or "Imported prompt", prompt_spec.get("content") or ""
+
+
+def _editable_prompt(conn, owner: str, agent_id: Optional[str], name: str) -> Optional[dict]:
+    """The updated agent's own prompt, when the file keeps its name and no other agent uses it.
+
+    Re-applying an edited file then changes that prompt in place, as an edit in the UI would, instead
+    of leaving the old text behind as another prompt with the same name on every apply.
+
+    Args:
+        conn: Open database connection.
+        owner: The workspace's owner.
+        agent_id: The agent the file updates; None when it creates one.
+        name: The file's prompt name.
+
+    Returns:
+        The prompt row, or None.
+    """
+    if not agent_id:
+        return None
+    agents = AgentsRepository(conn)
+    agent = agents.get(agent_id, owner)
+    prompt_id = str((agent or {}).get("prompt_id") or "")
+    if not prompt_id or prompt_id in STORED_PROMPT_PRESETS:
+        return None
+    row = PromptsRepository(conn).get(prompt_id, owner)
+    if row is None or row.get("name") != name:
+        return None
+    if agents.count_by_prompt(prompt_id, exclude_agent_id=agent_id):
+        return None
+    return row
+
+
+def _apply_prompt(
+    conn, user: str, spec: dict, created_by: Optional[str] = None, agent_id: Optional[str] = None
+) -> Optional[str]:
     """The agent's ``prompt_id`` for the file's prompt.
 
     Args:
@@ -1537,22 +1582,29 @@ def _apply_prompt(conn, user: str, spec: dict, created_by: Optional[str] = None)
         user: The workspace's owner (the importer, or the team's principal).
         spec: The document's ``spec``.
         created_by: The person importing, recorded on a prompt made here.
+        agent_id: The agent the file updates, whose own prompt takes an edit in place.
 
     Returns:
         A preset name (``creative`` / ``strict``), the id of the owner's prompt
-        with the file's name and content (made when missing), or None for the
-        default and for an unknown name.
+        with the file's name and content (made when missing, or the agent's
+        own prompt edited to match), or None for the default and for an
+        unknown name.
     """
     prompt_spec = spec.get("prompt")
     if prompt_spec in STORED_PROMPT_PRESETS:
         return prompt_spec
-    if not isinstance(prompt_spec, dict):
+    stored = _prompt_spec(spec)
+    if stored is None:
         return None
+    name, content = stored
     repo = PromptsRepository(conn)
-    name = prompt_spec.get("name") or "Imported prompt"
-    content = prompt_spec.get("content") or ""
+    row = repo.find(user, name, content)
+    if row is None:
+        row = _editable_prompt(conn, user, agent_id, name)
+        if row is not None:
+            repo.update(str(row["id"]), user, name, content)
     # A team's prompt names who added it: the trigger fills that in for a person only.
-    row = repo.find(user, name, content) or repo.create(user, name, content, created_by=created_by)
+    row = row or repo.create(user, name, content, created_by=created_by)
     return str(row["id"])
 
 
@@ -2478,7 +2530,7 @@ def apply_import(
     target = _resolve_target(conn, owner, metadata)
     before = _items_before_import(conn, owner, target)
 
-    prompt_id = _apply_prompt(conn, owner, spec, created_by)
+    prompt_id = _apply_prompt(conn, owner, spec, created_by, target.get("agent_id"))
     source_ids, source_ids_by_name = _apply_sources(conn, owner, spec, resolution, warnings)
     folder_ids, folder_ids_by_name = _apply_folders(conn, owner, spec, resolution, warnings)
     tool_ids, tool_ids_by_key = _apply_tools(conn, owner, spec, resolution, warnings, created_by)
