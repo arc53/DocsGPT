@@ -62,6 +62,10 @@ EXPECTED_IDS = {
         "deepseek-v4-pro",
         "qwen3.8-max",
         "glm-5.3",
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "moonshotai/Kimi-K2.6",
+        "zai-org/GLM-5.3",
+        "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
     },
     "docsgpt": {"docsgpt-local"},
 }
@@ -299,6 +303,7 @@ class TestRegistryPermutations:
         monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         monkeypatch.setenv("DASHSCOPE_API_KEY", "x")
         monkeypatch.setenv("ZAI_API_KEY", "x")
+        monkeypatch.setenv("RUNCRATE_API_KEY", "x")
         s = _make_settings(
             OPENAI_API_KEY="x",
             ANTHROPIC_API_KEY="x",
