@@ -5,7 +5,9 @@
 # on every docs merge loaded the Cloud workers for no real gain. Both uploads use
 # `sources upload --sync`, which updates the existing source in place: the CLI
 # sends a list of file hashes, uploads only the files the server lacks, and the
-# server re-embeds only the files that were added, edited or removed.
+# server re-embeds only the files that were added, edited or removed. Exceptions:
+# the first folder sync re-embeds every page once (the earlier zip stored paths
+# under content/), and a server without manifest syncs is sent every file.
 # Off until the TRIAGE_MODE repository variable is set; see .github/triage/README.md.
 name: Triage agent
 

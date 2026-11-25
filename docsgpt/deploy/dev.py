@@ -8,6 +8,7 @@ them; nothing here imports the app itself.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shlex
 import shutil
@@ -77,10 +78,17 @@ def analytics_enabled(home: Path) -> bool:
 
 
 def api_address(host: str, port: int) -> str:
-    """Where the other children reach an API bound to ``host:port``; a wildcard bind answers on loopback."""
-    if host in ("", "0.0.0.0", "::"):
-        host = "127.0.0.1"
-    elif ":" in host:
+    """Where the other children reach an API bound to ``host:port``; a wildcard bind answers on loopback.
+
+    An IPv6 wildcard maps to ``::1``: Windows IPv6 sockets refuse IPv4 connections by default.
+    """
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None  # a host name, or empty
+    if not host or (ip is not None and ip.is_unspecified):
+        host = "::1" if ip is not None and ip.version == 6 else "127.0.0.1"
+    if ":" in host:
         host = f"[{host}]"
     return f"http://{host}:{port}"
 

@@ -36,7 +36,11 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
   docs" ticked. Both use `sources upload --sync`: the source keeps its id and
   is updated in place, the CLI uploads only the files the source doesn't
   already hold, and only added, edited or removed files are re-embedded, so a
-  week without docs changes uploads and embeds nothing. An
+  week without docs changes uploads and embeds nothing. Two runs cost more:
+  the first folder sync re-embeds every page once (the zip it replaces stored
+  them as `content/API/...`, the folder as `API/...`), and a server without
+  manifest syncs gets every file uploaded, though it still re-embeds only the
+  changed ones. An
   upload that fails or times out doesn't stop the agent from being applied;
   the source keeps what it had and the run is marked failed.
 - The **triage manual** is a wiki source on DocsGPT Cloud
