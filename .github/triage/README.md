@@ -31,12 +31,12 @@ DocsGPT schedule (daily, 07:00 UTC) ──► {"kind": "stale_sweep"} ───�
   `docsgpt-cli agents apply` on every push to `main` that changes it, and
   syncs `AGENTS.md`, `CONTRIBUTING.md` and `frontend/DESIGN.md` into the
   agent's contributor guides when they change. The product docs
-  (`docs/content/`) are synced every Monday, or by running the workflow
-  with "Re-upload the product docs" ticked. Both use `sources upload --sync`:
-  the existing source is updated in place and only added, edited or removed
-  files are re-embedded, so a week without docs changes embeds nothing. (A
-  source ingested before content hashes were stored is re-embedded in full on
-  its first sync, once.) An
+  (`docs/content/`, its `.md` and `.mdx` pages, uploaded as a folder) are
+  synced every Monday, or by running the workflow with "Re-upload the product
+  docs" ticked. Both use `sources upload --sync`: the source keeps its id and
+  is updated in place, the CLI uploads only the files the source doesn't
+  already hold, and only added, edited or removed files are re-embedded, so a
+  week without docs changes uploads and embeds nothing. An
   upload that fails or times out doesn't stop the agent from being applied;
   the source keeps what it had and the run is marked failed.
 - The **triage manual** is a wiki source on DocsGPT Cloud
