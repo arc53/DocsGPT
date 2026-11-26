@@ -91,11 +91,15 @@ from docsgpt.upload_limits import (
 )
 from docsgpt.vectorstore.index_lock import (
     WORKER_WAIT_SECONDS,
+    SameJobRunning,
     SourceBusy,
     connection_fetch_lock,
     graph_extract_lock,
+    job_finished,
+    record_job_finished,
     source_index_lock,
 )
+from docsgpt.vectorstore.staged_rebuild import discard_staged_index, promote_staged_index, staged_index_id
 from docsgpt.utils import (
     count_tokens_docs,
     get_encoding,
@@ -929,9 +933,11 @@ def _upload_refusal(answer: Any) -> Optional[str]:
 def _drop_refused_sync_vectors(reason: str, source_id: str) -> None:
     """Clear what a refused sync wrote to the vector store for a source deleted while it ran.
 
-    A sync wipes and re-fills the source's chunks before it uploads; on a store
-    other than FAISS they are already written under the source's id, and the
-    delete that ran meanwhile has already cleared it, so nothing else would.
+    A sync that rebuilds in place wipes and re-fills the source's chunks before
+    it uploads; on a store other than FAISS they are already written under the
+    source's id, and the delete that ran meanwhile has already cleared it, so
+    nothing else would. (A staged rebuild wrote under its staging id, which the
+    sync drops itself: ``discard_staged_index``.)
     FAISS keeps the index in the sync's scratch directory, which the API never
     saved. A source that became a wiki keeps its chunks: they may already be
     the wiki's pages. Best effort: a failure is logged.
@@ -2273,19 +2279,23 @@ def remote_worker(
             f"{list(directory_structure.keys())}"
         )
 
-        content_key = incremental.settings_key(config, _REMOTE_INGEST_VERSION, settings.EMBEDDINGS_NAME)
+        content_key, legacy_content_key = incremental.settings_keys(
+            config, _REMOTE_INGEST_VERSION, settings.EMBEDDINGS_NAME,
+        )
         content_files = _content_files(docs)
         if operation_mode == "sync" and doc_id and content_files is not None:
             outcome = _sync_remote_changes(
                 self,
                 user=user, actor_id=actor_id, name_job=name_job, loader=loader, source_id=source_id_for_events,
-                docs=docs, content_files=content_files, key=content_key, cfg=cfg, tokens=tokens,
+                docs=docs, content_files=content_files, key=content_key, legacy_key=legacy_content_key,
+                cfg=cfg, tokens=tokens,
                 directory_structure=directory_structure, connection_id=connection_id,
                 remote_loader=remote_loader, fetched_at=fetched_at,
             )
             if outcome is not None:
                 return outcome
 
+        staged = None
         if operation_mode == "upload":
             embed_and_store_documents(
                 docs, full_path, source_uuid, self,
@@ -2301,11 +2311,15 @@ def remote_worker(
             # The index is rebuilt now: until it is stored again no manifest
             # vouches for it, so a sync that dies here leaves the next one full.
             _save_source_sync_state(source_id_for_events, remote_files=None)
-            embed_and_store_documents(
+            # Under a staging id where the store can swap it in at once, so
+            # searches read the old index until the new one is complete.
+            staged = staged_index_id(source_id_for_events)
+            embedded = embed_and_store_documents(
                 docs, full_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=progress_user,
                 actor_id=progress_actor,
+                index_id=staged,
             )
             assert_index_complete(source_uuid)
         self.update_state(state="PROGRESS", meta={"current": 100})
@@ -2352,8 +2366,12 @@ def remote_worker(
             file_data["folder_id"] = folder_id
         refused = _upload_refusal(upload_index(full_path, file_data))
         if refused:
+            if staged:
+                discard_staged_index(source_id_for_events)
             # No website report either: nothing was stored.
             return _skip_refused_sync(self, user, source_id_for_events, name_job, loader, refused, actor_id)
+        if staged:
+            promote_staged_index(source_id_for_events, staged, embedded)
         if connection_id:
             _link_source_to_connection(source_id_for_events, str(connection_id))
         if content_files is not None:
@@ -2493,6 +2511,7 @@ def _sync_remote_changes(
     connection_id: Optional[str],
     remote_loader: Any,
     fetched_at: str,
+    legacy_key: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Sync a remote source by re-embedding only the files whose content changed.
 
@@ -2518,7 +2537,8 @@ def _sync_remote_changes(
         stored_manifest = repo.get_remote_files(source_id) if row is not None else None
     if row is None or not _can_edit_index_in_place(row):
         return None
-    manifest = incremental.load_manifest(stored_manifest, "content", key)
+    # A manifest under the legacy key is accepted; this sync stores it again under ``key``.
+    manifest = incremental.load_manifest(stored_manifest, "content", (key, legacy_key) if legacy_key else key)
     if manifest is None:
         return None
     plan = incremental.plan_content_sync(manifest, {path: group["sha256"] for path, group in content_files.items()})
@@ -2711,6 +2731,29 @@ def _skip_refused_sync(
     return {"id": source_id, "status": "skipped", "reason": reason}
 
 
+def _celery_task_id(task: Any) -> Optional[str]:
+    """The running Celery task's id, or ``None`` when there is none to go by (a direct call, a test double)."""
+    task_id = getattr(getattr(task, "request", None), "id", None)
+    return task_id if isinstance(task_id, str) and task_id else None
+
+
+def _ignore_redelivered_sync(doc_id: str, task_id: str, why: str) -> None:
+    """End a redelivered copy of a sync without running it, and without recording a result.
+
+    Celery redelivers a task that outlives the broker's visibility timeout
+    under the same task id; the copy's result would overwrite the one the
+    first delivery records under that id, so it raises ``Ignore``, like
+    ``with_idempotency`` does for a deferred copy, and tells nobody.
+
+    Raises:
+        Ignore: Always.
+    """
+    from celery.exceptions import Ignore
+
+    logging.info("Not running sync of source %s again: task %s %s", doc_id, task_id, why)
+    raise Ignore()
+
+
 def _run_locked_sync(
     task: Any, user: str, doc_id: str, name: str, loader: str, run: Callable[[Dict[str, Any]], Dict[str, Any]],
     *, lock_wait_seconds: float = WORKER_WAIT_SECONDS, notify_skip: bool = True, actor_id: Optional[str] = None,
@@ -2721,6 +2764,15 @@ def _run_locked_sync(
     conversion or another sync on the source: each rewrites the index, and a
     FAISS index is saved whole. A source busy past the wait, deleted or made a
     wiki meanwhile is skipped; one whose row can't be read doesn't run.
+
+    A redelivered copy of a sync (the same Celery task id) never runs it
+    twice: while the first delivery still runs, the copy finds its own id on
+    the lock and stops as soon as it sees the lock renewed; once the first
+    delivery finished (``record_job_finished``), the copy stops before taking
+    the lock, or right after. Either way it raises ``celery.exceptions.Ignore``
+    and publishes nothing. A different sync of the same source (a manual
+    "Sync now" while a scheduled one runs) still waits its turn, up to
+    ``lock_wait_seconds``, and then runs.
 
     Args:
         task: The bound Celery task.
@@ -2737,6 +2789,9 @@ def _run_locked_sync(
     Returns:
         What ``run`` returned, ``{"status": "skipped", "reason": "busy" | "gone" | "wiki"}``,
         or ``{"status": "error", "error": ...}`` when the row couldn't be read.
+
+    Raises:
+        Ignore: This is a redelivered copy of a sync that is running or ran.
     """
 
     def _skipped(reason: str) -> Dict[str, Any]:
@@ -2745,8 +2800,14 @@ def _run_locked_sync(
             _publish_sync_not_run(task, user, doc_id, name, loader, _SYNC_SKIP_MESSAGES[reason], reason, actor_id)
         return {"status": "skipped", "reason": reason}
 
+    task_id = _celery_task_id(task)
+    if task_id and job_finished(task_id):
+        _ignore_redelivered_sync(str(doc_id), task_id, "already ran it")
     try:
-        with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds):
+        with source_index_lock(str(doc_id), wait_seconds=lock_wait_seconds, holder=task_id):
+            if task_id and job_finished(task_id):
+                # Its first delivery finished while this copy waited for the lock.
+                _ignore_redelivered_sync(str(doc_id), task_id, "already ran it")
             try:
                 with db_readonly() as conn:
                     row = SourcesRepository(conn).get_any(str(doc_id), user)
@@ -2759,7 +2820,11 @@ def _run_locked_sync(
             if _is_wiki_config(row.get("config")):
                 # A sync would replace a wiki's pages with the remote content.
                 return _skipped("wiki")
-            return run(row)
+            result = run(row)
+            record_job_finished(task_id)
+            return result
+    except SameJobRunning:
+        _ignore_redelivered_sync(str(doc_id), str(task_id), "is still running it")
     except SourceBusy:
         return _skipped("busy")
 
@@ -2835,11 +2900,16 @@ def sync(
             return {"status": "skipped", "reason": result.get("reason")}
         return {"status": "success"}
 
+    from celery.exceptions import Ignore
+
     try:
         return _run_locked_sync(
             self, user, doc_id, name_job, loader, _run,
             lock_wait_seconds=lock_wait_seconds, notify_skip=notify_skip, actor_id=actor_id,
         )
+    except Ignore:
+        # A redelivered copy of this sync: it records no result of its own.
+        raise
     except Exception as e:
         logging.error(f"Error during sync: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
@@ -5275,38 +5345,71 @@ def _connector_download_losses(download_info: Dict[str, Any]) -> Tuple[int, int]
     return int(download_info.get("files_failed") or 0), int(download_info.get("folders_failed") or 0)
 
 
-def _connector_sync_fingerprint(selection_fingerprint: Optional[str], config: Any) -> Optional[str]:
-    """Combine a connector's selection fingerprint with the source's processing settings.
+def _connector_sync_fingerprint(
+    selection_fingerprint: Optional[str], config: Any, *, legacy: bool = False,
+) -> Optional[str]:
+    """Combine a connector's selection fingerprint with what the source's settings make an ingest write.
 
-    Changing the chunking or retrieval settings changes the result, so the
-    next sync re-ingests even when no file changed. So does a new
-    ``_CONNECTOR_INGEST_VERSION``. ``retrieval.show_links`` is left out: it
-    only decides what a search returns, not what is ingested.
+    Changing the chunking settings (``incremental.ingest_settings``) changes
+    the result, so the next sync re-ingests even when no file changed. So
+    does a new ``_CONNECTOR_INGEST_VERSION``. Retrieval settings don't: they
+    take effect live and don't change what is ingested.
 
     Args:
         selection_fingerprint: The loader's fingerprint of the selected files, or ``None``.
         config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+        legacy: Compute the fingerprint stored before retrieval settings were
+            left out (the whole config less ``retrieval.show_links``), which a
+            sync still accepts once (``_connector_fingerprint_match``).
 
     Returns:
         A hex digest, or ``None`` when the loader gave no fingerprint.
     """
     if not selection_fingerprint:
         return None
-    if isinstance(config, str):
-        try:
-            config = json.loads(config)
-        except ValueError:
-            # Not JSON: hash the raw string, which still changes when the settings do.
-            pass
-    if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
-        retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
-        config = {**config, "retrieval": retrieval}
-    payload = json.dumps(
-        {"selection": selection_fingerprint, "config": config or {}, "version": _CONNECTOR_INGEST_VERSION},
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    if legacy:
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except ValueError:
+                # Not JSON: hash the raw string, which still changes when the settings do.
+                pass
+        if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
+            retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
+            config = {**config, "retrieval": retrieval}
+        payload = {"selection": selection_fingerprint, "config": config or {}, "version": _CONNECTOR_INGEST_VERSION}
+    else:
+        payload = {
+            "selection": selection_fingerprint,
+            "ingest": incremental.ingest_settings(config),
+            "version": _CONNECTOR_INGEST_VERSION,
+        }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+
+
+def _connector_fingerprint_match(
+    previous: Optional[str], selection_fingerprint: Optional[str], config: Any,
+) -> Optional[str]:
+    """Which fingerprint of this selection and config a stored one is.
+
+    Args:
+        previous: ``remote_data.sync_fingerprint`` as stored.
+        selection_fingerprint: The loader's fingerprint of the selection now.
+        config: The source's ``SourceConfig`` dict, or ``None``.
+
+    Returns:
+        ``"current"``, ``"legacy"`` (stored before retrieval settings were left
+        out, for the config as it is now: store the current one), or ``None``
+        when it matches neither, so the sync re-ingests.
+    """
+    current = _connector_sync_fingerprint(selection_fingerprint, config)
+    if not previous or not current:
+        return None
+    if previous == current:
+        return "current"
+    if previous == _connector_sync_fingerprint(selection_fingerprint, config, legacy=True):
+        return "legacy"
+    return None
 
 
 def _connector_selection_unchanged(
@@ -5333,11 +5436,20 @@ def _connector_selection_unchanged(
         previous = remote_data.get("sync_fingerprint") if isinstance(remote_data, dict) else None
         if not previous:
             return False
-        current = _connector_sync_fingerprint(loader.sync_fingerprint(source_config), config)
+        selection_fingerprint = loader.sync_fingerprint(source_config)
+        match = _connector_fingerprint_match(previous, selection_fingerprint, config)
     except Exception:
         logging.warning("Could not check source %s for changes; syncing it in full", source_id, exc_info=True)
         return False
-    return current == previous
+    if match == "legacy":
+        # Stored before retrieval settings were left out: store it as it is computed now.
+        try:
+            _save_source_sync_state(
+                source_id, fingerprint=_connector_sync_fingerprint(selection_fingerprint, config),
+            )
+        except Exception:  # noqa: BLE001 - the legacy one still matches next time
+            logging.warning("Could not store the fingerprint of source %s again", source_id, exc_info=True)
+    return match is not None
 
 
 def _mark_source_synced(source_id: str, user: str) -> None:
@@ -5725,20 +5837,25 @@ def _sync_connector_changes(
         if _connector_selection_unchanged(loader, selection, config, source_id, user):
             return _connector_unchanged(task, user, actor_id, source_id, job_name, source_type, len(failed))
         return None
-    key = incremental.settings_key(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME)
-    manifest = incremental.load_manifest(stored_manifest, "connector", key)
-    record_manifest = False
+    key, legacy_key = incremental.settings_keys(config, _CONNECTOR_INGEST_VERSION, settings.EMBEDDINGS_NAME)
+    manifest = incremental.load_manifest(stored_manifest, "connector", (key, legacy_key))
+    # A manifest stored under the legacy key is stored again under the current one.
+    record_manifest = manifest is not None and incremental.manifest_settings(stored_manifest) != key
+    restored_fingerprint: Any = _UNSET
     if manifest is None:
         previous = remote_data.get("sync_fingerprint")
         try:
-            current = _connector_sync_fingerprint(loader.sync_fingerprint(selection), config)
+            selection_fingerprint = loader.sync_fingerprint(selection)
+            match = _connector_fingerprint_match(previous, selection_fingerprint, config)
         except ConnectorAuthError:
             raise
         except Exception:
             logging.warning(f"Could not fingerprint source {source_id}; syncing it in full", exc_info=True)
-            current = None
-        if not previous or current != previous:
+            match = None
+        if match is None:
             return None
+        if match == "legacy":
+            restored_fingerprint = _connector_sync_fingerprint(selection_fingerprint, config)
         # The index was built from exactly this listing, less the files that failed.
         tokens = {
             path: int(entry.get("token_count") or 0)
@@ -5762,6 +5879,7 @@ def _sync_connector_changes(
                 source_id,
                 remote_files=incremental.build_manifest("connector", key, manifest) if record_manifest else _UNSET,
                 failed_files=remaining,
+                fingerprint=restored_fingerprint,
             )
         if not listing.complete:
             # Part of the selection couldn't be read: the index is kept, but
@@ -6165,8 +6283,11 @@ def sync_connector_source(self, source_id: str) -> Dict[str, Any]:
             doc_id=str(source["id"]),
             sync_frequency=source.get("sync_frequency") or "never",
             config=source.get("config") or None,
-            # A scheduled run: nobody waits on it, so a skip goes unannounced.
+            # A scheduled run: nobody waits on it, so a skip goes unannounced,
+            # and a source busy with another job is left to the next schedule
+            # rather than held up for (as scheduled content syncs are).
             notify_skip=False,
+            lock_wait_seconds=0,
             # The payer of a team's sync hears its events and pays for its graph.
             **_actor_kwargs(payer),
         )
@@ -6199,6 +6320,7 @@ def ingest_connector(
     actor_id: Optional[str] = None,
     folder_id: Optional[str] = None,
     retry_failed: bool = False,
+    lock_wait_seconds: float = WORKER_WAIT_SECONDS,
 ) -> Dict[str, Any]:
     """
     Ingestion for internal knowledge bases (GoogleDrive, etc.).
@@ -6239,6 +6361,9 @@ def ingest_connector(
         folder_id: One of the uploader's source folders to file a new source in.
         retry_failed: For a sync someone asked for: try every file the last
             sync could not read again, whatever its kind and attempts.
+        lock_wait_seconds: How long a sync waits for another job on the
+            source (``0`` for a scheduled one: a busy source waits for the
+            next schedule).
 
     Returns:
         The ingest summary, ``{"status": "skipped", "reason": "busy" | "wiki" | "gone"}``
@@ -6275,7 +6400,8 @@ def ingest_connector(
         )
 
     return _run_locked_sync(
-        self, user, doc_id, job_name, source_type, _run, notify_skip=notify_skip, actor_id=actor_id,
+        self, user, doc_id, job_name, source_type, _run,
+        lock_wait_seconds=lock_wait_seconds, notify_skip=notify_skip, actor_id=actor_id,
     )
 
 
@@ -6528,6 +6654,10 @@ def _ingest_connector(
             vector_store_path = os.path.join(temp_dir, "vector_store")
             os.makedirs(vector_store_path, exist_ok=True)
 
+            # A sync rebuilds the index under a staging id where the store can
+            # swap it in at once, so searches read the old index until the new
+            # one is complete (``docsgpt.vectorstore.staged_rebuild``).
+            staged = staged_index_id(source_id_for_events) if operation_mode == "sync" else None
             if operation_mode == "sync":
                 # The index is rebuilt now: until it is stored again, neither a
                 # manifest nor a fingerprint vouches for it, so a sync that dies
@@ -6536,12 +6666,13 @@ def _ingest_connector(
             self.update_state(
                 state="PROGRESS", meta={"current": 60, "status": "Storing documents"}
             )
-            embed_and_store_documents(
+            embedded = embed_and_store_documents(
                 docs, vector_store_path, source_uuid, self,
                 attempt_id=getattr(self.request, "id", None),
                 user_id=user,
                 actor_id=actor_id,
                 progress_start=60, progress_end=100,
+                index_id=staged,
             )
             assert_index_complete(source_uuid)
 
@@ -6625,7 +6756,11 @@ def _ingest_connector(
                 file_data["folder_id"] = folder_id
             refused = _upload_refusal(upload_index(vector_store_path, file_data))
             if refused:
+                if staged:
+                    discard_staged_index(source_id_for_events)
                 return _skip_refused_sync(self, user, source_id_for_events, job_name, source_type, refused, actor_id)
+            if staged:
+                promote_staged_index(source_id_for_events, staged, embedded)
             if connection_id:
                 _link_source_to_connection(source_id_for_events, connection_id)
             try:

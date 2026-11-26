@@ -510,6 +510,10 @@ class ParentClearError(RuntimeError):
         self.__cause__ = cause
 
 
+class StagedIndexIncomplete(RuntimeError):
+    """A staged rebuild holds fewer chunks than were embedded, so it doesn't replace the live index."""
+
+
 class BaseVectorStore(ABC):
     def __init__(self):
         pass
@@ -694,6 +698,36 @@ class BaseVectorStore(ABC):
             self.update_chunk(str(chunk_id), texts[str(chunk_id)], metadata)
             updated += 1
         return updated
+
+    @classmethod
+    def supports_staged_rebuild(cls) -> bool:
+        """Whether a full rebuild can embed under another id and then replace this source's chunks at once.
+
+        True for stores that override :meth:`promote_staged`. The others are
+        rebuilt in place: their old chunks are deleted when the rebuild starts.
+        """
+        return cls.promote_staged is not BaseVectorStore.promote_staged
+
+    def promote_staged(self, staging_id: str, expected: Optional[int] = None) -> int:
+        """Replace this source's chunks with the ones a rebuild embedded under ``staging_id``.
+
+        Stores that can do it in one transaction override this (see
+        :meth:`supports_staged_rebuild`); a reader sees either the old chunks
+        or the new ones, never a half-built index.
+
+        Args:
+            staging_id: The id the rebuild embedded under; its chunks move to this source.
+            expected: How many chunks the rebuild embedded; when the staging id
+                holds another number, nothing is changed.
+
+        Returns:
+            The number of chunks moved in.
+
+        Raises:
+            StagedIndexIncomplete: The staging id holds another number of chunks than ``expected``.
+            NotImplementedError: The store cannot swap a staged index in.
+        """
+        raise NotImplementedError(f"{type(self).__name__} cannot swap in a staged index")
 
     @classmethod
     def supports_chunk_edits(cls) -> bool:

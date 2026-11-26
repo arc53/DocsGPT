@@ -33,6 +33,77 @@ class TestSettingsKey:
     def test_json_text_is_read(self):
         assert incremental.settings_key('{"a": 1}', 1) == incremental.settings_key({"a": 1}, 1)
 
+    @pytest.mark.parametrize(
+        "retrieval",
+        [
+            {"chunks": 12},
+            {"exposure": "agentic_tool"},
+            {"retriever": "hybrid"},
+            {"rephrase_query": False},
+            {"score_threshold": 0.4},
+            {"reranker": {"type": "decision", "min_relevance": 0.5}},
+            {"prescreen": {"candidate_k": 40}},
+            {"graph": {"seed_strategy": "relationships", "blend_vector": False}},
+        ],
+    )
+    def test_a_retrieval_edit_does_not_change_it(self, retrieval):
+        # Retrieval settings take effect live: they don't change what a sync ingests.
+        base = {"chunking": {"max_tokens": 1000}}
+        assert incremental.settings_key(base, 1) == incremental.settings_key({**base, "retrieval": retrieval}, 1)
+
+    def test_graph_extraction_settings_do_not_change_it(self):
+        # A graph is carried over by chunk content after any sync, full or not.
+        base = {"kind": "graphrag", "chunking": {"max_tokens": 1000}}
+        edited = {**base, "graph": {"extraction_model": "other", "gleanings": 2, "max_chunks": 10}}
+        assert incremental.settings_key(base, 1) == incremental.settings_key(edited, 1)
+
+    def test_kind_and_embeddings_change_it(self):
+        key = incremental.settings_key({"kind": "classic"}, 1, "model-a")
+        assert key != incremental.settings_key({"kind": "graphrag"}, 1, "model-a")
+        assert key != incremental.settings_key({"kind": "classic"}, 1, "model-b")
+
+    def test_defaults_written_out_match_an_empty_config(self):
+        # Ingest reads both as the defaults, so both index the same.
+        from docsgpt.storage.db.source_config import SourceConfig
+
+        written = SourceConfig().model_dump()
+        assert incremental.settings_key(written, 1) == incremental.settings_key({}, 1)
+        assert incremental.settings_key(None, 1) == incremental.settings_key({}, 1)
+
+
+@pytest.mark.unit
+class TestLegacySettingsKey:
+    """The key stored before retrieval was left out, still accepted for the same config."""
+
+    def test_it_is_the_old_whole_config_hash(self):
+        import hashlib
+
+        config = {"chunking": {"max_tokens": 1000}, "retrieval": {"chunks": 2, "show_links": False}}
+        payload = json.dumps(
+            {"config": {"chunking": {"max_tokens": 1000}, "retrieval": {"chunks": 2}}, "version": 1, "embeddings": "m"},
+            sort_keys=True, default=str,
+        )
+        assert incremental.legacy_settings_key(config, 1, "m") == hashlib.sha256(payload.encode()).hexdigest()
+        assert incremental.legacy_settings_key(json.dumps(config), 1, "m") == incremental.legacy_settings_key(
+            config, 1, "m",
+        )
+
+    def test_settings_keys_gives_the_current_then_the_legacy_key(self):
+        config = {"retrieval": {"chunks": 3}}
+        assert incremental.settings_keys(config, 1, "m") == (
+            incremental.settings_key(config, 1, "m"), incremental.legacy_settings_key(config, 1, "m"),
+        )
+
+    def test_a_manifest_under_the_legacy_key_is_accepted(self):
+        config = {"retrieval": {"chunks": 3}}
+        current, legacy = incremental.settings_keys(config, 1, "m")
+        manifest = incremental.build_manifest("connector", legacy, {"a": _record("a")})
+        assert incremental.load_manifest(manifest, "connector", (current, legacy)) == {"a": _record("a")}
+        assert incremental.manifest_settings(manifest) == legacy
+        assert incremental.manifest_settings(json.dumps(manifest)) == legacy
+        assert incremental.manifest_settings("not json") is None
+        assert incremental.manifest_settings(None) is None
+
 
 @pytest.mark.unit
 class TestLoadManifest:

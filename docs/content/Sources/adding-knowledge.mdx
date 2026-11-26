@@ -201,7 +201,11 @@ A sync of a connector source (Google Drive, SharePoint and OneDrive, Confluence)
 
 A sync of a GitHub repository, a crawled site, an S3 bucket or another remote source reads every file again, since those services have no cheaper listing, but embeds only the files whose content changed and deletes the chunks of removed ones.
 
-Both rebuild the whole index once after a chunking change.
+Both rebuild the whole index once after a chunking change. A change to retrieval settings applies on the next question and doesn't make a sync rebuild anything.
+
+While a sync rebuilds the whole index, the source keeps answering from its previous index until the new one is complete, and a rebuild that fails leaves the previous index in place. This holds on pgvector, which builds the new index beside the old one and swaps it in, and on FAISS. On MongoDB, Qdrant, Milvus and Elasticsearch a rebuild still clears the source's chunks first, so searches return part of the source until the rebuild finishes.
+
+A scheduled sync of a source that another change is still running on is skipped, and the next scheduled sync picks the source up. A sync you start with **Sync now** waits for that change instead, as described in [Manage the pages of a website source](#manage-the-pages-of-a-website-source).
 
 To replace all of a source's files at once, for example from a script, send the new set with the `sync` operation of `POST /api/manage_source_files`. Files and ZIP archives are accepted, with the same limits as an upload, and a ZIP keeps its folders. Files that are not in the new set are removed, and the source keeps its ID, so agents that use it keep working.
 
