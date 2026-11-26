@@ -165,6 +165,15 @@ class TestWebRouterReadPages:
         assert router.extract.call_args[0][0] == ["https://a.com"]
         assert [f["url"] for f in result["failures"]] == ["file:///etc/passwd", "ftp://x.org/f"]
 
+    def test_malformed_url_refused_and_others_still_read(self, tool):
+        response = ExtractResponse(provider="jina", documents=[ExtractedDocument(url="https://a.com")])
+        router = _router(extract=response)
+        with patch.object(WebRouterTool, "_router", return_value=router):
+            result = tool.execute_action("webrouter_read_pages", urls=["http://[::1", "https://a.com"])
+
+        assert router.extract.call_args[0][0] == ["https://a.com"]
+        assert [f["url"] for f in result["failures"]] == ["http://[::1"]
+
     def test_only_non_http_urls_makes_no_call(self, tool):
         with patch.object(WebRouterTool, "_router") as factory:
             result = tool.execute_action("webrouter_read_pages", urls=["javascript:alert(1)"])

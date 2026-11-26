@@ -17,7 +17,7 @@ class WebRouterTool(Tool):
     """
     WebRouter
     Web search and page reading through WebRouter, which sends each call to one of several providers and falls back
-    to the next if it fails. Works without an API key; an optional provider key adds that provider.
+    to the next if it fails. Works without an API key; setting a provider and its key sends every call to that provider.
     """
 
     def __init__(self, config: Dict[str, Any]) -> None:
@@ -298,5 +298,8 @@ def _is_http(url: str) -> bool:
     Returns:
         ``True`` for an http(s) URL with a host.
     """
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
