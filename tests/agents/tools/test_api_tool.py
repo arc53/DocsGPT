@@ -293,7 +293,90 @@ class TestErrorHandling:
             side_effect=ValueError("serialize fail"),
         ):
             result = tool.execute_action("any", key="val")
+            assert result["status"] == "error"
             assert "serialization error" in result["message"].lower()
+
+    @pytest.mark.parametrize(
+        "status_code,headers",
+        [
+            (301, {"Location": "https://api.example.com/v2/items"}),
+            (302, {"location": "/v2/items"}),
+            (307, {"Location": "/v1/orders/"}),
+        ],
+    )
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_with_location_returns_error(self, mock_pinned, post_tool, status_code, headers):
+        from docsgpt.agents.tool_executor import result_status
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = status_code
+        mock_resp.headers = headers
+        mock_resp.content = b""
+        mock_resp.text = ""
+        mock_pinned.return_value = mock_resp
+
+        result = post_tool.execute_action("create", item="a")
+
+        target = headers.get("Location") or headers.get("location")
+        assert result["status"] == "error"
+        assert result["status_code"] == status_code
+        assert result["data"] is None
+        assert target in result["message"]
+        assert result_status(result) == "error"
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_without_location_returns_error(self, mock_pinned, get_tool):
+        from docsgpt.agents.tool_executor import result_status
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 302
+        mock_resp.headers = {}
+        mock_resp.content = b""
+        mock_resp.text = ""
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+
+        assert result["status"] == "error"
+        assert result["status_code"] == 302
+        assert result["data"] is None
+        assert "302" in result["message"]
+        assert result_status(result) == "error"
+
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            requests.exceptions.Timeout(),
+            requests.exceptions.ConnectionError("refused"),
+            requests.exceptions.RequestException("failed"),
+            RuntimeError("unexpected"),
+        ],
+    )
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_transport_and_unexpected_errors_report_error_status(self, mock_pinned, get_tool, exc):
+        from docsgpt.agents.tool_executor import result_status
+
+        mock_pinned.side_effect = exc
+        result = get_tool.execute_action("any")
+
+        assert result["status"] == "error"
+        assert result["status_code"] is None
+        assert result_status(result) == "error"
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_unsafe_url_and_unsupported_method_report_error_status(self, mock_pinned, get_tool):
+        from docsgpt.agents.tool_executor import result_status
+        from docsgpt.security.safe_url import UnsafeUserUrlError
+
+        mock_pinned.side_effect = UnsafeUserUrlError("blocked")
+        ssrf_result = get_tool.execute_action("any")
+        assert ssrf_result["status"] == "error"
+        assert result_status(ssrf_result) == "error"
+
+        bad_method_tool = APITool(config={"url": "https://example.com", "method": "TRACE"})
+        method_result = bad_method_tool.execute_action("any")
+        assert method_result["status"] == "error"
+        assert result_status(method_result) == "error"
 
 
 # =====================================================================

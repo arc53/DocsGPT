@@ -45,6 +45,20 @@ class APITool(Tool):
             self.body_encoding_rules,
         )
 
+    @staticmethod
+    def _error_result(
+        message: str,
+        status_code: Optional[int] = None,
+        data: Any = None,
+    ) -> Dict[str, Any]:
+        """Build a standardized error payload recognized by ``result_status``."""
+        return {
+            "status": "error",
+            "status_code": status_code,
+            "message": message,
+            "data": data,
+        }
+
     def _make_api_call(
         self,
         url: str,
@@ -68,7 +82,7 @@ class APITool(Tool):
             encoding_rules: OpenAPI encoding rules
 
         Returns:
-            Dict with status_code, data, and message
+            Dict with status_code, data, and message (and status="error" on failure)
         """
         _VALID_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
 
@@ -77,11 +91,7 @@ class APITool(Tool):
         response = None
 
         if method.upper() not in _VALID_METHODS:
-            return {
-                "status_code": None,
-                "message": f"Unsupported HTTP method: {method}",
-                "data": None,
-            }
+            return self._error_result(f"Unsupported HTTP method: {method}")
 
         try:
             path_params_used = set()
@@ -110,11 +120,7 @@ class APITool(Tool):
                     request_headers.update(body_headers)
                 except ValueError as e:
                     logger.error(f"Body serialization failed: {str(e)}")
-                    return {
-                        "status_code": None,
-                        "message": f"Body serialization error: {str(e)}",
-                        "data": None,
-                    }
+                    return self._error_result(f"Body serialization error: {str(e)}")
             else:
                 serialized_body = None
             if "Content-Type" not in request_headers and method not in [
@@ -134,6 +140,28 @@ class APITool(Tool):
                 headers=request_headers,
                 timeout=DEFAULT_TIMEOUT,
             )
+            # Redirects stay unfollowed (pinned_request enforces allow_redirects=False
+            # for SSRF safety); report 3xx as an error so callers know the request
+            # was not sent to the redirect target.
+            if 300 <= response.status_code < 400:
+                headers_map = response.headers or {}
+                location = headers_map.get("Location") or headers_map.get("location") or ""
+                logger.warning(
+                    f"Unfollowed redirect {response.status_code} for {request_url}"
+                    + (f" -> {location}" if location else "")
+                )
+                if location:
+                    message = (
+                        f"Redirect (HTTP {response.status_code}) to '{location}' was not followed. "
+                        "Send the request to that URL directly instead."
+                    )
+                else:
+                    message = (
+                        f"Redirect (HTTP {response.status_code}) was not followed "
+                        "(no Location header provided)."
+                    )
+                return self._error_result(message, status_code=response.status_code)
+
             response.raise_for_status()
 
             data = self._parse_response(response)
@@ -145,50 +173,33 @@ class APITool(Tool):
             }
         except UnsafeUserUrlError as e:
             logger.error(f"URL validation failed: {e}")
-            return {
-                "status_code": None,
-                "message": f"URL validation error: {e}",
-                "data": None,
-            }
+            return self._error_result(f"URL validation error: {e}")
         except requests.exceptions.Timeout:
             logger.error(f"Request timeout for {request_url}")
-            return {
-                "status_code": None,
-                "message": f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)",
-                "data": None,
-            }
+            return self._error_result(f"Request timeout ({DEFAULT_TIMEOUT}s exceeded)")
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error: {str(e)}")
-            return {
-                "status_code": None,
-                "message": f"Connection error: {str(e)}",
-                "data": None,
-            }
+            return self._error_result(f"Connection error: {str(e)}")
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTP error {response.status_code}: {str(e)}")
             try:
                 error_data = response.json()
             except (json.JSONDecodeError, ValueError):
                 error_data = response.text
-            return {
-                "status_code": response.status_code,
-                "message": f"HTTP Error {response.status_code}",
-                "data": error_data,
-            }
+            return self._error_result(
+                f"HTTP Error {response.status_code}",
+                status_code=response.status_code,
+                data=error_data,
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
-            return {
-                "status_code": response.status_code if response else None,
-                "message": f"API call failed: {str(e)}",
-                "data": None,
-            }
+            return self._error_result(
+                f"API call failed: {str(e)}",
+                status_code=response.status_code if response else None,
+            )
         except Exception as e:
             logger.error(f"Unexpected error in API call: {str(e)}", exc_info=True)
-            return {
-                "status_code": None,
-                "message": f"Unexpected error: {str(e)}",
-                "data": None,
-            }
+            return self._error_result(f"Unexpected error: {str(e)}")
 
     def _parse_response(self, response: requests.Response) -> Any:
         """
