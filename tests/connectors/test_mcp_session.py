@@ -6,6 +6,8 @@ import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
+import httpx2
 import pytest
 
 import docsgpt.api.user  # noqa: F401  (loads mcp_tool without the circular import)
@@ -174,14 +176,218 @@ class TestRunConnectionSession:
         with pytest.raises(ValueError):
             _run(FakeClient(), work, _connection(server_url="https://mcp.notion.com"))
 
-    def test_network_trouble_is_worth_retrying(self):
-        client = FakeClient({"list_issues": ConnectionError("reset")})
+    @pytest.mark.parametrize(
+        "error",
+        [
+            ConnectionError("reset"),
+            TimeoutError("timed out"),
+            httpx.ConnectError("connection failed"),
+            httpx.ReadTimeout("read timed out"),
+            httpx2.ConnectError("connection failed"),
+            httpx2.ReadTimeout("read timed out"),
+            httpx2.ReadError("read failed"),
+            httpx2.RemoteProtocolError("server disconnected"),
+            ExceptionGroup(
+                "transport failure",
+                [httpx2.ConnectError("connection failed")],
+            ),
+        ],
+    )
+    def test_network_trouble_is_worth_retrying(self, error):
+        client = FakeClient({"list_issues": error})
 
         async def work(session):
             return await session.call("list_issues", {})
 
-        with patch.object(service, "mark_reconnect_needed") as flag, pytest.raises(service.TransientConnectionError):
+        with (
+            patch.object(service, "mark_reconnect_needed") as flag,
+            pytest.raises(service.TransientConnectionError) as caught,
+        ):
             _run(client, work)
+
+        assert caught.value.__cause__ is error
+        flag.assert_not_called()
+        assert not client.open
+
+    @pytest.mark.parametrize(
+        "error_type",
+        [httpx.ConnectError, httpx2.ConnectError],
+        ids=["httpx", "httpx2"],
+    )
+    @pytest.mark.parametrize("chain", ["__cause__", "__context__"])
+    def test_wrapped_network_trouble_is_worth_retrying(
+        self, chain, error_type
+    ):
+        class WrappedErrorClient(FakeClient):
+            async def __aenter__(self):
+                try:
+                    raise error_type("connection failed")
+                except error_type as exc:
+                    if chain == "__cause__":
+                        raise RuntimeError(
+                            "Client failed to connect"
+                        ) from exc
+
+                    raise RuntimeError("Client failed to connect")
+
+        client = WrappedErrorClient()
+
+        async def work(session):
+            pytest.fail("The session should not open")
+
+        with (
+            patch.object(service, "mark_reconnect_needed") as flag,
+            pytest.raises(service.TransientConnectionError) as caught,
+        ):
+            _run(client, work)
+
+        wrapped_error = caught.value.__cause__
+
+        assert isinstance(wrapped_error, RuntimeError)
+        assert isinstance(getattr(wrapped_error, chain), error_type)
+        flag.assert_not_called()
+        assert not client.open
+
+    def test_lost_sign_in_takes_priority_over_network_trouble(self):
+        error = ExceptionGroup(
+            "MCP connection failed",
+            [
+                httpx2.ConnectError("connection failed"),
+                MCPReauthorizationRequired("OAuth session expired"),
+            ],
+        )
+        client = FakeClient(enter_error=error)
+
+        async def work(session):
+            pytest.fail("The session should not open")
+
+        with (
+            patch.object(service, "mark_reconnect_needed") as flag,
+            pytest.raises(service.ConnectionUnavailable),
+        ):
+            _run(client, work)
+
+        flag.assert_called_once_with("c1", mcp.SIGN_IN_EXPIRED)
+        assert not client.open
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            ValueError("invalid configuration"),
+            RuntimeError("unexpected failure"),
+            httpx2.HTTPStatusError(
+                "Unauthorized",
+                request=httpx2.Request("POST", LINEAR),
+                response=httpx2.Response(401),
+            ),
+            httpx2.HTTPStatusError(
+                "Forbidden",
+                request=httpx2.Request("POST", LINEAR),
+                response=httpx2.Response(403),
+            ),
+        ],
+        ids=[
+            "value-error",
+            "runtime-error",
+            "http-401",
+            "http-403",
+        ],
+    )
+    def test_unrelated_errors_are_not_classified_as_transient(self, error):
+        client = FakeClient({"list_issues": error})
+
+        async def work(session):
+            return await session.call("list_issues", {})
+
+        with (
+            patch.object(service, "mark_reconnect_needed") as flag,
+            pytest.raises(type(error)) as caught,
+        ):
+            _run(client, work)
+
+        assert caught.value is error
+        flag.assert_not_called()
+        assert not client.open
+
+    @pytest.mark.parametrize(
+        "raise_first_error",
+        [True, False],
+        ids=["first-error", "exception-group"],
+    )
+    def test_fastmcp_transport_failure_is_worth_retrying(
+        self, monkeypatch, raise_first_error
+    ):
+        import fastmcp
+        from fastmcp import Client
+
+        monkeypatch.setattr(
+            fastmcp.settings,
+            "client_raise_first_exceptiongroup_error",
+            raise_first_error,
+        )
+
+        import docsgpt.agents.tools.mcp_tool as mcp_tool
+
+        requests = []
+
+        def network_failure(request):
+            requests.append(request)
+            raise httpx2.ConnectError(
+                "Simulated network failure",
+                request=request,
+            )
+
+        def client_factory(
+            headers=None,
+            timeout=None,
+            auth=None,
+            **kwargs,
+        ):
+            return httpx2.AsyncClient(
+                headers=headers,
+                timeout=timeout,
+                auth=auth,
+                transport=httpx2.MockTransport(network_failure),
+            )
+
+        monkeypatch.setattr(
+            mcp_tool,
+            "validate_user_base_url",
+            lambda url: None,
+        )
+
+        monkeypatch.setattr(
+            mcp_tool,
+            "_mcp_http_client",
+            client_factory,
+        )
+
+        tool = mcp_tool.MCPTool(
+            {
+                "server_url": LINEAR,
+                "auth_type": "none",
+                "transport_type": "http",
+                "timeout": 5,
+            },
+            "alice",
+        )
+
+        client = Client(tool._create_transport(), timeout=5)
+
+        async def work(session):
+            pytest.fail("The session should not open")
+
+        with (
+            patch.object(service, "mark_reconnect_needed") as flag,
+            pytest.raises(service.TransientConnectionError) as caught,
+        ):
+            _run(client, work)
+
+        assert requests
+        assert any(
+            isinstance(error, httpx2.ConnectError)
+            for error in mcp._errors(caught.value)
+        )
         flag.assert_not_called()
 
     def test_the_client_signs_in_with_the_connections_stored_tokens(self, monkeypatch):
