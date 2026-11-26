@@ -3443,6 +3443,7 @@
         "mcp_context7": "查找库的最新文档和代码示例。",
         "mcp_drawio": "使用 draw.io 创建可编辑的流程图和其他图表。",
         "mcp_excalidraw": "绘制图表并获取可在 Excalidraw 中编辑的链接。",
+        "mcp_fireflies": "搜索 Fireflies 会议的文字记录、摘要和行动项。",
         "mcp_linear": "将问题和文档同步到知识库，并让智能体查找、创建和更新问题。",
         "mcp_miro": "查找 Miro 白板、阅读内容和评论、创建图表并回复评论。",
         "mcp_neon": "查看 Neon Postgres 项目、分支和架构，并运行 SQL。",

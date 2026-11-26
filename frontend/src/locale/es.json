@@ -3600,6 +3600,7 @@
         "mcp_context7": "Consulta documentación actualizada y ejemplos de código de bibliotecas.",
         "mcp_drawio": "Crea diagramas de flujo y otros diagramas editables con draw.io.",
         "mcp_excalidraw": "Dibuja diagramas y obtén un enlace para editarlos en Excalidraw.",
+        "mcp_fireflies": "Buscar transcripciones, resúmenes y acciones en reuniones de Fireflies.",
         "mcp_linear": "Sincroniza incidencias y documentos con Conocimiento y deja que los agentes busquen, creen y actualicen incidencias.",
         "mcp_miro": "Busca tableros de Miro, lee contenido y comentarios, crea diagramas y responde a comentarios.",
         "mcp_neon": "Explora proyectos, ramas y esquemas de Postgres en Neon, y ejecuta SQL.",
