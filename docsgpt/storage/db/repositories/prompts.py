@@ -66,9 +66,15 @@ class PromptsRepository:
         )
         return row_to_dict(result.fetchone())
 
-    def get(self, prompt_id: str, user_id: str) -> Optional[dict]:
+    def get(self, prompt_id: str, user_id: str, *, for_update: bool = False) -> Optional[dict]:
+        """Fetch a user's prompt; ``for_update`` row-locks it until the transaction ends.
+
+        The lock conflicts with the key-share lock the ``agents.prompt_id`` foreign key takes, so
+        no agent can be pointed at the prompt while it is held.
+        """
+        sql = "SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"
         result = self._conn.execute(
-            text("SELECT * FROM prompts WHERE id = CAST(:id AS uuid) AND user_id = :user_id"),
+            text(sql + (" FOR UPDATE" if for_update else "")),
             {"id": prompt_id, "user_id": user_id},
         )
         row = result.fetchone()
@@ -272,12 +278,19 @@ class PromptsRepository:
         )
         return result.rowcount > 0
 
-    def find(self, user_id: str, name: str, content: str) -> Optional[dict]:
-        """Return a prompt exactly matching (user, name, content), or None."""
+    def find(self, user_id: str, name: str, content: str, *, for_update: bool = False) -> Optional[dict]:
+        """Return the oldest prompt exactly matching (user, name, content), or None.
+
+        ``for_update`` row-locks the match until the transaction ends. A row edited while this
+        waited is matched again against its new text, so a prompt that no longer has ``content``
+        is not returned.
+        """
+        sql = (
+            "SELECT * FROM prompts WHERE user_id = :user_id AND name = :name AND content = :content "
+            "ORDER BY created_at, id LIMIT 1"
+        )
         result = self._conn.execute(
-            text(
-                "SELECT * FROM prompts WHERE user_id = :user_id AND name = :name AND content = :content"
-            ),
+            text(sql + (" FOR UPDATE" if for_update else "")),
             {"user_id": user_id, "name": name, "content": content},
         )
         row = result.fetchone()
