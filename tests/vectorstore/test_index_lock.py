@@ -351,3 +351,23 @@ class TestFinishedJobs:
         record_job_finished(None)
         assert job_finished(None) is False
         assert fake_redis.kv == {}
+
+
+@pytest.mark.unit
+class TestOwnTtl:
+    def test_a_lock_gone_or_held_by_another_job_is_not_its_own(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import _own_ttl, lock_key
+
+        key = lock_key("src-1")
+        assert _own_ttl(fake_redis, key, "task-1") is None
+        fake_redis.set(key, "task-2|x", nx=True, ex=600)
+        assert _own_ttl(fake_redis, key, "task-1") is None
+        assert _own_ttl(fake_redis, key, None) is None
+
+    def test_a_str_value_from_a_decoding_client_is_read(self, fake_redis):
+        from docsgpt.vectorstore.index_lock import _own_ttl, lock_key
+
+        key = lock_key("src-1")
+        fake_redis.set(key, "task-1|x", nx=True, ex=600)
+        fake_redis.kv[key] = "task-1|x"
+        assert 0 < _own_ttl(fake_redis, key, "task-1") <= 600_000

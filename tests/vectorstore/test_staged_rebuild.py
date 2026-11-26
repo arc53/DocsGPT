@@ -85,3 +85,50 @@ class TestDiscard:
         )
         staged_rebuild.discard_staged_index("abc")
         assert "abc:staging" in caplog.text
+
+
+@pytest.mark.unit
+class TestEdges:
+    def test_a_store_without_a_swap_refuses_one(self):
+        from docsgpt.vectorstore.base import BaseVectorStore
+
+        class Plain(BaseVectorStore):
+            def search(self, *args, **kwargs):
+                return []
+
+            def add_texts(self, texts, metadatas=None, *args, **kwargs):
+                return []
+
+        with pytest.raises(NotImplementedError):
+            Plain().promote_staged("abc:staging")
+
+    def test_an_incomplete_staging_set_is_dropped_with_the_checkpoint(self, stores, monkeypatch):
+        from docsgpt.vectorstore.base import StagedIndexIncomplete
+
+        forgotten = []
+        monkeypatch.setattr(staged_rebuild.settings, "VECTOR_STORE", "pgvector")
+        monkeypatch.setattr(staged_rebuild, "_forget_checkpoint", forgotten.append)
+
+        def _create(store_type, *args, source_id=None, **kwargs):
+            store = MagicMock(name=f"store:{source_id}")
+            store.promote_staged.side_effect = StagedIndexIncomplete("2 of 3")
+            stores[source_id] = store
+            return store
+
+        monkeypatch.setattr(VectorCreator, "create_vectorstore", staticmethod(_create))
+        with pytest.raises(StagedIndexIncomplete):
+            staged_rebuild.promote_staged_index("abc", "abc:staging", 3)
+        stores["abc:staging"].purge_index.assert_called_once_with()
+        assert forgotten == ["abc"]
+
+    def test_forgetting_a_checkpoint_never_raises(self, monkeypatch, caplog):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def _down():
+            raise RuntimeError("db down")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(staged_rebuild, "db_session", _down)
+        staged_rebuild._forget_checkpoint("abc")
+        assert "checkpoint of source abc" in caplog.text

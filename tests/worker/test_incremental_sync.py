@@ -430,6 +430,25 @@ class TestConnectorIncrementalSync:
             harness.loader.sync_fingerprint({}), config,
         )
 
+    def test_a_fingerprint_that_cannot_be_read_without_a_manifest_syncs_in_full(self, harness, monkeypatch):
+        harness.sync()
+        SourcesRepository(harness.pg).update(harness.source_id, "dave", {"remote_files": None})
+        real = harness.loader.sync_fingerprint
+        calls = []
+
+        def _fails_once(selection):
+            calls.append(selection)
+            if len(calls) == 1:
+                raise RuntimeError("drive down")
+            return real(selection)
+
+        monkeypatch.setattr(harness.loader, "sync_fingerprint", _fails_once)
+        harness.reset()
+
+        harness.sync()
+
+        assert harness.loader.full_downloads == 1
+
     def test_a_loader_that_cannot_list_keeps_the_full_sync(self, harness, monkeypatch):
         plain = MagicMock(name="connector")
         plain.connection_id = None

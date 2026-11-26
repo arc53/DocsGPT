@@ -260,6 +260,21 @@ class TestIngestConnectorSkipsUnchangedSync:
         stored = SourcesRepository(pg_conn).get(str(src["id"]), "dave")["remote_data"]["sync_fingerprint"]
         assert stored == worker._connector_sync_fingerprint("fp-1", config)
 
+    def test_a_legacy_fingerprint_that_cannot_be_stored_again_still_skips(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(
+            pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None, legacy=True)},
+        )
+        monkeypatch.setattr(worker, "_save_source_sync_state", MagicMock(side_effect=RuntimeError("db down")))
+
+        assert _sync(worker, task_self, str(src["id"]))["status"] == "unchanged"
+        connector.download_to_directory.assert_not_called()
+
     @pytest.mark.parametrize("stored, current", [(None, "fp-1"), ("fp-1", None)])
     def test_missing_fingerprint_reingests(
         self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline, stored, current,
@@ -363,6 +378,10 @@ class TestConnectorSyncFingerprint:
         assert worker._connector_sync_fingerprint("fp", config, legacy=True) == legacy
         assert worker._connector_sync_fingerprint("fp", json.dumps(config), legacy=True) == legacy
         assert worker._connector_sync_fingerprint("fp", config) != legacy
+        # Text that isn't JSON is hashed as it is, as before.
+        assert worker._connector_sync_fingerprint("fp", "not json", legacy=True) != worker._connector_sync_fingerprint(
+            "fp", "other", legacy=True,
+        )
 
     def test_fingerprints_stored_before_web_links_force_one_reingest(self):
         import hashlib

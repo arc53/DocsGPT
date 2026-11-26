@@ -917,3 +917,12 @@ class TestPGVectorPromoteStaged:
         store, _, _, _ = _make_store(source_id="live")
         with pytest.raises(ValueError):
             store.promote_staged("live")
+
+    def test_a_failed_rollback_still_raises_the_swap_error(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="live")
+        mock_cursor.execute.side_effect = RuntimeError("connection lost")
+        mock_conn.rollback.side_effect = RuntimeError("already closed")
+
+        with pytest.raises(RuntimeError, match="connection lost"):
+            store.promote_staged("live:staging")
+        mock_cursor.close.assert_called_once()
