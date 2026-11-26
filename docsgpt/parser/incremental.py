@@ -341,7 +341,10 @@ def load_manifest(raw: Any, kind: str, key: Any) -> Optional[Dict[str, Dict[str,
     if raw is None:
         return None
     accepted = {key} if isinstance(key, str) else set(key)
-    if raw.get("format") != MANIFEST_FORMAT or raw.get("kind") != kind or raw.get("settings") not in accepted:
+    settings = raw.get("settings")
+    if raw.get("format") != MANIFEST_FORMAT or raw.get("kind") != kind or not isinstance(settings, str):
+        return None
+    if settings not in accepted:
         return None
     files = raw.get("files")
     if not isinstance(files, dict):

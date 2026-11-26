@@ -113,6 +113,12 @@ class TestLoadManifest:
         assert incremental.load_manifest(manifest, "connector", "k2") is None
         assert incremental.load_manifest(manifest, "content", "k1") is None
 
+    @pytest.mark.parametrize("settings", [[], {}, 7, None])
+    def test_settings_that_are_not_a_key_are_not_used(self, settings):
+        manifest = {**incremental.build_manifest("connector", "k1", {}), "settings": settings}
+        assert incremental.load_manifest(manifest, "connector", ("k1", "k2")) is None
+        assert incremental.manifest_settings(manifest) is None
+
     @pytest.mark.parametrize("raw", [None, "", "not json", [], {"format": 99}])
     def test_anything_unreadable_is_not_used(self, raw):
         assert incremental.load_manifest(raw, "connector", "k") is None

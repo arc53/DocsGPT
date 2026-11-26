@@ -52,6 +52,13 @@ class LockRedis:
         return int(existed)
 
     def eval(self, script, numkeys, key, token, *args):
+        if "'pttl'" in script:
+            # The holder check: this TTL only while the value starts with the prefix, in one step.
+            value = self.kv.get(key) if self._alive(key) else None
+            if value is None or not value.startswith(token.encode()):
+                return -3
+            deadline = self.expiry.get(key)
+            return -1 if deadline is None else int((deadline - time.time()) * 1000)
         if not self._alive(key) or self.kv[key] != token.encode():
             return 0
         if "'del'" in script:
@@ -312,8 +319,10 @@ class TestARedeliveredJobDoesNotWait:
         from docsgpt.vectorstore.index_lock import SameJobRunning, SourceBusy, source_index_lock
 
         class BrokenReads(LockRedis):
-            def get(self, key):
-                raise ConnectionError("redis blip")
+            def eval(self, script, *args):
+                if "'pttl'" in script:
+                    raise ConnectionError("redis blip")
+                return super().eval(script, *args)
 
         _use(monkeypatch, BrokenReads())
         with source_index_lock("src-1", holder="task-1"):
@@ -364,10 +373,20 @@ class TestOwnTtl:
         assert _own_ttl(fake_redis, key, "task-1") is None
         assert _own_ttl(fake_redis, key, None) is None
 
-    def test_a_str_value_from_a_decoding_client_is_read(self, fake_redis):
+    def test_its_own_lock_reports_its_ttl(self, fake_redis):
         from docsgpt.vectorstore.index_lock import _own_ttl, lock_key
 
         key = lock_key("src-1")
         fake_redis.set(key, "task-1|x", nx=True, ex=600)
-        fake_redis.kv[key] = "task-1|x"
+        assert 0 < _own_ttl(fake_redis, key, "task-1") <= 600_000
+        # A holder whose id only starts the same is someone else.
+        assert _own_ttl(fake_redis, key, "task") is None
+
+    def test_the_holder_and_its_ttl_are_read_in_one_step(self, fake_redis):
+        # Two commands could read this job's value, then another job's TTL after a handover.
+        from docsgpt.vectorstore.index_lock import _own_ttl, lock_key
+
+        key = lock_key("src-1")
+        fake_redis.set(key, "task-1|x", nx=True, ex=600)
+        fake_redis.get = fake_redis.pttl = None  # only the script may read it
         assert 0 < _own_ttl(fake_redis, key, "task-1") <= 600_000

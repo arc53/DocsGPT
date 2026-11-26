@@ -6693,7 +6693,9 @@ def _ingest_connector(
             if listing is not None and not listing.complete:
                 # It would vouch for an index built from part of the selection.
                 sync_fingerprint = None
-            upload_fingerprint = sync_fingerprint if listing is None else None
+            # A staged rebuild stores it only once the new index is swapped in:
+            # stored with the upload, it would vouch for a swap that may fail.
+            upload_fingerprint = sync_fingerprint if listing is None and not staged else None
             if upload_fingerprint:
                 remote_data["sync_fingerprint"] = upload_fingerprint
             if failed_files:
@@ -6766,7 +6768,7 @@ def _ingest_connector(
             try:
                 _save_source_sync_state(
                     source_id_for_events, remote_files=remote_files, failed_files=failed_files,
-                    **({"fingerprint": sync_fingerprint} if listing is not None else {}),
+                    **({"fingerprint": sync_fingerprint} if listing is not None or staged else {}),
                 )
             except Exception as err:  # noqa: BLE001 - the index is stored; the next sync is only a full one
                 logging.warning(f"Could not record what source {source_id_for_events} indexed: {err}")

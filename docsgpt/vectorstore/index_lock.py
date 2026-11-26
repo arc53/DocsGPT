@@ -84,21 +84,26 @@ def connection_fetch_lock_key(connection_id: str) -> str:
 _SOURCE_BUSY = "Another change to this source is still running; try again when it finishes"
 
 
+# The lock's remaining ms while its value starts with ARGV[1] (the holder's prefix), else -3;
+# one script, so the holder and the TTL are read from the same lock.
+_OWN_TTL_LUA = """
+local value = redis.call('get', KEYS[1])
+if value and string.sub(value, 1, string.len(ARGV[1])) == ARGV[1] then
+    return redis.call('pttl', KEYS[1])
+end
+return -3
+"""
+
+
 def _own_ttl(redis: Any, key: str, holder: Optional[str]) -> Optional[int]:
     """The lock's remaining time in ms while ``holder`` names it; ``None`` otherwise, or on an error."""
     if not holder:
         return None
     try:
-        value = redis.get(key)
-        if value is None:
-            return None
-        if isinstance(value, bytes):
-            value = value.decode("utf-8", "replace")
-        if not str(value).startswith(f"{holder}{_HOLDER_SEPARATOR}"):
-            return None
-        return int(redis.pttl(key))
+        ttl = int(redis.eval(_OWN_TTL_LUA, 1, key, f"{holder}{_HOLDER_SEPARATOR}"))
     except Exception:  # noqa: BLE001 - unknown: keep waiting as for any holder
         return None
+    return ttl if ttl >= 0 else None
 
 
 def _acquire(

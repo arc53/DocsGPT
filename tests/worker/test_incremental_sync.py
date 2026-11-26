@@ -1516,6 +1516,46 @@ class TestStagedFullRebuild:
         # Nothing resumes from the dropped staging set.
         assert IngestChunkProgressRepository(pg_conn).get_progress(staged.source_id) is None
 
+    @pytest.fixture
+    def unlisted(self, staged, monkeypatch):
+        """A loader that can't list its selection: only a fingerprint vouches for the index."""
+        plain = MagicMock(name="connector")
+        plain.connection_id = None
+        plain.download_to_directory.side_effect = staged.loader.download_to_directory
+        plain.sync_fingerprint.return_value = staged.loader.sync_fingerprint({})
+        monkeypatch.setattr(
+            worker.ConnectorCreator, "create_connector",
+            staticmethod(lambda source_type, session_token=None, connection_id=None: plain),
+        )
+        return plain
+
+    def test_a_fingerprint_is_stored_only_once_the_new_index_is_swapped_in(self, staged, unlisted, monkeypatch):
+        seen = {}
+
+        def _fails(source_id, staged_id, expected):
+            seen["remote_data"] = SourcesRepository(staged.pg).get(staged.source_id, "dave")["remote_data"]
+            raise RuntimeError("deadlock")
+
+        monkeypatch.setattr(worker, "promote_staged_index", _fails)
+
+        with pytest.raises(RuntimeError, match="deadlock"):
+            staged.sync()
+
+        # Neither during the swap nor after it failed: the next sync must rebuild.
+        assert "sync_fingerprint" not in seen["remote_data"]
+        assert "sync_fingerprint" not in staged.row()["remote_data"]
+        assert staged.table.texts(staged.source_id) == ["old chunk"]
+
+    def test_a_swapped_in_index_gets_its_fingerprint(self, staged, unlisted):
+        staged.sync()
+
+        assert staged.row()["remote_data"]["sync_fingerprint"] == worker._connector_sync_fingerprint(
+            unlisted.sync_fingerprint.return_value, None,
+        )
+        unlisted.download_to_directory.reset_mock()
+        assert staged.sync()["status"] == "unchanged"
+        unlisted.download_to_directory.assert_not_called()
+
     def test_a_store_that_cannot_swap_rebuilds_in_place(self, staged, monkeypatch):
         monkeypatch.setattr(worker.settings, "VECTOR_STORE", "qdrant")
 
