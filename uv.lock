@@ -1506,6 +1506,7 @@ dependencies = [
     { name = "tqdm" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "uvicorn-worker" },
+    { name = "webrouter" },
     { name = "websocket-client" },
     { name = "werkzeug" },
 ]
@@ -1642,6 +1643,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'docling'", specifier = ">=5.17.0,<6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30,<1" },
     { name = "uvicorn-worker", specifier = ">=0.4,<1" },
+    { name = "webrouter", specifier = ">=0.16.0,<0.17" },
     { name = "websocket-client", specifier = ">=1.9.0,<2" },
     { name = "werkzeug", specifier = ">=3.1.9,<4" },
 ]
@@ -3571,6 +3573,23 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/dc/76/3af777226b63a5e64a6b36b1ec5855c14e2b94a37096d4760e595fc43511/networkx-3.7.tar.gz", hash = "sha256:fd77a511bd90f39f3d016351345b52cf5319b813bdca01de3f755d3cca62e96a", size = 1866482, upload-time = "2026-09-21T16:45:16.974Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/cd/fe58041e9011f307c490e3e17dd48cc516448f7c698a3f2d9d9d65d7e6a8/networkx-3.7-py3-none-any.whl", hash = "sha256:e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0", size = 2142205, upload-time = "2026-09-21T16:45:14.609Z" },
+]
+
+[[package]]
+name = "nimble-python"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c4/91/988c3173670bb1f1682ba497f5aeecf58ebfd9072253b3ef3f126d46e77f/nimble_python-1.6.0.tar.gz", hash = "sha256:f746b55244034e2ec427ed04c8fe0a5ff8f05d78e4a0e94ffa6870493b90734f", size = 325482, upload-time = "2026-09-07T13:54:48.917Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/2d/e95228afc8b64bfa0a5327978a44ae9d57b16f633caef16b7f7aa49a3260/nimble_python-1.6.0-py3-none-any.whl", hash = "sha256:b0f0700232e19d45e59dd24fd748c5b0f9bd796520aa878e3a2ef2c7ef82a2d1", size = 265483, upload-time = "2026-09-07T13:54:49.907Z" },
 ]
 
 [[package]]
@@ -6560,6 +6579,20 @@ wheels = [
 ]
 
 [[package]]
+name = "tavily-python"
+version = "0.8.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "requests" },
+    { name = "tiktoken" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2f/39/3aff85cb3b45cab3ef9578560364b893baa34e79744e99567a825dbadf57/tavily_python-0.8.5.tar.gz", hash = "sha256:1795965c3ffe5654856244d637daa816a4ee947aca57d0588b731c69e75e71fe", size = 35634, upload-time = "2026-10-06T15:11:34.827Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2f/c5/fc13567e2a1d3671f51252d44f580bf3ab3c0a6ec90a6553f5c67ba87208/tavily_python-0.8.5-py3-none-any.whl", hash = "sha256:f8d2880f5aa67cf3ee2eb1f7c9336ea50dc331eb1e406688391badb0140599a7", size = 24629, upload-time = "2026-10-06T15:11:33.854Z" },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -7293,6 +7326,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/63/6f/b321f10c2298e7d16cffc1a5f05f3d7e5231b45f9e68af5ee378e23bb2e5/wcwidth-0.9.4-cp315-cp315t-win_amd64.whl", hash = "sha256:12786620375dc83fabf4b2b2aa52416fef2bc6094522ea29c8a53c75b0dfe9b6", size = 603485, upload-time = "2026-10-24T18:11:43.052Z" },
     { url = "https://files.pythonhosted.org/packages/4e/cc/7eeb28059186cae72a770df79e744f232ef068192a5a588b718473e35bb4/wcwidth-0.9.4-cp315-cp315t-win_arm64.whl", hash = "sha256:2cca7b5d0b9d0ae49068d3ce806e965326a987f555b62eaa322223396e10d01b", size = 605198, upload-time = "2026-10-24T18:11:33.75Z" },
     { url = "https://files.pythonhosted.org/packages/6f/0c/309b1813b230d1dbbd6f2c2ab2bb21ef68992358977605d9ef289bbfedcc/wcwidth-0.9.4-py3-none-any.whl", hash = "sha256:901eace6d2dd25ebb917d0ce5db18e5c537e1504c905cf32f0d006c12098b05d", size = 301806, upload-time = "2026-10-24T18:10:52.651Z" },
+]
+
+[[package]]
+name = "webrouter"
+version = "0.16.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "nimble-python" },
+    { name = "pydantic" },
+    { name = "tavily-python" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b5/99/36761b9dc59da714220c9932d5834d482100b3b2cab255c7f929be5f8dad/webrouter-0.16.0.tar.gz", hash = "sha256:26adcd03503a5f7459f495f84735992c2720951932d986004eeeb99d8dd747f9", size = 2590504, upload-time = "2026-11-26T10:54:16.157Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ae/a4/6f828230bad39ef6ac37ec0246fb4480611199b63f330e7dc2953af86e37/webrouter-0.16.0-py3-none-any.whl", hash = "sha256:3ee89bae0fd054501914447e42ace2d93f239295c3e1a9b01b3eeead204f311d", size = 2164450, upload-time = "2026-11-26T10:54:14.553Z" },
 ]
 
 [[package]]
