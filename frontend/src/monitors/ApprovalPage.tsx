@@ -7,6 +7,7 @@ import monitorsService, {
 } from '@/api/services/monitorsService';
 import DocsGPTMark from '@/assets/logo-b.svg';
 import DocsGPTMarkWhite from '@/assets/logo-w.svg';
+import { Head } from '@/components/Head';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -74,8 +75,12 @@ export default function ApprovalPage() {
     if (result.state === 'decided') setSentComment(comment.trim());
   };
 
+  // Anyone with the link can open this page, and an agent wrote its text.
+  const noIndex = <Head robots="noindex, nofollow" />;
+
   const shell = (children: React.ReactNode) => (
     <main className="bg-background flex min-h-dvh flex-col items-center px-4 py-10">
+      {noIndex}
       <div className="flex w-full max-w-xl flex-col gap-6">
         <img
           src={isDarkTheme ? DocsGPTMarkWhite : DocsGPTMark}
@@ -87,7 +92,14 @@ export default function ApprovalPage() {
     </main>
   );
 
-  if (load.state === 'loading') return <LoadingState fill="screen" />;
+  if (load.state === 'loading') {
+    return (
+      <>
+        {noIndex}
+        <LoadingState fill="screen" />
+      </>
+    );
+  }
   if (load.state === 'missing') {
     return shell(
       <EmptyState
