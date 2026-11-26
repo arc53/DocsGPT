@@ -57,82 +57,6 @@ def _strip_html(text: str) -> str:
     return _HTML_TAG_LOWERCASE.sub("", text)
 
 
-# YAML (---) or TOML (+++) front matter opens a document, and MDX files import
-# and export modules, leave comments and place self-closing components above
-# their first heading; none of it is text a reader searches for.
-_FRONT_MATTER = re.compile(r"\A\ufeff?(---|\+\+\+)[ \t\r]*\n.*?^\1[ \t\r]*$", re.DOTALL | re.MULTILINE)
-# Between "---" lines, front matter holds YAML: keys, list items, indented values
-# and comments. A horizontal rule above a heading and prose does not.
-_YAML_KEY = re.compile(r"[^\s#:\-][^:\n]*:(?:[ \t]|\r?$)")
-_YAML_LINE = re.compile(r"[ \t\r]*$|[ \t]*#|[ \t]*-(?:[ \t]|\r?$)|[ \t]+\S")
-# A whole import statement ends in its quoted module, which prose such as
-# "import the SDK first" does not. Its words and the whitespace between them
-# never overlap, and neither do the whitespace runs after the module, so a long
-# run of spaces is matched in linear time.
-_MDX_IMPORT = re.compile(
-    r"^import\s+(?:[\w$*{},]+(?:\s+[\w$*{},]+)*\s+from\s*)?(['\"])[^'\"\n]+\1"
-    r"[ \t]*(?:;[ \t]*)?(?://[^\n]*)?\r?$",
-    re.MULTILINE,
-)
-_MDX_EXPORT = re.compile(
-    r"^export[ \t]+(?:(?:const|let|var)\s+[\w$]+\s*=\s*\{[^{}]*\}[ \t]*;?"
-    r"|(?:const|let|var|function|class|default|async)\b[^\n]*)[ \t\r]*$",
-    re.MULTILINE,
-)
-_MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}", re.DOTALL)
-# Quoted and braced attribute values may hold ">", and braces nest once, as in
-# style={{ color: "red" }}.
-_BRACED = r"\{(?:[^{}]|\{[^{}]*\})*\}"
-_MDX_ATTRIBUTES = (
-    r"""(?:\s+(?:(?:[^\s"'{}<>/]|/(?!>))+(?:"[^"]*"|'[^']*'|""" + _BRACED + r""")?"""
-    r"""|"[^"]*"|'[^']*'|""" + _BRACED + r"""))*"""
-)
-_MDX_SELF_CLOSING_COMPONENT = re.compile(r"<[A-Z][\w.]*" + _MDX_ATTRIBUTES + r"\s*/>")
-# A component that wraps content, like <Callout type="info">...</Callout>. Its
-# tags are markup when the same name closes somewhere in the text, as for HTML
-# bare tags; the content between them stays and is text if it has words.
-_MDX_COMPONENT_OPENING_TAG = re.compile(r"<([A-Z][\w.]*)" + _MDX_ATTRIBUTES + r"\s*>")
-_MDX_COMPONENT_CLOSING_TAG = re.compile(r"</([A-Z][\w.]*)\s*>")
-_THEMATIC_BREAK = re.compile(r"^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t\r]*$", re.MULTILINE)
-# A comment still open where the first heading was found: a "#" line inside it.
-_OPEN_HTML_COMMENT = re.compile(r"<!--(?:(?!-->).)*\Z", re.DOTALL)
-
-
-def _front_matter(text: str) -> Optional["re.Match[str]"]:
-    """The front matter block that opens text, if there is one."""
-    match = _FRONT_MATTER.match(text)
-    if match and match.group(1) == "---":
-        lines = match.group(0).split("\n")[1:-1]
-        # YAML may indent the whole block; its top-level keys start at the
-        # block's own indentation.
-        indent = min(
-            (len(line) - len(line.lstrip(" ")) for line in lines if line.strip()), default=0
-        )
-        lines = [line[indent:] for line in lines]
-        is_yaml = all(_YAML_KEY.match(line) or _YAML_LINE.match(line) for line in lines)
-        if not is_yaml or not any(_YAML_KEY.match(line) for line in lines):
-            return None
-    return match
-
-
-def _has_text(preamble: str) -> bool:
-    """Whether text before the first heading holds more than front matter, MDX
-    import and export statements, comments and components, horizontal rules,
-    markup and whitespace."""
-    front_matter = _front_matter(preamble)
-    if front_matter:
-        preamble = preamble[front_matter.end():]
-    for pattern in (_MDX_IMPORT, _MDX_EXPORT, _MDX_COMMENT, _MDX_SELF_CLOSING_COMPONENT, _THEMATIC_BREAK):
-        preamble = pattern.sub("", preamble)
-    closed = {match.group(1) for match in _MDX_COMPONENT_CLOSING_TAG.finditer(preamble)}
-    if closed:
-        preamble = _MDX_COMPONENT_OPENING_TAG.sub(
-            lambda match: "" if match.group(1) in closed else match.group(0), preamble
-        )
-        preamble = _MDX_COMPONENT_CLOSING_TAG.sub("", preamble)
-    return bool(_OPEN_HTML_COMMENT.sub("", _strip_html(preamble)).strip())
-
-
 # A fenced code block opens with three or more backticks or tildes, indented by
 # at most three spaces (CommonMark). Backtick info strings cannot hold backticks.
 _FENCE_OPEN = re.compile(r"^ {0,3}(?:(`{3,})[^`]*|(~{3,}).*)$")
@@ -188,12 +112,6 @@ class MarkdownParser(BaseParser):
         current_text = ""
         # Marker of the open fenced code block, or None outside a code block.
         open_fence: Optional[str] = None
-        # Front matter is metadata: a "#" line in it is a YAML comment, not a heading.
-        front_matter = _front_matter(markdown_text)
-        if front_matter:
-            front_matter_lines = front_matter.group(0).count("\n") + 1
-            current_text = "\n".join(lines[:front_matter_lines]) + "\n"
-            lines = lines[front_matter_lines:]
 
         for line in lines:
             # A "#" line inside a fenced code block is code (a shell comment, say), not a heading.
@@ -205,7 +123,7 @@ class MarkdownParser(BaseParser):
                 # advances: a body after a header chain belongs to the last one.
                 if current_header is not None and current_text:
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
-                elif current_header is None and _has_text(current_text):
+                elif current_header is None and current_text.strip():
                     # Text before the first heading is a section of its own, without a header.
                     markdown_tups = self.tups_chunk_append(markdown_tups, None, current_text)
 
