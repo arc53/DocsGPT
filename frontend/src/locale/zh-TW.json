@@ -3449,6 +3449,7 @@
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",
         "mcp_notion": "搜尋、閱讀和更新 Notion 頁面與資料庫。",
         "mcp_resend": "傳送電子郵件並管理聯絡人、受眾和網域。",
+        "mcp_fireflies": "搜尋會議逐字稿與摘要，並使用 Fireflies 工具管理會議。",
         "mcp_sentry": "查看 Sentry 問題、事件和發行版本。",
         "mcp_stripe": "查看 Stripe 中的客戶、付款和訂閱。",
         "mcp_supabase": "列出資料表、執行 SQL、檢視記錄並管理 Supabase 專案。",

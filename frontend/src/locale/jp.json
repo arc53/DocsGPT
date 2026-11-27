@@ -3449,6 +3449,7 @@
         "mcp_neon": "Neon の Postgres プロジェクト、ブランチ、スキーマを調べ、SQL を実行します。",
         "mcp_notion": "Notion のページやデータベースを検索、閲覧、更新します。",
         "mcp_resend": "メールを送信し、連絡先、オーディエンス、ドメインを管理します。",
+        "mcp_fireflies": "Fireflies で文字起こしや要約を検索し、会議を管理します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
         "mcp_supabase": "テーブルの一覧表示、SQL の実行、ログの確認、Supabase プロジェクトの管理を行います。",

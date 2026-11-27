@@ -3605,6 +3605,7 @@
         "mcp_neon": "Explorez les projets, branches et schémas Neon Postgres, et exécutez du SQL.",
         "mcp_notion": "Recherchez, lisez et modifiez des pages et bases de données Notion.",
         "mcp_resend": "Envoyez des e-mails et gérez contacts, audiences et domaines.",
+        "mcp_fireflies": "Recherchez des transcriptions et des résumés, et gérez vos réunions avec Fireflies.",
         "mcp_sentry": "Consultez les tickets, événements et versions Sentry.",
         "mcp_stripe": "Consultez les clients, paiements et abonnements dans Stripe.",
         "mcp_supabase": "Listez les tables, exécutez du SQL, consultez les journaux et gérez les projets Supabase.",
