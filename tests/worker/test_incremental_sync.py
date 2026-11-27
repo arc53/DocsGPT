@@ -375,6 +375,80 @@ class TestConnectorIncrementalSync:
         assert harness.loader.full_downloads == 0
         assert harness.loader.single_downloads == [["id3"]]
 
+    def test_a_retrieval_edit_keeps_the_manifest_and_the_sync_incremental(self, harness):
+        harness.sync()
+        # Retrieval fields take effect live (PATCH /api/sources/<id>/config).
+        config = {"retrieval": {"chunks": 12, "exposure": "agentic_tool", "retriever": "hybrid"}}
+        _set_config(harness, config)
+        harness.reset()
+
+        result = harness.sync(config=config)
+
+        assert result["status"] == "unchanged"
+        assert harness.loader.full_downloads == 0 and harness.store.embedded == []
+
+    def test_a_manifest_under_the_legacy_key_is_used_and_stored_again_under_the_current_one(self, harness):
+        config = {"retrieval": {"chunks": 3}}
+        _set_config(harness, config)
+        harness.sync(config=config)
+        current, legacy = incremental.settings_keys(
+            config, worker._CONNECTOR_INGEST_VERSION, worker.settings.EMBEDDINGS_NAME,
+        )
+        repo = SourcesRepository(harness.pg)
+        stored = repo.get_remote_files(harness.source_id)
+        repo.update(harness.source_id, "dave", {"remote_files": {**stored, "settings": legacy}})
+        harness.reset()
+
+        result = harness.sync(config=config)
+
+        assert result["status"] == "unchanged"
+        assert harness.loader.full_downloads == 0 and harness.store.embedded == []
+        assert harness.row()["remote_files"]["settings"] == current
+        assert harness.row()["remote_files"]["files"] == stored["files"]
+
+    def test_a_legacy_fingerprint_records_a_manifest_without_rebuilding(self, harness):
+        config = {"retrieval": {"chunks": 3}}
+        _set_config(harness, config)
+        harness.sync(config=config)
+        repo = SourcesRepository(harness.pg)
+        remote = dict(harness.row()["remote_data"])
+        remote["sync_fingerprint"] = worker._connector_sync_fingerprint(
+            harness.loader.sync_fingerprint({}), config, legacy=True,
+        )
+        repo.update(harness.source_id, "dave", {"remote_files": None, "remote_data": remote})
+        harness.reset()
+
+        result = harness.sync(config=config)
+
+        assert result["status"] == "unchanged"
+        assert harness.loader.full_downloads == 0
+        row = harness.row()
+        assert row["remote_files"]["settings"] == incremental.settings_key(
+            config, worker._CONNECTOR_INGEST_VERSION, worker.settings.EMBEDDINGS_NAME,
+        )
+        assert row["remote_data"]["sync_fingerprint"] == worker._connector_sync_fingerprint(
+            harness.loader.sync_fingerprint({}), config,
+        )
+
+    def test_a_fingerprint_that_cannot_be_read_without_a_manifest_syncs_in_full(self, harness, monkeypatch):
+        harness.sync()
+        SourcesRepository(harness.pg).update(harness.source_id, "dave", {"remote_files": None})
+        real = harness.loader.sync_fingerprint
+        calls = []
+
+        def _fails_once(selection):
+            calls.append(selection)
+            if len(calls) == 1:
+                raise RuntimeError("drive down")
+            return real(selection)
+
+        monkeypatch.setattr(harness.loader, "sync_fingerprint", _fails_once)
+        harness.reset()
+
+        harness.sync()
+
+        assert harness.loader.full_downloads == 1
+
     def test_a_loader_that_cannot_list_keeps_the_full_sync(self, harness, monkeypatch):
         plain = MagicMock(name="connector")
         plain.connection_id = None
@@ -976,7 +1050,7 @@ def remote(pg_conn, patch_worker_db, task_self, published, monkeypatch, tmp_path
         return {**repo.get(source_id, "dave"), "remote_files": repo.get_remote_files(source_id)}
 
     return MagicMock(
-        store=store, loader=loader, sync=sync, full_embeds=full_embeds, events=published, row=row,
+        store=store, loader=loader, sync=sync, full_embeds=full_embeds, events=published, row=row, pg=pg_conn,
     )
 
 
@@ -1001,6 +1075,32 @@ class TestRemoteIncrementalSync:
         assert remote.store.by_source() == before
         assert result["files_changed"] == 0
         assert remote.events[-1][1]["no_changes"] is True
+
+    def test_a_retrieval_edit_keeps_the_sync_incremental(self, remote):
+        remote.sync()
+        remote.store.embedded.clear()
+
+        result = remote.sync(config={"retrieval": {"chunks": 9, "rephrase_query": False}})
+
+        assert remote.full_embeds == [4] and remote.store.embedded == []
+        assert result["files_changed"] == 0
+
+    def test_a_manifest_under_the_legacy_key_is_used_and_stored_again(self, remote):
+        config = {"retrieval": {"chunks": 3}}
+        remote.sync(config=config)
+        current, legacy = incremental.settings_keys(
+            config, worker._REMOTE_INGEST_VERSION, worker.settings.EMBEDDINGS_NAME,
+        )
+        source_id = str(remote.row()["id"])
+        repo = SourcesRepository(remote.pg)
+        repo.update(source_id, "dave", {"remote_files": {**repo.get_remote_files(source_id), "settings": legacy}})
+        remote.store.embedded.clear()
+
+        result = remote.sync(config=config)
+
+        assert remote.full_embeds == [4] and remote.store.embedded == []
+        assert result["files_changed"] == 0
+        assert remote.row()["remote_files"]["settings"] == current
 
     def test_only_changed_added_and_removed_pages_are_touched(self, remote):
         remote.sync()
@@ -1251,3 +1351,281 @@ def test_an_orphaned_faiss_index_is_removed(monkeypatch):
     monkeypatch.setattr(worker.settings, "VECTOR_STORE", "pgvector")
     worker._discard_orphan_index("s2")
     assert removed == ["indexes/s1"]
+
+
+# ---------------------------------------------------------------------------
+# Full rebuilds embed under a staging id and swap it in
+# ---------------------------------------------------------------------------
+
+
+class SharedTable:
+    """One vectors table shared by every source id, like pgvector's ``documents``."""
+
+    def __init__(self) -> None:
+        self.rows: Dict[int, Dict[str, Any]] = {}
+        self.next_id = 0
+
+    def texts(self, source_id: str) -> List[str]:
+        return [row["text"] for _, row in sorted(self.rows.items()) if row["source_id"] == str(source_id)]
+
+    def view(self, source_id: str) -> "TableView":
+        return TableView(self, str(source_id))
+
+
+class TableView(MemoryStore):
+    """A store for one source id over a :class:`SharedTable`, with pgvector's one-step swap."""
+
+    def __init__(self, table: SharedTable, source_id: str) -> None:
+        super().__init__()
+        self.table, self.source_id = table, source_id
+
+    def add_texts(self, texts, metadatas=None, *args, **kwargs):
+        ids = []
+        for text, metadata in zip(texts, metadatas or [{} for _ in texts]):
+            self.table.next_id += 1
+            self.table.rows[self.table.next_id] = {"source_id": self.source_id, "text": text, "metadata": metadata}
+            ids.append(str(self.table.next_id))
+        return ids
+
+    def delete_index(self, *args, **kwargs):
+        for cid in [cid for cid, row in self.table.rows.items() if row["source_id"] == self.source_id]:
+            del self.table.rows[cid]
+
+    def purge_index(self, batch_size=1000):
+        self.delete_index()
+
+    def promote_staged(self, staging_id, expected=None):
+        staged = [cid for cid, row in self.table.rows.items() if row["source_id"] == staging_id]
+        if expected is not None and len(staged) != expected:
+            from docsgpt.vectorstore.base import StagedIndexIncomplete
+
+            raise StagedIndexIncomplete(f"{len(staged)} of {expected}")
+        self.delete_index()
+        for cid in staged:
+            self.table.rows[cid]["source_id"] = self.source_id
+        return len(staged)
+
+
+@pytest.fixture
+def staged(harness, monkeypatch):
+    """The connector harness on a store that stages full rebuilds (pgvector), with the live index seeded."""
+    table = SharedTable()
+    monkeypatch.setattr(worker.settings, "VECTOR_STORE", "pgvector")
+
+    def _create(store_type, *args, source_id=None, **kwargs):
+        return table.view(source_id if source_id is not None else args[0])
+
+    monkeypatch.setattr("docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore", _create)
+    seen: Dict[str, Any] = {"index_ids": []}
+
+    def _embed(docs, folder, source_id, task, index_id=None, **kwargs):
+        seen["index_ids"].append(index_id)
+        seen["live_during_embed"] = table.texts(source_id)
+        target = table.view(index_id or source_id)
+        target.delete_index()
+        target.add_texts([d.page_content for d in docs], [dict(d.metadata, source_id=str(source_id)) for d in docs])
+        return len(docs)
+
+    monkeypatch.setattr(worker, "embed_and_store_documents", _embed)
+    upload = worker.upload_index
+
+    def _upload(full_path, file_data):
+        seen["live_at_upload"] = table.texts(harness.source_id)
+        if seen.get("refuse"):
+            return {"status": "skipped", "reason": seen["refuse"]}
+        return upload(full_path, file_data)
+
+    monkeypatch.setattr(worker, "upload_index", _upload)
+    table.view(harness.source_id).add_texts(["old chunk"], [{"source_id": harness.source_id}])
+    harness.table, harness.seen = table, seen
+    harness.staging = f"{harness.source_id}:staging"
+    return harness
+
+
+@pytest.mark.unit
+class TestStagedFullRebuild:
+
+    def test_the_old_index_answers_until_the_new_one_is_swapped_in(self, staged):
+        result = staged.sync()
+
+        assert result["status"] == "complete"
+        assert staged.seen["index_ids"] == [staged.staging]
+        assert staged.seen["live_during_embed"] == ["old chunk"]
+        assert staged.seen["live_at_upload"] == ["old chunk"]
+        live = staged.table.texts(staged.source_id)
+        assert "old chunk" not in live and len(live) >= 5
+        assert staged.table.texts(staged.staging) == []
+        assert {row["metadata"]["source_id"] for row in staged.table.rows.values()} == {staged.source_id}
+
+    def test_a_settings_change_rebuilds_without_emptying_the_index(self, staged):
+        staged.sync()
+        before = staged.table.texts(staged.source_id)
+        config = {"chunking": {"strategy": "classic_chunk", "max_tokens": 600, "min_tokens": 50}}
+        _set_config(staged, config)
+
+        staged.sync(config=config)
+
+        assert staged.seen["index_ids"][-1] == staged.staging
+        assert staged.seen["live_during_embed"] == before
+        assert staged.table.texts(staged.staging) == []
+        assert staged.table.texts(staged.source_id)
+
+    @pytest.mark.parametrize("reason", ["wiki", "gone"])
+    def test_a_refused_upload_drops_the_staged_chunks(self, staged, reason):
+        staged.seen["refuse"] = reason
+
+        result = staged.sync()
+
+        assert result == {"id": staged.source_id, "status": "skipped", "reason": reason}
+        assert staged.table.texts(staged.staging) == []
+        if reason == "wiki":
+            # The wiki's own pages stay.
+            assert staged.table.texts(staged.source_id) == ["old chunk"]
+
+    def test_a_failed_embed_leaves_the_live_index_alone(self, staged, monkeypatch):
+        def _embed(docs, folder, source_id, task, index_id=None, **kwargs):
+            staged.table.view(index_id).add_texts(["half"], [{}])
+            raise RuntimeError("embeddings down")
+
+        monkeypatch.setattr(worker, "embed_and_store_documents", _embed)
+
+        with pytest.raises(RuntimeError, match="embeddings down"):
+            staged.sync()
+
+        assert staged.table.texts(staged.source_id) == ["old chunk"]
+        # Kept for the next rebuild of the same chunks to resume from.
+        assert staged.table.texts(staged.staging) == ["half"]
+
+    def test_a_staging_set_short_of_the_embed_count_is_not_swapped_in(self, staged, monkeypatch, pg_conn):
+        from docsgpt.storage.db.repositories.ingest_chunk_progress import IngestChunkProgressRepository
+        from docsgpt.vectorstore.base import StagedIndexIncomplete
+
+        def _embed(docs, folder, source_id, task, index_id=None, **kwargs):
+            IngestChunkProgressRepository(pg_conn).init_progress(source_id, len(docs) + 1, "att")
+            staged.table.view(index_id).add_texts([d.page_content for d in docs], [{} for _ in docs])
+            return len(docs) + 1
+
+        monkeypatch.setattr(worker, "embed_and_store_documents", _embed)
+        monkeypatch.setattr("docsgpt.vectorstore.staged_rebuild.db_session", worker.db_session)
+
+        with pytest.raises(StagedIndexIncomplete):
+            staged.sync()
+
+        assert staged.table.texts(staged.source_id) == ["old chunk"]
+        assert staged.table.texts(staged.staging) == []
+        # Nothing resumes from the dropped staging set.
+        assert IngestChunkProgressRepository(pg_conn).get_progress(staged.source_id) is None
+
+    @pytest.fixture
+    def unlisted(self, staged, monkeypatch):
+        """A loader that can't list its selection: only a fingerprint vouches for the index."""
+        plain = MagicMock(name="connector")
+        plain.connection_id = None
+        plain.download_to_directory.side_effect = staged.loader.download_to_directory
+        plain.sync_fingerprint.return_value = staged.loader.sync_fingerprint({})
+        monkeypatch.setattr(
+            worker.ConnectorCreator, "create_connector",
+            staticmethod(lambda source_type, session_token=None, connection_id=None: plain),
+        )
+        return plain
+
+    def test_a_fingerprint_is_stored_only_once_the_new_index_is_swapped_in(self, staged, unlisted, monkeypatch):
+        seen = {}
+
+        def _fails(source_id, staged_id, expected):
+            seen["remote_data"] = SourcesRepository(staged.pg).get(staged.source_id, "dave")["remote_data"]
+            raise RuntimeError("deadlock")
+
+        monkeypatch.setattr(worker, "promote_staged_index", _fails)
+
+        with pytest.raises(RuntimeError, match="deadlock"):
+            staged.sync()
+
+        # Neither during the swap nor after it failed: the next sync must rebuild.
+        assert "sync_fingerprint" not in seen["remote_data"]
+        assert "sync_fingerprint" not in staged.row()["remote_data"]
+        assert staged.table.texts(staged.source_id) == ["old chunk"]
+
+    def test_a_swapped_in_index_gets_its_fingerprint(self, staged, unlisted):
+        staged.sync()
+
+        assert staged.row()["remote_data"]["sync_fingerprint"] == worker._connector_sync_fingerprint(
+            unlisted.sync_fingerprint.return_value, None,
+        )
+        unlisted.download_to_directory.reset_mock()
+        assert staged.sync()["status"] == "unchanged"
+        unlisted.download_to_directory.assert_not_called()
+
+    def test_a_store_that_cannot_swap_rebuilds_in_place(self, staged, monkeypatch):
+        monkeypatch.setattr(worker.settings, "VECTOR_STORE", "qdrant")
+
+        staged.sync()
+
+        assert staged.seen["index_ids"] == [None]
+        assert staged.seen["live_during_embed"] == ["old chunk"]
+        assert "old chunk" not in staged.table.texts(staged.source_id)
+
+
+@pytest.fixture
+def staged_remote(remote, monkeypatch):
+    """The remote harness on a store that stages full rebuilds, with the live index seeded."""
+    table = SharedTable()
+    monkeypatch.setattr(worker.settings, "VECTOR_STORE", "pgvector")
+
+    def _create(store_type, *args, source_id=None, **kwargs):
+        return table.view(source_id if source_id is not None else args[0])
+
+    monkeypatch.setattr("docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore", _create)
+    seen: Dict[str, Any] = {"index_ids": []}
+
+    def _embed(docs, folder, source_id, task, index_id=None, **kwargs):
+        seen["index_ids"].append(index_id)
+        seen["live_during_embed"] = table.texts(source_id)
+        target = table.view(index_id or source_id)
+        target.delete_index()
+        target.add_texts([d.page_content for d in docs], [dict(d.metadata) for d in docs])
+        return len(docs)
+
+    monkeypatch.setattr(worker, "embed_and_store_documents", _embed)
+
+    def _upload(full_path, file_data):
+        seen["live_at_upload"] = table.texts(file_data["id"])
+        if seen.get("refuse"):
+            return {"status": "skipped", "reason": seen["refuse"]}
+        return {"status": "ok"}
+
+    monkeypatch.setattr(worker, "upload_index", _upload)
+    source_id = str(remote.row()["id"])
+    table.view(source_id).add_texts(["old page"], [{}])
+    remote.table, remote.seen, remote.source_id = table, seen, source_id
+    remote.staging = f"{source_id}:staging"
+    return remote
+
+
+@pytest.mark.unit
+class TestStagedRemoteRebuild:
+
+    def test_the_old_index_answers_until_the_new_one_is_swapped_in(self, staged_remote):
+        staged_remote.sync()
+
+        assert staged_remote.seen["index_ids"] == [staged_remote.staging]
+        assert staged_remote.seen["live_during_embed"] == ["old page"]
+        assert staged_remote.seen["live_at_upload"] == ["old page"]
+        live = staged_remote.table.texts(staged_remote.source_id)
+        assert "old page" not in live and len(live) == 4
+        assert staged_remote.table.texts(staged_remote.staging) == []
+        assert staged_remote.row()["remote_files"]["kind"] == "content"
+
+    def test_a_refused_upload_drops_the_staged_chunks(self, staged_remote):
+        staged_remote.seen["refuse"] = "wiki"
+
+        staged_remote.sync()
+
+        assert staged_remote.table.texts(staged_remote.source_id) == ["old page"]
+        assert staged_remote.table.texts(staged_remote.staging) == []
+
+    def test_a_first_ingest_is_never_staged(self, staged_remote, task_self, tmp_path):
+        worker.remote_worker(
+            task_self, "https://x", "crawl", "dave", "crawler", directory=str(tmp_path), operation_mode="upload",
+        )
+        assert staged_remote.seen["index_ids"] == [None]

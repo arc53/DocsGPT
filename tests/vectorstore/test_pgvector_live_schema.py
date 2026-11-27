@@ -340,3 +340,47 @@ class TestPooling:
         stats = pgvector_module._POOLS[live_dsn].get_stats()
         assert stats["pool_size"] <= 4
         assert stats["pool_available"] == stats["pool_size"]
+
+
+@pytest.mark.fresh_db
+class TestStagedRebuildLive:
+    """A staged rebuild on a real pgvector table: the swap is one transaction readers never see half of."""
+
+    def _ids(self, conn, source_id):
+        conn.rollback()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT text, metadata->>'source_id' FROM documents WHERE source_id = %s ORDER BY id", (source_id,))
+            return cursor.fetchall()
+
+    def test_the_staged_chunks_replace_the_live_ones(self, live_dsn, postgresql, stub_embeddings):
+        ensure_vector_schema()
+        live = _store(live_dsn, "live-src")
+        live.add_texts(["old a", "old b"], metadatas=[{"source_id": "live-src"}, {"source_id": "live-src"}])
+        staging = _store(live_dsn, "live-src:staging")
+        staging.add_texts(["new a", "new b", "new c"], metadatas=[{"source_id": "live-src"}] * 3)
+
+        # While the rebuild runs, the live source still answers with its old chunks.
+        assert [text for text, _ in self._ids(postgresql, "live-src")] == ["old a", "old b"]
+
+        assert live.promote_staged("live-src:staging", expected=3) == 3
+
+        assert self._ids(postgresql, "live-src") == [("new a", "live-src"), ("new b", "live-src"), ("new c", "live-src")]
+        assert self._ids(postgresql, "live-src:staging") == []
+        assert [doc.page_content for doc in live.search("anything", k=5)]
+        live.close()
+        staging.close()
+
+    def test_a_short_staging_set_leaves_the_live_chunks(self, live_dsn, postgresql, stub_embeddings):
+        from docsgpt.vectorstore.base import StagedIndexIncomplete
+
+        ensure_vector_schema()
+        live = _store(live_dsn, "live-src")
+        live.add_texts(["old a"], metadatas=[{}])
+        _store(live_dsn, "live-src:staging").add_texts(["new a"], metadatas=[{}])
+
+        with pytest.raises(StagedIndexIncomplete):
+            live.promote_staged("live-src:staging", expected=2)
+
+        assert [text for text, _ in self._ids(postgresql, "live-src")] == ["old a"]
+        assert [text for text, _ in self._ids(postgresql, "live-src:staging")] == ["new a"]
+        live.close()

@@ -168,6 +168,25 @@ def test_markdown_fence_closes_with_crlf_line_endings():
     assert "run it" in tups[1][1]
 
 
+def test_markdown_text_before_first_heading_is_kept():
+    content = "Intro paragraph.\n\n# Install\nrun it\n"
+    tups = MarkdownParser().markdown_to_tups(content)
+    assert tups == [(None, "Intro paragraph.\n\n"), ("Install", "run it\n\n")]
+
+
+def test_markdown_whitespace_only_preamble_adds_no_section():
+    tups = MarkdownParser().markdown_to_tups("\n  \n\t\n# Install\nrun it\n")
+    assert tups == [("Install", "run it\n\n")]
+
+
+def test_markdown_parse_file_keeps_text_before_first_heading():
+    content = "Project summary.\n## Usage\ntext\n"
+    parser = MarkdownParser()
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("doc.md"))
+    assert result == ["Project summary.\n", "\n\nUsage\ntext\n\n"]
+
+
 def test_tups_chunk_append_small_text_golden():
     parser = MarkdownParser(max_tokens=4)
     assert parser.tups_chunk_append([], None, "ab\n") == [(None, "ab\n")]
