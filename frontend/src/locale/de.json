@@ -3481,6 +3481,7 @@
         "mcp_supabase": "Tabellen auflisten, SQL ausführen, Protokolle lesen und Supabase-Projekte verwalten.",
         "mcp_trello": "Trello-Boards und -Karten finden sowie Karten erstellen und aktualisieren.",
         "mcp_twelvedata": "Kurse, Kursverläufe, technische Indikatoren und Fundamentaldaten für Aktien, Devisen, Kryptowährungen und ETFs abrufen.",
+        "mcp_webflow": "Webflow-Websites, -Seiten und CMS-Sammlungen verwalten.",
         "mcp_zapier": "Mit den in deinem Zapier-MCP-Konto aktivierten Aktionen verbundene Apps lesen oder aktualisieren.",
         "ntfy": "Push-Benachrichtigungen über einen ntfy-Server senden.",
         "postgres": "Schema lesen und SQL auf einer Postgres-Datenbank ausführen.",

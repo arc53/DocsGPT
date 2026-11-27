@@ -1,0 +1,9 @@
+key: mcp:webflow
+name: Webflow
+description: Manage Webflow sites, pages and CMS collections.
+icon: webflow
+category: dev
+mcp_url: https://mcp.webflow.com/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://developers.webflow.com/mcp/reference/getting-started

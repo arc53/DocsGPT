@@ -3454,6 +3454,7 @@
         "mcp_supabase": "列出資料表、執行 SQL、檢視記錄並管理 Supabase 專案。",
         "mcp_trello": "尋找 Trello 看板與卡片，並建立及更新卡片。",
         "mcp_twelvedata": "查詢股票、外匯、加密貨幣和 ETF 的報價、歷史價格、技術指標和基本面資料。",
+        "mcp_webflow": "管理 Webflow 網站、頁面與 CMS 集合。",
         "mcp_zapier": "使用 Zapier MCP 帳戶中啟用的動作讀取或更新已連線的應用程式。",
         "ntfy": "透過 ntfy 伺服器傳送推播通知。",
         "postgres": "讀取 Postgres 資料庫的結構並執行 SQL。",

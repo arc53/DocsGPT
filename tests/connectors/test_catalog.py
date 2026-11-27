@@ -173,6 +173,19 @@ class TestPresets:
         )
 
 
+    def test_webflow_preset(self):
+        definition = catalog.get_definition("mcp:webflow")
+
+        assert definition.name == "Webflow"
+        assert definition.description == "Manage Webflow sites, pages and CMS collections."
+        assert definition.icon == "webflow"
+        assert definition.category == "dev"
+        assert definition.mcp_url == "https://mcp.webflow.com/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://developers.webflow.com/mcp/reference/getting-started"
+
+
     def test_miro_preset_uses_the_catalog_contract(self):
         definition = catalog.get_definition("mcp:miro")
 

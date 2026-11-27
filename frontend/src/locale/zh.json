@@ -3453,6 +3453,7 @@
         "mcp_supabase": "列出数据表、运行 SQL、查看日志并管理 Supabase 项目。",
         "mcp_trello": "查找 Trello 看板和卡片，并创建和更新卡片。",
         "mcp_twelvedata": "查询股票、外汇、加密货币和 ETF 的行情、历史价格、技术指标和基本面数据。",
+        "mcp_webflow": "管理 Webflow 站点、页面和 CMS 集合。",
         "mcp_zapier": "使用 Zapier MCP 账户中启用的操作读取或更新已连接的应用。",
         "ntfy": "通过 ntfy 服务器发送推送通知。",
         "postgres": "读取 Postgres 数据库的结构并执行 SQL。",
