@@ -1,0 +1,9 @@
+key: mcp:todoist
+name: Todoist
+description: Find Todoist tasks and projects, and add, update and complete tasks.
+icon: todoist
+category: projects
+mcp_url: https://ai.todoist.net/mcp
+auth_kind: mcp_oauth
+capabilities: [read, write]
+docs_url: https://github.com/Doist/todoist-ai

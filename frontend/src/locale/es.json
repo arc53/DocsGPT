@@ -3609,6 +3609,7 @@
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
         "mcp_supabase": "Lista tablas, ejecuta SQL, lee registros y administra proyectos de Supabase.",
         "mcp_trello": "Busca tableros y tarjetas de Trello, y crea y actualiza tarjetas.",
+        "mcp_todoist": "Busca tareas y proyectos de Todoist, y añade, actualiza y completa tareas.",
         "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
         "mcp_zapier": "Usa las acciones habilitadas en tu cuenta de Zapier MCP para leer o actualizar aplicaciones conectadas.",
         "ntfy": "Envía notificaciones push mediante un servidor ntfy.",
