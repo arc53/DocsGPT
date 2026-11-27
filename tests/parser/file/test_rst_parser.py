@@ -603,3 +603,38 @@ def test_chunk_by_token_count_rejects_non_positive_max_tokens(bad_value):
     parser = RstParser()
     with pytest.raises(ValueError):
         parser.chunk_by_token_count("some non-empty text", max_tokens=bad_value)
+
+
+def test_parse_tups_keeps_none_header_for_headerless_text():
+    """Chunking must not turn a missing header into the text "None - Chunk 1"."""
+    parser = RstParser()
+    content = "Just a plain paragraph with no section title."
+
+    with patch("builtins.open", mock_open(read_data=content)):
+        tups = parser.parse_tups(Path("test.rst"))
+
+    assert tups == [(None, "Just a plain paragraph with no section title.")]
+
+
+def test_parse_file_headerless_text_has_no_none_label():
+    """A file without headings is returned as its own text, with no "None" label."""
+    parser = RstParser()
+    content = "Just a plain paragraph with no section title."
+
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("test.rst"))
+
+    assert result == ["Just a plain paragraph with no section title."]
+
+
+def test_parse_file_preamble_before_first_header_has_no_none_label():
+    """Text before the first heading has no header; the titled section keeps its own."""
+    parser = RstParser()
+    content = "Intro text here.\n\nTitle\n=====\nBody text.\n"
+
+    with patch("builtins.open", mock_open(read_data=content)):
+        result = parser.parse_file(Path("test.rst"))
+
+    assert not any("None" in chunk for chunk in result)
+    assert result[0] == "Intro text here."
+    assert result[1] == "\n\nTitle - Chunk 1\nBody text."
