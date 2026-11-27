@@ -36,7 +36,6 @@ from docsgpt.agents.tools.code_executor_hints import (
 from docsgpt.core.settings import settings
 from docsgpt.llm.tool_images import image_ref
 from docsgpt.sandbox.artifacts_capture import (
-    MAX_CAPTURED_FILES,
     QuotaExceeded,
     capture_artifacts,
     persist_artifact,
@@ -852,10 +851,6 @@ class CodeExecutorTool(Tool):
             )
         except AttachmentBridgeError as exc:
             return {"error": f"failed to load {raw} into the sandbox: {exc}"}
-
-    # Cap the per-run capture work so a workspace full of pre-existing files
-    # can't turn one exec into an unbounded read+persist sweep.
-    _MAX_CAPTURED_FILES = MAX_CAPTURED_FILES
 
     def _snapshot_signatures(self, manager: Any, session_id: str) -> Dict[str, Tuple[int, Optional[str]]]:
         """Map each non-input workspace file to a (size, sha256) signature for change detection."""

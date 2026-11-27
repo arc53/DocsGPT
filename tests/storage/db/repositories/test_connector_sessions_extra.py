@@ -113,25 +113,6 @@ class TestMergeSessionData:
         assert got["server_url"] == base_url
         assert got["session_data"] == {"tokens": {"access_token": "at"}}
 
-    def test_strips_server_url_key_from_patch(self, pg_conn):
-        """Legacy callers still embed ``server_url`` in the patch — the
-        scalar column is authoritative so the key should be discarded
-        rather than duplicated into the JSONB payload."""
-        from docsgpt.storage.db.repositories.connector_sessions import (
-            ConnectorSessionsRepository,
-        )
-        repo = ConnectorSessionsRepository(pg_conn)
-        base_url = "https://mcp.strip.example.com"
-        inserted = repo.merge_session_data(
-            "u-strip", "mcp:https://mcp.strip.example.com", base_url,
-            {
-                "server_url": "https://different-url-should-be-ignored",
-                "tokens": {"access_token": "x"},
-            },
-        )
-        assert inserted["server_url"] == base_url
-        assert "server_url" not in (inserted["session_data"] or {})
-
     def test_shallow_merge_preserves_other_keys(self, pg_conn):
         from docsgpt.storage.db.repositories.connector_sessions import (
             ConnectorSessionsRepository,

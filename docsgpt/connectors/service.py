@@ -1522,20 +1522,6 @@ def picker_token(connection_id: str, provider: Optional[str] = None) -> dict:
     }
 
 
-def claim_session_token(conn, user_id: str, provider: str, session_token: str) -> Optional[dict]:
-    """Link a legacy browser session token to its connection, once.
-
-    Returns the connection when the token belongs to ``user_id`` and
-    ``provider``. The token itself keeps working for the session-token
-    routes during this release, so an older tab does not break.
-    """
-    repo = ConnectorSessionsRepository(conn)
-    row = repo.get_by_session_token(session_token)
-    if not row or row.get("user_id") != user_id or (row.get("provider") or "").lower() != provider.lower():
-        return None
-    return row
-
-
 def resolve_request_connection(
     user_id: str, provider: Optional[str], data: dict, *, action: Optional[str] = None,
 ) -> Optional[dict]:

@@ -37,7 +37,6 @@ export type StartedSync = {
 export type TeamConnectorsEntry = {
   catalog: ConnectorDefinition[];
   connections: Connection[];
-  loading: boolean;
   loaded: boolean;
   failed: boolean;
   /** The `loadTeamConnectors` call for this team started last. */
@@ -49,7 +48,6 @@ export type ConnectorsState = {
   enabled: boolean;
   catalog: ConnectorDefinition[];
   connections: Connection[];
-  loading: boolean;
   loaded: boolean;
   failed: boolean;
   /**
@@ -77,7 +75,6 @@ const initialState: ConnectorsState = {
   enabled: true,
   catalog: [],
   connections: [],
-  loading: false,
   loaded: false,
   failed: false,
   settled: false,
@@ -89,7 +86,6 @@ const initialState: ConnectorsState = {
 const EMPTY_TEAM: TeamConnectorsEntry = Object.freeze({
   catalog: [],
   connections: [],
-  loading: false,
   loaded: false,
   failed: false,
   latestRequestId: null,
@@ -192,13 +188,11 @@ const connectorsSlice = createSlice({
     builder
       .addCase(loadConnectors.pending, (state, action) => {
         state.latestRequestId = action.meta.requestId;
-        state.loading = true;
         state.failed = false;
       })
       .addCase(loadConnectors.fulfilled, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
         state.latestRequestId = null;
-        state.loading = false;
         state.loaded = true;
         state.settled = true;
         state.catalog = action.payload.catalog;
@@ -207,21 +201,18 @@ const connectorsSlice = createSlice({
       .addCase(loadConnectors.rejected, (state, action) => {
         if (action.meta.requestId !== state.latestRequestId) return;
         state.latestRequestId = null;
-        state.loading = false;
         state.failed = true;
         state.settled = true;
       })
       .addCase(loadTeamConnectors.pending, (state, action) => {
         const entry = teamEntry(state, action.meta.arg.teamId);
         entry.latestRequestId = action.meta.requestId;
-        entry.loading = true;
         entry.failed = false;
       })
       .addCase(loadTeamConnectors.fulfilled, (state, action) => {
         const entry = teamEntry(state, action.meta.arg.teamId);
         if (action.meta.requestId !== entry.latestRequestId) return;
         entry.latestRequestId = null;
-        entry.loading = false;
         entry.loaded = true;
         entry.catalog = action.payload.catalog;
         entry.connections = action.payload.connections;
@@ -230,7 +221,6 @@ const connectorsSlice = createSlice({
         const entry = teamEntry(state, action.meta.arg.teamId);
         if (action.meta.requestId !== entry.latestRequestId) return;
         entry.latestRequestId = null;
-        entry.loading = false;
         entry.failed = true;
       });
   },
@@ -269,8 +259,6 @@ export const selectConnectionsNeedAttention = (state: RootLike) =>
 /** How many connections need signing in again (`connectionNeedsSignIn`). */
 export const selectSignInNeededCount = (state: RootLike) =>
   (state.connectors?.connections ?? []).filter(connectionNeedsSignIn).length;
-export const selectConnectorsLoading = (state: RootLike) =>
-  state.connectors.loading;
 export const selectConnectorsLoaded = (state: RootLike) =>
   state.connectors.loaded;
 export const selectConnectorsFailed = (state: RootLike) =>
@@ -292,9 +280,6 @@ export const selectTeamConnectors = (
 /** A team's connections (`owner=team`), as any member sees them. */
 export const selectTeamConnections = (state: RootLike, teamId: string) =>
   selectTeamConnectors(state, teamId).connections;
-/** The catalog with its card states worked out for a team's connections. */
-export const selectTeamConnectorCatalog = (state: RootLike, teamId: string) =>
-  selectTeamConnectors(state, teamId).catalog;
 
 const currentTeam = (state: WorkspaceRootLike): string | null => {
   const current = state.workspace?.current;
@@ -323,9 +308,6 @@ export const selectWorkspaceConnectorCatalog = (state: WorkspaceRootLike) =>
 /** The current workspace's list has answered at least once with a list. */
 export const selectWorkspaceConnectorsLoaded = (state: WorkspaceRootLike) =>
   selectCurrentTeamConnectors(state)?.loaded ?? state.connectors.loaded;
-/** The current workspace's list is loading. */
-export const selectWorkspaceConnectorsLoading = (state: WorkspaceRootLike) =>
-  selectCurrentTeamConnectors(state)?.loading ?? state.connectors.loading;
 /** The current workspace's last load failed. */
 export const selectWorkspaceConnectorsFailed = (state: WorkspaceRootLike) =>
   selectCurrentTeamConnectors(state)?.failed ?? state.connectors.failed;

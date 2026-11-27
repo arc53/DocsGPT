@@ -39,10 +39,9 @@ import {
   selectSendableAttachmentIds,
 } from '../upload/uploadSlice';
 
-const initialState: ConversationState = {
+const initialState: Omit<ConversationState, 'conversationId'> = {
   queries: [],
   status: 'idle',
-  conversationId: null,
 };
 
 const API_STREAMING = envVar('VITE_API_STREAMING') === 'true';
@@ -85,7 +84,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           state.preference.selectedDocs,
           null, // No conversation ID for previews
           state.preference.prompt.id,
-          state.preference.chunks,
           previewEventHandler(
             dispatch,
             indx ?? state.agentPreview.queries.length - 1,
@@ -104,7 +102,6 @@ export const fetchPreviewAnswer = createAsyncThunk<
           state.preference.selectedDocs,
           null,
           state.preference.prompt.id,
-          state.preference.chunks,
           state.preference.selectedAgent?.id,
           attachmentIds,
           false,
@@ -431,7 +428,6 @@ export const agentPreviewSlice = createSlice({
     resetPreview: (state) => {
       state.queries = initialState.queries;
       state.status = initialState.status;
-      state.conversationId = initialState.conversationId;
       handlePreviewAbort();
     },
   },

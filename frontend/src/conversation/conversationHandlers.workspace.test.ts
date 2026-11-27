@@ -42,7 +42,6 @@ async function ask(): Promise<Record<string, unknown>[]> {
     [],
     null,
     null,
-    '2',
     (event) => frames.push(JSON.parse(event.data)),
   );
   return frames;

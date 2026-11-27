@@ -109,13 +109,6 @@ export function fmtMs(n?: number | null): string {
   return n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(1)}s`;
 }
 
-export function fmtCompact(n?: number | null): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(n ?? 0);
-}
-
 // Humanized event labels + semantic color tier, shared by the activity feed
 // and the user-detail modal so the same event reads identically everywhere.
 // Unknown names fall back to a title-cased form of the name itself, so an

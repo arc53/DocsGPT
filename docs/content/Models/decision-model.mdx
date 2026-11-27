@@ -1,5 +1,6 @@
 ---
 title: The Decision Model
+sidebarTitle: 🧭 Decision Model
 description: The small model some DocsGPT features ask typed questions about a message or a chunk, where it runs (the API process, the opt-in decider, a Mac's GPU, vLLM), and why it downloads nothing until a feature is turned on.
 lastUpdated: 2026-10-21
 ---
@@ -16,7 +17,7 @@ Every feature that uses the decision model is off by default, and nothing is dow
 
 Two settings apply to the model as a whole:
 
-```env
+```dotenv
 DECISION_MODE=none      # turn it off everywhere, whatever the feature settings say
 DECISION_PRELOAD=true   # download, load and time it when the API starts, even with every feature off
 ```
@@ -99,7 +100,7 @@ To turn it on:
 
 - **Compose.** Add three lines to `.env`, then run your `docker compose ... up -d` again:
 
-  ```env
+  ```dotenv
   COMPOSE_PROFILES=decider
   DECISION_BASE_URL=http://decider:7095
   DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>
@@ -155,7 +156,7 @@ It needs an amd64 host with the NVIDIA Container Toolkit. vLLM takes `DECISION_V
 
 Instead of loading the model in the API process, DocsGPT can call a decision server. Set its address in `.env`; with `DECISION_BASE_URL` set, `DECISION_MODE` defaults to `api`, and both the API and the Celery worker call the server:
 
-```env
+```dotenv
 DECISION_BASE_URL=http://127.0.0.1:7095   # the server's root, without /v1
 DECISION_KEY=                             # bearer key the server expects; unset sends none
 ```
@@ -171,7 +172,7 @@ vllm serve arc53/arc-decide-0.6b-v0.1 --revision a03cd6bc45fa7b75e05489454e2084b
   --gpu-memory-utilization 0.2
 ```
 
-```env
+```dotenv
 DECISION_BASE_URL=http://127.0.0.1:8000
 DECISION_PROTOCOL=vllm
 ```

@@ -163,6 +163,7 @@ export const SharedConversation = () => {
       <DocumentHead
         title={`DocsGPT | ${title}`}
         description={t('sharedConv.metaDescription')}
+        robots="noindex, nofollow"
         ogTitle={title}
         ogDescription={t('sharedConv.metaDescription')}
         twitterCard="summary_large_image"

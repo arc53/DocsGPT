@@ -520,6 +520,32 @@ class TestDeleteOldIndexes:
         assert response.status_code == 200
         fake_vs.delete_index.assert_called_once()
 
+    def test_deleting_a_source_drops_its_staged_rebuild(self, app, pg_conn):
+        from docsgpt.api.user.sources.routes import DeleteOldIndexes
+
+        user = "u-del-staged"
+        src = _seed_source(pg_conn, user, name="remove-me")
+        fake_storage = MagicMock()
+        fake_storage.is_directory.return_value = False
+        discarded = []
+
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.sources.routes.settings.VECTOR_STORE", "pgvector",
+        ), patch(
+            "docsgpt.api.user.sources.routes.StorageCreator.get_storage", return_value=fake_storage,
+        ), patch(
+            "docsgpt.api.user.sources.routes.VectorCreator.create_vectorstore", return_value=MagicMock(),
+        ), patch(
+            "docsgpt.api.user.sources.routes.discard_staged_index", side_effect=discarded.append,
+        ), app.test_request_context(
+            f"/api/delete_old?source_id={src['id']}"
+        ):
+            from flask import request
+            request.decoded_token = {"sub": user}
+            response = DeleteOldIndexes().get()
+        assert response.status_code == 200
+        assert discarded == [str(src["id"])]
+
     def test_deletes_faiss_source(self, app, pg_conn):
         from docsgpt.api.user.sources.routes import DeleteOldIndexes
 

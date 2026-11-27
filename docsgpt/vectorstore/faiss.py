@@ -688,6 +688,30 @@ class FaissStore(BaseVectorStore):
         self._save_or_undo(undo)
         return chunk_id
 
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Remove parent metadata from chunks and save the index once, without embedding."""
+        ids = [str(chunk_id) for chunk_id in chunk_ids]
+        previous = {}
+        for chunk_id in ids:
+            document = self.documents.get(chunk_id)
+            if document is None:
+                continue
+            metadata = document.get("metadata") or {}
+            if metadata.get("parent_text"):
+                previous[chunk_id] = metadata
+                updated_metadata = dict(metadata)
+                updated_metadata.pop("parent_text", None)
+                document["metadata"] = updated_metadata
+        if not previous:
+            return []
+
+        def undo() -> None:
+            for chunk_id, metadata in previous.items():
+                self.documents[chunk_id]["metadata"] = metadata
+
+        self._save_or_undo(undo)
+        return [(chunk_id, chunk_id) for chunk_id in previous]
+
     def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
         """Replace several chunks' metadata, keeping their text and vectors; saved to storage once.
 

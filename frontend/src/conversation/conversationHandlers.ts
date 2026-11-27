@@ -24,6 +24,7 @@ import {
   quotaErrorParams,
 } from './quotaError';
 import { ToolCallsType } from './types';
+import { CONNECTION_LOST } from './curatedError';
 
 /**
  * Mirrors the backend's ``_SEQUENCE_NO_RE`` (application/api/answer/
@@ -290,7 +291,6 @@ export function handleFetchAnswer(
   selectedDocs: Doc[],
   conversationId: string | null,
   promptId: string | null,
-  chunks: string,
   agentId?: string,
   attachments?: string[],
   save_conversation = true,
@@ -322,7 +322,6 @@ export function handleFetchAnswer(
     question: question,
     conversation_id: conversationId,
     prompt_id: promptId,
-    chunks: chunks,
     isNoneDoc: selectedDocs.length === 0 && activeFolders.length === 0,
     agent_id: agentId,
     save_conversation: save_conversation,
@@ -375,7 +374,6 @@ export function handleFetchAnswerSteaming(
   selectedDocs: Doc[],
   conversationId: string | null,
   promptId: string | null,
-  chunks: string,
   onEvent: (event: MessageEvent) => void,
   indx?: number,
   agentId?: string,
@@ -389,7 +387,6 @@ export function handleFetchAnswerSteaming(
     question: question,
     conversation_id: conversationId,
     prompt_id: promptId,
-    chunks: chunks,
     isNoneDoc: selectedDocs.length === 0 && activeFolders.length === 0,
     index: indx,
     agent_id: agentId,
@@ -738,6 +735,7 @@ export function handleSubmitToolActions(
               type: 'error',
               error:
                 'Connection lost. The tool response could not be resumed; please try again.',
+              code: CONNECTION_LOST,
             }),
           );
         }
@@ -944,57 +942,6 @@ function translateV1ChunkToInternalEvents(
   }
 
   return events;
-}
-
-export function handleSearch(
-  question: string,
-  token: string | null,
-  selectedDocs: Doc[],
-  conversation_id: string | null,
-  chunks: string,
-) {
-  const payload: RetrievalPayload = {
-    question: question,
-    conversation_id: conversation_id,
-    chunks: chunks,
-    isNoneDoc: selectedDocs.length === 0,
-  };
-  applySelectedKnowledge(payload, selectedDocs);
-  return conversationService
-    .search(payload, token)
-    .then((response) => response.json())
-    .then((data) => {
-      return data;
-    })
-    .catch((err) => console.log(err));
-}
-
-export function handleSearchViaApiKey(
-  question: string,
-  api_key: string,
-  history: Array<any> = [],
-) {
-  history = history.map((item) => {
-    return {
-      prompt: item.prompt,
-      response: item.response,
-      tool_calls: item.tool_calls,
-    };
-  });
-  return conversationService
-    .search(
-      {
-        question: question,
-        history: JSON.stringify(history),
-        api_key: api_key,
-      },
-      null,
-    )
-    .then((response) => response.json())
-    .then((data) => {
-      return data;
-    })
-    .catch((err) => console.log(err));
 }
 
 export function handleSendFeedback(

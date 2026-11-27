@@ -239,7 +239,7 @@ test('a date that is already later is not moved back', () => {
 });
 
 test('files that are not pages are ignored', () => {
-  const meta = 'docs/content/_meta.js';
+  const meta = 'docs/content/meta.js';
   const since = commit('baseline', { [meta]: 'export default {}' });
   commit('docs: sidebar', { [meta]: 'export default { a: "A" }' });
 

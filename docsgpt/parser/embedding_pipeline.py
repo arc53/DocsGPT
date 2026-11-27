@@ -1,3 +1,4 @@
+import hashlib
 import os
 import logging
 from typing import Any, List, Optional
@@ -262,7 +263,8 @@ def embed_and_store_documents(
     actor_id: Optional[str] = None,
     progress_start: int = 0,
     progress_end: int = 100,
-) -> None:
+    index_id: Optional[str] = None,
+) -> int:
     """Embeds documents and stores them in a vector store.
 
     Resumable from ``last_index + 1`` across Celery autoretries of the
@@ -295,9 +297,16 @@ def embed_and_store_documents(
             (e.g. parsing). Defaults to ``0`` (embed owns the whole bar).
         progress_end: Percent the reported progress maps to at the final
             chunk. Defaults to ``100``.
+        index_id: The id the chunks are written under in the vector store,
+            when not ``source_id``: a full rebuild's staging id
+            (``docsgpt.vectorstore.staged_rebuild``). Only that id is cleared
+            on a fresh run, so the source's own chunks stay searchable; the
+            chunks' metadata, the progress row and the events keep
+            ``source_id``. Its checkpoint never resumes one written in place,
+            nor the reverse.
 
     Returns:
-        None
+        The number of chunks embedded (blank documents left out).
 
     Raises:
         OSError: If unable to create folder or save vector store.
@@ -327,15 +336,24 @@ def embed_and_store_documents(
         )
 
     total_docs = len(docs)
+    index_id = str(index_id) if index_id else str(source_id)
+    # FAISS keeps a partial index only in the dead task's temp dir, so a new
+    # task can never continue one: it gets no fingerprint. A staged run's
+    # fingerprint is its own, so it never continues chunks stored in place
+    # (which its swap would delete), nor an in-place run staged ones.
+    fingerprint = None
+    if settings.VECTOR_STORE != "faiss":
+        fingerprint = chunk_fingerprint(docs)
+        if index_id != str(source_id):
+            fingerprint = hashlib.sha256(f"{index_id}\n{fingerprint}".encode("utf-8")).hexdigest()
     # Atomic upsert that preserves the checkpoint for the same work (an
     # autoretry of this task, or a new task over the same chunk set after a
     # restart killed the last one) and resets it otherwise (fresh sync /
     # reingest, changed content). Returns the resume index — 0 means "start
-    # fresh". FAISS keeps a partial index only in the dead task's temp dir,
-    # so a new task can never continue one: it gets no fingerprint.
+    # fresh".
     resume_index = _init_progress_and_resume_index(
         source_id, total_docs, attempt_id,
-        fingerprint=None if settings.VECTOR_STORE == "faiss" else chunk_fingerprint(docs),
+        fingerprint=fingerprint,
         dispatch=dispatch_of(task_status, source_id),
     )
     is_resume = resume_index > 0
@@ -373,11 +391,12 @@ def embed_and_store_documents(
     else:
         store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
-            source_id=source_id,
+            source_id=index_id,
             embeddings_key=settings.EMBEDDINGS_KEY,
         )
         # Only wipe the index on a fresh run — a resume must keep the
-        # chunks that earlier attempts already embedded.
+        # chunks that earlier attempts already embedded. A staged run wipes
+        # only its staging id: what an earlier rebuild left there.
         if not is_resume:
             store.delete_index()
         loop_start = resume_index
@@ -508,3 +527,4 @@ def embed_and_store_documents(
             f"embed failure at chunk {failed_idx}/{total_docs} "
             f"for source {source_id}"
         ) from chunk_error
+    return total_docs

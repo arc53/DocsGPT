@@ -804,29 +804,6 @@ class ConnectionPickerToken(Resource):
         return make_response(jsonify({"success": True, **token}), 200)
 
 
-@connections_ns.route("/connections/claim")
-class ConnectionClaim(Resource):
-    @api.doc(
-        description=(
-            "One-time link of a legacy browser session token ({provider, session_token}) "
-            "to the caller's connection. Removed next release."
-        )
-    )
-    def post(self):
-        user_id = _user_id()
-        if not user_id:
-            return _unauthorized()
-        body = _json_body()
-        provider, token = body.get("provider"), body.get("session_token")
-        if not provider or not token:
-            return _error("provider and session_token are required", 400)
-        with db_readonly() as conn:
-            row = service.claim_session_token(conn, user_id, str(provider), str(token))
-        if row is None:
-            return _not_found()
-        return make_response(jsonify({"success": True, "connection_id": str(row["id"])}), 200)
-
-
 @connections_ns.route("/connections/<string:connection_id>/tools/<string:tool_id>/permissions")
 class ConnectionToolPermissions(Resource):
     @api.doc(description="Set per-action permissions: {permissions: {action: always | ask | off}}")

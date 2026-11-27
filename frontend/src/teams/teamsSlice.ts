@@ -12,11 +12,7 @@ import teamsService, {
   OutsidePolicyResult,
   TeamRole,
 } from '../api/services/teamsService';
-import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
-import {
-  outsidePolicyChanged,
-  type WorkspaceState,
-} from '../workspace/workspaceSlice';
+import { outsidePolicyChanged } from '../workspace/workspaceSlice';
 
 /** A team row; `outside_policy` is who may take its items outside. */
 export type Team = OutsidePolicyFields & {
@@ -170,13 +166,6 @@ const teamsSlice = createSlice({
 export default teamsSlice.reducer;
 
 export const selectTeams = (state: { teams: TeamsState }) => state.teams.teams;
-/** The team the app is in, or null in Personal. */
-export const selectCurrentTeamId = (state: {
-  workspace: WorkspaceState;
-}): string | null =>
-  state.workspace.current === PERSONAL_WORKSPACE
-    ? null
-    : state.workspace.current;
 export const selectTeamsLoading = (state: { teams: TeamsState }) =>
   state.teams.loading;
 export const selectTeamsError = (state: { teams: TeamsState }) =>

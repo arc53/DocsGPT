@@ -12,6 +12,13 @@ import {
   quotaErrorMessage,
 } from './quotaError';
 
+/**
+ * The code of the error the client writes itself when a stream ends without
+ * a terminal frame: the connection dropped, so the server may or may not
+ * have taken the request.
+ */
+export const CONNECTION_LOST = 'connection_lost';
+
 /** Values a curated error was worded from (``needed_tokens``…). */
 export type ErrorParams = Record<string, unknown>;
 

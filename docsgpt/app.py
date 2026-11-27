@@ -136,12 +136,6 @@ if admin_ns not in api.namespaces:
     api.add_namespace(admin_ns)
 if pat_ns not in api.namespaces:
     api.add_namespace(pat_ns)
-app.config.update(
-    UPLOAD_FOLDER="inputs",
-    CELERY_BROKER_URL=settings.CELERY_BROKER_URL,
-    CELERY_RESULT_BACKEND=settings.CELERY_RESULT_BACKEND,
-    MONGO_URI=settings.MONGO_URI,
-)
 celery.config_from_object("docsgpt.celeryconfig")
 api.init_app(app)
 

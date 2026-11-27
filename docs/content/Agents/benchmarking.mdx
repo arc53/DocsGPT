@@ -1,10 +1,9 @@
 ---
 title: Benchmarking Agents
+sidebarTitle: 📊 Benchmarking Agents
 description: Run repeatable benchmarks and evals against your DocsGPT agents from the terminal with docsgpt-cli bench.
 lastUpdated: 2026-09-30
 ---
-
-import { Callout } from 'nextra/components'
 
 # Benchmarking Agents
 
@@ -36,7 +35,7 @@ bench/
     report.pdf
 ```
 
-```yaml filename="bench.yaml"
+```yaml title="bench.yaml"
 agent: my-agent          # key name from `docsgpt-cli keys`, or a literal API key
 target: v1               # v1 | stream | webhook
 # base_url: https://gptcloud.arc53.com
@@ -68,7 +67,7 @@ The same case can be exercised through three wire protocols:
 
 ## Writing cases
 
-```yaml filename="01-refund-policy/case.yaml"
+```yaml title="01-refund-policy/case.yaml"
 description: "Support agent quotes the refund window"
 tags: [smoke, support]
 # target, agent, timeout, repeat… override bench.yaml per case
@@ -112,7 +111,7 @@ Any value in `bench.yaml` or a `case.yaml` can reference an environment
 variable as `${VAR}`, so the suite is safe to commit while keys stay in the
 environment:
 
-```yaml filename="bench.yaml"
+```yaml title="bench.yaml"
 agent: ${DOCSGPT_BENCH_KEY}
 webhook_url: ${DOCSGPT_WEBHOOK_URL}
 judge:
@@ -157,7 +156,7 @@ docsgpt-cli bench --json > run.json      # machine-readable results
 docsgpt-cli bench --junit report.xml     # JUnit XML for CI test reporting
 ```
 
-```yaml filename=".github/workflows/bench.yml"
+```yaml title=".github/workflows/bench.yml"
 - name: Agent benchmarks
   # --key accepts a key name from ~/.docsgpt/config.json or a literal API key,
   # so CI can pass the secret directly.

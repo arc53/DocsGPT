@@ -5,6 +5,7 @@ import pytest
 from docsgpt.vectorstore.base import (
     BaseVectorStore,
     EmbeddingsSingleton,
+    ParentClearError,
     RemoteEmbeddings,
     _key_fingerprint,
     get_embeddings,
@@ -912,6 +913,84 @@ class _ChunkListStore(ConcreteVectorStore):
 
     def get_chunks(self, *args, **kwargs):
         return self._chunks
+
+
+class _ParentClearFallbackStore(_ChunkListStore):
+    def __init__(self, chunks):
+        super().__init__(chunks)
+        self._next_id = len(chunks) - 1
+
+    def add_chunk(self, text, metadata=None, *args, **kwargs):
+        self._next_id += 1
+        chunk_id = f"new-{self._next_id}"
+        self._chunks.append({"doc_id": chunk_id, "text": text, "metadata": metadata or {}})
+        return chunk_id
+
+    def delete_chunk(self, chunk_id, *args, **kwargs):
+        before = len(self._chunks)
+        self._chunks[:] = [chunk for chunk in self._chunks if chunk["doc_id"] != chunk_id]
+        return len(self._chunks) < before
+
+
+@pytest.mark.unit
+def test_base_clear_parent_text_fallback_preserves_id_remapping_information():
+    store = _ParentClearFallbackStore([
+        {"doc_id": "old", "text": "child", "metadata": {"parent_text": "parent"}}
+    ])
+
+    changed_ids = store.clear_parent_text(["old"])
+
+    assert changed_ids == [("old", "new-1")]
+    assert store.get_chunks() == [{"doc_id": "new-1", "text": "child", "metadata": {}}]
+
+
+@pytest.mark.unit
+def test_base_clear_parent_text_snapshots_a_live_list_before_readding_siblings():
+    parent = "parent window"
+    store = _ParentClearFallbackStore([
+        {"doc_id": f"old-{i}", "text": f"child-{i}", "metadata": {"parent_text": parent}}
+        for i in range(4)
+    ])
+
+    remaps = store.clear_parent_text([f"old-{i}" for i in range(4)])
+
+    assert len(remaps) == 4
+    assert len({new_id for _, new_id in remaps}) == 4
+    assert len(store.get_chunks()) == 4
+    assert all("parent_text" not in chunk["metadata"] for chunk in store.get_chunks())
+
+
+@pytest.mark.unit
+def test_base_clear_parent_text_preserves_completed_remaps_on_later_failure():
+    class FailsSecondUpdate(_ParentClearFallbackStore):
+        def __init__(self, chunks):
+            super().__init__(chunks)
+            self._updates = 0
+
+        def update_chunk(self, chunk_id, text, metadata):
+            self._updates += 1
+            if self._updates == 2:
+                raise RuntimeError("second update failed")
+            return super().update_chunk(chunk_id, text, metadata)
+
+    store = FailsSecondUpdate([
+        {"doc_id": f"old-{i}", "text": f"child-{i}", "metadata": {"parent_text": "p"}}
+        for i in range(3)
+    ])
+
+    with pytest.raises(ParentClearError) as exc:
+        store.clear_parent_text(["old-0", "old-1", "old-2"])
+
+    assert exc.value.remapped_ids == [("old-0", "new-3")]
+    assert isinstance(exc.value.__cause__, RuntimeError)
+
+
+@pytest.mark.unit
+def test_base_clear_parent_text_fails_closed_when_scan_silently_omits_requested_ids():
+    store = _ParentClearFallbackStore([])
+
+    with pytest.raises(ParentClearError, match="disappeared"):
+        store.clear_parent_text(["expected-sibling"])
 
 
 @pytest.mark.unit

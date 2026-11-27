@@ -600,6 +600,101 @@ class TestResumeAcrossTasks:
         assert dispatch_of(MagicMock(), "s-1") is None
 
 
+
+@pytest.mark.unit
+class TestStagedEmbed:
+    """A full rebuild embeds under a staging id; its checkpoint stays on the source."""
+
+    @pytest.fixture
+    def stores(self, monkeypatch):
+        from docsgpt.parser import embedding_pipeline as ep
+
+        monkeypatch.setattr(ep.settings, "VECTOR_STORE", "pgvector", raising=False)
+        built = {}
+
+        def _create(store_type, *args, source_id=None, **kwargs):
+            return built.setdefault(source_id, MagicMock(name=f"store:{source_id}"))
+
+        monkeypatch.setattr(ep.VectorCreator, "create_vectorstore", _create)
+        return built
+
+    def test_the_chunks_go_to_the_staging_id_and_the_live_index_is_not_wiped(
+        self, pg_conn, patch_pipeline_db, stores, tmp_path
+    ):
+        import docsgpt.parser.embedding_pipeline as ep_mod
+        from docsgpt.storage.db.repositories.ingest_chunk_progress import IngestChunkProgressRepository
+
+        source_id = str(uuid.uuid4())
+        staging = f"{source_id}:staging"
+        stored = ep_mod.embed_and_store_documents(
+            _make_docs(3), str(tmp_path), source_id, MagicMock(), attempt_id="att-1", index_id=staging,
+        )
+
+        assert stored == 3
+        assert set(stores) == {staging}
+        stores[staging].delete_index.assert_called_once()
+        metadatas = stores[staging].add_texts.call_args.kwargs["metadatas"]
+        # Written with the source's own id: the swap moves the rows, not their metadata.
+        assert {m["source_id"] for m in metadatas} == {source_id}
+        progress = IngestChunkProgressRepository(pg_conn).get_progress(source_id)
+        assert (progress["embedded_chunks"], progress["total_chunks"]) == (3, 3)
+
+    def test_a_staged_run_never_resumes_an_in_place_checkpoint(
+        self, pg_conn, patch_pipeline_db, stores, tmp_path
+    ):
+        # The first chunks of an in-place run sit under the live id, which the swap replaces.
+        source_id = str(uuid.uuid4())
+        docs = _make_docs(6)
+        _seed_checkpoint(pg_conn, source_id, docs, last_index=2, attempt_id="task-killed")
+        import docsgpt.parser.embedding_pipeline as ep_mod
+
+        captured: list[str] = []
+        original = ep_mod.add_texts_to_store_with_retry
+        ep_mod.add_texts_to_store_with_retry = lambda store, batch, sid: captured.extend(d.page_content for d in batch)
+        try:
+            ep_mod.embed_and_store_documents(
+                _make_docs(6), str(tmp_path), source_id, MagicMock(), attempt_id="task-new",
+                index_id=f"{source_id}:staging",
+            )
+        finally:
+            ep_mod.add_texts_to_store_with_retry = original
+
+        assert captured == [f"chunk-{i}" for i in range(6)]
+
+    def test_a_staged_run_resumes_its_own_checkpoint(self, pg_conn, patch_pipeline_db, stores, tmp_path):
+        import docsgpt.parser.embedding_pipeline as ep_mod
+
+        source_id = str(uuid.uuid4())
+        staging = f"{source_id}:staging"
+        captured: list[str] = []
+        original = ep_mod.add_texts_to_store_with_retry
+
+        def _fail_at_chunk_three(store, batch, sid):
+            # A batch is written whole or not at all; chunk 3 can't be embedded.
+            if any(doc.page_content == "chunk-3" for doc in batch):
+                raise RuntimeError("embeddings down")
+            captured.extend(doc.page_content for doc in batch)
+
+        ep_mod.add_texts_to_store_with_retry = _fail_at_chunk_three
+        try:
+            with pytest.raises(ep_mod.EmbeddingPipelineError):
+                ep_mod.embed_and_store_documents(
+                    _make_docs(6), str(tmp_path), source_id, MagicMock(), attempt_id="task-killed", index_id=staging,
+                )
+            captured.clear()
+            ep_mod.add_texts_to_store_with_retry = lambda store, batch, sid: captured.extend(
+                d.page_content for d in batch
+            )
+            ep_mod.embed_and_store_documents(
+                _make_docs(6), str(tmp_path), source_id, MagicMock(), attempt_id="task-new", index_id=staging,
+            )
+        finally:
+            ep_mod.add_texts_to_store_with_retry = original
+
+        assert captured == ["chunk-3", "chunk-4", "chunk-5"]
+        stores[staging].delete_index.assert_called_once()
+
+
 @pytest.mark.unit
 class TestIngestHeartbeat:
     def test_loop_bumps_last_updated_then_exits(

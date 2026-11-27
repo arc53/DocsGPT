@@ -254,6 +254,30 @@ class QdrantStore(BaseVectorStore):
         )
         return chunk_id
 
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Delete nested parent metadata from this source's points without embedding."""
+        ids = list(dict.fromkeys(str(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        records = self._client.retrieve(
+            collection_name=self._collection,
+            ids=ids,
+            with_payload=True,
+            with_vectors=False,
+        )
+        own_ids = [
+            record.id
+            for record in records
+            if ((record.payload or {}).get("metadata") or {}).get("source_id") == self._source_id
+        ]
+        if own_ids:
+            self._client.delete_payload(
+                collection_name=self._collection,
+                keys=["metadata.parent_text"],
+                points=own_ids,
+            )
+        return [(str(chunk_id), str(chunk_id)) for chunk_id in own_ids]
+
     def delete_chunk(self, chunk_id: str) -> bool:
         """Delete one of this source's chunks by id.
 

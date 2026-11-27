@@ -3,9 +3,11 @@
 # The contributor guides follow every push that changes them. The product docs
 # (docs/content, about 70 pages) are refreshed weekly instead: re-ingesting them
 # on every docs merge loaded the Cloud workers for no real gain. Both uploads use
-# `sources upload --sync`, which updates the existing source in place and
-# re-embeds only the files that were added, edited or removed (all of them once,
-# on the first sync of a source ingested before content hashes were stored).
+# `sources upload --sync`, which updates the existing source in place: the CLI
+# sends a list of file hashes, uploads only the files the server lacks, and the
+# server re-embeds only the files that were added, edited or removed. Exceptions:
+# the first folder sync re-embeds every page once (the earlier zip stored paths
+# under content/), and a server without manifest syncs is sent every file.
 # Off until the TRIAGE_MODE repository variable is set; see .github/triage/README.md.
 name: Triage agent
 
@@ -34,7 +36,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CLI_VERSION: v1.11.0
+  CLI_VERSION: v1.13.0
 
 jobs:
   deploy:
@@ -97,8 +99,7 @@ jobs:
         if: steps.changed.outputs.docs == 'true'
         continue-on-error: true
         run: |
-          (cd docs && zip -qr "$RUNNER_TEMP/product-docs.zip" content -i '*.md' '*.mdx')
-          docsgpt-cli sources upload "$RUNNER_TEMP/product-docs.zip" \
+          docsgpt-cli sources upload docs/content --include '*.md' --include '*.mdx' \
             --name docsgpt-product-docs --wait --sync --timeout 90m
 
       - name: Apply the agent

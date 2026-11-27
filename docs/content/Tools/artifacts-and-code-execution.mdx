@@ -1,10 +1,9 @@
 ---
 title: Artifacts and Code Execution
+sidebarTitle: 📦 Artifacts and Code Execution
 description: Generate editable documents, run sandboxed code, and read files with the DocsGPT artifact, code executor, and read document tools.
 lastUpdated: 2026-10-22
 ---
-
-import { Callout } from 'nextra/components';
 
 # Artifacts and Code Execution
 
@@ -19,7 +18,7 @@ All three are opt-in: enable Artifact and Code Executor per agent in the tool pi
 If your deployment runs a sandbox and you want these available in every chat
 rather than per agent, add them to `DEFAULT_CHAT_TOOLS`:
 
-```env
+```dotenv
 DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","monitor","code_executor","artifact_generator"]
 ```
 

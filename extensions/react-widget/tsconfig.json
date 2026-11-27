@@ -25,9 +25,9 @@
       /* The "typeRoots" configuration specifies the locations where
          TypeScript looks for type definitions (.d.ts files) to
          include in the compilation process.*/
-         "typeRoots": ["./dist/index.d.ts", "node_modules/@types"]
+         "typeRoots": ["node_modules/@types"]
         },
         /* include /index.ts*/
-        "include": ["src/index.ts","custom.d.ts"],
+        "include": ["src/index.ts"],
         "exclude": ["node_modules"],
   }

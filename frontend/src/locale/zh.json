@@ -1659,6 +1659,7 @@
     },
     "toolApproval": {
       "approve": "批准",
+      "approveAll": "全部批准 ({{formatted}})",
       "approveAlways": "批准，不再询问",
       "connect": "连接 {{name}}",
       "connectTitle": "此工具需要你的 {{name}} 账号。",
@@ -1677,9 +1678,13 @@
       "skip": "跳过",
       "state": {
         "approval": "需要批准",
+        "approved": "已批准",
+        "denied": "已拒绝",
         "notConnected": "未连接"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "撤销",
+      "waitingForOthers": "此回答中的其他请求都决定后才会发送。"
     },
     "toolChip": {
       "accessingMemory": "已访问记忆",
@@ -2400,11 +2405,6 @@
       "type": "类型"
     },
     "createAPIKey": {
-      "apiKeyName": "API 密钥名称",
-      "chunks": "每个查询处理的块",
-      "create": "创建",
-      "label": "创建新的 API 密钥",
-      "prompt": "选择活动提示",
       "sourceDoc": "源文档"
     },
     "deleteConv": {
@@ -2500,12 +2500,8 @@
       "viewDescription": "内置提示无法编辑。复制后可创建您自己的可编辑副本。"
     },
     "saveKey": {
-      "apiKeyLabel": "API 密钥",
-      "confirm": "我已保存密钥",
       "copied": "已复制",
-      "copy": "复制",
-      "disclaimer": "这是您的密钥唯一一次展示机会。",
-      "note": "请保存您的密钥"
+      "copy": "复制"
     },
     "searchConversations": {
       "noResults": "未找到结果",
@@ -2518,7 +2514,6 @@
       "option": "允许用户进行更多查询。"
     },
     "uploadDoc": {
-      "cancel": "取消",
       "choose": "选择文件",
       "connectors": {
         "auth": {
@@ -2583,9 +2578,7 @@
         }
       },
       "label": "添加知识",
-      "link": "链接",
       "name": "名称",
-      "noFilesSelected": "未选择文件",
       "progress": {
         "clear": "清除",
         "collapseDetails": "折叠上传详情",
@@ -2599,7 +2592,6 @@
         "partialDownload_one": "有 {{count}} 个项目未能读取，已被跳过。请同步此来源以重试。",
         "partialDownload_other": "有 {{count}} 个项目未能读取，已被跳过。请同步此来源以重试。",
         "preparing": "准备上传",
-        "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
         "tooManyFiles": "此来源的文件数超过上限 {{limit}} 个。请选择更小的文件夹、路径或选择范围。",
         "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。",
         "training": "正在上传",
@@ -2607,18 +2599,13 @@
         "uploadProgress": "上传进度 {{progress}}%",
         "wait": "这可能需要几分钟"
       },
-      "remote": "从网站收集",
       "removeFile": "移除 {{name}}",
       "repoUrl": "存储库 URL",
       "select": "选择如何将文档上传到 DocsGPT",
       "selectFolder": "或选择整个文件夹",
       "selectSource": "添加知识",
       "selectedFiles": "已选择的文件",
-      "start": "开始聊天",
       "train": "添加到知识库",
-      "uploadedFiles": "已上传文件",
-      "urlLink": "URL 链接",
-      "wait": "请稍等 ...",
       "website": {
         "addAnotherPage": "再添加一个页面",
         "discovery": {
@@ -3140,7 +3127,6 @@
     "analytics": {
       "completed": "已完成",
       "failed": "失败",
-      "filterByChatbot": "按聊天机器人筛选",
       "filterOptions": {
         "hour": "小时",
         "last15Days": "15 天",
@@ -3387,7 +3373,6 @@
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "计划运行",
-      "selectChatbot": "选择聊天机器人",
       "skipped": "已跳过",
       "stats": {
         "feedback": "反馈",
@@ -3538,6 +3523,7 @@
       "fieldHints": {
         "github_access_token": "细粒度令牌，授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。<link>在 GitHub 上创建令牌</link>",
         "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中复制。此连接只能访问该项目。",
+        "ntfy_server_url": "设置后，所有消息和访问令牌都会发送到此服务器。留空时，令牌只会发送到 ntfy.sh。",
         "telegram_chat_id": "消息只会发送到此聊天。添加机器人并给它发一条消息，然后用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
@@ -3550,6 +3536,7 @@
         "endpoint_url": "自定义端点 URL",
         "github_access_token": "个人访问令牌",
         "mcp_supabase_project_ref": "项目 ID",
+        "ntfy_server_url": "服务器 URL",
         "ntfy_token": "访问令牌",
         "number_posts": "帖子数量",
         "postgres_token": "连接字符串",
@@ -3974,21 +3961,13 @@
       "subtitle": "配对远程机器，让智能体可以通过 shell 命令操作它们。"
     },
     "general": {
-      "addNew": "添加新的",
-      "chunks": "每个查询处理的块",
-      "convHistory": "对话历史",
       "dark": "暗色",
-      "default": "默认",
       "deleteAllInWorkspace": "永久删除您在 {{name}} 中开始的所有聊天。此操作无法撤销。",
       "deleteAllLabel": "删除所有对话",
-      "high": "高",
       "label": "一般",
       "language": "语言",
       "languageDescription": "菜单和标签的语言。",
       "light": "浅色",
-      "low": "低",
-      "medium": "中",
-      "none": "无",
       "sections": {
         "appearance": "外观",
         "dangerZone": "危险操作",
@@ -4004,8 +3983,7 @@
       "taskModelUnavailable": "你的任务模型已无法运行（已被停用或移除），因此改用实例默认值。如果该模型恢复，会再次使用它；在此选择一个选项即可替换它。",
       "taskModelUnavailableValue": "模型不可用",
       "theme": "主题",
-      "themeDescription": "浅色或深色界面。",
-      "unlimited": "无限"
+      "themeDescription": "浅色或深色界面。"
     },
     "insights": {
       "label": "洞察"
@@ -4042,7 +4020,6 @@
         "dislike": "踩",
         "like": "赞"
       },
-      "filterByChatbot": "按聊天机器人筛选",
       "label": "日志",
       "labels": {
         "asksHuman": "要求人工",
@@ -4078,7 +4055,6 @@
       "retriedStep_other": "{{node}}：尝试 {{count}} 次",
       "running": "运行中",
       "searchPlaceholder": "搜索日志...",
-      "selectChatbot": "选择聊天机器人",
       "subtitle": "查看和监控 API 调用及会话日志",
       "trace": {
         "chips": {
@@ -4320,7 +4296,6 @@
       "deleteWarning": "删除“{{name}}”？",
       "deleting": "正在删除…",
       "deletingTitle": "正在删除...",
-      "editAlt": "编辑",
       "editChunk": "编辑文本块",
       "editChunkDescription": "{{file}} · 第 {{n}} 个文本块 · {{tokens}} 个令牌",
       "editChunkDescriptionUnplaced": "{{file}} · 已编辑的文本块 · {{tokens}} 个令牌",
@@ -4341,7 +4316,6 @@
         "sync": "无法同步来源。",
         "syncFrequency": "无法更改同步频率。"
       },
-      "fileAlt": "文件",
       "fileName": "名称",
       "files": "文件",
       "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
@@ -4350,7 +4324,6 @@
       "filesFailed_other": "上次同步时有 {{count}} 个文件的最新版本未能编入索引。之前已编入索引的文件可能仍以旧内容出现在搜索中。",
       "filesLoadError": "无法加载文件",
       "filterFiles": "筛选文件",
-      "folderAlt": "文件夹",
       "folders": {
         "emptyHint": "在此添加知识，或通过来源的 ⋯ 菜单将其移入。",
         "noMatchIn": "{{name}}中没有与“{{query}}”匹配的内容。",
@@ -4471,17 +4444,13 @@
       "needsAttention": "需要处理",
       "nextChunk": "下一个文本块",
       "noChunks": "未找到文本块",
-      "noChunksAlt": "未找到文本块",
       "noData": "还没有知识",
       "noKnowledgeFound": "未找到知识",
       "noResults": "未找到结果",
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个来源",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个来源",
-      "parentFolderAlt": "父文件夹",
       "paused": "同步已暂停。重新连接 {{name}} 以继续。",
-      "preLoaded": "预加载",
       "previousChunk": "上一个文本块",
-      "private": "私有",
       "queued": "已排队：{{count}}",
       "reingest": "重新索引",
       "retrievalOptions": {
@@ -4591,7 +4560,6 @@
         "title": "高级设置"
       },
       "retryFailedFiles": "立即重试",
-      "searchAlt": "搜索",
       "searchChunks": "搜索文本块",
       "searchPlaceholder": "搜索知识…",
       "sections": {

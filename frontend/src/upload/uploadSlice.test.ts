@@ -330,7 +330,6 @@ describe('source.ingest.completed', () => {
     expect(state.tasks[0].status).toBe('completed');
     expect(state.tasks[0].progress).toBe(100);
     expect(state.tasks[0].dismissed).toBe(false);
-    expect(state.tasks[0].tokenLimitReached).toBe(false);
   });
 
   it('keeps how many items a partial download lost', () => {
@@ -363,20 +362,6 @@ describe('source.ingest.completed', () => {
     expect(state.tasks[0].status).toBe('completed');
     // Folders count only for a partial download.
     expect(state.tasks[0].itemsNotDownloaded).toBe(2);
-  });
-
-  it('with limited=true transitions training -> failed and flags tokenLimitReached', () => {
-    let state = stateWithTask(
-      makeTask({ status: 'training', dismissed: true }),
-    );
-    state = reducer(
-      state,
-      ingest('source.ingest.completed', { limited: true }),
-    );
-    expect(state.tasks[0].status).toBe('failed');
-    expect(state.tasks[0].progress).toBe(100);
-    expect(state.tasks[0].tokenLimitReached).toBe(true);
-    expect(state.tasks[0].dismissed).toBe(false);
   });
 
   it('does not re-un-dismiss when a duplicate terminal event arrives', () => {

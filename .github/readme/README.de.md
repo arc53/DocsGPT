@@ -183,7 +183,7 @@ Wir freuen uns über Issues, Fragen und Pull Requests. Beginnen Sie mit [CONTRIB
 - **Backend:** Python, Flask und flask-restx hinter einer Starlette-ASGI-App (uvicorn/gunicorn), Celery mit RedBeat, Pydantic-Einstellungen.
 - **Daten:** PostgreSQL (SQLAlchemy, Alembic), Redis und FAISS, pgvector, Elasticsearch, Qdrant, Milvus oder MongoDB für Vektoren.
 - **Frontend:** React, Vite, Redux Toolkit, Tailwind CSS und React Flow.
-- **Dokumentation:** Next.js mit Nextra.
+- **Dokumentation:** Next.js mit Fumadocs.
 
 Projektstruktur:
 
