@@ -3502,6 +3502,7 @@
         "mcp_supabase": "List tables, run SQL, read logs and manage Supabase projects.",
         "mcp_trello": "Find Trello boards and cards, and create and update cards.",
         "mcp_twelvedata": "Look up quotes, price history, technical indicators and fundamentals for stocks, forex, crypto and ETFs.",
+        "mcp_webflow": "Manage Webflow sites, pages and CMS collections.",
         "mcp_zapier": "Use the actions enabled in your Zapier MCP account to read or update connected apps.",
         "ntfy": "Send push notifications through an ntfy server.",
         "postgres": "Read the schema and run SQL against a Postgres database.",
