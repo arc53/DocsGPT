@@ -173,6 +173,19 @@ class TestPresets:
         )
 
 
+    def test_todoist_preset(self):
+        definition = catalog.get_definition("mcp:todoist")
+
+        assert definition.name == "Todoist"
+        assert definition.description == "Find Todoist tasks and projects, and add, update and complete tasks."
+        assert definition.icon == "todoist"
+        assert definition.category == "projects"
+        assert definition.mcp_url == "https://ai.todoist.net/mcp"
+        assert definition.auth_kind == "mcp_oauth"
+        assert definition.capabilities == ("read", "write")
+        assert definition.docs_url == "https://github.com/Doist/todoist-ai"
+
+
     def test_miro_preset_uses_the_catalog_contract(self):
         definition = catalog.get_definition("mcp:miro")
 
