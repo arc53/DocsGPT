@@ -133,7 +133,6 @@ describe('AgentPanel knowledge and tool pickers', () => {
         connections: [],
         catalog: [],
         loaded: true,
-        loading: false,
       },
       folders: { tree: folderList([]) },
     };
@@ -609,7 +608,6 @@ describe('AgentPanel knowledge and tool pickers', () => {
         ],
         catalog: [],
         loaded: true,
-        loading: false,
       },
     };
     const onReconnect = vi.fn();

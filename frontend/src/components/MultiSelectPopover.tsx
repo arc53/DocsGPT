@@ -468,5 +468,3 @@ export function MultiSelectPopover({
     </Popover>
   );
 }
-
-export default MultiSelectPopover;

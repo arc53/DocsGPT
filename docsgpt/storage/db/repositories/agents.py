@@ -265,6 +265,19 @@ class AgentsRepository:
         )
         return int(result.scalar() or 0)
 
+    def count_by_prompt(self, prompt_id: str, *, exclude_agent_id: Optional[str] = None) -> int:
+        """Number of agents, anyone's, that use the stored prompt ``prompt_id``, leaving out ``exclude_agent_id``."""
+        if not looks_like_uuid(prompt_id):
+            return 0
+        result = self._conn.execute(
+            text(
+                "SELECT COUNT(*) FROM agents WHERE prompt_id = CAST(:prompt AS uuid) "
+                "AND (CAST(:exclude AS uuid) IS NULL OR id <> CAST(:exclude AS uuid))"
+            ),
+            {"prompt": prompt_id, "exclude": exclude_agent_id},
+        )
+        return int(result.scalar() or 0)
+
     def touch_for_workflow(self, workflow_id: str) -> None:
         """Move ``updated_at`` on every agent linked to ``workflow_id``.
 

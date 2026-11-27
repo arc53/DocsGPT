@@ -27,7 +27,6 @@ describe('stream requests say the app renders question forms', () => {
       [],
       'conv-1',
       null,
-      '2',
       () => {},
     );
     expect(service.answerStream.mock.calls[0][0]).toMatchObject({

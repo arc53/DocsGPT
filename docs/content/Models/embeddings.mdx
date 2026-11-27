@@ -1,5 +1,6 @@
 ---
 title: Understanding and Configuring Embedding Models in DocsGPT
+sidebarTitle: 📝 Embeddings
 description: Learn about embedding models, their importance in DocsGPT, and how to configure them for optimal performance.
 lastUpdated: 2026-11-01
 ---
@@ -104,7 +105,7 @@ The key is looked up in the same order as for OpenAI. There is no Azure OpenAI c
 
 If you run your own embedding server, or use a provider that exposes an OpenAI-style embeddings API, point DocsGPT at it with `EMBEDDINGS_BASE_URL`. When this is set, all embedding calls (ingestion and querying) are sent to `{EMBEDDINGS_BASE_URL}/v1/embeddings` in OpenAI format instead of running a local model.
 
-```env
+```dotenv
 EMBEDDINGS_BASE_URL=http://localhost:8080   # your OpenAI-compatible embeddings server
 EMBEDDINGS_NAME=your-model-name             # sent as the "model" field in the request
 EMBEDDINGS_KEY=YOUR_API_KEY                 # optional; sent as a Bearer token
@@ -120,7 +121,7 @@ If the server answers `401` or `403`, DocsGPT logs an `embeddings_auth_failed` e
 
 Some remote servers (notably llama.cpp) reject any single input larger than their physical batch size with a `500` error. Set `EMBEDDINGS_MAX_INPUT_TOKENS` to clip each input to a fixed number of tokens before it is sent:
 
-```env
+```dotenv
 EMBEDDINGS_MAX_INPUT_TOKENS=512
 ```
 

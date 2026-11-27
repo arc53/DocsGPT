@@ -35,8 +35,6 @@ const KIND_ICONS: Record<ItemKind, LucideIcon> = {
 export type FolderCrumbRowProps = {
   /** The page's kind: names the root and is left out of "Also in this folder". */
   kind?: ItemKind;
-  /** @deprecated Use `kind`. */
-  type?: ItemKind;
   /** The open folder's trail, top level first, the open folder last. */
   trail: Folder[];
   /** Open a folder from the trail, or the root (null). */
@@ -66,7 +64,6 @@ export type FolderCrumbRowProps = {
  */
 export default function FolderCrumbRow({
   kind: kindProp,
-  type,
   trail,
   onNavigate,
   meta,
@@ -75,7 +72,7 @@ export default function FolderCrumbRow({
   alsoLinks = true,
 }: FolderCrumbRowProps) {
   const { t } = useTranslation();
-  const kind = kindProp ?? type ?? 'agent';
+  const kind = kindProp ?? 'agent';
   const inTeam = useSelector(selectFoldersInTeam);
   const open = trail.length > 0 ? trail[trail.length - 1] : null;
   const others = open && alsoLinks ? folderOtherKinds(open, kind) : [];

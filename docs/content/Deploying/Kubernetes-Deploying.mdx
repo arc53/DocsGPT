@@ -1,10 +1,9 @@
 ---
 title: Deploying DocsGPT on Kubernetes
+sidebarTitle: ☸️ Deploying on Kubernetes
 description: "Deploy DocsGPT on Kubernetes with the manifests in deployment/k8s: secrets, S3 and pgvector storage, migrations, an Ingress, scaling, upgrades and rollbacks."
 lastUpdated: 2026-11-02
 ---
-
-import { Callout } from 'nextra/components'
 
 # Deploying DocsGPT on Kubernetes
 
@@ -75,7 +74,7 @@ The manifests pin every image. `arc53/docsgpt` is pinned to the release the mani
 
    Leave `AUTH_TYPE` commented out only while DocsGPT is reachable through `kubectl port-forward` alone. See [Publish DocsGPT](#publish-docsgpt).
 
-   <Callout type="warning" emoji="⚠️">
+   <Callout type="warning">
    The file now holds real credentials. Keep your copy out of version control.
    </Callout>
 

@@ -1,10 +1,9 @@
 ---
 title: Observability
+sidebarTitle: 🔭 Observability
 description: Send traces, metrics, and logs from DocsGPT to any OpenTelemetry-compatible backend (Axiom, Honeycomb, Grafana, Datadog, Jaeger, etc.).
 lastUpdated: 2026-11-02
 ---
-
-import { Callout } from 'nextra/components'
 
 # Observability
 
@@ -125,7 +124,7 @@ Trace the ASGI app rather than `flask run`, which serves only the Flask app: the
 their spans never appear. `-B` keeps the beat scheduler running, as in production.
 
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   Logs are exported in-process when `OTEL_LOGS_EXPORTER=otlp` is set —
   `docsgpt/core/logging_config.py` detects the flag and preserves
   the OTEL log handler. Without it, `logging` writes only to stdout.
@@ -274,7 +273,7 @@ OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 This adds the same redacted previews the app stores (for example
 `gen_ai.tool.call.arguments` and `gen_ai.tool.call.result`).
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   GenAI spans are exported when the request finishes, with their original
   timestamps. Consequences: a long research run appears only when it ends;
   HTTP and database spans made during a step sit beside the step rather than

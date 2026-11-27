@@ -12,7 +12,6 @@ on:
     paths:
       - 'docsgpt/Dockerfile'
       - '.dockerignore'
-      - 'application/**'
       - 'docsgpt/requirements*.txt'
       - 'docsgpt/scripts/prefetch_models.py'
       - 'docsgpt/scripts/verify_offline.py'

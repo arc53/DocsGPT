@@ -79,7 +79,6 @@ vi.mock('./NodePalette', () => ({ default: () => null }));
 vi.mock('./CanvasControls', () => ({ default: () => null }));
 
 const updateAgent = vi.fn();
-const updateWorkflow = vi.fn();
 const getAgent = vi.fn();
 const AGENT = {
   id: 'a1',
@@ -122,7 +121,6 @@ vi.mock('../../api/services/userService', () => ({
   default: {
     getAgent: (...a: unknown[]) => getAgent(...a),
     updateAgent: (...a: unknown[]) => updateAgent(...a),
-    updateWorkflow: (...a: unknown[]) => updateWorkflow(...a),
     getUserTools: () => ok({ tools: [] }),
     getWorkflow: () => ok({ success: true, data: WORKFLOW }),
   },
@@ -156,7 +154,6 @@ describe('WorkflowBuilder insights', () => {
 
   beforeEach(() => {
     updateAgent.mockReset().mockImplementation(() => ok({ id: 'a1' }));
-    updateWorkflow.mockReset().mockImplementation(() => ok({ success: true }));
     getAgent.mockReset().mockImplementation(() => ok(AGENT));
     sheet.props = null;
     preview.props = null;
@@ -312,8 +309,6 @@ describe('WorkflowBuilder insights', () => {
     expect(JSON.parse(form.get('workflow_graph') as string)).toMatchObject({
       retry_defaults: { max_attempts: 3, backoff_seconds: [5] },
     });
-    // One request: the graph goes with the agent.
-    expect(updateWorkflow).not.toHaveBeenCalled();
     expect(sentConfig()).toBeNull();
     expect(
       (sheet.props!.details as { retryDefaults: unknown }).retryDefaults,

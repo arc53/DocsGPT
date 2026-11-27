@@ -1,10 +1,9 @@
 ---
 title: Code Execution Sandbox
+sidebarTitle: 🧪 Code Execution Sandbox
 description: Run the sandbox that the Artifact and Code Executor tools need - the self-hosted Jupyter runner with Docker Compose, Kubernetes or pip, or Daytona Cloud - with the gateway token, kernel settings and network isolation.
 lastUpdated: 2026-10-07
 ---
-
-import { Callout } from 'nextra/components'
 
 # Code Execution Sandbox
 
@@ -99,7 +98,7 @@ docker run -d --name docsgpt-sandbox -p 127.0.0.1:8888:8888 \
 
 Then set the token in DocsGPT's `.env`. `SANDBOX_GATEWAY_URL` defaults to `http://localhost:8888`, and `SANDBOX_KERNEL_NAME` defaults to `docsgpt-python`, the kernel the image ships:
 
-```env
+```dotenv
 SANDBOX_GATEWAY_AUTH_TOKEN=<same-token>
 ```
 
@@ -128,7 +127,7 @@ Licenses: the Python libraries, Node.js, Chromium and tesseract are permissive (
 
 Turn on **Code Executor** and **Artifact** per agent in the agent's tool picker. To offer them in every chat without an agent, add them to `DEFAULT_CHAT_TOOLS` in `.env`:
 
-```env
+```dotenv
 DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler","code_executor","artifact_generator"]
 ```
 

@@ -1667,6 +1667,7 @@
     },
     "toolApproval": {
       "approve": "Genehmigen",
+      "approveAll": "Alle genehmigen ({{formatted}})",
       "approveAlways": "Genehmigen, nicht mehr fragen",
       "connect": "{{name}} verbinden",
       "connectTitle": "Dieses Werkzeug braucht dein {{name}}-Konto.",
@@ -1685,9 +1686,13 @@
       "skip": "Überspringen",
       "state": {
         "approval": "Freigabe nötig",
+        "approved": "Genehmigt",
+        "denied": "Abgelehnt",
         "notConnected": "Nicht verbunden"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "Rückgängig",
+      "waitingForOthers": "Wird gesendet, sobald über die anderen Anfragen dieser Antwort entschieden ist."
     },
     "toolChip": {
       "accessingMemory": "Auf Gedächtnis zugegriffen",
@@ -2426,11 +2431,6 @@
       "type": "Typ"
     },
     "createAPIKey": {
-      "apiKeyName": "API-Schlüssel-Name",
-      "chunks": "Chunks pro Anfrage",
-      "create": "Erstellen",
-      "label": "Neuen API-Schlüssel erstellen",
-      "prompt": "Aktiven Prompt auswählen",
       "sourceDoc": "Quelldokument"
     },
     "deleteConv": {
@@ -2527,12 +2527,8 @@
       "viewDescription": "Integrierte Prompts können nicht bearbeitet werden. Dupliziere ihn, um eine eigene bearbeitbare Kopie zu erstellen."
     },
     "saveKey": {
-      "apiKeyLabel": "API-Schlüssel",
-      "confirm": "Ich habe den Schlüssel gespeichert",
       "copied": "Kopiert",
-      "copy": "Kopieren",
-      "disclaimer": "Dies ist das einzige Mal, dass dein Schlüssel angezeigt wird.",
-      "note": "Bitte speichere deinen Schlüssel"
+      "copy": "Kopieren"
     },
     "searchConversations": {
       "noResults": "Keine Ergebnisse gefunden",
@@ -2545,7 +2541,6 @@
       "option": "Benutzern weitere Eingaben erlauben"
     },
     "uploadDoc": {
-      "cancel": "Abbrechen",
       "choose": "Dateien auswählen",
       "connectors": {
         "auth": {
@@ -2610,9 +2605,7 @@
         }
       },
       "label": "Wissen hinzufügen",
-      "link": "Link",
       "name": "Name",
-      "noFilesSelected": "Keine Dateien ausgewählt",
       "progress": {
         "clear": "Löschen",
         "collapseDetails": "Upload-Details einklappen",
@@ -2626,7 +2619,6 @@
         "partialDownload_one": "{{count}} Element konnte nicht gelesen werden und wurde ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
         "partialDownload_other": "{{count}} Elemente konnten nicht gelesen werden und wurden ausgelassen. Synchronisiere die Quelle, um es erneut zu versuchen.",
         "preparing": "Upload wird vorbereitet",
-        "tokenLimit": "Token-Limit überschritten, bitte lade ein kleineres Dokument hoch",
         "tooManyFiles": "Diese Quelle hat mehr als {{limit}} Dateien, mehr als eine Quelle enthalten kann. Wähle einen kleineren Ordner, Pfad oder eine kleinere Auswahl.",
         "tooManyTokens": "Diese Quelle hat mehr als {{limit}} Tokens Text, mehr als eine Quelle enthalten kann. Teile sie in kleinere Quellen auf.",
         "training": "Upload läuft",
@@ -2634,18 +2626,13 @@
         "uploadProgress": "Upload-Fortschritt {{progress}}%",
         "wait": "Dies kann einige Minuten dauern"
       },
-      "remote": "Von Website sammeln",
       "removeFile": "{{name}} entfernen",
       "repoUrl": "Repository-URL",
       "select": "Wähle, wie du dein Dokument zu DocsGPT hochladen möchtest",
       "selectFolder": "Oder einen ganzen Ordner auswählen",
       "selectSource": "Wissen hinzufügen",
       "selectedFiles": "Ausgewählte Dateien",
-      "start": "Chat starten",
       "train": "Zum Wissen hinzufügen",
-      "uploadedFiles": "Hochgeladene Dateien",
-      "urlLink": "URL-Link",
-      "wait": "Bitte warten ...",
       "website": {
         "addAnotherPage": "Weitere Seite hinzufügen",
         "discovery": {
@@ -3168,7 +3155,6 @@
     "analytics": {
       "completed": "Abgeschlossen",
       "failed": "Fehlgeschlagen",
-      "filterByChatbot": "Nach Chatbot filtern",
       "filterOptions": {
         "hour": "Stunde",
         "last15Days": "15 Tage",
@@ -3415,7 +3401,6 @@
         "usedOf": "{{used}} von {{limit}}"
       },
       "scheduledRuns": "Geplante Ausführungen",
-      "selectChatbot": "Chatbot auswählen",
       "skipped": "Übersprungen",
       "stats": {
         "feedback": "Feedback",
@@ -3566,6 +3551,7 @@
       "fieldHints": {
         "github_access_token": "Feingranular, mit Lesezugriff auf „Contents“ und „Metadata“. Für Änderungen durch Agenten außerdem Lese- und Schreibzugriff auf „Issues“ und „Pull requests“. <link>Token auf GitHub erstellen</link>",
         "mcp_supabase_project_ref": "Kopiere sie in deinem Supabase-Dashboard unter Project Settings > General. Die Verbindung erreicht nur dieses Projekt.",
+        "ntfy_server_url": "Wenn gesetzt, gehen alle Nachrichten und das Zugriffstoken an diesen Server. Wenn leer, geht das Token nur an ntfy.sh.",
         "telegram_chat_id": "Nachrichten gehen nur an diesen Chat. Füge den Bot hinzu, sende ihm eine Nachricht und finde die Chat-ID mit <link>getUpdates</link>."
       },
       "fields": {
@@ -3578,6 +3564,7 @@
         "endpoint_url": "Eigene Endpunkt-URL",
         "github_access_token": "Persönliches Zugriffstoken",
         "mcp_supabase_project_ref": "Projekt-ID",
+        "ntfy_server_url": "Server-URL",
         "ntfy_token": "Zugriffstoken",
         "number_posts": "Anzahl der Beiträge",
         "postgres_token": "Verbindungszeichenfolge",
@@ -4009,21 +3996,13 @@
       "subtitle": "Kopple entfernte Rechner, die Agenten über Shell-Befehle steuern können."
     },
     "general": {
-      "addNew": "Neu hinzufügen",
-      "chunks": "Chunks pro Anfrage",
-      "convHistory": "Konversationsverlauf",
       "dark": "Dunkel",
-      "default": "Standard",
       "deleteAllInWorkspace": "Löscht dauerhaft alle Chats, die Sie in {{name}} begonnen haben. Dies kann nicht rückgängig gemacht werden.",
       "deleteAllLabel": "Alle Konversationen löschen",
-      "high": "Hoch",
       "label": "Allgemein",
       "language": "Sprache",
       "languageDescription": "Sprache von Menüs und Beschriftungen.",
       "light": "Hell",
-      "low": "Niedrig",
-      "medium": "Mittel",
-      "none": "Keine",
       "sections": {
         "appearance": "Darstellung",
         "dangerZone": "Gefahrenzone",
@@ -4039,8 +4018,7 @@
       "taskModelUnavailable": "Ihr Aufgabenmodell kann nicht mehr ausgeführt werden (es wurde deaktiviert oder entfernt), daher läuft der Instanz-Standard. Ist das Modell wieder verfügbar, läuft es erneut; wählen Sie hier eine Option, um es zu ersetzen.",
       "taskModelUnavailableValue": "Modell nicht verfügbar",
       "theme": "Design",
-      "themeDescription": "Helle oder dunkle Oberfläche.",
-      "unlimited": "Unbegrenzt"
+      "themeDescription": "Helle oder dunkle Oberfläche."
     },
     "insights": {
       "label": "Einblicke"
@@ -4077,7 +4055,6 @@
         "dislike": "Gefällt nicht",
         "like": "Gefällt"
       },
-      "filterByChatbot": "Nach Chatbot filtern",
       "label": "Protokolle",
       "labels": {
         "asksHuman": "Nach einem Menschen gefragt",
@@ -4114,7 +4091,6 @@
       "retriedStep_other": "{{node}}: {{count}} Versuche",
       "running": "läuft",
       "searchPlaceholder": "Protokolle suchen...",
-      "selectChatbot": "Chatbot auswählen",
       "subtitle": "API-Aufrufe und Konversationsprotokolle einsehen und überwachen",
       "trace": {
         "chips": {
@@ -4356,7 +4332,6 @@
       "deleteWarning": "\"{{name}}\" löschen?",
       "deleting": "Wird gelöscht…",
       "deletingTitle": "Wird gelöscht...",
-      "editAlt": "Bearbeiten",
       "editChunk": "Chunk bearbeiten",
       "editChunkDescription": "{{file}} · Chunk {{n}} · {{tokens}} Tokens",
       "editChunkDescriptionUnplaced": "{{file}} · bearbeiteter Chunk · {{tokens}} Tokens",
@@ -4377,7 +4352,6 @@
         "sync": "Die Quelle konnte nicht synchronisiert werden.",
         "syncFrequency": "Die Synchronisierungshäufigkeit konnte nicht geändert werden."
       },
-      "fileAlt": "Datei",
       "fileName": "Name",
       "files": "Dateien",
       "filesByline_one": "{{files}} Datei · {{tokens}} Tokens",
@@ -4386,7 +4360,6 @@
       "filesFailed_other": "{{count}} Dateien konnten bei der letzten Synchronisierung nicht in ihrer neuesten Version indexiert werden. Waren sie schon indexiert, kann die Suche noch ihren früheren Inhalt liefern.",
       "filesLoadError": "Die Dateien konnten nicht geladen werden",
       "filterFiles": "Dateien filtern",
-      "folderAlt": "Ordner",
       "folders": {
         "emptyHint": "Füge hier Wissen hinzu oder verschiebe Quellen über ihr ⋯-Menü hierher.",
         "noMatchIn": "Nichts in {{name}} passt zu „{{query}}“.",
@@ -4507,17 +4480,13 @@
       "needsAttention": "Braucht Aufmerksamkeit",
       "nextChunk": "Nächster Chunk",
       "noChunks": "Keine Chunks gefunden",
-      "noChunksAlt": "Keine Chunks gefunden",
       "noData": "Noch kein Wissen",
       "noKnowledgeFound": "Kein Wissen gefunden",
       "noResults": "Keine Ergebnisse gefunden",
       "pageRange_one": "{{from}}–{{to}} von {{formatted}} Quelle",
       "pageRange_other": "{{from}}–{{to}} von {{formatted}} Quellen",
-      "parentFolderAlt": "Übergeordneter Ordner",
       "paused": "Sync pausiert. Verbinde {{name}} neu, um fortzufahren.",
-      "preLoaded": "Vorgeladen",
       "previousChunk": "Vorheriger Chunk",
-      "private": "Privat",
       "queued": "In Warteschlange: {{count}}",
       "reingest": "Erneut indexieren",
       "retrievalOptions": {
@@ -4627,7 +4596,6 @@
         "title": "Erweiterte Einstellungen"
       },
       "retryFailedFiles": "Jetzt erneut versuchen",
-      "searchAlt": "Suchen",
       "searchChunks": "Chunks durchsuchen",
       "searchPlaceholder": "Wissen durchsuchen…",
       "sections": {

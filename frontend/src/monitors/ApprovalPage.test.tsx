@@ -183,6 +183,27 @@ describe('ApprovalPage', () => {
     expect(container.querySelector('button')).toBeNull();
   });
 
+  it('asks search engines not to index the page, in every state', async () => {
+    const robots = () =>
+      document.head.querySelector<HTMLMetaElement>('meta[name="robots"]')
+        ?.content;
+    getApproval.mockReturnValue(new Promise(() => {}));
+    await render();
+    expect(robots()).toBe('noindex, nofollow');
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    getApproval.mockResolvedValue({ state: 'ok', view: view() });
+    await render();
+    expect(robots()).toBe('noindex, nofollow');
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    getApproval.mockResolvedValue({ state: 'missing' });
+    await render();
+    expect(robots()).toBe('noindex, nofollow');
+  });
+
   it('a 409 on press shows the earlier decision', async () => {
     getApproval.mockResolvedValue({ state: 'ok', view: view() });
     decideApproval.mockResolvedValue({ state: 'already', decision: 'reject' });

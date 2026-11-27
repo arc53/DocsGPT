@@ -383,13 +383,17 @@ export default function ConversationMessages({
     // Error first; reconciler-failed rows may carry partial thought/
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
-      // A resume the server refused leaves the questions waiting: answering
-      // them is the retry, and resending the prompt would start a new turn.
+      // A resume the server refused leaves the questions or approvals
+      // waiting: answering them is the retry, and resending the prompt would
+      // start a new turn.
       const waitingQuestions = pendingQuestionCall([query]) !== null;
+      const waitingApprovals = Boolean(
+        query.tool_calls?.some((call) => call.status === 'awaiting_approval'),
+      );
       // A woken turn's prompt is the background event: retrying would send
       // it as the user's own message.
       const retryButton =
-        query.wake || waitingQuestions ? undefined : (
+        query.wake || waitingQuestions || waitingApprovals ? undefined : (
           <IconButton
             label={t('conversation.retry')}
             variant="ghost-muted"
@@ -431,7 +435,8 @@ export default function ConversationMessages({
       const showPartial =
         (query.errorCode === 'time_limit' && hasPartialProgress) ||
         Boolean(query.workflow?.steps.length) ||
-        waitingQuestions;
+        waitingQuestions ||
+        waitingApprovals;
       return (
         <Fragment key={`${index}-ERROR`}>
           {showPartial ? (

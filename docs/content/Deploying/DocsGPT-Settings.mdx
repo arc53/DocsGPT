@@ -1,10 +1,9 @@
 ---
 title: App Configuration
+sidebarTitle: ⚙️ App Configuration
 description: "Configure DocsGPT through .env: LLM provider and keys, custom models, upload limits, document parsing, speech-to-text, authentication and production secrets."
 lastUpdated: 2026-11-11
 ---
-
-import { Callout } from 'nextra/components'
 
 # App Configuration
 
@@ -301,7 +300,7 @@ The settings below control speech-to-text behaviour for both voice input and aud
 
 ### Example: OpenAI Speech-to-Text
 
-```env
+```dotenv
 STT_PROVIDER=openai
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 OPENAI_STT_MODEL=gpt-4o-mini-transcribe
@@ -315,7 +314,7 @@ If you already use `API_KEY` for OpenAI, DocsGPT can reuse that key for transcri
 
 ### Example: Local `faster_whisper`
 
-```env
+```dotenv
 STT_PROVIDER=faster_whisper
 STT_LANGUAGE=en
 STT_ENABLE_TIMESTAMPS=true
@@ -347,7 +346,7 @@ The database password is separate: `docsgpt up` generates `POSTGRES_PASSWORD`, a
 | `JWT_SECRET_KEY` | Signs login tokens in every `AUTH_TYPE`, and agent-avatar URLs in every mode. Same value on every API and worker process. | With `DEPLOYMENT_TYPE=production` (or `cloud`), startup fails. Otherwise the API generates `.jwt_secret_key` in the data home, which suits one local process only: separate containers each generate their own key, and a recreated container gets a new one, which signs everyone out and, under `session_jwt`, loses sight of their data. |
 | `ENCRYPTION_SECRET_KEY` | Seals stored credentials: connector tokens, MCP credentials, tool secrets and custom-model API keys. | It falls back to a public default, and DocsGPT logs a warning at startup. With any `AUTH_TYPE` set, it refuses to create connections on the Connectors page (OAuth sign-ins and connector keys); tool secrets, MCP server credentials and custom-model keys are still stored, sealed with the public key. |
 
-```env
+```dotenv
 INTERNAL_KEY=<openssl rand -hex 32>
 JWT_SECRET_KEY=<openssl rand -hex 32>
 ENCRYPTION_SECRET_KEY=<openssl rand -hex 32>
@@ -355,7 +354,7 @@ ENCRYPTION_SECRET_KEY=<openssl rand -hex 32>
 DEPLOYMENT_TYPE=production
 ```
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Set `ENCRYPTION_SECRET_KEY` before anyone connects a service, and never just replace it: stored credentials are sealed with the key they were saved under. The installers never overwrite an existing value. `docsgpt up` on Docker adds one only to a fresh install. The setup scripts add one when there is no `.env` yet, and `docsgpt up --native` adds one on its first run; both also set `ENCRYPTION_SECRET_KEY_PREVIOUS` to the public default, since a kept Docker volume or the database it points at may already hold credentials sealed with it. Reseal them with `docsgpt connectors reencrypt`, then remove `ENCRYPTION_SECRET_KEY_PREVIOUS`.
 </Callout>
 
@@ -390,7 +389,7 @@ While the previous key is set, DocsGPT reads every stored credential with either
 
 Add the following to your `.env` file:
 
-```env
+```dotenv
 # Signing key: set it whenever more than one process or container runs
 JWT_SECRET_KEY=<long-random-value>
 
@@ -476,7 +475,7 @@ By default DocsGPT stores files locally. Set `STORAGE_TYPE=s3` to use Amazon S3 
 
 ### AWS S3
 
-```env
+```dotenv
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
 S3_ACCESS_KEY_ID=your-access-key-id
@@ -488,7 +487,7 @@ S3_REGION=us-east-1
 
 Set `S3_ENDPOINT_URL` and usually `S3_PATH_STYLE=true`:
 
-```env
+```dotenv
 STORAGE_TYPE=s3
 S3_BUCKET_NAME=your-bucket-name
 S3_ACCESS_KEY_ID=your-access-key-id
@@ -515,7 +514,7 @@ DocsGPT stores user data — conversations, agents, prompts, sources, attachment
 
 Example:
 
-```env
+```dotenv
 POSTGRES_URI=postgresql://docsgpt:docsgpt@localhost:5432/docsgpt
 # Append ?sslmode=require for managed providers that enforce SSL.
 ```
@@ -537,7 +536,7 @@ need no manual migration step. See
 for the recommended production flow (`AUTO_CREATE_DB`, `AUTO_MIGRATE`
 and `AUTO_VECTOR_SCHEMA` set to `false`, migrations gated by CI/CD).
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
   `MONGO_URI` is **opt-in**. It is only consulted when you select the
   MongoDB Atlas vector-store backend (`VECTOR_STORE=mongodb`) or when
   running the one-shot `scripts/db/backfill.py` migration from a legacy

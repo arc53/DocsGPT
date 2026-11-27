@@ -1708,6 +1708,7 @@
     },
     "toolApproval": {
       "approve": "Approuver",
+      "approveAll": "Tout approuver ({{formatted}})",
       "approveAlways": "Approuver, ne plus demander",
       "connect": "Connecter {{name}}",
       "connectTitle": "Cet outil a besoin de votre compte {{name}}.",
@@ -1726,9 +1727,13 @@
       "skip": "Ignorer",
       "state": {
         "approval": "Approbation requise",
+        "approved": "Approuvé",
+        "denied": "Refusé",
         "notConnected": "Non connecté"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "Annuler",
+      "waitingForOthers": "Envoyé une fois les autres demandes de cette réponse décidées."
     },
     "toolChip": {
       "accessingMemory": "Mémoire consultée",
@@ -2520,11 +2525,6 @@
       "type": "Type"
     },
     "createAPIKey": {
-      "apiKeyName": "Nom de la clé API",
-      "chunks": "Fragments traités par requête",
-      "create": "Créer",
-      "label": "Créer une clé API",
-      "prompt": "Sélectionner le prompt actif",
       "sourceDoc": "Document source"
     },
     "deleteConv": {
@@ -2622,12 +2622,8 @@
       "viewDescription": "Les prompts intégrés ne sont pas modifiables. Dupliquez-les pour créer votre propre copie modifiable."
     },
     "saveKey": {
-      "apiKeyLabel": "Clé API",
-      "confirm": "J’ai enregistré la clé",
       "copied": "Copié",
-      "copy": "Copier",
-      "disclaimer": "C’est la seule fois où votre clé sera affichée.",
-      "note": "Veuillez enregistrer votre clé"
+      "copy": "Copier"
     },
     "searchConversations": {
       "noResults": "Aucun résultat",
@@ -2640,7 +2636,6 @@
       "option": "Autoriser les utilisateurs à poursuivre la conversation"
     },
     "uploadDoc": {
-      "cancel": "Annuler",
       "choose": "Choisir des fichiers",
       "connectors": {
         "auth": {
@@ -2705,9 +2700,7 @@
         }
       },
       "label": "Ajouter des connaissances",
-      "link": "Lien",
       "name": "Nom",
-      "noFilesSelected": "Aucun fichier sélectionné",
       "progress": {
         "clear": "Effacer",
         "collapseDetails": "Masquer les détails de l’import",
@@ -2722,7 +2715,6 @@
         "partialDownload_one": "{{count}} élément n’a pas pu être lu et a été ignoré. Synchronisez la source pour réessayer.",
         "partialDownload_other": "{{count}} éléments n’ont pas pu être lus et ont été ignorés. Synchronisez la source pour réessayer.",
         "preparing": "Préparation de l’import",
-        "tokenLimit": "Limite de jetons dépassée, essayez d’importer un document plus petit",
         "tooManyFiles": "Cette source contient plus de {{limit}} fichiers, le maximum pour une source. Choisissez un dossier, un chemin ou une sélection plus petits.",
         "tooManyTokens": "Cette source contient plus de {{limit}} jetons de texte, le maximum pour une source. Divisez-la en sources plus petites.",
         "training": "Import en cours",
@@ -2730,18 +2722,13 @@
         "uploadProgress": "Progression de l’import {{progress}} %",
         "wait": "Cela peut prendre plusieurs minutes"
       },
-      "remote": "Collecter depuis un site web",
       "removeFile": "Retirer {{name}}",
       "repoUrl": "URL du dépôt",
       "select": "Choisissez comment importer votre document dans DocsGPT",
       "selectFolder": "Ou choisissez un dossier entier",
       "selectSource": "Ajouter des connaissances",
       "selectedFiles": "Fichiers sélectionnés",
-      "start": "Commencer à discuter",
       "train": "Ajouter aux connaissances",
-      "uploadedFiles": "Fichiers importés",
-      "urlLink": "Lien URL",
-      "wait": "Veuillez patienter…",
       "website": {
         "addAnotherPage": "Ajouter une autre page",
         "discovery": {
@@ -3283,7 +3270,6 @@
     "analytics": {
       "completed": "Terminées",
       "failed": "Échecs",
-      "filterByChatbot": "Filtrer par chatbot",
       "filterOptions": {
         "hour": "Heure",
         "last15Days": "15 jours",
@@ -3544,7 +3530,6 @@
         "usedOf": "{{used}} sur {{limit}}"
       },
       "scheduledRuns": "Exécutions planifiées",
-      "selectChatbot": "Sélectionner un chatbot",
       "skipped": "Ignorées",
       "stats": {
         "feedback": "Retours",
@@ -3697,6 +3682,7 @@
       "fieldHints": {
         "github_access_token": "Précis (fine-grained), avec accès en lecture à Contents et Metadata. Pour les modifications par l’agent, ajoutez aussi la lecture et l’écriture sur Issues et Pull requests. <link>Créer un jeton sur GitHub</link>",
         "mcp_supabase_project_ref": "Copiez-le depuis Project Settings > General dans votre tableau de bord Supabase. La connexion n’accède qu’à ce projet.",
+        "ntfy_server_url": "Si renseigné, tous les messages et le jeton d’accès sont envoyés à ce serveur. Si vide, le jeton n’est envoyé qu’à ntfy.sh.",
         "telegram_chat_id": "Les messages sont envoyés uniquement à cette conversation. Ajoutez le bot, envoyez-lui un message, puis trouvez l’ID de la conversation avec <link>getUpdates</link>."
       },
       "fields": {
@@ -3709,6 +3695,7 @@
         "endpoint_url": "URL de point de terminaison personnalisée",
         "github_access_token": "Jeton d’accès personnel",
         "mcp_supabase_project_ref": "ID du projet",
+        "ntfy_server_url": "URL du serveur",
         "ntfy_token": "Jeton d’accès",
         "number_posts": "Nombre de publications",
         "postgres_token": "Chaîne de connexion",
@@ -4150,21 +4137,13 @@
       "subtitle": "Associez des machines distantes que les agents peuvent piloter via des commandes shell."
     },
     "general": {
-      "addNew": "Ajouter",
-      "chunks": "Fragments traités par requête",
-      "convHistory": "Historique des conversations",
       "dark": "Sombre",
-      "default": "Par défaut",
       "deleteAllInWorkspace": "Supprime définitivement tous les chats que vous avez commencés dans {{name}}. Cette action est irréversible.",
       "deleteAllLabel": "Supprimer toutes les conversations",
-      "high": "Élevé",
       "label": "Général",
       "language": "Langue",
       "languageDescription": "Langue des menus et des libellés.",
       "light": "Clair",
-      "low": "Faible",
-      "medium": "Moyen",
-      "none": "Aucun",
       "sections": {
         "appearance": "Apparence",
         "dangerZone": "Zone de danger",
@@ -4180,8 +4159,7 @@
       "taskModelUnavailable": "Votre modèle de tâches ne peut plus s’exécuter (il a été désactivé ou supprimé) ; la valeur par défaut de l’instance est donc utilisée. Si le modèle revient, il sera de nouveau utilisé ; choisissez une option ici pour le remplacer.",
       "taskModelUnavailableValue": "Modèle indisponible",
       "theme": "Thème",
-      "themeDescription": "Interface claire ou sombre.",
-      "unlimited": "Illimité"
+      "themeDescription": "Interface claire ou sombre."
     },
     "insights": {
       "label": "Analyses"
@@ -4218,7 +4196,6 @@
         "dislike": "Pas aimé",
         "like": "Aimé"
       },
-      "filterByChatbot": "Filtrer par chatbot",
       "label": "Journaux",
       "labels": {
         "asksHuman": "Demande d’un humain",
@@ -4256,7 +4233,6 @@
       "retriedStep_other": "{{node}} : {{count}} tentatives",
       "running": "en cours",
       "searchPlaceholder": "Rechercher dans les journaux…",
-      "selectChatbot": "Sélectionner un chatbot",
       "subtitle": "Consultez et surveillez les appels API, les exécutions planifiées et les erreurs de votre compte",
       "trace": {
         "chips": {
@@ -4510,7 +4486,6 @@
       "deleteWarning": "Supprimer « {{name}} » ?",
       "deleting": "Suppression…",
       "deletingTitle": "Suppression…",
-      "editAlt": "Modifier",
       "editChunk": "Modifier le fragment",
       "editChunkDescription": "{{file}} · fragment {{n}} · {{tokens}} jetons",
       "editChunkDescriptionUnplaced": "{{file}} · fragment modifié · {{tokens}} jetons",
@@ -4531,7 +4506,6 @@
         "sync": "Impossible de synchroniser la source.",
         "syncFrequency": "Impossible de modifier la fréquence de synchronisation."
       },
-      "fileAlt": "Fichier",
       "fileName": "Nom",
       "files": "Fichiers",
       "filesByline_many": "{{files}} fichiers · {{tokens}} jetons",
@@ -4542,7 +4516,6 @@
       "filesFailed_other": "La dernière version de {{count}} fichiers n’a pas pu être indexée lors de la dernière synchronisation. Ceux déjà indexés peuvent encore apparaître avec leur contenu précédent.",
       "filesLoadError": "Impossible de charger les fichiers",
       "filterFiles": "Filtrer les fichiers",
-      "folderAlt": "Dossier",
       "folders": {
         "emptyHint": "Ajoutez des connaissances ici ou déplacez des sources depuis leur menu ⋯.",
         "noMatchIn": "Rien dans {{name}} ne correspond à « {{query}} ».",
@@ -4672,18 +4645,14 @@
       "needsAttention": "À traiter",
       "nextChunk": "Fragment suivant",
       "noChunks": "Aucun fragment trouvé",
-      "noChunksAlt": "Aucun fragment trouvé",
       "noData": "Aucune connaissance pour l’instant",
       "noKnowledgeFound": "Aucune connaissance trouvée",
       "noResults": "Aucun résultat trouvé",
       "pageRange_many": "{{from}}–{{to}} sur {{formatted}} sources",
       "pageRange_one": "{{from}}–{{to}} sur {{formatted}} source",
       "pageRange_other": "{{from}}–{{to}} sur {{formatted}} sources",
-      "parentFolderAlt": "Dossier parent",
       "paused": "Synchronisation en pause. Reconnectez {{name}} pour reprendre.",
-      "preLoaded": "Préchargé",
       "previousChunk": "Fragment précédent",
-      "private": "Privé",
       "queued": "En file d’attente : {{count}}",
       "reingest": "Réindexer",
       "retrievalOptions": {
@@ -4793,7 +4762,6 @@
         "title": "Paramètres avancés"
       },
       "retryFailedFiles": "Réessayer maintenant",
-      "searchAlt": "Rechercher",
       "searchChunks": "Rechercher dans les fragments",
       "searchPlaceholder": "Rechercher des connaissances…",
       "sections": {

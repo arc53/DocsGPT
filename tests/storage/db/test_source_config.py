@@ -33,7 +33,7 @@ class TestParseLenient:
         assert cfg == SourceConfig()
 
     def test_chunking_defaults_match_worker(self):
-        # Byte-identical-ingest guarantee: defaults equal worker MAX/MIN_TOKENS.
+        # Byte-identical-ingest guarantee: the defaults keep the worker's long-standing chunk sizes.
         c = ChunkingConfig()
         assert c.strategy == "classic_chunk"
         assert c.max_tokens == 1250

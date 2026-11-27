@@ -387,6 +387,9 @@ const StyledContainer = styled.div<{
   display: flex;
   padding: 0;
   overflow: hidden;
+  /* The shadow alone vanishes on a page the colour of the panel, as a dark
+     page often is; the app's floating surfaces carry a border too. */
+  border: 1px solid ${(props) => props.theme.border};
   border-radius: ${radii['2xl']};
   box-shadow: ${shadows.modal};
   transform-origin: ${(props) =>
@@ -429,6 +432,7 @@ const StyledContainer = styled.div<{
     height: var(--dgpt-vv-height, 100dvh);
     max-width: 100vw;
     max-height: var(--dgpt-vv-height, 100dvh);
+    border: none;
     border-radius: 0;
     /* Expanding is desktop-only; easing after the keyboard reads as lag. */
     transition: none;
@@ -447,6 +451,7 @@ const StyledContainer = styled.div<{
         ${$sidebar === 'right' ? 'env(safe-area-inset-right, 0px)' : '0'}
         env(safe-area-inset-bottom, 0px)
         ${$sidebar === 'left' ? 'env(safe-area-inset-left, 0px)' : '0'};
+      border: none;
       border-radius: 0;
       border-${$sidebar === 'right' ? 'left' : 'right'}: 1px solid
         ${theme.border};

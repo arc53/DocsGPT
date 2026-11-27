@@ -1,11 +1,9 @@
 ---
 title: SharePoint / OneDrive Connector
+sidebarTitle: 🔗 SharePoint / OneDrive
 description: Connect your Microsoft SharePoint or OneDrive as an external knowledge base to upload and process files directly.
 lastUpdated: 2026-10-07
 ---
-
-import { Callout } from 'nextra/components'
-import { Steps } from 'nextra/components'
 
 # SharePoint / OneDrive Connector
 
@@ -38,7 +36,7 @@ Go to **Certificates & secrets** > **New client secret**. Copy the secret value 
 
 Add to your `.env` file:
 
-```env
+```dotenv
 MICROSOFT_CLIENT_ID=your-azure-ad-client-id
 MICROSOFT_CLIENT_SECRET=your-azure-ad-client-secret
 MICROSOFT_TENANT_ID=your-azure-ad-tenant-id

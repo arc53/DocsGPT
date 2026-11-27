@@ -100,6 +100,22 @@ class TestDocumentsLandInTheUserTurn:
         user = agent._build_messages("SYSTEM", "Summarize current context")[-1]["content"]
         assert user == "Summarize current context"
 
+    def test_two_large_parent_sources_fit_the_model_turn_budget(self):
+        from docsgpt.utils import num_tokens_from_string
+
+        docs = [
+            {"text": f"Parent {label}: " + (word + " ") * 4000, "filename": f"{label}.txt"}
+            for label, word in (("A", "alpha"), ("B", "bravo"))
+        ]
+        agent = self._agent(retrieved_docs=docs)
+
+        with patch("docsgpt.core.model_utils.get_token_limit", return_value=8192):
+            messages = agent._build_messages("SYSTEM", "Summarize both sources")
+
+        user_turn = messages[-1]["content"]
+        assert num_tokens_from_string(user_turn) < 8192
+        assert "Parent A:" in user_turn or "Parent B:" in user_turn
+
 
 @pytest.mark.unit
 class TestChunksPrecedence:
@@ -164,3 +180,88 @@ class TestChunksPrecedence:
         sp.all_sources = []
         sp._configure_retriever()
         assert sp.retriever_config["chunks"] == 500
+
+
+@pytest.mark.unit
+class TestParentTextReachesPrompt:
+    """When a chunk was produced by the parent_child chunker the LLM must see
+    the parent window, not the narrow child that was embedded.
+
+    The StreamProcessor returns whatever the retriever puts in entry["text"].
+    After the fix, ClassicRAG puts the parent window there; this test pins
+    the contract from retriever output all the way to the user-turn <content>
+    block sent to the model.
+    """
+
+    PARENT = "Full parent window with extensive background context and reporting rules."
+    CHILD = "Full parent window"
+
+    def _agent_with_docs(self, docs):
+        with patch("docsgpt.llm.llm_creator.LLMCreator.create_llm"), patch(
+            "docsgpt.llm.handlers.handler_creator.LLMHandlerCreator.create_handler"
+        ):
+            return ClassicAgent(
+                endpoint="stream",
+                llm_name="openai",
+                model_id="gpt-4o",
+                api_key="k",
+                prompt="SYSTEM",
+                decoded_token={"sub": "u"},
+                tool_executor=MagicMock(),
+                retrieved_docs=docs,
+            )
+
+    def test_parent_text_in_prompt_not_child(self):
+        """entry['text'] == parent window → parent must appear in <content>."""
+        docs = [
+            {
+                "text": self.PARENT,
+                "matched_text": self.CHILD,
+                "filename": "aml.pdf",
+            }
+        ]
+        agent = self._agent_with_docs(docs)
+        messages = agent._build_messages("SYSTEM", "What is the deadline?")
+        user_turn = messages[-1]["content"]
+
+        assert self.PARENT in user_turn, "Parent window must appear in the user turn"
+        assert user_turn.count(self.CHILD) == 1, "The child must not be added as a separate passage"
+
+    def test_retrieved_parent_metadata_reaches_prompt(self):
+        """Parent-expanded retriever entries keep their metadata through prompting."""
+        sp = _processor()
+        expanded_doc = {
+            "text": self.PARENT,
+            "matched_text": self.CHILD,
+            "metadata": {"parent_text": self.PARENT},
+            "filename": "aml.pdf",
+        }
+        retriever = MagicMock()
+        retriever.search.return_value = [expanded_doc]
+        retriever.chunks = 2
+        retriever.doc_token_limit = 50000
+        with patch.object(sp, "create_retriever", return_value=retriever):
+            _, docs = sp.pre_fetch_docs("What is the deadline?")
+
+        agent = self._agent_with_docs(docs)
+        user_turn = agent._build_messages("SYSTEM", "What is the deadline?")[-1]["content"]
+        assert self.PARENT in user_turn
+        assert user_turn.count(self.CHILD) == 1
+
+    def test_matched_text_not_in_prompt(self):
+        """'matched_text' is for citation/source display only — not sent to LLM."""
+        docs = [
+            {
+                "text": self.PARENT,
+                "matched_text": self.CHILD,
+                "filename": "aml.pdf",
+            }
+        ]
+        agent = self._agent_with_docs(docs)
+        messages = agent._build_messages("SYSTEM", "What is the deadline?")
+        full_prompt = " ".join(
+            m["content"] if isinstance(m["content"], str) else ""
+            for m in messages
+        )
+        # The child is within the parent, but must not be added as a second passage.
+        assert full_prompt.count(self.CHILD) == 1

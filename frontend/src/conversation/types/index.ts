@@ -13,6 +13,22 @@ export type ToolCallsType = {
   /** Set on a refused call (``tool_not_allowed``, ``connection_required``). */
   error_type?: string;
   /**
+   * Client only: the user's decision on an approval, held until every other
+   * approval in the same turn is decided, since one resume settles them all.
+   */
+  local_decision?: {
+    decision: 'approved' | 'denied';
+    comment?: string;
+    /** Sent with the turn's other decisions; the request is still open. */
+    sent?: boolean;
+    /**
+     * Approve, don't ask again: the device learns the command once the
+     * server has taken the approval, not on the click, so an undone or
+     * refused one leaves nothing behind.
+     */
+    sticky?: boolean;
+  };
+  /**
    * A call its turn waited on that never ran: the user started a new message
    * instead of answering it, or the request expired. Its status is ``denied``.
    */

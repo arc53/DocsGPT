@@ -363,7 +363,6 @@ describe('SourceConfigModal first section, by kind', () => {
                 ? [{ id: 'team-conn', owner: 'team', ...connection }]
                 : [],
               loaded: true,
-              loading: false,
               failed: false,
               latestRequestId: null,
             },
