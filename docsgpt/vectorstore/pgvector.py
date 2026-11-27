@@ -8,7 +8,7 @@ from psycopg.types.json import Jsonb
 from docsgpt.core.settings import settings
 from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore import pgconn
-from docsgpt.vectorstore.base import BaseVectorStore
+from docsgpt.vectorstore.base import BaseVectorStore, StagedIndexIncomplete
 from docsgpt.vectorstore.document_class import Document
 
 # table name -> IVFFlat ``lists`` (None when the table has no such index)
@@ -654,6 +654,58 @@ class PGVectorStore(BaseVectorStore):
             total += deleted
             if deleted < size:
                 return total
+
+    def promote_staged(self, staging_id: str, expected: Optional[int] = None) -> int:
+        """Replace this source's chunks with the ones embedded under ``staging_id``, in one transaction.
+
+        The staged rows keep their ids, text, vectors and metadata (written
+        with this source's id already); only their ``source_id`` column moves.
+        A reader sees the old chunks or the new ones, never neither.
+
+        Args:
+            staging_id: The id the rebuild embedded under.
+            expected: How many chunks the rebuild embedded; a staging id
+                holding another number changes nothing.
+
+        Returns:
+            The number of chunks moved in.
+
+        Raises:
+            StagedIndexIncomplete: The staging id holds another number of chunks than ``expected``.
+            ValueError: ``staging_id`` is this source's own id.
+        """
+        staging_id = str(staging_id)
+        if staging_id == self._source_id:
+            raise ValueError("A staged index needs an id of its own")
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            if expected is not None:
+                cursor.execute(
+                    f"SELECT count(*) FROM {self._table_name} WHERE source_id = %s;", (staging_id,),
+                )
+                staged = int(cursor.fetchone()[0])
+                if staged != int(expected):
+                    raise StagedIndexIncomplete(
+                        f"staged index {staging_id} holds {staged} of {expected} chunks; the live one is kept"
+                    )
+            cursor.execute(f"DELETE FROM {self._table_name} WHERE source_id = %s;", (self._source_id,))
+            cursor.execute(
+                f"UPDATE {self._table_name} SET source_id = %s WHERE source_id = %s;",
+                (self._source_id, staging_id),
+            )
+            moved = cursor.rowcount
+            conn.commit()
+            return moved
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
+            raise
+        finally:
+            cursor.close()
 
     def save_local(self, *args, **kwargs):
         """No-op for PostgreSQL - data is already persisted"""

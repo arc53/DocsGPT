@@ -82,6 +82,7 @@ from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
 from docsgpt.vectorstore.index_lock import SourceBusy
 from docsgpt.vectorstore.vector_creator import VectorCreator
+from docsgpt.vectorstore.staged_rebuild import discard_staged_index
 from docsgpt.workspaces.context import Workspace, WorkspaceError
 from docsgpt.workspaces.principal import is_principal_id
 
@@ -891,6 +892,8 @@ def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = Non
                 embeddings_key=settings.EMBEDDINGS_KEY,
             )
             vectorstore.delete_index()
+            # And what a rebuild of it left under its staging id.
+            discard_staged_index(resolved_id)
         if "file_path" in doc and doc["file_path"]:
             file_path = doc["file_path"]
             if storage.is_directory(file_path):
