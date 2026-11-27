@@ -35,7 +35,7 @@ in the file (such as `DOCSGPT_IMAGE_TAG`); without it they fall back to their
 defaults. `docsgpt up` and the standalone file work the same way; see
 [Docker Deployment](/Deploying/Docker-Deploying).
 
-### Managed Postgres (Neon, RDS, Supabase, Cloud SQL)
+### Managed Postgres (Neon, RDS, Supabase, Cloud SQL, Prisma Postgres)
 
 Point `POSTGRES_URI` at the provider-given URI. The app applies the
 schema on first boot.
@@ -44,6 +44,16 @@ schema on first boot.
 export POSTGRES_URI="postgresql://user:pass@host/docsgpt?sslmode=require"
 uvicorn docsgpt.asgi:asgi_app --host 0.0.0.0 --port 7091
 ```
+
+The URI a provider gives you usually names a database that already exists
+(`postgres` on Prisma Postgres, for example). DocsGPT runs in it as is, so
+you only need to change the name if you want a separate `docsgpt` database.
+`AUTO_CREATE_DB` creates that database on a direct connection. Behind a
+connection pooler, check that it can: on Prisma Postgres the pooled host
+(`pooled.db.prisma.io`) answers a missing database with a generic connection
+error, so startup fails instead of creating it. Run the first boot, or
+`docsgpt migrate`, against the direct host (`db.prisma.io`) once; after that
+either host works.
 
 ### Bare-metal Postgres
 
