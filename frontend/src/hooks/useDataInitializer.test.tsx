@@ -19,9 +19,6 @@ vi.mock('../api/services/workspacesService', () => ({
 vi.mock('../preferences/chatPrompt', () => ({
   initChatPrompt: () => async () => undefined,
 }));
-vi.mock('../utils/providerUtils', () => ({
-  claimLegacySessionTokens: () => undefined,
-}));
 const connectors = vi.hoisted(() => ({
   enabled: false,
   teamLoads: [] as string[],

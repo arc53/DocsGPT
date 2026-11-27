@@ -30,8 +30,13 @@ import type { NowSnapshot } from './types';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
+// The day every test runs on: a Wednesday at noon, so the days around it
+// (tomorrow's sync, a monitor's span) stay in its Monday–Sunday week whatever
+// day the suite runs. On a real Sunday, tomorrow fell in the next week.
+const TODAY = new Date(2026, 9, 14, 12);
+
 const at = (dayOffset: number, hour: number) => {
-  const d = new Date();
+  const d = new Date(TODAY);
   d.setDate(d.getDate() + dayOffset);
   d.setHours(hour, 0, 0, 0);
   return d.toISOString();
@@ -54,14 +59,14 @@ const slot = (overrides: Partial<ScheduleEvent>): ScheduleEvent => ({
   ...overrides,
 });
 
-const sync = (dayOffset: number): SyncEvent => ({
+const sync = (dayOffset: number, hour = 3): SyncEvent => ({
   kind: 'sync',
   schedule_id: 'sync:daily',
   name: null,
   agent_id: null,
   agent_name: null,
   frequent: false,
-  at: at(dayOffset, 3),
+  at: at(dayOffset, hour),
   state: 'planned',
   frequency: 'daily',
   sources: [
@@ -94,7 +99,9 @@ const WINDOW: PlannedWindow = {
       state: 'failed',
       run_id: 'r9',
     }),
-    sync(1),
+    // Tomorrow, unless today is Sunday: the week view ends with it, so the
+    // sync goes late today instead.
+    new Date().getDay() === 0 ? sync(0, 23) : sync(1),
   ],
   monitors: [
     {
@@ -116,6 +123,7 @@ describe('Calendar page', () => {
   let container: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'], now: TODAY });
     activity.planned.mockReset().mockResolvedValue(WINDOW);
     schedules.getRun.mockReset().mockResolvedValue({
       run: {
@@ -136,6 +144,7 @@ describe('Calendar page', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    vi.useRealTimers();
   });
 
   // A test replaces the monitors store with `{ type: 'test/monitors' }`.

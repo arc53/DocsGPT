@@ -75,8 +75,6 @@ export type MoveToFolderModalProps = {
   onOpenChange: (open: boolean) => void;
   /** The kind of the items moved (and of the page): names the root row. */
   kind?: ItemKind;
-  /** @deprecated Use `kind`. */
-  type?: ItemKind;
   subject: MoveSubject;
   /** After the server moved it and the folder list reloaded. */
   onMoved?: (folderId: string | null) => void;
@@ -106,12 +104,11 @@ export default function MoveToFolderModal({
   open,
   onOpenChange,
   kind: kindProp,
-  type,
   subject,
   onMoved,
 }: MoveToFolderModalProps) {
   const { t } = useTranslation();
-  const kind = kindProp ?? type ?? 'agent';
+  const kind = kindProp ?? 'agent';
   const { isMobile } = useMediaQuery();
   const list = useSelector(selectFolderTree);
   const inTeam = useSelector(selectFoldersInTeam);

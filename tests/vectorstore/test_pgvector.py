@@ -542,7 +542,59 @@ class TestPGVectorPrecomputedQueryVector:
 
 
 @pytest.mark.unit
+class TestPGVectorStoreShortEmbeddings:
+    def test_a_short_embedding_answer_writes_nothing(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_emb.embed_documents.return_value = [[0.1, 0.2]]
+        with pytest.raises(ValueError, match="1 embeddings for 2 texts"):
+            store.add_texts(["a", "b"], [{}, {}])
+        mock_cursor.execute.assert_not_called()
+        mock_conn.commit.assert_not_called()
+
+
+@pytest.mark.unit
+class TestPGVectorStoreUpdateChunksMetadata:
+    def test_rewrites_metadata_only_in_one_transaction(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+        mock_cursor.rowcount = 2
+
+        with patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: ("jsonb", v)):
+            count = store.update_chunks_metadata({"4": {"source": "b.md"}, "7": {"source": "c.md"}, "x": {}})
+
+        assert count == 2
+        mock_cursor.executemany.assert_called_once()
+        sql, params = mock_cursor.executemany.call_args[0]
+        assert sql.strip().upper().startswith("UPDATE") and "embedding" not in sql.lower()
+        assert params == [
+            (("jsonb", {"source": "b.md", "source_id": "src1"}), 4, "src1"),
+            (("jsonb", {"source": "c.md", "source_id": "src1"}), 7, "src1"),
+        ]
+        mock_emb.embed_documents.assert_not_called()
+        mock_conn.commit.assert_called_once()
+
+    def test_an_error_rolls_back(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="src1")
+        mock_cursor.executemany.side_effect = RuntimeError("db down")
+        with patch("docsgpt.vectorstore.pgvector.Jsonb", side_effect=lambda v: v), pytest.raises(RuntimeError):
+            store.update_chunks_metadata({"4": {}})
+        mock_conn.rollback.assert_called_once()
+
+
+@pytest.mark.unit
 class TestPGVectorStoreUpdateChunk:
+    def test_clears_parent_metadata_in_one_source_scoped_update_without_embedding(self):
+        store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
+
+        updated = store.clear_parent_text(["42", "43"])
+
+        assert updated == [("42", "42"), ("43", "43")]
+        sql, params = mock_cursor.execute.call_args[0]
+        assert "metadata = metadata - 'parent_text'" in sql
+        assert "WHERE id = ANY(%s) AND source_id = %s" in sql
+        assert params == ([42, 43], "src1")
+        mock_emb.embed_documents.assert_not_called()
+        mock_conn.commit.assert_called_once()
+
     def test_updates_the_row_in_place(self):
         store, mock_conn, mock_cursor, mock_emb = _make_store(source_id="src1")
         mock_emb.embed_documents.return_value = [[0.4, 0.5]]
@@ -800,3 +852,77 @@ class TestChunkCountsBySource:
             assert pgvector.chunk_counts_by_source(connection_string="postgresql://x/y") == {"a": 3, "b": 1}
         sql = conn.cursor.return_value.__enter__.return_value.execute.call_args[0][0]
         assert "GROUP BY source_id" in sql
+
+
+@pytest.mark.unit
+class TestPGVectorPromoteStaged:
+    """A full rebuild embeds under a staging id and replaces the source's chunks in one transaction."""
+
+    def test_it_supports_staged_rebuilds(self):
+        from docsgpt.vectorstore.base import BaseVectorStore
+        from docsgpt.vectorstore.pgvector import PGVectorStore
+
+        assert PGVectorStore.supports_staged_rebuild() is True
+        assert BaseVectorStore.supports_staged_rebuild() is False
+
+    def test_swaps_the_staged_chunks_in_with_one_commit(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="live")
+        mock_cursor.fetchone.return_value = (3,)
+        mock_cursor.rowcount = 3
+
+        assert store.promote_staged("live:staging", expected=3) == 3
+
+        statements = [call.args for call in mock_cursor.execute.call_args_list]
+        assert "count(*)" in statements[0][0] and statements[0][1] == ("live:staging",)
+        assert statements[1][0].startswith("DELETE FROM documents WHERE source_id = %s")
+        assert statements[1][1] == ("live",)
+        assert statements[2][0].startswith("UPDATE documents SET source_id = %s WHERE source_id = %s")
+        assert statements[2][1] == ("live", "live:staging")
+        mock_conn.commit.assert_called_once()
+        mock_conn.rollback.assert_not_called()
+
+    def test_without_an_expected_count_nothing_is_counted(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="live")
+        mock_cursor.rowcount = 2
+
+        assert store.promote_staged("live:staging") == 2
+        assert [call.args[0].split()[0] for call in mock_cursor.execute.call_args_list] == ["DELETE", "UPDATE"]
+        mock_conn.commit.assert_called_once()
+
+    def test_a_short_staging_set_is_refused_and_the_live_chunks_kept(self):
+        from docsgpt.vectorstore.base import StagedIndexIncomplete
+
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="live")
+        mock_cursor.fetchone.return_value = (2,)
+
+        with pytest.raises(StagedIndexIncomplete, match="2 of 3"):
+            store.promote_staged("live:staging", expected=3)
+
+        assert len(mock_cursor.execute.call_args_list) == 1
+        mock_conn.rollback.assert_called_once()
+        mock_conn.commit.assert_not_called()
+
+    def test_a_failed_swap_rolls_back(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="live")
+        mock_cursor.fetchone.return_value = (3,)
+        mock_cursor.execute.side_effect = [None, None, RuntimeError("deadlock")]
+
+        with pytest.raises(RuntimeError, match="deadlock"):
+            store.promote_staged("live:staging", expected=3)
+
+        mock_conn.rollback.assert_called_once()
+        mock_conn.commit.assert_not_called()
+
+    def test_the_staging_id_is_never_the_live_one(self):
+        store, _, _, _ = _make_store(source_id="live")
+        with pytest.raises(ValueError):
+            store.promote_staged("live")
+
+    def test_a_failed_rollback_still_raises_the_swap_error(self):
+        store, mock_conn, mock_cursor, _ = _make_store(source_id="live")
+        mock_cursor.execute.side_effect = RuntimeError("connection lost")
+        mock_conn.rollback.side_effect = RuntimeError("already closed")
+
+        with pytest.raises(RuntimeError, match="connection lost"):
+            store.promote_staged("live:staging")
+        mock_cursor.close.assert_called_once()

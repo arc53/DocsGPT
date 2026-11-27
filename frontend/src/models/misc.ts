@@ -106,6 +106,9 @@ export type Doc = {
   website?: { hosts: string[]; pages: number } | null;
   // How many files the source's tree holds; null for a flat source.
   files?: number | null;
+  // Files a connector source's last sync couldn't read (download or parse);
+  // left out of its index until a sync reads them (sources API).
+  filesFailed?: number;
   // The caller's role and what it allows (sources API); gate UI with
   // `can(doc, action)` from utils/accessUtils.
   access?: 'owner' | 'editor' | 'viewer' | null;

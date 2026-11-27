@@ -45,7 +45,7 @@ import PageToolbar from '../components/PageToolbar';
 import RoleMeta, { showsRole } from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
-import { Alert, AlertDescription } from '../components/ui/alert';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
@@ -1473,6 +1473,24 @@ export default function Sources({
           <Alert variant="warning" role="note" className="mb-4">
             <AlertDescription>
               <p>{viewSyncPaused}</p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {documentToView.filesFailed ? (
+          <Alert variant="warning" role="note" className="mb-4">
+            <AlertDescription>
+              <p>
+                {t('settings.sources.filesFailed', {
+                  count: documentToView.filesFailed,
+                })}{' '}
+                {viewCanEdit && canSyncSource(documentToView) ? (
+                  <AlertAction
+                    onClick={() => void actions.syncNow(documentToView)}
+                  >
+                    {t('settings.sources.retryFailedFiles')}
+                  </AlertAction>
+                ) : null}
+              </p>
             </AlertDescription>
           </Alert>
         ) : null}

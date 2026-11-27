@@ -4,6 +4,7 @@ interface HeadProps {
   title?: string;
   description?: string;
   keywords?: string;
+  robots?: string;
   ogTitle?: string;
   ogDescription?: string;
   ogImage?: string;
@@ -17,6 +18,7 @@ export function Head({
   title,
   description,
   keywords,
+  robots,
   ogTitle,
   ogDescription,
   ogImage,
@@ -30,6 +32,7 @@ export function Head({
       {title && <title>{title}</title>}
       {description && <meta name="description" content={description} />}
       {keywords && <meta name="keywords" content={keywords} />}
+      {robots && <meta name="robots" content={robots} />}
 
       {/* Open Graph */}
       {ogTitle && <meta property="og:title" content={ogTitle} />}

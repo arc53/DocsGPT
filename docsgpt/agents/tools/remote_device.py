@@ -149,20 +149,6 @@ class RemoteDeviceTool(Tool):
             }
         }
 
-    def preview_requires_approval(self, action_name: str, params: dict) -> bool:
-        """Live approval decision for a specific invocation.
-
-        The tool_executor gate calls this for ``remote_device`` so the
-        decision considers the device's current ``approval_mode``, sticky
-        patterns, and the denylist — rather than trusting the static
-        ``user_tools.actions[].require_approval`` snapshot stored at pair
-        time. Returns ``True`` when a prompt is required.
-        """
-        requires_approval, _denylist_forced = self.preview_decision(
-            action_name, params,
-        )
-        return requires_approval
-
     def preview_decision(
         self, action_name: str, params: dict,
     ) -> tuple[bool, bool]:

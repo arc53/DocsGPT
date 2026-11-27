@@ -8,6 +8,7 @@ them; nothing here imports the app itself.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import shlex
 import shutil
@@ -76,6 +77,22 @@ def analytics_enabled(home: Path) -> bool:
         return True
 
 
+def api_address(host: str, port: int) -> str:
+    """Where the other children reach an API bound to ``host:port``; a wildcard bind answers on loopback.
+
+    An IPv6 wildcard maps to ``::1``: Windows IPv6 sockets refuse IPv4 connections by default.
+    """
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None  # a host name, or empty
+    if not host or (ip is not None and ip.is_unspecified):
+        host = "::1" if ip is not None and ip.version == 6 else "127.0.0.1"
+    if ":" in host:
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
+
+
 def _reloading_command(command: list[str], watched: Path) -> list[str]:
     """``command`` under watchfiles, restarted when a Python file under ``watched`` changes."""
     return [sys.executable, "-m", "watchfiles", "--filter", "python", shlex.join(command), str(watched)]
@@ -112,6 +129,12 @@ def plan(
     watching = watchfiles_available() if watching is None else watching
     package = checkout / "docsgpt"
     environment = {"DOCSGPT_HOME": os.environ.get("DOCSGPT_HOME") or str(checkout)}
+    # The worker posts indexes back to the API and the UI calls it; both default to port 7091, so a
+    # --port elsewhere left them talking to nothing. A value exported in the shell still wins.
+    address = api_address(args.host, args.port)
+    for key in ("WORKER_API_URL", "VITE_API_HOST"):
+        if not os.environ.get(key):
+            environment[key] = address
     children: list[Child] = []
 
     if getattr(args, "mock_llm", False):

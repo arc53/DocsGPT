@@ -1,10 +1,9 @@
 ---
 title: Realtime Events & Notifications
+sidebarTitle: 📡 Realtime Events
 description: Subscribe to DocsGPT's server-sent events channel for live notifications — ingestion progress, tool approvals, MCP OAuth completion — and reconnect to an in-flight chat answer.
-lastUpdated: 2026-11-02
+lastUpdated: 2026-11-18
 ---
-
-import { Callout } from 'nextra/components'
 
 # Realtime Events & Notifications
 
@@ -13,11 +12,11 @@ DocsGPT pushes realtime updates to the browser over **Server-Sent Events (SSE)**
 - **User events** — `GET /api/events`: a per-user notification stream (ingestion progress, tool approvals, MCP OAuth completion, …).
 - **Chat reconnect** — `GET /api/messages/<message_id>/events`: resume an answer stream that was interrupted mid-generation.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Both channels require Redis (already a DocsGPT dependency). The publisher can be turned off instance-wide with `ENABLE_SSE_PUSH=false`.
 </Callout>
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Adding an [MCP server that signs in with OAuth](/Tools/mcp-tools) needs `ENABLE_SSE_PUSH=true` (the default): the sign-in link and its result reach the web app only as `mcp.oauth.*` events. With the publisher off, the sign-in never starts in the browser.
 </Callout>
 
@@ -112,7 +111,7 @@ Send the sequence number of the last event you processed (the `id:` line of each
 
 It takes a session token, or a personal access token with `conversations:read` or `chat:run` and no resource restrictions. Only the owner of the message can read it (others get `404`), and the connection counts toward the same per-user cap: over `SSE_MAX_CONCURRENT_PER_USER` it returns **HTTP 429**.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev` and the Docker images do. Under `flask run`, `GET /api/events` and `GET /api/messages/<message_id>/events` return 404. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).
 </Callout>
 
@@ -131,6 +130,6 @@ Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`)
 | `EVENTS_REPLAY_BUDGET_WINDOW_SECONDS` | `60` | Replay budget window length. |
 | `MESSAGE_EVENTS_RETENTION_DAYS` | `14` | Retention for the chat-stream `message_events` journal. |
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Operators debugging delivery issues ("the toast never appeared", "the answer didn't reconnect") can follow the [SSE notifications runbook](/Deploying/Troubleshooting/sse-notifications).
 </Callout>

@@ -201,14 +201,12 @@ describe('ConnectWizard for a team', () => {
           enabled: true,
           catalog: [],
           connections: [],
-          loading: false,
           loaded: true,
           failed: false,
           teams: {
             t1: {
               catalog: [],
               connections,
-              loading: false,
               loaded: true,
               failed: false,
               latestRequestId: null,

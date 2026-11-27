@@ -1,17 +1,17 @@
 ---
 title: GraphRAG
+sidebarTitle: 🕸️ GraphRAG
 description: Build a knowledge graph from a source at ingest time and retrieve over it with Personalized PageRank. Covers requirements, enabling, configuration, and the graph view.
-lastUpdated: 2026-10-27
+lastUpdated: 2026-11-13
 ---
 
-import { Callout } from 'nextra/components'
 import Image from 'next/image'
 
 # GraphRAG
 
 GraphRAG augments classic vector retrieval with a **knowledge graph**. During ingestion DocsGPT uses an LLM to extract entities and the relationships between them from a source's chunks, and stores them as a graph alongside the vectors. At query time, a graph retriever uses Personalized PageRank (PPR) to walk that graph from the entities mentioned in your question, surfacing connected context that pure similarity search can miss — useful for multi-hop questions and queries that span related concepts.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 GraphRAG is **flag-gated** and currently **pgvector-only**. It is available only when both `GRAPHRAG_ENABLED=true` **and** `VECTOR_STORE=pgvector`. On any other vector store the enable action is rejected.
 </Callout>
 
@@ -21,7 +21,7 @@ GraphRAG is **flag-gated** and currently **pgvector-only**. It is available only
 - `GRAPHRAG_ENABLED=true` in your environment.
 - A model for extraction. Without an override, extraction uses the source owner's [task model](/Using/web-app#task-model) (see [Configuration](#configuration)).
 
-```env
+```dotenv
 GRAPHRAG_ENABLED=true
 VECTOR_STORE=pgvector
 ```
@@ -34,7 +34,7 @@ The graph tables live in the same pgvector database as your embeddings and are s
 2. **Extraction** runs over the source's chunks. For each chunk, the LLM extracts entities and relations, which are written into per-source graph tables. Extraction is durable and resumable via a checkpoint, so it survives restarts and re-runs from scratch each time you re-enable it.
 3. **Query.** Questions against the source are routed to the graph retriever, which runs Personalized PageRank from the query's entities to gather related context.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 If a source has no graph yet (extraction still running or failed), the graph retriever **falls back to classic vector retrieval** for that source — answers keep working, they just don't use the graph until it is ready.
 </Callout>
 
@@ -131,7 +131,7 @@ Per-source extraction knobs live under the source config's `graph` object and ov
 | `max_chunks` | `null` | Override the chunk cap; `null` falls back to `GRAPHRAG_MAX_CHUNKS_FOR_EXTRACTION`. |
 | `gleanings` | `0` | Extra extraction passes per chunk to catch entities missed on the first pass. Off by default (each pass costs additional LLM calls). |
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Graph extraction makes an LLM call per chunk (more if `gleanings > 0`), so it has a real token cost. The cost is attributed to token usage under a `graph_extraction` tag, and the `max_chunks` cap bounds it. A source runs one extraction at a time, so page changes made close together, or a page change during a full build, wait for each other and share the cap.
 </Callout>
 

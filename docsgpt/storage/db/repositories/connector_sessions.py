@@ -503,11 +503,7 @@ class ConnectorSessionsRepository:
         """Upsert by shallow-merging ``patch`` into ``session_data``.
 
         Writes ``server_url`` to the scalar column so downstream
-        ``get_by_user_and_server_url`` lookups can find the row. If
-        ``patch`` still carries a ``"server_url"`` key (legacy callers)
-        it is stripped before merging so the scalar column stays the
-        single source of truth and we don't duplicate it inside the
-        JSONB blob.
+        ``get_by_user_and_server_url`` lookups can find the row.
 
         Args:
             user_id: Owner of the session.
@@ -530,10 +526,6 @@ class ConnectorSessionsRepository:
             so MCP's per-URL rows and OAuth's single-row-per-user rows
             both upsert idempotently.
         """
-        # Defensively strip ``server_url`` from ``patch`` — the scalar
-        # column is authoritative now. Callers still pass it for
-        # backwards compatibility during the transition.
-        patch = {k: v for k, v in patch.items() if k != "server_url"}
         set_entries = {k: v for k, v in patch.items() if v is not None}
         drop_keys = [k for k, v in patch.items() if v is None]
 
@@ -579,15 +571,4 @@ class ConnectorSessionsRepository:
             sql += " AND server_url = :server_url"
             params["server_url"] = server_url
         result = self._conn.execute(text(sql), params)
-        return result.rowcount > 0
-
-    def delete_by_session_token(self, session_token: str, user_id: str) -> bool:
-        """Delete the session behind ``session_token`` only if ``user_id`` owns it."""
-        result = self._conn.execute(
-            text(
-                "DELETE FROM connector_sessions "
-                "WHERE session_token = :token AND user_id = :user_id"
-            ),
-            {"token": session_token, "user_id": user_id},
-        )
         return result.rowcount > 0

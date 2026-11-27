@@ -202,8 +202,7 @@ path = "docsgpt/version.py"
 # model catalogs, the seed config, alembic.ini and the migrations, plus the web
 # UI build under docsgpt/static (gitignored; scripts/build_frontend.sh makes
 # it, and `artifacts` admits it). Build inputs (Dockerfile, exported
-# requirements) and local runtime data stay out. The one-release `application`
-# import alias is checkout-only.
+# requirements) and local runtime data stay out.
 [tool.hatch.build.targets.wheel]
 packages = ["docsgpt"]
 artifacts = ["docsgpt/static/**"]
@@ -243,7 +242,7 @@ venvPath = "."
 venv = ".venv"
 extraPaths = ["."]
 typeCheckingMode = "standard"
-include = ["docsgpt", "application", "tests", "scripts"]
+include = ["docsgpt", "tests", "scripts"]
 exclude = [
   "**/__pycache__",
   "**/node_modules",

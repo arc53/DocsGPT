@@ -20,7 +20,6 @@ import { SettingRow } from '../components/ui/setting-row';
 import { Switch } from '../components/ui/switch';
 import { Doc } from '../models/misc';
 import {
-  selectChunks,
   selectPrompt,
   selectSelectedDocs,
   selectSourceDocs,
@@ -51,7 +50,6 @@ export const ShareConversationModal = ({
   const sourceDocs = useSelector(selectSourceDocs);
   const preSelectedDoc = useSelector(selectSelectedDocs);
   const selectedPrompt = useSelector(selectPrompt);
-  const selectedChunk = useSelector(selectChunks);
 
   // Only ingested sources (rows with an id) can be shared.
   const extractDocPaths = (docs: Doc[]) =>
@@ -80,12 +78,10 @@ export const ShareConversationModal = ({
     setError(null);
     const payload: {
       conversation_id: string;
-      chunks?: string;
       prompt_id?: string;
       source?: string;
     } = { conversation_id: conversationId };
     if (isPromptable) {
-      payload.chunks = selectedChunk;
       payload.prompt_id = selectedPrompt.id;
       sourcePath && (payload.source = sourcePath.value);
     }

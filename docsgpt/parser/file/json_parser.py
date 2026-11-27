@@ -1,3 +1,4 @@
+import codecs
 import json
 from typing import Any, Dict, List, Union
 from pathlib import Path
@@ -48,8 +49,8 @@ class JSONParser(BaseParser):
 
         Args:
             file (Path): Path to the .json file.
-            errors (str): Error handling policy. Unused: JSON is read as strict
-                UTF-8, and a file that is not valid UTF-8 is not valid JSON.
+            errors (str): Error handling policy. Unused because JSON uses strict UTF-8 decoding
+                unless a byte order mark selects UTF-16 or UTF-32.
 
         Returns:
             Union[str, List[str]]: Concatenated rows if ``concat_rows`` is
@@ -65,8 +66,14 @@ class JSONParser(BaseParser):
                 also re-failed on every retry instead of failing once.
         """
         try:
-            with open(file, "r", encoding="utf-8") as f:
-                data = json.load(f, **self._json_config)
+            raw = Path(file).read_bytes()
+            if raw.startswith((codecs.BOM_UTF32_BE, codecs.BOM_UTF32_LE)):
+                encoding = "utf-32"
+            elif raw.startswith((codecs.BOM_UTF16_BE, codecs.BOM_UTF16_LE)):
+                encoding = "utf-16"
+            else:
+                encoding = "utf-8-sig"
+            data = json.loads(raw.decode(encoding), **self._json_config)
         except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise DocumentParseError(
                 f"Failed to parse {Path(file).name}: not valid JSON ({exc})."

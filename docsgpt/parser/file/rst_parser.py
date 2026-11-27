@@ -262,7 +262,12 @@ class RstParser(BaseParser):
             for header, text in rst_tups:
                 chunks = self.chunk_by_token_count(text, max_tokens)
                 for idx, chunk in enumerate(chunks):
-                    chunked_tups.append((f"{header} - Chunk {idx + 1}", chunk))
+                    # Text with no section title keeps its None header: formatting
+                    # it would put the text "None - Chunk 1" into the document.
+                    label = (
+                        f"{header} - Chunk {idx + 1}" if header is not None else None
+                    )
+                    chunked_tups.append((label, chunk))
             return chunked_tups    
         return rst_tups
 

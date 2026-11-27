@@ -184,6 +184,8 @@ def _merge_trace_summaries(traces: list) -> dict:
                 totals[key] = totals.get(key, 0) + value
     if "retrieval_ms" in totals:
         totals["retrieval_ms"] = round(totals["retrieval_ms"], 1)
+    if "cost_usd" in totals:
+        totals["cost_usd"] = round(totals["cost_usd"], 6)
     return {
         "count": len(traces),
         "duration_ms": sum(int(t.get("duration_ms") or 0) for t in traces),

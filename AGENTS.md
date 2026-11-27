@@ -235,7 +235,7 @@ vale .
 - `tests/`: backend unit/integration tests and test-only Python dependencies.
 - `frontend/`: Vite + React + TypeScript application.
 - `frontend/src/`: main UI code, including `components`, `conversation`, `hooks`, `locale`, `settings`, `upload`, and Redux store wiring in `store.ts`.
-- `docs/`: separate documentation site built with Next.js/Nextra.
+- `docs/`: separate documentation site built with Next.js/Fumadocs.
 - `extensions/`: integrations and widgets — currently the Chatwoot webhook bridge and the React widget (published to npm as `docsgpt`). The Discord, Slack and Telegram bots live in their own repos (`arc53/discord-docsgpt-extension`, `arc53/slack-bot-docsgpt-extenstion`, `arc53/tg-bot-docsgpt-extenstion`); the old Chrome extension was removed and has no public successor.
 - `deployment/`: Docker Compose variants and Kubernetes manifests.
 
@@ -291,9 +291,8 @@ DocsGPT historically mixed three icon sources: `lucide-react`, inline SVG compon
    variants in this branch). The pattern is acceptable for existing call sites — don't
    bulk-migrate without a reason.
 
-Three pre-existing dark-variant pairs (`documentation`, `no-files`, `science-spark`) are
-hand-tuned multi-color illustrations, not pure inverts; they keep their `-dark` companion
-files until a per-illustration refactor.
+One pre-existing dark-variant pair (`no-files`) is a hand-tuned multi-color illustration,
+not a pure invert; it keeps its `-dark` companion file until a per-illustration refactor.
 
 ## PR readiness
 

@@ -43,7 +43,6 @@ CONNECTION_ADMIN_REQUIRED = "connection_admin_required"
 CONNECTION_PICKER_OWNER_ONLY = "connection_picker_owner_only"
 CONNECTION_PAUSED = "connection_paused"
 ACCOUNT_ALREADY_CONNECTED = "account_already_connected"
-CONNECT_PERSONAL_FIRST = "connect_personal_first"
 TEAM_CONNECTION_OUTSIDE = "team_connection_outside"
 #: The existing workspace code an Editor-level action answers below Editor.
 _ROLE_REQUIRED = "workspace_role_required"

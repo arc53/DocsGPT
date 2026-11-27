@@ -82,6 +82,7 @@ from docsgpt.storage.storage_creator import StorageCreator
 from docsgpt.utils import check_required_fields
 from docsgpt.vectorstore.index_lock import SourceBusy
 from docsgpt.vectorstore.vector_creator import VectorCreator
+from docsgpt.vectorstore.staged_rebuild import discard_staged_index
 from docsgpt.workspaces.context import Workspace, WorkspaceError
 from docsgpt.workspaces.principal import is_principal_id
 
@@ -288,6 +289,32 @@ def connection_sync_pauses(conn, rows: list, owner_id: str) -> dict:
                 "connection_id": connection_id,
             }
     return paused
+
+
+def _files_failed(row: dict) -> int:
+    """How many files a connector source's last sync could not read (``remote_data.failed_files``).
+
+    They are left out of its index; its next sync retries them.
+
+    Args:
+        row: A ``sources`` row.
+
+    Returns:
+        The count; 0 for a source with none, or no record of them.
+    """
+    remote_data = row.get("remote_data")
+    if isinstance(remote_data, str):
+        try:
+            remote_data = json.loads(remote_data)
+        except ValueError:
+            return 0
+    if not isinstance(remote_data, dict):
+        return 0
+    count = remote_data.get("files_failed")
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        return count
+    failed = remote_data.get("failed_files")
+    return len(failed) if isinstance(failed, list) else 0
 
 
 def _sync_paused(row: dict) -> Optional[dict]:
@@ -520,6 +547,8 @@ class CombinedJson(Resource):
                     # As in the paginated listing (SourcesRepository.list_for_user).
                     "ingestStatus": index.get("ingest_status"),
                     "sync_paused": sync_pauses.get(str(index["id"])) or _sync_paused(index),
+                    # Files the last sync could not read; the next sync retries them.
+                    "filesFailed": _files_failed(index),
                     # The caller's own filing: folder_id and its path, top-level folder first.
                     **filing.fields(index["id"]),
                     "created_by": created_by_payload(index, creators),
@@ -562,7 +591,9 @@ class PaginatedSources(Resource):
             "(the agents using it) and the caller's filing (``folder_id``, ``folder_path`` "
             "[{id, name}] from the top-level folder down) and ``sync_paused`` ({reason, since} while a team "
             "source's scheduled sync is skipped for want of a payer; {reason, until, left_team, connection_id} "
-            "while the team connection it reads through is paused; else null). ``kind_counts`` counts every "
+            "while the team connection it reads through is paused; else null), and ``filesFailed`` (how many "
+            "files a connector source's last sync could not read; its next sync retries them). ``kind_counts`` "
+            "counts every "
             "kind with the "
             "search and usage filters applied; ``usage_counts`` counts all/in_use/unused with the search "
             "and kind filters applied. Both follow ``origin``; ``origin_counts`` counts own/shared with the "
@@ -765,6 +796,8 @@ class PaginatedSources(Resource):
                     # A team source's sync skipped for want of a payer: its team connection's
                     # pause, derived now, else the scheduler's flag.
                     "sync_paused": sync_pauses.get(str(doc["id"])) or _sync_paused(doc),
+                    # Files the last sync could not read; the next sync retries them.
+                    "filesFailed": _files_failed(doc),
                     "used_by": used_by.get(str(doc["id"])) or empty_usage(),
                     **filing.fields(doc["id"]),
                     "created_by": created_by_payload(doc, creators),
@@ -859,6 +892,8 @@ def _delete_source_unlocked(owner: str, doc: dict, *, actor: Optional[str] = Non
                 embeddings_key=settings.EMBEDDINGS_KEY,
             )
             vectorstore.delete_index()
+            # And what a rebuild of it left under its staging id.
+            discard_staged_index(resolved_id)
         if "file_path" in doc and doc["file_path"]:
             file_path = doc["file_path"]
             if storage.is_directory(file_path):

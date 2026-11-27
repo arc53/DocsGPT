@@ -353,5 +353,4 @@ export const selectDate = (state: RootState) => state.sharedConversation.date;
 
 type RootState = ReturnType<typeof store.getState>;
 
-sharedConversationSlice;
 export default sharedConversationSlice.reducer;

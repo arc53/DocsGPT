@@ -156,30 +156,6 @@ const devicesService = {
     return (await json(r)) as { pattern: string };
   },
 
-  listAutoApprovePatterns: async (
-    id: string,
-    token: string | null,
-  ): Promise<{ patterns: string[] }> => {
-    const r = await apiClient.get(
-      endpoints.USER.DEVICE_AUTO_APPROVE(id),
-      token,
-    );
-    return (await json(r)) as { patterns: string[] };
-  },
-
-  removeAutoApprovePattern: async (
-    id: string,
-    pattern: string,
-    token: string | null,
-  ): Promise<{ success: boolean }> => {
-    const r = await apiClient.delete(
-      endpoints.USER.DEVICE_AUTO_APPROVE(id),
-      token,
-      { pattern },
-    );
-    return (await json(r)) as { success: boolean };
-  },
-
   listAudit: async (
     id: string,
     token: string | null,

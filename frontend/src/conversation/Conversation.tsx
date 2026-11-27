@@ -49,7 +49,7 @@ import {
   resumeQuestion,
   selectQueries,
   selectStatus,
-  submitToolActions,
+  decideToolCall,
   updateQuery,
 } from './conversationSlice';
 import { getSendReadiness } from '../components/message-input/armedSend';
@@ -236,11 +236,8 @@ export default function Conversation() {
 
   const handleToolAction = useCallback(
     (callId: string, decision: 'approved' | 'denied', comment?: string) => {
-      dispatch(
-        submitToolActions({
-          toolActions: [{ call_id: callId, decision, comment }],
-        }),
-      );
+      // Held until the turn's other approvals are decided, then sent together.
+      void dispatch(decideToolCall({ callId, decision, comment }));
     },
     [dispatch],
   );
