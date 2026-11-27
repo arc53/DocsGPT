@@ -16,7 +16,8 @@ The record is a manifest kept in ``sources.remote_files``. A connector
 manifest is keyed by the provider's file id (``kind: "connector"``); a remote
 loader's by the file's path, with a hash of its content (``kind: "content"``).
 Both carry the settings key they were built under, so a change of chunking
-settings, or of the ingest version, makes the next sync a full one.
+settings, or of the ingest version, makes the next sync a full one; a change
+of retrieval settings doesn't (:func:`settings_key`).
 
 The chunk edits here are shared by the upload re-ingest
 (``reingest_source_worker``) and the connector and remote syncs.
@@ -44,11 +45,48 @@ TRANSIENT = "transient"
 PERMANENT = "permanent"
 
 
-def settings_key(config: Any, ingest_version: int, embeddings: Optional[str] = None) -> str:
-    """A key that changes whenever a source's processing settings or the ingest version do.
+def _config_object(config: Any) -> Any:
+    """A source's config as stored (a dict), its JSON read; text that isn't JSON is returned as it is."""
+    if isinstance(config, str):
+        try:
+            return json.loads(config)
+        except ValueError:
+            pass
+    return config
 
-    ``retrieval.show_links`` is left out: it only decides what a search
-    returns, not what is ingested.
+
+def ingest_settings(config: Any) -> Any:
+    """The parts of a source's config that decide what an ingest writes to its index.
+
+    Only ``kind`` and ``chunking``, read the way ingest reads them
+    (``SourceConfig.parse``), so a config that spells out the defaults and an
+    empty one agree. ``retrieval`` is left out: it only decides what a search
+    returns and takes effect live. So is ``graph``: a graph is carried over by
+    chunk content after every sync, full or incremental, so its extraction
+    settings never change what a sync stores. Add a field here when an ingest
+    starts reading it.
+
+    Args:
+        config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+
+    Returns:
+        ``{"kind", "chunking"}``; text that isn't JSON is returned as it is,
+        so it still keys apart from any other.
+    """
+    from docsgpt.storage.db.source_config import SourceConfig
+
+    config = _config_object(config)
+    if isinstance(config, str):
+        return config
+    parsed = SourceConfig.parse(config if isinstance(config, dict) else None)
+    return {"kind": parsed.kind, "chunking": parsed.chunking.model_dump()}
+
+
+def settings_key(config: Any, ingest_version: int, embeddings: Optional[str] = None) -> str:
+    """A key that changes whenever what a source's ingest writes, or the ingest version, does.
+
+    It hashes :func:`ingest_settings`, so editing retrieval settings (which
+    take effect live) keeps a source's manifest and its next sync incremental.
 
     Args:
         config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
@@ -59,11 +97,31 @@ def settings_key(config: Any, ingest_version: int, embeddings: Optional[str] = N
     Returns:
         A hex digest.
     """
-    if isinstance(config, str):
-        try:
-            config = json.loads(config)
-        except ValueError:
-            pass
+    payload = json.dumps(
+        {"ingest": ingest_settings(config), "version": ingest_version, "embeddings": embeddings},
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def legacy_settings_key(config: Any, ingest_version: int, embeddings: Optional[str] = None) -> str:
+    """The key manifests were stored under before :func:`settings_key` left retrieval out.
+
+    It hashed the whole config less ``retrieval.show_links``. A manifest under
+    it still matches while the config is the one it was built with, so the
+    change of key doesn't make every source's next sync a full one; that sync
+    stores the manifest again under the current key.
+
+    Args:
+        config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+        ingest_version: The loader family's ingest version.
+        embeddings: The embedding model the index is built with.
+
+    Returns:
+        A hex digest.
+    """
+    config = _config_object(config)
     if isinstance(config, dict) and isinstance(config.get("retrieval"), dict):
         retrieval = {k: v for k, v in config["retrieval"].items() if k != "show_links"}
         config = {**config, "retrieval": retrieval}
@@ -71,6 +129,23 @@ def settings_key(config: Any, ingest_version: int, embeddings: Optional[str] = N
         {"config": config or {}, "version": ingest_version, "embeddings": embeddings}, sort_keys=True, default=str,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def settings_keys(config: Any, ingest_version: int, embeddings: Optional[str] = None) -> Tuple[str, str]:
+    """The keys a stored manifest may carry for this config: the current one, then the legacy one.
+
+    Args:
+        config: The source's ``SourceConfig`` dict (or its JSON), or ``None``.
+        ingest_version: The loader family's ingest version.
+        embeddings: The embedding model the index is built with.
+
+    Returns:
+        ``(settings_key, legacy_settings_key)``; a new manifest is built under the first.
+    """
+    return (
+        settings_key(config, ingest_version, embeddings),
+        legacy_settings_key(config, ingest_version, embeddings),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -228,26 +303,48 @@ def record_failures(
 # ---------------------------------------------------------------------------
 
 
-def load_manifest(raw: Any, kind: str, key: str) -> Optional[Dict[str, Dict[str, Any]]]:
-    """The files of a stored manifest, or ``None`` when it can't be used.
-
-    Args:
-        raw: ``sources.remote_files`` (a dict, its JSON, or ``None``).
-        kind: ``connector`` or ``content``.
-        key: The source's current :func:`settings_key`; a manifest built under
-            another one is not used, so the sync rebuilds the index.
-
-    Returns:
-        ``{file key: record}``, or ``None``.
-    """
+def _manifest_object(raw: Any) -> Optional[Dict[str, Any]]:
+    """A stored manifest as a dict, its JSON read; ``None`` for anything else."""
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except ValueError:
             return None
-    if not isinstance(raw, dict):
+    return raw if isinstance(raw, dict) else None
+
+
+def manifest_settings(raw: Any) -> Optional[str]:
+    """The settings key a stored manifest was built under, or ``None`` when it names none.
+
+    Args:
+        raw: ``sources.remote_files`` (a dict, its JSON, or ``None``).
+    """
+    raw = _manifest_object(raw)
+    key = raw.get("settings") if raw is not None else None
+    return key if isinstance(key, str) else None
+
+
+def load_manifest(raw: Any, kind: str, key: Any) -> Optional[Dict[str, Dict[str, Any]]]:
+    """The files of a stored manifest, or ``None`` when it can't be used.
+
+    Args:
+        raw: ``sources.remote_files`` (a dict, its JSON, or ``None``).
+        kind: ``connector`` or ``content``.
+        key: The source's current :func:`settings_key`, or several keys any of
+            which is accepted (:func:`settings_keys`); a manifest built under
+            another one is not used, so the sync rebuilds the index.
+
+    Returns:
+        ``{file key: record}``, or ``None``.
+    """
+    raw = _manifest_object(raw)
+    if raw is None:
         return None
-    if raw.get("format") != MANIFEST_FORMAT or raw.get("kind") != kind or raw.get("settings") != key:
+    accepted = {key} if isinstance(key, str) else set(key)
+    settings = raw.get("settings")
+    if raw.get("format") != MANIFEST_FORMAT or raw.get("kind") != kind or not isinstance(settings, str):
+        return None
+    if settings not in accepted:
         return None
     files = raw.get("files")
     if not isinstance(files, dict):

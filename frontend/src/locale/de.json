@@ -1667,6 +1667,7 @@
     },
     "toolApproval": {
       "approve": "Genehmigen",
+      "approveAll": "Alle genehmigen ({{formatted}})",
       "approveAlways": "Genehmigen, nicht mehr fragen",
       "connect": "{{name}} verbinden",
       "connectTitle": "Dieses Werkzeug braucht dein {{name}}-Konto.",
@@ -1685,9 +1686,13 @@
       "skip": "Überspringen",
       "state": {
         "approval": "Freigabe nötig",
+        "approved": "Genehmigt",
+        "denied": "Abgelehnt",
         "notConnected": "Nicht verbunden"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "Rückgängig",
+      "waitingForOthers": "Wird gesendet, sobald über die anderen Anfragen dieser Antwort entschieden ist."
     },
     "toolChip": {
       "accessingMemory": "Auf Gedächtnis zugegriffen",

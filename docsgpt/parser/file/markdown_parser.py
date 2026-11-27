@@ -5,7 +5,7 @@ Contains parser for md files.
 """
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from docsgpt.parser.file.base_parser import BaseParser
 from docsgpt.parser.tokenization import count_tokens_windowed
@@ -123,6 +123,9 @@ class MarkdownParser(BaseParser):
                 # advances: a body after a header chain belongs to the last one.
                 if current_header is not None and current_text:
                     markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
+                elif current_header is None and current_text.strip():
+                    # Text before the first heading is a section of its own, without a header.
+                    markdown_tups = self.tups_chunk_append(markdown_tups, None, current_text)
 
                 current_header = line
                 current_text = ""
@@ -131,9 +134,8 @@ class MarkdownParser(BaseParser):
         markdown_tups = self.tups_chunk_append(markdown_tups, current_header, current_text)
 
         if current_header is not None:
-            # pass linting, assert keys are defined
             markdown_tups = [
-                (re.sub(r"#", "", cast(str, key)).strip(), _strip_html(value))
+                (None if key is None else re.sub(r"#", "", key).strip(), _strip_html(value))
                 for key, value in markdown_tups
             ]
         else:

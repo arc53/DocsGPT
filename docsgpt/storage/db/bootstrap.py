@@ -442,9 +442,9 @@ def _is_missing_database(exc: Exception) -> bool:
 def _run_migrations(log: logging.Logger) -> None:
     """Run ``alembic upgrade head`` against ``POSTGRES_URI``.
 
-    Alembic serializes concurrent workers via its ``alembic_version``
-    table, so no extra application-level locking is needed. Failures are
-    logged and re-raised so the app fails fast.
+    Processes that boot together are serialised by an advisory lock in
+    ``alembic/env.py``; the ones that wait find the schema at head. Failures
+    are logged and re-raised so the app fails fast.
     """
     from pathlib import Path
 

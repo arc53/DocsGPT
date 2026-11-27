@@ -24,6 +24,7 @@ import {
   quotaErrorParams,
 } from './quotaError';
 import { ToolCallsType } from './types';
+import { CONNECTION_LOST } from './curatedError';
 
 /**
  * Mirrors the backend's ``_SEQUENCE_NO_RE`` (application/api/answer/
@@ -734,6 +735,7 @@ export function handleSubmitToolActions(
               type: 'error',
               error:
                 'Connection lost. The tool response could not be resumed; please try again.',
+              code: CONNECTION_LOST,
             }),
           );
         }

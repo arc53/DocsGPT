@@ -2,7 +2,7 @@
 title: Google Drive Connector
 sidebarTitle: 🔗 Google Drive
 description: Connect your Google Drive as an external knowledge base to upload and process files directly from your Google Drive account.
-lastUpdated: 2026-10-24
+lastUpdated: 2026-11-27
 ---
 
 # Google Drive Connector
@@ -123,7 +123,7 @@ A scheduled sync, or **Sync now**, lists the selection from Drive without downlo
 
 A file that could not be downloaded or read is recorded, and the source says how many there are, with **Try again now**. A new file stays out of the index until it can be read; an edited file usually keeps its earlier content in the index, so search can still return the older version. Later syncs try only those files again. A failure that can pass, such as a rate limit, a timeout or a sharing change, is tried until it has failed three times in all for that version of the file, then again once the file is edited. A file DocsGPT can never read as it is, such as a Google Doc over the export limit or a corrupt file, waits for its next edit or for a change of the OCR or parser settings. **Try again now** retries every recorded file at once.
 
-Changing the source's chunking settings makes the next sync process the whole selection once. So does a source's first sync after an upgrade from a version without this record.
+Changing the source's chunking settings makes the next sync process the whole selection once. So does a source's first sync after an upgrade from a version without this record. Changing its retrieval settings doesn't: they apply on the next question. While a sync processes the whole selection, the source keeps answering from its previous index on pgvector; see [What a sync re-embeds](/Sources/adding-knowledge#what-a-sync-re-embeds).
 
 ## Team accounts
 

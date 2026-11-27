@@ -2,7 +2,7 @@
 title: Setting Up a Development Environment
 sidebarTitle: 🛠️ Development Environment
 description: "Set up a DocsGPT development environment: Postgres and Redis, the backend API and Celery worker, the Vite frontend, the docsgpt dev loop and troubleshooting."
-lastUpdated: 2026-11-10
+lastUpdated: 2026-11-25
 ---
 
 # Setting Up a Development Environment
@@ -336,6 +336,11 @@ first as long as it gets its own port:
 docsgpt dev --port 7092                      # a second checkout, second terminal
 docsgpt up --native --dir ~/.docsgpt/review --port 7092   # or a second installed copy
 ```
+
+`docsgpt dev` points its worker (`WORKER_API_URL`) and the UI (`VITE_API_HOST`) at the port you give it,
+unless you exported either in your shell. Give the second checkout its own Redis databases as well
+(`CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `CACHE_REDIS_URL`): two workers on one broker take each
+other's tasks.
 
 A native install in another directory gets its own service names, so the two never write over each
 other's units. `docsgpt status --dir ~/.docsgpt/review` reports on that one alone.

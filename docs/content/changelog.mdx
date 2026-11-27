@@ -1,7 +1,7 @@
 ---
 title: 'Changelog'
 description: What changed in each DocsGPT release, with links to the upgrade steps an existing deployment needs.
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-24
 ---
 
 # Changelog
@@ -10,6 +10,105 @@ The notable changes in each release. Every release on GitHub also carries
 [auto-generated notes](https://github.com/arc53/DocsGPT/releases) listing every merged pull
 request, and [Upgrading](/upgrading) covers the steps an existing deployment has to take.
 Entries start at 0.17.0; see GitHub for earlier releases.
+
+## 1.2.0
+
+<Callout type="warning">
+  **Upgrade actions.** Read [Upgrading to 1.2.0](/upgrading#upgrading-to-120) before you upgrade:
+
+  - The `application` import alias is removed. Custom entry points must use `docsgpt`
+    (`celery -A docsgpt.app.celery`, `uvicorn docsgpt.asgi:asgi_app`). Workers no longer accept the
+    task names from before 0.20.0.
+  - Chats without an agent use each source's own chunk count; the web app no longer sends a hidden
+    `chunks` value.
+  - Migrations `0058` to `0068` run on start.
+</Callout>
+
+### Workspaces
+
+- **Personal and team workspaces** organise agents, knowledge, tools and prompts in shared folders,
+  with role-based access, transfers between workspaces, controlled sharing between teams, usage
+  attributed to the workspace, and team connections and custom models. See
+  [Team workspaces](/Using/team-workspaces).
+- Tools, Knowledge, Prompts and Connectors share one look.
+
+### Agents and chat
+
+- **Draft with DocsGPT** builds and improves agents, prompts and Insights topics from a description,
+  asks clarifying questions in chat, and proposes knowledge folders. Start it from the New agent
+  modal. See [Draft with DocsGPT](/Agents/draft-with-docsgpt).
+- Advanced agent settings, prompt presets and conversation starters.
+- Tool approvals for one turn are sent together, with an **Approve all** button.
+- MCP Apps views render inline in the chat. See [MCP Apps](/Tools/mcp-tools#mcp-apps).
+- Long agent runs are saved in bounded continuation rounds. A woken background turn can fix and
+  re-run a script that crashed on its own bug, once, and a finished job's files show under the reply
+  that reports it.
+- Each model takes its own `max_output_tokens`. A reply the cap ends before its answer, or a
+  reasoning stream that never starts one, hands off to the fallback model.
+- Mistral's streamed thinking is shown, and parent-child chunks send their parent text to the model.
+- Context compression no longer adds a summary message to the chat and keeps the compressing turn's
+  answer.
+- A trace shows its total LLM cost.
+- The chat no longer jumps on open, at stream end or on late resizes.
+
+### Workflows
+
+- A **Loop** node runs a body once per list item. See [Loop Node](/Agents/nodes#loop-node).
+- A node retries on transient model and sandbox failures. See
+  [Retrying a failed node](/Agents/nodes#retrying-a-failed-node).
+- Agent and code nodes get line-numbered document text, stream events stay small with full step
+  values on request, and workflow steps show in the chat.
+- A run that hits the step limit fails instead of completing, and scheduled runs report their
+  agent nodes' tokens.
+
+### Sources
+
+- A sync re-embeds only what changed, retries failed files on their own, rides out OCR rate limits
+  and reuses parsed text. A source can also sync from a manifest, uploading only what changed. See
+  [Sync only the files that changed](/Sources/adding-knowledge#sync-only-the-files-that-changed).
+- Long ingests resume after a restart, deduplicate files, cap sizes, clean up orphans and expose a
+  queue gauge.
+- Connector ingests and syncs report lost files and rejected sign-ins instead of success. GitHub
+  reads a repository in one tarball request and reports rate limits instead of skipping files.
+  SharePoint keeps its Graph token fresh for the whole download.
+- Graph extraction calls are no longer chained, and the graph carries over on sync.
+- Parsing: Markdown, RST and CSV are read as UTF-8, CSV uses the separator it was written with,
+  rows under a rowspan stay in their own columns, tabular headers repeat by row position, HTML no
+  longer cuts sentences into lines, Markdown keeps headers, code blocks and word boundaries it used
+  to lose, malformed JSON fails only that file, and chunking large documents uses bounded memory.
+
+### Schedules
+
+- The owner is notified when a recurring schedule pauses itself. A failed **Run now** no longer
+  counts toward auto-pause, a run the agent says it can't do is recorded as failed, and one-time
+  tasks resolve daylight-saving offsets.
+- The beat scheduler keeps running when its Redis lock expires, its six-minute gaps are closed, and a
+  task kombu lost is resent.
+
+### API and integrations
+
+- The personal access token agent tool gets an action for every endpoint its token can call, and a
+  token can read a workflow run's status, final state and artifacts.
+- Agent API keys can be restricted to allowed origins.
+- A `/v1` tool-loop resume can add new attachments.
+- MCP connector presets for Canva, Cloudflare, Supabase and Twelve Data.
+
+### Security
+
+- `SAFE_URL_ALLOWED_HOSTS` lets an operator allow private-network hosts. See
+  [Security](/Deploying/Security).
+- The real client IP is recorded behind proxies and Cloudflare.
+- The pinned HTTP session no longer honours environment proxies.
+- Release assets carry signed SLSA provenance (see `SECURITY.md`). Workflows pin actions, container
+  images and installs by hash, and the backend is fuzzed with ClusterFuzzLite.
+
+### Fixes
+
+- A device pairing wait stops when the code expires.
+- MCP no longer retries authentication on errors that are not about authentication.
+- `str_replace` substitutes the new string literally.
+- The ntfy token stays with the server its owner set up.
+- A published agent can be saved with 0 chunks, and a draft without a description.
 
 ## 1.1.0
 

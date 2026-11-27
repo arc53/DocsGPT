@@ -711,6 +711,8 @@ class TestScheduledSync:
         assert kwargs["operation_mode"] == "sync"
         assert kwargs["folder_ids"] == ["f"] and kwargs["recursive"] is False
         assert "session_token" not in kwargs
+        # A scheduled sync of a busy source is left to the next schedule, not waited for.
+        assert kwargs["lock_wait_seconds"] == 0 and kwargs["notify_skip"] is False
 
     @pytest.mark.parametrize("reason", ["busy", "gone", "wiki"])
     def test_a_skipped_sync_is_reported_as_skipped(self, pg_conn, reason):

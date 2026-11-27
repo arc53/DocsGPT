@@ -596,6 +596,141 @@ def test_update_clears_models_and_resets_prompt(pg_conn):
     assert updated["prompt_id"] is None  # reset to default
 
 
+def _agent_with_prompt(conn, user, name="Sys", content="Be terse", **kwargs):
+    prompt = PromptsRepository(conn).create(user, name, content)
+    agent = _make_agent(conn, user, prompt_id=str(prompt["id"]), **kwargs)
+    return agent, prompt, ensure_agent_slug(conn, agent, user)
+
+
+def _prompt_doc(slug, name, content):
+    return {
+        "apiVersion": API_VERSION,
+        "kind": "Agent",
+        "metadata": {"slug": slug},
+        "spec": {"name": "Bot", "retriever": "classic", "prompt": {"name": name, "content": content}},
+    }
+
+
+def test_an_edited_prompt_updates_the_agent_s_prompt_in_place(pg_conn):
+    """Re-applying a file with new prompt text edits the agent's prompt rather than adding a copy."""
+    user = "u_prompt_edit"
+    agent, prompt, slug = _agent_with_prompt(pg_conn, user)
+
+    assert plan_import(pg_conn, user, _prompt_doc(slug, "Sys", "Be brief"))["prompt"]["status"] == "update"
+    apply_import(pg_conn, user, _prompt_doc(slug, "Sys", "Be brief"))
+
+    updated = AgentsRepository(pg_conn).get(str(agent["id"]), user)
+    assert str(updated["prompt_id"]) == str(prompt["id"])
+    prompts = PromptsRepository(pg_conn).list_for_user(user)
+    assert [(p["name"], p["content"]) for p in prompts] == [("Sys", "Be brief")]
+
+
+def test_a_prompt_another_agent_uses_is_left_alone(pg_conn):
+    """Editing it would change the other agent too, so the updated agent gets a new prompt."""
+    user = "u_prompt_shared"
+    agent, prompt, slug = _agent_with_prompt(pg_conn, user)
+    other = AgentsRepository(pg_conn).create(user, "Other", "published", prompt_id=str(prompt["id"]))
+
+    assert plan_import(pg_conn, user, _prompt_doc(slug, "Sys", "Be brief"))["prompt"]["status"] == "create"
+    apply_import(pg_conn, user, _prompt_doc(slug, "Sys", "Be brief"))
+
+    repo = PromptsRepository(pg_conn)
+    assert repo.get(str(prompt["id"]), user)["content"] == "Be terse"
+    assert str(AgentsRepository(pg_conn).get(str(other["id"]), user)["prompt_id"]) == str(prompt["id"])
+    moved = AgentsRepository(pg_conn).get(str(agent["id"]), user)["prompt_id"]
+    assert str(moved) != str(prompt["id"])
+    assert repo.get(str(moved), user)["content"] == "Be brief"
+
+
+def test_a_renamed_prompt_is_a_different_prompt(pg_conn):
+    """Only the same name is the same prompt; the old one stays for whoever picked it in chat."""
+    user = "u_prompt_rename"
+    agent, prompt, slug = _agent_with_prompt(pg_conn, user)
+
+    apply_import(pg_conn, user, _prompt_doc(slug, "Other name", "Be brief"))
+
+    assert PromptsRepository(pg_conn).get(str(prompt["id"]), user)["content"] == "Be terse"
+    assert str(AgentsRepository(pg_conn).get(str(agent["id"]), user)["prompt_id"]) != str(prompt["id"])
+
+
+def test_an_unchanged_prompt_is_reused(pg_conn):
+    user = "u_prompt_same"
+    agent, prompt, slug = _agent_with_prompt(pg_conn, user)
+
+    assert plan_import(pg_conn, user, _prompt_doc(slug, "Sys", "Be terse"))["prompt"]["status"] == "reuse"
+    apply_import(pg_conn, user, _prompt_doc(slug, "Sys", "Be terse"))
+
+    assert len(PromptsRepository(pg_conn).list_for_user(user)) == 1
+    assert str(AgentsRepository(pg_conn).get(str(agent["id"]), user)["prompt_id"]) == str(prompt["id"])
+
+
+@pytest.mark.fresh_db
+def test_no_agent_can_take_the_prompt_while_an_import_edits_it(pg_engine):
+    """The import locks the prompt before counting its agents; an agent pointed at it waits for the edit."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    user = "u_prompt_lock"
+    with pg_engine.begin() as conn:
+        agent, prompt, slug = _agent_with_prompt(conn, user)
+        other = AgentsRepository(conn).create(user, "Other", "published")
+
+    with pg_engine.connect() as importer, pg_engine.connect() as writer:
+        importer.begin()
+        apply_import(importer, user, _prompt_doc(slug, "Sys", "Be brief"))
+        writer.execute(text("SET lock_timeout = '200ms'"))
+        with pytest.raises(OperationalError, match="lock timeout"):
+            writer.execute(
+                text("UPDATE agents SET prompt_id = CAST(:p AS uuid) WHERE id = CAST(:a AS uuid)"),
+                {"p": str(prompt["id"]), "a": str(other["id"])},
+            )
+        writer.rollback()
+        importer.commit()
+
+    with pg_engine.connect() as conn:
+        assert PromptsRepository(conn).get(str(prompt["id"]), user)["content"] == "Be brief"
+
+
+@pytest.mark.fresh_db
+def test_a_prompt_an_import_reuses_cannot_be_edited_under_it(pg_engine, monkeypatch):
+    """Between finding a prompt and pointing its new agent at it, another import's edit of it waits."""
+    from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
+    from docsgpt.api.user.agents import portability
+
+    user = "u_prompt_reuse_lock"
+    with pg_engine.begin() as conn:
+        _agent, prompt, slug = _agent_with_prompt(conn, user)
+
+    apply_sources = portability._apply_sources
+    edits = []
+
+    def edit_meanwhile(*args, **kwargs):
+        if edits:  # the editor's own import passes through here too
+            return apply_sources(*args, **kwargs)
+        edits.append("started")
+        with pg_engine.connect() as editor:
+            editor.execute(text("SET lock_timeout = '200ms'"))
+            try:
+                apply_import(editor, user, _prompt_doc(slug, "Sys", "Be brief"))
+                editor.commit()
+                edits.append("committed")
+            except OperationalError:
+                editor.rollback()
+                edits.append("waited")
+        return apply_sources(*args, **kwargs)
+
+    monkeypatch.setattr(portability, "_apply_sources", edit_meanwhile)
+    with pg_engine.begin() as reuser:
+        created = apply_import(reuser, user, _prompt_doc("another-bot", "Sys", "Be terse"))
+
+    assert edits == ["started", "waited"]
+    with pg_engine.connect() as conn:
+        new_agent = AgentsRepository(conn).get(created["agent_id"], user)
+        assert PromptsRepository(conn).get(str(new_agent["prompt_id"]), user)["content"] == "Be terse"
+
+
 def test_tool_skipped_when_encryption_fails(pg_conn, monkeypatch):
     user = "u_encfail"
     fake_tool = Mock()

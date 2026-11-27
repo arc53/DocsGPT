@@ -23,6 +23,12 @@ class VectorCreator:
         return bool(vectorstore_class and vectorstore_class.supports_chunk_edits())
 
     @classmethod
+    def supports_staged_rebuild(cls, type: str) -> bool:
+        """Whether the ``VECTOR_STORE`` named ``type`` can swap a staged rebuild in at once; False when unknown."""
+        vectorstore_class = cls.vectorstores.get((type or "").lower())
+        return bool(vectorstore_class and vectorstore_class.supports_staged_rebuild())
+
+    @classmethod
     def create_vectorstore(cls, type, *args, **kwargs):
         vectorstore_class = cls.vectorstores.get(type.lower())
         if not vectorstore_class:
