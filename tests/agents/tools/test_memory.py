@@ -154,6 +154,10 @@ class TestPathValidation:
     def test_empty_path_returns_none(self, memory_tool):
         assert memory_tool._validate_path("") is None
 
+    @pytest.mark.parametrize("blank", [" ", "   ", "\t", "\n", " \r\n "])
+    def test_whitespace_only_path_returns_none(self, memory_tool, blank):
+        assert memory_tool._validate_path(blank) is None
+
     def test_double_dots_rejected(self, memory_tool):
         assert memory_tool._validate_path("/../../etc/passwd") is None
 
@@ -452,6 +456,19 @@ class TestDeleteAction:
     def test_delete_invalid_path(self, memory_tool):
         result = memory_tool.execute_action("delete", path="")
         assert "Error" in result
+
+    def test_delete_whitespace_only_path_keeps_files(self, memory_tool):
+        """A blank path is invalid: it must not be read as the root and delete everything."""
+        memory_tool.execute_action("create", path="/a.txt", file_text="alpha")
+        memory_tool.execute_action("create", path="/b.txt", file_text="beta")
+        assert memory_tool.execute_action("view", path="/a.txt") == "alpha"
+        assert memory_tool.execute_action("view", path="/b.txt") == "beta"
+
+        result = memory_tool.execute_action("delete", path="   ")
+
+        assert "Error" in result
+        assert memory_tool.execute_action("view", path="/a.txt") == "alpha"
+        assert memory_tool.execute_action("view", path="/b.txt") == "beta"
 
 
 # =====================================================================
