@@ -85,6 +85,7 @@ class TestDefaultModelMatrix:
             ("groq", "GROQ_API_KEY", "openai/gpt-oss-120b"),
             ("openrouter", "OPEN_ROUTER_API_KEY", "qwen/qwen3-coder:free"),
             ("novita", "NOVITA_API_KEY", "deepseek/deepseek-v4-pro"),
+            ("llmtr", "LLMTR_API_KEY", "qwen/qwen3.8-27b-free"),
         ],
     )
     def test_only_a_provider_specific_key(self, monkeypatch, provider, key, expected):

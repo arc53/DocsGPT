@@ -30,6 +30,7 @@ _PROVIDER_HOSTS = (
     ("groq.com", "groq"),
     ("openrouter.ai", "openrouter"),
     ("novita.ai", "novita"),
+    ("llmtr.com", "llmtr"),
     ("cohere.com", "cohere"),
     ("cohere.ai", "cohere"),
     ("together.xyz", "together_ai"),

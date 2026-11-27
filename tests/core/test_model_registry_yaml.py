@@ -57,6 +57,10 @@ EXPECTED_IDS = {
         "moonshotai/kimi-k2.6",
         "zai-org/glm-5",
     },
+    "llmtr": {
+        "qwen/qwen3.8-27b-free",
+        "minimax/minimax-m3.1-flash",
+    },
     "openai_compatible": {
         "deepseek-v4-flash",
         "deepseek-v4-pro",
@@ -88,6 +92,7 @@ def _make_settings(**overrides):
     s.GROQ_API_KEY = None
     s.OPEN_ROUTER_API_KEY = None
     s.NOVITA_API_KEY = None
+    s.LLMTR_API_KEY = None
     s.LLM_PROVIDER = ""
     s.LLM_NAME = None
     s.API_KEY = None
@@ -286,6 +291,13 @@ class TestRegistryPermutations:
         ids = {m.id for m in reg.get_all_models()}
         assert ids == EXPECTED_IDS["novita"] | EXPECTED_IDS["docsgpt"]
 
+    def test_llmtr_only(self):
+        s = _make_settings(LLMTR_API_KEY="l-test")
+        with patch("docsgpt.core.settings.settings", s):
+            reg = ModelRegistry()
+        ids = {m.id for m in reg.get_all_models()}
+        assert ids == EXPECTED_IDS["llmtr"] | EXPECTED_IDS["docsgpt"]
+
     def test_no_credentials_only_docsgpt(self):
         s = _make_settings()
         with patch("docsgpt.core.settings.settings", s):
@@ -306,6 +318,7 @@ class TestRegistryPermutations:
             GROQ_API_KEY="x",
             OPEN_ROUTER_API_KEY="x",
             NOVITA_API_KEY="x",
+            LLMTR_API_KEY="x",
             OPENAI_API_BASE="x",
         )
         with patch("docsgpt.core.settings.settings", s):

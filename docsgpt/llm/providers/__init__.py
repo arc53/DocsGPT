@@ -18,6 +18,7 @@ from docsgpt.llm.providers.groq import GroqProvider
 from docsgpt.llm.providers.novita import NovitaProvider
 from docsgpt.llm.providers.openai import OpenAIProvider
 from docsgpt.llm.providers.openai_compatible import OpenAICompatibleProvider
+from docsgpt.llm.providers.llmtr import LLMTRProvider
 from docsgpt.llm.providers.openrouter import OpenRouterProvider
 
 # Order here is the order the registry iterates providers (and therefore
@@ -34,6 +35,7 @@ ALL_PROVIDERS: List[Provider] = [
     GroqProvider(),
     OpenRouterProvider(),
     NovitaProvider(),
+    LLMTRProvider(),
 ]
 
 PROVIDERS_BY_NAME: Dict[str, Provider] = {p.name: p for p in ALL_PROVIDERS}

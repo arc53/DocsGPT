@@ -53,6 +53,7 @@ _CREDENTIAL_SETTINGS = (
     "GROQ_API_KEY",
     "OPEN_ROUTER_API_KEY",
     "NOVITA_API_KEY",
+    "LLMTR_API_KEY",
     "FALLBACK_LLM_API_KEY",
 )
 
@@ -166,6 +167,10 @@ def provider_endpoint(provider: str, settings) -> Optional[str]:
         from docsgpt.llm.novita import NOVITA_BASE_URL
 
         return NOVITA_BASE_URL
+    if provider == "llmtr":
+        from docsgpt.llm.llmtr import LLMTR_BASE_URL
+
+        return LLMTR_BASE_URL
     return None
 
 
