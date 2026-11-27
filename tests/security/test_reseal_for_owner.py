@@ -19,14 +19,16 @@ def _keys(monkeypatch):
 
 
 class TestV1:
-    def test_round_trip_to_a_team_and_back(self):
+    def test_a_v1_blob_comes_out_as_a_v2_envelope(self):
         blob = enc.encrypt_credentials({"api_key": "sk-1"}, "alice")
         moved = enc.reseal_for_owner(blob, "alice", TEAM)
-        assert not moved.startswith("v2:")  # the format stays what the reader expects
-        assert enc.decrypt_credentials(moved, TEAM) == {"api_key": "sk-1"}
-        assert enc.decrypt_credentials(moved, "alice") == {}
+        assert moved.startswith("v2:")
+        assert enc.decrypt_json(moved, TEAM) == {"api_key": "sk-1"}
+        with pytest.raises(enc.CredentialDecryptionError):
+            enc.decrypt_json(moved, "alice")
         back = enc.reseal_for_owner(moved, TEAM, "alice")
-        assert enc.decrypt_credentials(back, "alice") == {"api_key": "sk-1"}
+        assert back.startswith("v2:")
+        assert enc.decrypt_json(back, "alice") == {"api_key": "sk-1"}
 
     def test_a_blob_written_with_the_previous_key_is_rewritten_with_the_current(self, monkeypatch):
         from docsgpt.core.settings import settings
@@ -37,7 +39,8 @@ class TestV1:
         monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", "old-key")
         moved = enc.reseal_for_owner(blob, "alice", TEAM)
         monkeypatch.setattr(settings, "ENCRYPTION_SECRET_KEY_PREVIOUS", None)
-        assert enc.decrypt_credentials(moved, TEAM) == {"token": "t"}
+        assert moved.startswith("v2:")
+        assert enc.decrypt_json(moved, TEAM) == {"token": "t"}
 
     def test_wrong_old_owner_raises_and_never_returns_an_empty_blob(self):
         blob = enc.encrypt_credentials({"api_key": "sk-1"}, "alice")

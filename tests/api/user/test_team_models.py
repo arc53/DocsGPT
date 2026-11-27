@@ -18,7 +18,7 @@ from flask import Flask
 from sqlalchemy import text
 
 import docsgpt.api.user  # noqa: F401  (import order: avoids the tools/tasks cycle)
-from docsgpt.security.encryption import decrypt_credentials
+from docsgpt.security.encryption import decrypt_tool_credentials
 from docsgpt.storage.db.repositories.agents import AgentsRepository
 from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
 from docsgpt.storage.db.repositories.teams import TeamsRepository
@@ -141,8 +141,8 @@ class TestCreate:
         principal = principal_id(team)
         assert row["user_id"] == principal and row["created_by"] == user
         # The key is sealed for the team, not for the person who pasted it.
-        assert decrypt_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-new"
-        assert not decrypt_credentials(row["api_key_encrypted"], user)
+        assert decrypt_tool_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-new"
+        assert not decrypt_tool_credentials(row["api_key_encrypted"], user)
         assert body["owner"] == "team" and body["team_id"] == team and body["source"] == "team"
         assert body["created_by"] == {"user_id": user, "label": f"{user}@x.io"}
         assert "manage" in body["allowed_actions"] and body["base_url"] == _NEW["base_url"]
@@ -422,7 +422,7 @@ class TestOneModel:
 
         assert resp.status_code == 200
         row = _row(pg_conn, mid)
-        assert decrypt_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-rotated"
+        assert decrypt_tool_credentials(row["api_key_encrypted"], principal)["api_key"] == "sk-rotated"
         # The person who added it stays on record.
         assert row["created_by"] == "ana"
         invalidate.assert_called_once_with(principal)
@@ -551,7 +551,7 @@ class TestStoredKeyStaysWithItsHost:
         assert resp.status_code == 200
         row = _row(pg_conn, mid)
         assert row["base_url"] == "https://other.example.net/v1"
-        assert decrypt_credentials(row["api_key_encrypted"], principal_id(team))["api_key"] == "sk-other"
+        assert decrypt_tool_credentials(row["api_key_encrypted"], principal_id(team))["api_key"] == "sk-other"
 
     def test_a_new_path_on_the_same_host_keeps_the_key(self, app, pg_conn, team):
         from docsgpt.api.user.models.routes import UserModelResource
@@ -564,7 +564,7 @@ class TestStoredKeyStaysWithItsHost:
         assert resp.status_code == 200
         row = _row(pg_conn, mid)
         assert row["base_url"] == "https://llm.example.com/v2"
-        assert decrypt_credentials(row["api_key_encrypted"], principal_id(team))["api_key"] == "sk-team"
+        assert decrypt_tool_credentials(row["api_key_encrypted"], principal_id(team))["api_key"] == "sk-team"
 
 
 class TestPayloadTest:

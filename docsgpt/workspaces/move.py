@@ -1496,7 +1496,7 @@ class _Executor:
                     except connector_service.ConnectionUnavailable as err:
                         raise MoveError(409, "credentials_unavailable",
                                         "A server's saved key can't be read. Reconnect it, then move again.") from err
-                    config["encrypted_credentials"] = encryption.encrypt_credentials(credentials, self.new)
+                    config["encrypted_credentials"] = encryption.encrypt_tool_credentials(credentials, self.new)
                     if credentials and not config["encrypted_credentials"]:
                         raise MoveError(409, "credentials_unavailable", "A server's saved key can't be re-sealed.")
             connector_key = row.get("connector_key")

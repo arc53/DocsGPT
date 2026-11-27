@@ -18,11 +18,13 @@ from docsgpt.api.user.tools.routes import (
     _CREDENTIALS_FOR_NEW_SERVER,
     _MCP_CREDENTIAL_AUTH_TYPES,
     _mcp_origin_changed,
+    _STORED_SECRETS_UNREADABLE,
     check_oauth_mcp_owner_only,
     CODE_OAUTH_PERSONAL_ONLY,
     create_workspace,
     denied_response,
     personal_only_response,
+    StoredCredentialsUnreadable,
     transform_actions,
 )
 from docsgpt.cache import get_redis_instance
@@ -37,7 +39,11 @@ from docsgpt.connectors.team import (
 )
 from docsgpt.core.url_validation import SSRFError, validate_url
 from docsgpt.guardrails import tool_descriptions
-from docsgpt.security.encryption import decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import (
+    CredentialDecryptionError,
+    encrypt_tool_credentials,
+    load_tool_credentials,
+)
 from docsgpt.storage.db.repositories.connector_sessions import (
     ConnectorSessionsRepository,
 )
@@ -290,7 +296,14 @@ def _mcp_policy_error(config: dict):
     return None
 
 
-def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
+_MCP_REQUIRED_CREDENTIALS = {
+    "api_key": ("api_key",),
+    "bearer": ("bearer_token",),
+    "basic": ("username", "password"),
+}
+
+
+def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> tuple[dict, bool]:
     """The secrets a saved MCP tool authenticates with, for reuse on an edit.
 
     A legacy tool keeps them encrypted in its config; a connection-backed one
@@ -302,16 +315,21 @@ def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
         owner_id: The tool's owner.
 
     Returns:
-        The stored credentials, or ``{}`` when there are none to reuse.
+        ``(credentials, unreadable)``.  ``unreadable`` reports a stored blob no
+        available key opens, so a save that would keep a value from it can be
+        refused while a complete re-entry still replaces it.
     """
     from docsgpt.connectors import catalog, service
 
     existing_config = existing_doc.get("config") or {}
     if existing_config.get("encrypted_credentials"):
-        return decrypt_credentials(existing_config["encrypted_credentials"], owner_id)
+        try:
+            return load_tool_credentials(existing_config["encrypted_credentials"], owner_id), False
+        except CredentialDecryptionError:
+            return {}, True
     connection_id = existing_doc.get("connection_id")
     if not connection_id:
-        return {}
+        return {}, False
     with db_readonly() as conn:
         row = ConnectorSessionsRepository(conn).get_for_user(str(connection_id), owner_id)
     if (
@@ -319,11 +337,11 @@ def _stored_mcp_credentials(existing_doc: dict, owner_id: str) -> dict:
         or (row.get("auth_kind") or "") != "api_key"
         or catalog.base_url(row.get("server_url")) != catalog.base_url(existing_config.get("server_url"))
     ):
-        return {}
+        return {}, False
     try:
-        return service.get_credentials(row)
+        return service.get_credentials(row), False
     except service.ConnectionUnavailable:
-        return {}
+        return {}, False
 
 
 def _existing_mcp_context(tool_id, user, config):
@@ -346,6 +364,8 @@ def _existing_mcp_context(tool_id, user, config):
     Raises:
         AccessDenied: the caller can't see the tool (404), can't change its
             credentials (403), or isn't the owner of an OAuth server (403).
+        StoredCredentialsUnreadable: the stored blob cannot be opened and the
+            save would have to keep a secret from it.
         WorkspaceError: a new server in a team the caller isn't in (404) or is
             only a Viewer of (403).
     """
@@ -374,7 +394,11 @@ def _existing_mcp_context(tool_id, user, config):
             jsonify({"success": False, "message": _CREDENTIALS_FOR_NEW_SERVER}), 400
         )
     credentials = dict(auth_credentials)
-    stored = {} if moved else _stored_mcp_credentials(existing_doc, ra.owner_id)
+    stored, unreadable = ({}, False) if moved else _stored_mcp_credentials(existing_doc, ra.owner_id)
+    if unreadable and auth_type in _MCP_CREDENTIAL_AUTH_TYPES:
+        missing = [key for key in _MCP_REQUIRED_CREDENTIALS[auth_type] if not credentials.get(key)]
+        if missing:
+            raise StoredCredentialsUnreadable(_STORED_SECRETS_UNREADABLE)
     if stored:
         credentials = {**stored, **auth_credentials}
     return existing_doc, ra.owner_id, ra.access == "owner", moved, credentials
@@ -662,6 +686,8 @@ class TestMCPServerConfig(Resource):
             return denied_response(e)
         except (WorkspaceError, ConnectionDenied) as e:
             return e.response()
+        except StoredCredentialsUnreadable as e:
+            return make_response(jsonify({"success": False, "error": str(e), "message": str(e)}), 400)
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server test request: {e}")
             return _invalid_server_url_response(e)
@@ -829,7 +855,7 @@ class MCPServerSave(Resource):
             storage_config = config.copy()
 
             if merged_credentials:
-                storage_config["encrypted_credentials"] = encrypt_credentials(
+                storage_config["encrypted_credentials"] = encrypt_tool_credentials(
                     merged_credentials, owner_id
                 )
 
@@ -988,6 +1014,8 @@ class MCPServerSave(Resource):
             return e.response()
         except FolderError as e:
             return e.response()
+        except StoredCredentialsUnreadable as e:
+            return make_response(jsonify({"success": False, "error": str(e), "message": str(e)}), 400)
         except InvalidServerUrl as e:
             current_app.logger.warning(f"Invalid MCP server save request: {e}")
             return _invalid_server_url_response(e)
