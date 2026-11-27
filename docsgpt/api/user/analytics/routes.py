@@ -8,6 +8,7 @@ from flask_restx import fields, Namespace, Resource
 from sqlalchemy import Connection, text as _sql_text
 
 from docsgpt import decisions
+from docsgpt.activity.common import owner_team_sql
 from docsgpt.activity.flags import list_runs
 from docsgpt.activity.now import CHAT_FRESH_SECONDS
 from docsgpt.analytics import insights, schema as analytics_schema, topics as analytics_topics
@@ -183,6 +184,8 @@ def _merge_trace_summaries(traces: list) -> dict:
                 totals[key] = totals.get(key, 0) + value
     if "retrieval_ms" in totals:
         totals["retrieval_ms"] = round(totals["retrieval_ms"], 1)
+    if "cost_usd" in totals:
+        totals["cost_usd"] = round(totals["cost_usd"], 6)
     return {
         "count": len(traces),
         "duration_ms": sum(int(t.get("duration_ms") or 0) for t in traces),
@@ -1314,6 +1317,43 @@ _LOG_MESSAGE_ID = (
 _MAX_PASSTHROUGH_FILTERS = 8
 
 
+def _agent_team_sql(agent_id: str) -> str:
+    """SQL for the team (as text) owning the agent ``agent_id`` names; NULL for a person's agent or none."""
+    return f"(SELECT {owner_team_sql('lt_a.user_id')} FROM agents lt_a WHERE lt_a.id = {agent_id})"
+
+
+def _still_in_team_sql(team: str) -> str:
+    """SQL that holds when ``team`` (a team id as text, NULL for Personal) is still the ``:user_id`` caller's.
+
+    A Logs row of a team's chat, agent or workflow is the team's record: its
+    author stops reading it on leaving the team, as their team chats and
+    runs elsewhere, and reads it again if re-added.
+
+    Args:
+        team: A SQL text expression.
+
+    Returns:
+        str: A parenthesized boolean SQL expression.
+    """
+    return (
+        f"(({team}) IS NULL"
+        f" OR EXISTS (SELECT 1 FROM teams lt_t WHERE lt_t.id = CAST(({team}) AS uuid) AND lt_t.owner_id = :user_id)"
+        f" OR EXISTS (SELECT 1 FROM team_members lt_m WHERE lt_m.team_id = CAST(({team}) AS uuid)"
+        " AND lt_m.user_id = :user_id))"
+    )
+
+
+# The team of a chat log row: its conversation's, found through the stored
+# conversation id or, on older rows, through the message.
+_CHAT_LOG_TEAM = (
+    "COALESCE("
+    "(SELECT lt_c.team_id::text FROM conversations lt_c WHERE lt_c.id = "
+    "CASE WHEN l.data->>'conversation_id' ~* :uuid_re THEN CAST(l.data->>'conversation_id' AS uuid) END), "
+    "(SELECT lt_c.team_id::text FROM conversation_messages lt_fm JOIN conversations lt_c "
+    f"ON lt_c.id = lt_fm.conversation_id WHERE lt_fm.id = {_LOG_MESSAGE_ID}))"
+)
+
+
 class _BadLogFilter(Exception):
     """A Logs row filter with the wrong shape; ``message`` is user-facing."""
 
@@ -1759,25 +1799,41 @@ class GetUserLogs(Resource):
                     ]
                     trace_scope = "t.agent_id = CAST(:agent_pg_id AS uuid)"
                 else:
-                    chat_where = ["l.user_id = :user_id"]
+                    # The caller's own rows, less those of a team they have
+                    # left: its chats, its agents' errors, runs and searches,
+                    # and its workflows' runs.
+                    chat_where = ["l.user_id = :user_id", _still_in_team_sql(_CHAT_LOG_TEAM)]
+                    stack_team = _still_in_team_sql(_agent_team_sql("s.agent_id"))
                     webhook_where = [
                         "s.user_id = :user_id",
                         "COALESCE(s.endpoint, '') = 'webhook'",
                         webhook_dedupe,
+                        stack_team,
                     ]
                     system_where = [
                         "s.user_id = :user_id",
                         "s.level = 'error'",
                         "COALESCE(s.endpoint, '') NOT IN ('webhook', 'schedule')",
                         chat_failure_dedupe,
+                        stack_team,
                     ]
                     schedule_where = [
                         "r.user_id = :user_id",
                         f"r.status IN {_SCHEDULE_LOG_STATUSES}",
+                        _still_in_team_sql(
+                            "CASE WHEN r.agent_id IS NOT NULL THEN " + _agent_team_sql("r.agent_id")
+                            + " ELSE (SELECT lt_o.team_id::text FROM conversations lt_o"
+                            " WHERE lt_o.id = sc.origin_conversation_id) END"
+                        ),
                     ]
-                    running_chat_where = ["m.user_id = :user_id"]
-                    workflow_where = ["wr.user_id = :user_id"]
-                    trace_scope = "t.user_id = :user_id"
+                    running_chat_where = ["m.user_id = :user_id", _still_in_team_sql("c.team_id::text")]
+                    workflow_where = ["wr.user_id = :user_id", _still_in_team_sql(owner_team_sql("w.user_id"))]
+                    trace_scope = (
+                        "t.user_id = :user_id AND " + _still_in_team_sql(_agent_team_sql("t.agent_id"))
+                        + " AND " + _still_in_team_sql(
+                            "(SELECT lt_tc.team_id::text FROM conversations lt_tc WHERE lt_tc.id = t.conversation_id)"
+                        )
+                    )
 
                 # One normalized timeline over five event sources.
                 # ``payload`` carries the per-type detail; the outer query

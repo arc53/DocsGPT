@@ -193,7 +193,11 @@
         "empty_output": "出力がなかった",
         "internal": "内部エラー",
         "missed": "実行時刻を逃した",
+        "no_payer": "一時停止中：誰も支払っていません",
         "overlap": "前回の実行が継続中",
+        "owner_inactive": "一時停止中：所有者のアカウントが無効化されています",
+        "payer_left": "一時停止中：支払う人がチームを離れたか、ロールを失いました",
+        "payer_out_of_allowance": "支払う人の利用枠が尽きていました",
         "stream_error": "回答のストリームが途切れた",
         "timeout": "タイムアウト",
         "tool_not_allowed": "許可されていないツール"
@@ -307,31 +311,11 @@
     "exportAgentFailed": "エージェントをエクスポートできませんでした",
     "filters": {
       "all": "すべて",
-      "byDocsGPT": "DocsGPT提供",
       "byMe": "自分の",
-      "shared": "共有された",
-      "team": "チーム"
+      "shared": "共有された"
     },
     "folders": {
-      "backToRoot": "戻る",
-      "createFolder": "フォルダを作成",
-      "currentFolder": "このフォルダ",
-      "delete": "削除",
-      "deleteConfirm": "「{{name}}」を削除しますか？",
-      "deleteConsequence": "中のエージェントはフォルダーの外に移動され、削除されません。",
-      "empty": "このフォルダは空です",
-      "folderName": "フォルダ名",
-      "menuAriaLabel": "{{folderName}} の操作",
-      "move": "移動",
-      "moveTitle": "「{{name}}」の移動先",
-      "moveTo": "移動",
-      "moveToFolder": "フォルダに移動",
-      "newFolder": "新しいフォルダ",
-      "noFolder": "フォルダなし (ルート)",
-      "noFolders": "フォルダがありません",
-      "noSubfolders": "サブフォルダなし",
-      "openFolder": "フォルダーを開く",
-      "rename": "名前を変更"
+      "emptyHint": "ここでエージェントを作成するか、エージェントの⋯メニューからここに移動してください。"
     },
     "form": {
       "advanced": {
@@ -476,7 +460,8 @@
       "errors": {
         "publishFailed": "エージェントを公開できませんでした。もう一度お試しください。",
         "saveDraftFailed": "下書きを保存できませんでした。もう一度お試しください。",
-        "staleWrite": "このエージェントは、あなたが開いた後に他のユーザーによって保存されました。変更内容はまだここにあります。必要な部分をコピーし、ページを再読み込みしてから、もう一度適用してください。"
+        "staleWrite": "このエージェントは、あなたが開いた後に他のユーザーによって保存されました。変更内容はまだここにあります。必要な部分をコピーし、ページを再読み込みしてから、もう一度適用してください。",
+        "teamConnectionAdded": "{{tools}} は追加できません。このエージェントはチーム外の人(API キー、公開リンク、Webhook、または別のチーム)に届きます。チーム用に接続されたアカウントのツールは、アプリ内でチームのメンバーにしか使えません。"
       },
       "externalKb": "外部KB",
       "guardrails": {
@@ -578,6 +563,13 @@
         "savedVersion": "保存済みバージョン",
         "unsavedChanges": "保存されていない変更があります。保存するまで、プレビューは保存済みのバージョンを使います。"
       },
+      "refusedModels": {
+        "line": "このエージェントは {{names}} を使えません。",
+        "remove": "エージェントから外す",
+        "separator": "、",
+        "unlisted_one": "ここで提供されていないモデル {{count}} 件",
+        "unlisted_other": "ここで提供されていないモデル {{count}} 件"
+      },
       "resourceStates": {
         "ask": {
           "admin": "管理者にオンに戻すよう依頼してください。",
@@ -593,6 +585,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} の {{service}} アカウントに再度サインインする必要があります。",
           "connectionNeedsReconnectNoService": "{{name}} に再度サインインする必要があります。",
+          "connectionPaused": "{{name}} はチームの {{service}} アカウントを使っていますが、そのアカウントは一時停止中です。チームの管理者がコネクタページで再接続できます。",
+          "connectionPausedNoService": "{{name}} が使うチームのアカウントは一時停止中です。チームの管理者がコネクタページで再接続できます。",
           "connectionRemoved": "{{name}} が使っていた {{service}} アカウントは削除されました。",
           "connectionRemovedNoService": "{{name}} が使っていたアカウントは削除されました。",
           "connectorDisabled": "管理者が {{service}} をオフにしたため、{{name}} は実行できません。",
@@ -605,6 +599,8 @@
           "sponsorCannotEditItem": "{{name}} は {{person}} のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
           "sponsorCannotEditItemOther": "{{name}} は他の人のアクセス権で実行されていましたが、この人はそれを編集できなくなりました。",
           "sponsorCannotEditItemYou": "{{name}} はあなたのアクセス権で実行されていましたが、あなたはそれを編集できなくなりました。",
+          "teamLocked": "{{name}} は別のチームのもので、そのチームはロックされています。ロックが解除されるまで、ここでは使用できません。",
+          "teamShareEnded": "{{name}} は別のチームのもので、そのチームはここでの共有をやめました。そのチームに再度共有するよう依頼してください。",
           "unknown": "{{name}} は実行されていません。"
         },
         "reconnectLabel": "{{name}} を再接続",
@@ -646,6 +642,8 @@
         "confirm": "自分のアクセス権で追加",
         "description_one": "エージェントのオーナーはこれを使用できません。追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
         "description_other": "エージェントのオーナーはこれらを使用できません。追加すると、このエージェントを使うすべての人に対してあなたのアクセス権で実行されます。",
+        "folderLive_one": "このフォルダに後から追加したソースも、あなたの権限で実行されます。",
+        "folderLive_other": "これらのフォルダに後から追加したソースも、あなたの権限で実行されます。",
         "stopNote_one": "編集権限を失うと、実行されなくなります。",
         "stopNote_other": "編集権限を失うと、実行されなくなります。",
         "takeOverConfirm": "自分のアクセス権で実行",
@@ -653,6 +651,7 @@
         "takeOverDescription_other": "エージェントのオーナーはこれらを使用できません。このエージェントを使うすべての人に対して、あなたのアクセス権で実行されます。",
         "title": "あなたのアクセス権で実行しますか？",
         "types": {
+          "folder": "フォルダ",
           "prompt": "プロンプト",
           "source": "ソース",
           "tool": "ツール"
@@ -877,6 +876,7 @@
         "openConversation": "会話を開く",
         "output": "出力",
         "scheduledFor": "予定日時",
+        "skippedWithType": "スキップ（{{type}}）",
         "started": "開始",
         "status": "ステータス",
         "title": "実行の詳細",
@@ -890,6 +890,7 @@
         "duration": "所要時間",
         "empty": "このスケジュールの実行記録はまだありません。",
         "loadFailed": "実行履歴を読み込めませんでした。",
+        "pausedStreak": "以降の実行も、次の行まで同じ理由でスキップされました。",
         "when": "日時"
       },
       "runNow": "今すぐ実行",
@@ -939,15 +940,18 @@
         "emptyState": "共有エージェントが見つかりません。",
         "title": "共有されたエージェント"
       },
-      "team": {
-        "description": "チームメイトが共有したエージェント",
-        "emptyState": "チームと共有されたエージェントはまだありません。",
-        "title": "チーム"
+      "sharedWithYou": {
+        "description": "ほかの人があなたと共有したエージェント",
+        "emptyState": "まだ誰もあなたとエージェントを共有していません。"
       },
-      "template": {
-        "description": "DocsGPTが提供するエージェント",
-        "emptyState": "テンプレートエージェントが見つかりません。",
-        "title": "DocsGPT提供"
+      "team": {
+        "description": "チームが所有するエージェント。チームの全員が使えます。",
+        "emptyState": "このチームにはまだエージェントがありません。",
+        "title": "エージェント"
+      },
+      "teamShared": {
+        "description": "ほかのチームがこのチームと共有したエージェント。チームの全員がチャットできます。",
+        "emptyState": "まだほかのチームからこのチームに共有されたエージェントはありません。"
       },
       "user": {
         "description": "あなたが作成または公開したエージェント",
@@ -955,7 +959,7 @@
         "title": "自分のエージェント"
       }
     },
-    "shareWithTeam": "チームと共有",
+    "shareWithTeam": "共有",
     "shared": {
       "connectedTools": "接続済みツール",
       "loadError": "このエージェントを読み込めませんでした。",
@@ -970,9 +974,16 @@
     "title": "エージェント",
     "tryDifferentSearch": "別の検索語をお試しください",
     "typeModal": {
+      "blankAgent": "空のエージェント",
+      "blankWorkflow": "空のワークフロー",
       "classicDescription": "単一のモデル、ツール、ナレッジソースを持つ標準的な AI エージェントを作成します",
       "classicTitle": "クラシックエージェント",
+      "describeLabel": "エージェントについて説明",
+      "describePlaceholder": "当社のウェブサイトで配送に関する質問に答えるエージェント",
       "description": "作成するエージェントの種類を選択してください",
+      "draftDescription": "用途を伝えると、DocsGPT が一歩ずつ一緒に作ります。",
+      "newTitle": "新しいエージェント",
+      "templatesLabel": "またはテンプレートから始める",
       "title": "新しいエージェントを作成",
       "workflowDescription": "複数のモデル、条件ロジック、状態管理を使った複雑なマルチステップのワークフローを設計します",
       "workflowTitle": "ワークフローエージェント"
@@ -1321,6 +1332,7 @@
         "monitor": "モニターが条件に一致しました",
         "monitor_expired": "モニターの期限が切れました",
         "monitor_paused": "モニターが一時停止されました",
+        "payer_left": "誰かが引き継ぐまで一時停止中",
         "schedule": "予定したタスクが完了しました",
         "schedule_failed": "予定したタスクが失敗しました",
         "schedule_paused": "予定したタスクが一時停止されました",
@@ -1419,6 +1431,10 @@
     "share": "共有"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "このエージェントは上限に達しました：過去 {{hours}} 時間で {{limit}} リクエスト中 {{used}} を使用しました。しばらくしてからもう一度お試しください。",
+      "tokens": "このエージェントは上限に達しました：過去 {{hours}} 時間で {{limit}} トークン中 {{used}} を使用しました。しばらくしてからもう一度お試しください。"
+    },
     "answer": "回答",
     "artifacts": {
       "backToList": "ファイル一覧に戻る",
@@ -1532,6 +1548,7 @@
     },
     "quotaExceeded": {
       "cost": "利用予算 {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。",
+      "reached": "利用枠に達したため、この回答は停止しました。",
       "tokens": "トークンクォータ {{limit}} のうち {{used}} を使用しました。{{resetsAt}} にリセットされます。"
     },
     "reasoning": "推論",
@@ -1642,6 +1659,7 @@
     },
     "toolApproval": {
       "approve": "承認",
+      "approveAll": "すべて承認 ({{formatted}})",
       "approveAlways": "承認し、今後は確認しない",
       "connect": "{{name}} に接続",
       "connectTitle": "このツールには {{name}} アカウントが必要です。",
@@ -1660,9 +1678,13 @@
       "skip": "スキップ",
       "state": {
         "approval": "承認が必要",
+        "approved": "承認済み",
+        "denied": "拒否済み",
         "notConnected": "未接続"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "元に戻す",
+      "waitingForOthers": "この回答の他のリクエストがすべて決定されると送信されます。"
     },
     "toolChip": {
       "accessingMemory": "メモリにアクセス済み",
@@ -1777,7 +1799,7 @@
         "finish": "完了",
         "folded": "{{step}}: {{result}}",
         "goTo": "{{field}}へ移動",
-        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジ、プロンプトと最初の質問、最後に制限と安全性です。\n\n出発点を選ぶか、何をするエージェントで誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
+        "intro": "このエージェントを一緒に、一つずつ作っていきましょう: 基本情報、ナレッジ、プロンプトと最初の質問、最後に制限と安全性です。\n\nテンプレートを選ぶか、何をするエージェントで誰が使うのかを教えてください。詳しく書いていただくほど、質問は少なくなります。",
         "missing": {
           "agentType": "エージェントタイプ",
           "contextLimit": "有効なコンテキスト上限",
@@ -1825,6 +1847,7 @@
         "other_step": "別のステップで行う変更"
       },
       "fields": {
+        "folders": "ナレッジフォルダ",
         "limits": "利用制限"
       },
       "formEdited": "フォームで {{fields}} を変更しました。",
@@ -1893,6 +1916,7 @@
     "changeModel": "モデルを変更",
     "counts": {
       "agents_other": "エージェント {{count}} 件",
+      "folders_other": "フォルダ {{count}} 件",
       "models_other": "モデル {{count}} 件",
       "prompts_other": "プロンプト {{count}} 件",
       "sources_other": "ナレッジ {{count}} 件",
@@ -2049,15 +2073,54 @@
     "startOver": "最初からやり直す",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人事",
+              "it": "IT",
+              "office": "オフィス・設備",
+              "policies": "社内規程"
+            },
+            "text": "どの分野を対象にしますか？"
+          }
+        },
         "description": "チームからの人事・IT・規程の質問",
+        "short": "社内ヘルプデスク",
         "title": "社内ヘルプデスク"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件ファイル",
+              "contracts": "契約書",
+              "papers": "論文",
+              "reports": "レポート"
+            },
+            "text": "どのような文書ですか？"
+          },
+          "users": {
+            "options": {
+              "clients": "顧客・クライアント",
+              "me": "自分だけ",
+              "team": "自分のチーム"
+            },
+            "text": "誰が使いますか？"
+          }
+        },
         "description": "ドキュメントを調べて出典を示す",
+        "short": "リサーチアシスタント",
         "title": "リサーチアシスタント"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "会社名または製品名は何ですか？"
+          }
+        },
         "description": "訪問者に回答し、不明な時は引き継ぎ",
+        "short": "ウェブサイトチャット",
         "title": "顧客向けウェブサイトチャット"
       }
     },
@@ -2071,6 +2134,23 @@
     "stop": "停止",
     "stoppedDescription": "このターンを停止しました。フォームは変更されていません。",
     "suggestionsLabel": "始め方の例",
+    "templates": {
+      "browse": "すべてのテンプレートを見る",
+      "categories": {
+        "all": "すべて",
+        "customerSupport": "カスタマーサポート",
+        "internal": "社内",
+        "research": "リサーチ"
+      },
+      "categoriesLabel": "テンプレートのカテゴリ",
+      "description_one": "{{formatted}} 件のテンプレート。選ぶと DocsGPT が一緒に作ります。",
+      "description_other": "{{formatted}} 件のテンプレート。選ぶと DocsGPT が一緒に作ります。",
+      "empty": "一致するテンプレートはありません",
+      "search": "テンプレートを検索",
+      "showAll": "すべてのテンプレート",
+      "showMore": "さらに表示",
+      "title": "テンプレート"
+    },
     "title": "DocsGPT で下書き",
     "topics": {
       "add_other": "{{formatted}} 件のトピックを追加",
@@ -2132,6 +2212,98 @@
     "sharedWithMe": "共有アイテム",
     "spaces": "スペース",
     "updated": "{{date}} に更新"
+  },
+  "folders": {
+    "and": "{{first}}と{{second}}",
+    "counts": {
+      "agent_one": "{{formatted}}件のエージェント",
+      "agent_other": "{{formatted}}件のエージェント",
+      "also": "ほかに{{list}}",
+      "empty": "空",
+      "folder_one": "{{formatted}}個のフォルダ",
+      "folder_other": "{{formatted}}個のフォルダ",
+      "prompt_one": "{{formatted}}件のプロンプト",
+      "prompt_other": "{{formatted}}件のプロンプト",
+      "source_one": "{{formatted}}件のソース",
+      "source_other": "{{formatted}}件のソース",
+      "tool_one": "{{formatted}}件のツール",
+      "tool_other": "{{formatted}}件のツール"
+    },
+    "create": "作成",
+    "current": "現在",
+    "delete": "削除",
+    "deleteConfirm": "「{{name}}」を削除しますか？",
+    "deleteEmpty": "このフォルダは空です。ほかに削除されるものはありません。",
+    "deleteFolder": "フォルダを削除",
+    "deleteMoves_one": "中身（{{what}}）は{{parent}}に移動します。何も削除されません。",
+    "deleteMoves_other": "中身（{{what}}）は{{parent}}に移動します。何も削除されません。",
+    "deletedRenamed_one": "フォルダを削除しました。名前が重複しないよう、{{formatted}}個のフォルダの名前を変更しました: {{list}}。",
+    "deletedRenamed_other": "フォルダを削除しました。名前が重複しないよう、{{formatted}}個のフォルダの名前を変更しました: {{list}}。",
+    "depthLimit": "フォルダは3階層までです",
+    "emptyTitle": "このフォルダは空です",
+    "errors": {
+      "cantFile": "この項目はフォルダに整理できません。",
+      "cycle": "フォルダをそれ自身やそのサブフォルダに移動することはできません。",
+      "deleteFailed": "フォルダを削除できませんでした。もう一度お試しください。",
+      "invalidName": "改行を含めず、1〜80文字で入力してください。",
+      "itemNotInTeam": "チームのフォルダにはチーム自身の項目しか入れられません。先に項目をチームに移動してください。",
+      "loadFailed": "フォルダを読み込めませんでした。",
+      "moveFailed": "移動できませんでした。もう一度お試しください。",
+      "nameTaken": "同じ名前のフォルダが既にあります。",
+      "notFound": "このフォルダはもう存在しません。",
+      "openFailed": "そのフォルダはもう存在しません。",
+      "saveFailed": "フォルダを保存できませんでした。もう一度お試しください。",
+      "teamItemNotFileable": "チームの項目は個人のフォルダに入れられません。",
+      "tooDeep": "フォルダは3階層までです。"
+    },
+    "inParent": "{{name}} 内",
+    "listSeparator": "、",
+    "menuLabel": "{{name}} の操作",
+    "move": "移動",
+    "moveTitle": "「{{name}}」を移動",
+    "moveToFolder": "フォルダに移動",
+    "name": "フォルダ名",
+    "newFolder": "新しいフォルダ",
+    "noFolder": "フォルダなし",
+    "noMatches": "一致するフォルダはありません",
+    "noSubfolders": "中にフォルダはありません",
+    "openFolder": "{{name}} を開く",
+    "picker": {
+      "allOf": "{{name}} のすべて",
+      "back": "戻る",
+      "deletedFolder": "削除されたフォルダ",
+      "deletedLine": "もう存在しません。外してください。",
+      "deleted_one": "選択したフォルダが削除されました。一覧から外してください。",
+      "deleted_other": "選択したフォルダが{{formatted}}個削除されました。一覧から外してください。",
+      "hintMany_one": "{{names}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintMany_other": "{{names}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintOne_one": "{{name}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "hintOne_other": "{{name}} はフォルダです: 現在の{{formatted}}件のソースと、今後追加されるソースが含まれます。",
+      "inFolder": "このフォルダ内",
+      "includedWith": "{{name}} に含まれます",
+      "live": "{{what}} · 新しいソースも含む",
+      "ownersFolder": "{{person}} のフォルダ",
+      "partial": "{{total}}件中{{picked}}件を選択",
+      "stopped": "{{name}} は停止中です: {{person}} のフォルダですが、このユーザーはもうこのエージェントを編集できません。",
+      "stoppedOther": "{{name}} は停止中です: 所有者はもうこのエージェントを編集できません。",
+      "stoppedShort": "停止中"
+    },
+    "rename": "名前を変更",
+    "renameTitle": "フォルダ名を変更",
+    "root": {
+      "agent": "自分のエージェント",
+      "prompt": "プロンプト",
+      "source": "ナレッジ",
+      "teamAgent": "エージェント",
+      "tool": "ツール"
+    },
+    "searchFolders": "フォルダを検索…",
+    "searchIn": "{{name}} 内を検索…",
+    "tooDeep": "深すぎます",
+    "usedByWarningNoNames_one": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います。",
+    "usedByWarningNoNames_other": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います。",
+    "usedByWarning_one": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います：{{names}}。",
+    "usedByWarning_other": "{{formatted}}件のエージェントがこのフォルダを使用しており、そのソースを失います：{{names}}。"
   },
   "help": "ヘルプ",
   "hero": {
@@ -2203,6 +2375,8 @@
       "resetKey": "キーをリセット",
       "resetKeyConfirm": "「{{name}}」の API キーをリセットしますか？",
       "resetKeyConsequence": "現在のキーはすぐに使えなくなるため、使用している箇所をすべて更新する必要があります。この操作は元に戻せません。",
+      "teamLocked": "{{team}} はロックされているため、このエージェントには公開リンク、APIキー、Webhook を設定できません。ロックを解除できるのはチームの所有者だけです。",
+      "teamLockedNoTeam": "このチームはロックされているため、このエージェントには公開リンク、APIキー、Webhook を設定できません。ロックを解除できるのはチームの所有者だけです。",
       "test": "テスト",
       "title": "アクセス詳細",
       "webhookUrl": "Webhook URL"
@@ -2232,16 +2406,9 @@
       "type": "タイプ"
     },
     "createAPIKey": {
-      "apiKeyName": "APIキー名",
-      "chunks": "クエリごとに処理されるチャンク",
-      "create": "作成",
-      "label": "新しいAPIキーを作成",
-      "prompt": "アクティブプロンプトを選択",
       "sourceDoc": "ソースドキュメント"
     },
     "deleteConv": {
-      "confirm": "すべての会話を削除しますか？",
-      "consequence": "アカウント内のすべての会話がメッセージごと削除されます。この操作は元に戻せません。",
       "delete": "削除"
     },
     "importAgent": {
@@ -2250,15 +2417,21 @@
       "continueToAgent": "エージェントへ進む",
       "description": "エージェントの YAML ファイルをアップロードしてください。ソースとツールはあなたのアカウント内のものと照合され、見つからないものは次のステップで割り当てるか作成できます。新しいエージェントは下書きとしてインポートされます。再インポートすると一致するエージェントが更新され、現在のステータスは維持されます。",
       "dropzoneText": "クリックしてアップロード、または .yaml ファイルをドラッグ＆ドロップ",
+      "folderFor": "{{name}} に使うフォルダ",
+      "folderMatched": "{{name}}: あなたのフォルダを使用",
+      "folderMissing": "{{name}}: この名前のフォルダはありません",
       "import": "インポート",
       "importError": "インポートに失敗しました",
       "invalidFileType": ".yaml または .yml ファイルのみ対応しています",
       "leaveUnattached": "割り当てない",
       "modelCustom": "{{name}}: カスタムモデル",
+      "modelLeftOff": "{{name}}: まだチームのモデルではないため、外されます",
       "models": "モデル",
+      "planWarningsTitle": "インポート前に確認してください:",
       "readError": "このエージェントファイルを読み込めませんでした",
       "review": "確認",
       "secretPlaceholder": "{{field}}（空欄にするとこのツールをスキップ）",
+      "sourceFor": "{{name}} に使うソース",
       "sourceMatched": "{{name}}: 既存のソースを使用",
       "sourceMissing": "{{name}}: 見つかりません",
       "sources": "ソース",
@@ -2328,12 +2501,8 @@
       "viewDescription": "組み込みプロンプトは編集できません。複製して編集可能なコピーを作成してください。"
     },
     "saveKey": {
-      "apiKeyLabel": "API キー",
-      "confirm": "キーを保存しました",
       "copied": "コピーしました",
-      "copy": "コピー",
-      "disclaimer": "キーが表示されるのはこのときだけです。",
-      "note": "キーを保存してください"
+      "copy": "コピー"
     },
     "searchConversations": {
       "noResults": "結果が見つかりません",
@@ -2346,7 +2515,6 @@
       "option": "ユーザーがより多くのクエリを実行できるようにします。"
     },
     "uploadDoc": {
-      "cancel": "キャンセル",
       "choose": "ファイルを選択",
       "connectors": {
         "auth": {
@@ -2411,9 +2579,7 @@
         }
       },
       "label": "ナレッジを追加",
-      "link": "リンク",
       "name": "名前",
-      "noFilesSelected": "ファイルが選択されていません",
       "progress": {
         "clear": "クリア",
         "collapseDetails": "アップロードの詳細を折りたたむ",
@@ -2424,10 +2590,9 @@
         "failed": "アップロード失敗",
         "ingestionFailed": "取り込みに失敗しました。",
         "parsing": "ファイルを解析中...",
-        "partialDownload_one": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
-        "partialDownload_other": "{{count}} 件の項目をダウンロードできなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_one": "{{count}} 件の項目を読み込めなかったため、除外されました。ソースを同期して再試行してください。",
+        "partialDownload_other": "{{count}} 件の項目を読み込めなかったため、除外されました。ソースを同期して再試行してください。",
         "preparing": "アップロードを準備中",
-        "tokenLimit": "トークン制限を超えています。より小さいドキュメントをアップロードしてください",
         "tooManyFiles": "このソースのファイル数が上限の {{limit}} 件を超えています。より小さいフォルダ、パス、または選択範囲を選んでください。",
         "tooManyTokens": "このソースのテキストが上限の {{limit}} トークンを超えています。より小さいソースに分割してください。",
         "training": "アップロード中",
@@ -2435,18 +2600,13 @@
         "uploadProgress": "アップロード進行状況 {{progress}}%",
         "wait": "数分かかる場合があります"
       },
-      "remote": "ウェブサイトから収集する",
       "removeFile": "{{name}} を取り除く",
       "repoUrl": "リポジトリURL",
       "select": "ドキュメントを DocsGPT にアップロードする方法を選択します",
       "selectFolder": "またはフォルダごと選択",
       "selectSource": "ナレッジを追加",
       "selectedFiles": "選択されたファイル",
-      "start": "チャットを開始する",
       "train": "ナレッジに追加",
-      "uploadedFiles": "アップロードされたファイル",
-      "urlLink": "URLリンク",
-      "wait": "お待ちください ...",
       "website": {
         "addAnotherPage": "別のページを追加",
         "discovery": {
@@ -2628,6 +2788,198 @@
     "previousPage": "前のページ",
     "range": "{{total}}件中 {{from}}–{{to}}件"
   },
+  "payer": {
+    "access": {
+      "notice": "外部からのアクセスは一時停止中です。{{reason}}",
+      "noticeUnknown": "外部からのアクセスは一時停止中です。",
+      "paused": "一時停止中",
+      "pausedBecause": "一時停止中 · {{reason}}",
+      "takenOver": "このエージェントの外部からの利用は今後あなたが支払います。"
+    },
+    "common": {
+      "access": {
+        "apiKey": "API キー",
+        "publicLink": "公開リンク",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "スケジュールはすでに上限まであります。1 つ削除してからもう一度お試しください。",
+        "noOutsideAccess": "このエージェントでは外部アクセスがオンになっていないため、引き継ぐものはありません。",
+        "notAvailableToTokens": "アクセストークンでは引き継げません。アプリにサインインして行ってください。",
+        "notFound": "これはもう存在しないか、開けなくなっています。",
+        "roleRequired": "このチームでのあなたのロールでは引き継げません。",
+        "teamLocked": "このチームはロックされているため、外部からはアクセスできません。",
+        "teamOnly": "引き継げるのはチームに属するものだけです。"
+      },
+      "paidBy": "支払い: {{name}}",
+      "paidByYou": "支払い: あなた",
+      "pause": {
+        "noPayer": "誰も支払っていません。",
+        "outOfAllowance": "{{name}} さんは {{date}} まで利用枠を使い切っています。",
+        "outOfAllowanceUndated": "支払う人が利用枠を使い切っています。",
+        "outOfAllowanceUnnamed": "支払う人が {{date}} まで利用枠を使い切っています。",
+        "outOfAllowanceYou": "{{date}} まで利用枠を使い切っています。",
+        "ownerInactive": "実行に使うアカウントが無効になっています。",
+        "payerLeft": "{{name}} さんが {{team}} を離れたか、支払うためのロールを失いました。",
+        "payerLeftNoTeam": "{{name}} さんがチームを離れたか、支払うためのロールを失いました。",
+        "payerLeftTeam": "{{name}} さんが {{team}} を離れました。",
+        "payerLeftTeamNoTeam": "{{name}} さんがチームを離れました。",
+        "payerLeftTeamUnnamed": "支払う人がチームを離れました。",
+        "payerLeftUnnamed": "支払う人がチームを離れたか、支払うためのロールを失いました。",
+        "payerLostRole": "{{name}} さんは {{team}} で支払うためのロールをもう持っていません。",
+        "payerLostRoleNoTeam": "{{name}} さんは支払うためのロールをもう持っていません。",
+        "payerLostRoleUnnamed": "支払う人は支払うためのロールをもう持っていません。",
+        "teamLocked": "{{team}} はロックされているため、外部からはアクセスできません。",
+        "teamLockedNoTeam": "チームはロックされているため、外部からはアクセスできません。",
+        "withSince": "{{reason}}{{date}} から一時停止中です。"
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "今後は外部からの利用をあなたが支払います",
+          "youPayDetail": "API キーと Webhook 経由のリクエスト、およびサインインしていない訪問者による公開リンク経由のリクエストは、{{name}} さんではなくあなたの利用枠から差し引かれます。サインインしている訪問者は自分のチャット分を自分で支払います。これまでの利用分は {{name}} さんのままです。",
+          "youPayUnnamed": "API キーと Webhook 経由のリクエスト、およびサインインしていない訪問者による公開リンク経由のリクエストは、あなたの利用枠から差し引かれます。サインインしている訪問者は自分のチャット分を自分で支払います。"
+        },
+        "failed": "引き継げませんでした。もう一度お試しください。",
+        "limitApplies": "エージェントの上限は引き続き適用されます",
+        "limitDetail": "誰が支払っても、エージェントは自身の上限で停止します。",
+        "schedule": {
+          "youPay": "今後は実行をあなたが支払います",
+          "youPayDetail": "{{name}} さんではなくあなたの利用枠から差し引かれます。これまでの実行は {{name}} さんのままです。",
+          "youPayUnnamed": "あなたの利用枠から差し引かれます。"
+        },
+        "submit": "引き継ぐ",
+        "title": "「{{name}}」を引き継ぎますか？"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "このエージェントは一時停止中のため、今は回答できません。",
+        "noPayer": "このエージェントの利用を支払う人が今いないため、回答できません。"
+      },
+      "near": {
+        "day": "今日の利用枠の {{percent}}% を使いました。{{time}} にリセットされます。",
+        "month": "{{month}}の利用枠の {{percent}}% を使いました。{{date}} にリセットされます。",
+        "week": "今週の利用枠の {{percent}}% を使いました。{{date}} にリセットされます。"
+      },
+      "reached": {
+        "body": "{{covers}}{{resets}}",
+        "covers": {
+          "agent": "対象は、エージェントとのチャット、あなたが設定したスケジュール、あなたが公開したエージェントです。",
+          "all": "対象は、すべてのワークスペースでのチャット、あなたが設定したスケジュール、あなたが公開したエージェントです。",
+          "direct": "対象は、すべてのワークスペースでのエージェントなしのチャットです。"
+        },
+        "publicLinkSignedOut": "公開リンク（サインインしていない訪問者向け）",
+        "published": "{{name}} は {{access}} 経由で回答しなくなりました。",
+        "schedules_one": "あなたが設定したスケジュール {{count}} 件が一時停止しています。",
+        "schedules_other": "あなたが設定したスケジュール {{count}} 件が一時停止しています。",
+        "seeUsage": "利用状況を見る",
+        "title": {
+          "day": "今日の利用枠に達しました",
+          "month": "{{month}}の利用枠に達しました",
+          "week": "今週の利用枠に達しました"
+        }
+      },
+      "resets": {
+        "date": "{{date}} にリセットされます。",
+        "time": "{{time}} にリセットされます。"
+      }
+    },
+    "schedules": {
+      "takenOver": "このスケジュールの実行は今後あなたが支払います。"
+    },
+    "team": {
+      "byAgent": {
+        "deleted": "削除されたエージェント",
+        "empty": "この期間に使われたエージェントはありません。",
+        "limitOn": "エージェントの上限あり",
+        "movedOut": "チームの外に移動済み",
+        "noLimit": "エージェントの上限なし",
+        "outsideNoPayer": "外部アクセスの支払者なし",
+        "outsidePaidBy": "外部アクセスは {{name}} さんが支払い",
+        "outsidePaidByYou": "外部アクセスはあなたが支払い",
+        "people_one": "{{formatted}} 人",
+        "people_other": "{{formatted}} 人",
+        "requests_one": "{{formatted}} 件のリクエスト",
+        "requests_other": "{{formatted}} 件のリクエスト",
+        "title": "エージェント別",
+        "totalsOnly": "エージェントなしのチャットと、その後削除されたエージェントは合計にのみ含まれます。"
+      },
+      "byPerson": {
+        "left": "チームを離れました",
+        "title": "メンバー別",
+        "you": "あなた"
+      },
+      "demote": {
+        "description": "新しいロールでは、{{name}} さんは {{team}} でこれらを支払えなくなります。",
+        "submit": "ロールを変更",
+        "title": "「{{name}}」を{{role}}に変更しますか？"
+      },
+      "empty": "この期間、ここでは何も使われていません。",
+      "export": {
+        "action": "エクスポート",
+        "description": "このワークスペースのすべてのチャットを 1 つのファイルにします（誰が、いつ、どのエージェントで）。個人のチャットは含まれません。エクスポートはすべて監査ログに記録されます。",
+        "failed": "チャットをエクスポートできませんでした。もう一度お試しください。",
+        "title": "チャットをエクスポート"
+      },
+      "loadError": "使用状況レポートを読み込めませんでした。",
+      "notALimit": "ここで使った分は、その人のほかの作業と合わせて本人の利用枠から差し引かれます。このページに上限はありません。",
+      "paused": {
+        "access": "{{access}} 経由の外部アクセス",
+        "accessAll": "外部アクセス",
+        "description": "誰かが引き継ぐか、支払者の利用枠がリセットされるまで一時停止したままです。",
+        "openConnection": "開く",
+        "openConnectionLabel": "コネクタページで「{{name}}」を開く",
+        "schedule": "{{agent}} のスケジュール",
+        "scheduleNoAgent": "スケジュール",
+        "sync": "定期同期",
+        "syncNoPayer": "チーム内に支払える人がいません。",
+        "takeOverLabel": "「{{name}}」を引き継ぐ",
+        "title": "一時停止中",
+        "unnamed": "無題"
+      },
+      "period": {
+        "current": {
+          "day": "今日",
+          "month": "今月",
+          "week": "今週"
+        },
+        "label": "期間",
+        "previous": {
+          "day": "昨日",
+          "month": "先月",
+          "week": "先週"
+        },
+        "range": "{{start}}〜{{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} さんが支払っています。管理者がエージェントのページで引き継げます。",
+        "access_one": "{{count}} 件のエージェントの外部アクセスが一時停止します",
+        "access_other": "{{count}} 件のエージェントの外部アクセスが一時停止します",
+        "connectionsDetail": "ほかのチーム管理者がコネクタページで自分のアカウントで再接続するまで、チームは同期にもツールにもこれらを使えません。",
+        "connections_one": "{{name}} さんが接続したチームのアカウント {{count}} 件が一時停止します",
+        "connections_other": "{{name}} さんが接続したチームのアカウント {{count}} 件が一時停止します",
+        "customModelsDetail": "キーはそのまま使われます。{{name}} さん個人のキーだった場合は、チームのカスタムモデルページでキーを置き換えてください。",
+        "customModels_one": "{{name}} さんがチームに追加したカスタムモデル {{count}} 件",
+        "customModels_other": "{{name}} さんがチームに追加したカスタムモデル {{count}} 件",
+        "schedulesDetail": "{{name}} さんが支払っています。編集者または管理者がエージェントのスケジュールページで引き継げます。",
+        "schedules_one": "{{name}} さんがチームのエージェントに設定したスケジュール {{count}} 件が一時停止します",
+        "schedules_other": "{{name}} さんがチームのエージェントに設定したスケジュール {{count}} 件が一時停止します"
+      },
+      "showAll": "すべて表示（{{formatted}}）",
+      "showFewer": "表示を減らす",
+      "stats": {
+        "chats": "チャット",
+        "chatsDetail": "チャットした人が支払い",
+        "people_one": "{{formatted}} 人が利用",
+        "people_other": "{{formatted}} 人が利用",
+        "runs": "人が関わらない実行",
+        "runsDetail": "スケジュール、API キー、ウィジェット、Webhook。設定した人が支払い",
+        "used": "{{team}} での使用量"
+      },
+      "tokens_one": "{{formatted}} トークン",
+      "tokens_other": "{{formatted}} トークン"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "Boundaries セクションがないため、エージェントがドキュメントやツールの結果に隠れた指示に従うおそれがあります",
@@ -2776,7 +3128,6 @@
     "analytics": {
       "completed": "完了",
       "failed": "失敗",
-      "filterByChatbot": "チャットボットでフィルター",
       "filterOptions": {
         "hour": "時間",
         "last15Days": "過去15日間",
@@ -2999,18 +3350,30 @@
       "positiveFeedback": "肯定的なフィードバック",
       "promptTokens": "プロンプトトークン",
       "quota": {
-        "cost": "コスト",
-        "resets": "{{resetsAt}} にリセット",
+        "allowance": "あなたの利用枠",
+        "parts": {
+          "chat": "あなたのチャット",
+          "chatDetail": "個人とあなたのチーム",
+          "other": "その他",
+          "otherDetail": "ナレッジの構築と、内訳の集計前の利用",
+          "published": "あなたが公開したエージェント",
+          "publishedDetail": "その API キー、公開リンク、Webhook",
+          "schedule": "あなたが設定したスケジュール",
+          "scheduleDetail": "その実行と、あなたが設定したモニター"
+        },
+        "resetsAt": "{{time}} にリセット",
+        "resetsOn": "{{date}} にリセット",
         "scope": {
-          "agent": "エージェント経由",
+          "agent": "エージェントとのチャット、スケジュール、公開したエージェント",
+          "all": "あなたが支払うすべて",
           "direct": "エージェントなしのチャット"
         },
-        "title": "利用クォータ",
-        "tokens": "トークン",
+        "titleDay": "今日の利用状況",
+        "titleMonth": "利用状況（{{month}}）",
+        "titleWeek": "今週の利用状況",
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "スケジュール実行",
-      "selectChatbot": "チャットボットを選択",
       "skipped": "スキップ",
       "stats": {
         "feedback": "フィードバック",
@@ -3055,6 +3418,7 @@
       "connectionStatus": {
         "connected": "接続済み",
         "disconnected": "切断済み",
+        "paused": "一時停止中",
         "pending": "サインイン待ち"
       },
       "createFailed": "コネクタを追加できませんでした。もう一度お試しください。",
@@ -3087,6 +3451,7 @@
         "mcp_resend": "メールを送信し、連絡先、オーディエンス、ドメインを管理します。",
         "mcp_sentry": "Sentry の課題、イベント、リリースを調べます。",
         "mcp_stripe": "Stripe の顧客、支払い、サブスクリプションを調べます。",
+        "mcp_supabase": "テーブルの一覧表示、SQL の実行、ログの確認、Supabase プロジェクトの管理を行います。",
         "mcp_trello": "Trello のボードやカードを検索し、カードを作成・更新します。",
         "mcp_twelvedata": "株式、為替、暗号資産、ETF の相場、価格履歴、テクニカル指標、ファンダメンタルズを調べます。",
         "mcp_zapier": "Zapier MCP アカウントで有効にしたアクションを使って、接続済みアプリの情報を読み取ったり更新したりします。",
@@ -3158,6 +3523,8 @@
       },
       "fieldHints": {
         "github_access_token": "fine-grained トークンに Contents と Metadata の読み取り権限を付与します。エージェントに変更を許可する場合は、Issues と Pull requests の読み取りと書き込みも付与します。<link>GitHub でトークンを作成</link>",
+        "mcp_supabase_project_ref": "Supabase ダッシュボードの Project Settings > General からコピーしてください。この接続はこのプロジェクトにのみアクセスします。",
+        "ntfy_server_url": "設定すると、すべてのメッセージとアクセストークンはこのサーバーに送られます。空の場合、トークンは ntfy.sh にのみ送られます。",
         "telegram_chat_id": "メッセージはこのチャットにのみ送られます。ボットを追加してメッセージを送り、<link>getUpdates</link> でチャット ID を確認します。"
       },
       "fields": {
@@ -3169,6 +3536,8 @@
         "client_secret": "クライアントシークレット",
         "endpoint_url": "カスタムエンドポイント URL",
         "github_access_token": "個人用アクセストークン",
+        "mcp_supabase_project_ref": "プロジェクト ID",
+        "ntfy_server_url": "サーバー URL",
         "ntfy_token": "アクセストークン",
         "number_posts": "投稿数",
         "postgres_token": "接続文字列",
@@ -3306,6 +3675,7 @@
         "custom": "カスタム",
         "disabledByAdmin": "管理者により無効",
         "needsAdminSetup": "管理者の設定が必要",
+        "paused": "一時停止中",
         "reconnect": "再接続"
       },
       "statusFilterLabel": "状態で絞り込む",
@@ -3317,6 +3687,43 @@
       },
       "subtitle": "DocsGPT をチームで使っているサービスに接続します。接続ごとに、コンテンツをナレッジへ同期したり、エージェントにツールを提供したりできます。",
       "syncContent": "コンテンツを同期",
+      "team": {
+        "adminOnly": "チームのアカウントを接続・変更できるのはチームの管理者だけです。",
+        "connectForTeam": "チーム用に接続",
+        "connectedBy": "{{name}} さんが接続",
+        "connectedByYou": "あなたが接続",
+        "emptyAdmin": "チーム用に接続されたアカウントはまだありません。接続すると、チームの全員が使えます。",
+        "emptyMember": "チーム用に接続されたアカウントはまだありません。チームの管理者が接続できます。",
+        "errors": {
+          "accountAlreadyConnected": "このアカウントはすでにチーム用に接続されています。その接続を使ってください。",
+          "adminRequired": "チームのアカウントでこの操作ができるのはチームの管理者だけです。",
+          "connectPersonalFirst": "まず個人で、このサービスの自分のアカウントを接続してください。その後は各自が自分のアカウントでサインインします。",
+          "invalidOwner": "このアカウントがあなたのものかチームのものか判断できませんでした。ページを再読み込みして、もう一度お試しください。",
+          "memberModeNotAllowed": "管理者がこのサービスを共有アカウント1つで使う設定にしているため、各自のアカウントではサインインできません。",
+          "notFound": "この接続はもう存在しないか、表示する権限がありません。",
+          "paused": "このチームのアカウントは一時停止中です。チームの管理者が再接続できます。",
+          "personalOnly": "チームのソースは、チーム用に接続されたアカウントからしか読み取れません。チームの管理者がコネクタで接続できます。",
+          "pickerOwnerOnly": "このアカウントから同期する内容を選べるのは、接続した人だけです。",
+          "teamConnectionOutside": "チーム用に接続されたアカウントのツールを使っています。こうしたツールは、アプリ内でチームのメンバーにしか使えません。",
+          "teamConnectionOutsideNamed": "チーム用に接続されたアカウントの {{tools}} を使っています。こうしたツールは、アプリ内でチームのメンバーにしか使えません。",
+          "teamWorkspaceRequired": "チーム用にアカウントを接続するには、そのチームに切り替えてください。"
+        },
+        "notice": "これらのアカウントはチームのものです。あなた自身のアカウントは個人にあります。",
+        "paused": "一時停止中: {{reason}}",
+        "pausedHintAdmin": "あなたのアカウントで再接続するか、切断してください。",
+        "pausedHintMember": "チームの管理者が再接続できます。",
+        "pausedUnknown": "一時停止中",
+        "pickerOwnerOnly": "このアカウントから同期する内容を選べるのは、接続した {{name}} さんだけです。",
+        "reconnect": {
+          "body": "このアカウントは {{name}} さんが接続しました。再接続すると、今後チームはあなたのアカウントを使い、同期の費用はあなたが支払います。",
+          "bodyUnnamed": "再接続すると、今後チームはあなたのアカウントを使い、同期の費用はあなたが支払います。",
+          "confirm": "自分のアカウントで再接続",
+          "dropNote": "あなたのアカウントで開けないファイルは、次回の同期で外れます。ソースから選び直せます。",
+          "sources_other": "{{formatted}} 件のソースがここから同期しています:",
+          "title": "自分のアカウントで再接続しますか？"
+        },
+        "teamAccount": "チームのアカウント"
+      },
       "unverified": "このサーバーは DocsGPT による確認を受けていません。信頼できるサーバーにのみ接続してください。",
       "wizard": {
         "account": "アカウント",
@@ -3367,6 +3774,7 @@
         "toolsHeading": "ツール ({{formatted}})",
         "toolsUnavailable": "{{name}} のツールに接続できませんでした。もう一度試すか、オフにして続行してください。",
         "tryInChat": "チャットで試す",
+        "urlParameterInvalid": "この値を確認してください。想定された形式ではありません。",
         "waiting": "開いたウィンドウで {{name}} へのサインインを完了してください。"
       }
     },
@@ -3407,6 +3815,7 @@
       "editTitle": "カスタムモデルを編集",
       "empty": "モデルが見つかりません",
       "errors": {
+        "apiKeyNewHost": "新しいホストの API キーを入力してください。保存済みのキーは、保存したときのホストにだけ送られます。",
         "apiKeyRequired": "API キーは必須です",
         "baseUrlInvalid": "有効な URL を入力してください",
         "baseUrlRequired": "ベース URL は必須です",
@@ -3425,7 +3834,8 @@
         "modelId": "モデル ID"
       },
       "hints": {
-        "apiKeyEdit": "既存のキーを保持するには空欄のままにしてください。"
+        "apiKeyEdit": "アドレスのホストが同じ間は、空欄のままにすると保存済みのキーが使われます。",
+        "apiKeyNewHost": "アドレスが新しいホストを指しています。そのホストの API キーを入力してください。保存済みのキーは、保存したときのホストにだけ送られます。"
       },
       "label": "カスタムモデル",
       "loadError": "モデルを読み込めませんでした。",
@@ -3448,6 +3858,48 @@
       "save": "保存",
       "searchPlaceholder": "モデルを検索...",
       "subtitle": "OpenAI 互換のモデルを自分で接続できます。",
+      "team": {
+        "actions": {
+          "disable": "無効にする",
+          "enable": "有効にする"
+        },
+        "addedBy": "{{name}} さんが追加",
+        "addedByYou": "あなたが追加",
+        "copy": {
+          "action": "チームにコピー",
+          "body": "チームは、あなたの API キーを使う {{name}} の専用コピーを受け取ります。あなたのモデルはそのまま残ります。",
+          "bodyTo": "{{team}} は、あなたの API キーを使う {{name}} の専用コピーを受け取ります。あなたのモデルはそのまま残ります。",
+          "confirm": "コピー",
+          "done": "{{name}} を {{team}} にコピーしました。",
+          "team": "チーム",
+          "title": "チームにコピー"
+        },
+        "delete": {
+          "fellBack": "モデルを確認してください: {{names}}",
+          "mayBeUsed": "このモデルを使うチームのエージェントは既定のモデルで動作し、このモデルを設定したワークフローのステップは、誰かが別のモデルを選ぶまで停止します。この操作は元に戻せません。",
+          "usedBy": "{{names}} が使用しています。エージェントは既定のモデルで動作し、このモデルを設定したワークフローのステップは、誰かが別のモデルを選ぶまで停止します。この操作は元に戻せません。"
+        },
+        "emptyAdmin": "チーム用に追加されたモデルはまだありません。追加すると、チームの全員が使えます。",
+        "emptyMember": "チーム用に追加されたモデルはまだありません。チームの管理者が追加できます。",
+        "errors": {
+          "adminRequired": "チームにカスタムモデルを追加できるのはチームの管理者だけです。管理者に追加を依頼してから、もう一度インポートしてください。",
+          "alreadyInTeam": "チームにはすでにこのモデルがあります。",
+          "chatPersonalOnly": "あなた自身のカスタムモデルはチームのチャットでは使えません。チームのモデルか、インスタンス全体で提供されているモデルを選んでください。",
+          "credentialsUnreadable": "このモデルの API キーを読み取れません。キーを置き換えてから、モデルをコピーしてください。",
+          "modelAdminRequired": "チームのモデルを変更できるのはチームの管理者だけです。",
+          "notAvailableToTokens": "チームのカスタムモデルはアプリでのみ変更できます。アクセストークンでは変更できません。",
+          "notFound": "このモデルはもう存在しないか、表示する権限がありません。",
+          "personalOnly": "チームのエージェントとワークフローが使えるのは、そのチームのカスタムモデルだけです。チームのモデルか、インスタンス全体で提供されているモデルを選んでください。",
+          "roleRequired": "チームにモデルを追加できるのはチームの管理者だけです。",
+          "teamIdRequired": "モデルのコピー先のチームを選んでください。",
+          "teamNotFound": "そのチームはもう存在しないか、あなたはメンバーではありません。",
+          "teamOnly": "チームのカスタムモデルを使えるのは、そのチームのエージェントとワークフローだけです。あなた自身のモデルか、インスタンス全体で提供されているモデルを選んでください。",
+          "teamWorkspaceRequired": "チーム用にモデルを追加するには、そのチームに切り替えてください。"
+        },
+        "notice": "これらのモデルはチームのものです。あなた自身のモデルは個人にあります。",
+        "pickerGroup": "チームのモデル",
+        "teamModel": "チームのモデル"
+      },
       "testConnection": "接続をテスト",
       "testHintNew": "接続テストを有効にするには、ベース URL、モデル ID、API キーを入力してください。",
       "testSuccess": "接続に成功しました。"
@@ -3491,6 +3943,7 @@
         "cancel": "キャンセル",
         "descriptionLabel": "説明（任意）",
         "descriptionPlaceholder": "エージェントが適切なデバイスを選べるように表示されます。",
+        "expired": "このコードは期限切れです。新しいコードを生成してデバイスをペアリングしてください。",
         "formSubtitle": "新しいデバイスの名前、説明、承認モードを設定します。",
         "fullAccessWarning": "フルアクセス: エージェントは確認なしでこのマシン上の任意のコマンドを実行できます。安全のための拒否リストは引き続き適用されます。",
         "installLink": "docsgpt-cliがない場合はインストール",
@@ -3510,21 +3963,13 @@
       "subtitle": "エージェントがシェルコマンドで操作できるリモートマシンをペアリングします。"
     },
     "general": {
-      "addNew": "新規追加",
-      "chunks": "クエリごとに処理されるチャンク",
-      "convHistory": "会話履歴",
       "dark": "ダーク",
-      "default": "デフォルト",
-      "deleteAllDescription": "アカウント内のすべての会話を完全に削除します。この操作は元に戻せません。",
+      "deleteAllInWorkspace": "{{name}} で始めたすべてのチャットを完全に削除します。この操作は元に戻せません。",
       "deleteAllLabel": "すべての会話を削除",
-      "high": "高",
       "label": "一般",
       "language": "言語",
       "languageDescription": "メニューとラベルの言語。",
       "light": "ライト",
-      "low": "低",
-      "medium": "中",
-      "none": "なし",
       "sections": {
         "appearance": "外観",
         "dangerZone": "危険な操作",
@@ -3535,15 +3980,12 @@
       "taskModelDescription": "フォームの下書き、ナレッジグラフの構築、モニターのチェックを行います。チャットではエージェントのモデルを使用します。",
       "taskModelFailed": "{{model}} で前回のタスクを実行できませんでした。プロバイダーが API キーを拒否しました。別のモデルを選ぶか、管理者にキーの確認を依頼してください。",
       "taskModelFailedItem": "· キーが拒否されました",
-      "taskModelInstanceDefault": "インスタンスのデフォルトを使用（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "インスタンスのデフォルトを使用",
       "taskModelLoadError": "タスクモデルを読み込めませんでした。",
       "taskModelSaveFailed": "タスクモデルを保存できませんでした。もう一度お試しください。",
       "taskModelUnavailable": "タスクモデルを実行できなくなりました（無効化または削除されました）。そのため、インスタンスのデフォルトが使われます。モデルが戻ると再び使われます。置き換えるには、ここでオプションを選んでください。",
       "taskModelUnavailableValue": "利用できないモデル",
       "theme": "テーマ",
-      "themeDescription": "ライトまたはダークのインターフェース。",
-      "unlimited": "無制限"
+      "themeDescription": "ライトまたはダークのインターフェース。"
     },
     "insights": {
       "label": "インサイト"
@@ -3580,7 +4022,6 @@
         "dislike": "低評価",
         "like": "高評価"
       },
-      "filterByChatbot": "チャットボットでフィルター",
       "label": "ログ",
       "labels": {
         "asksHuman": "担当者を希望",
@@ -3616,7 +4057,6 @@
       "retriedStep_other": "{{node}}: {{count}} 回試行",
       "running": "実行中",
       "searchPlaceholder": "ログを検索...",
-      "selectChatbot": "チャットボットを選択",
       "subtitle": "APIコールと会話ログを表示・監視",
       "trace": {
         "chips": {
@@ -3762,6 +4202,9 @@
       "filters": {
         "all": "すべて"
       },
+      "folders": {
+        "emptyHint": "ここでプロンプトを追加するか、プロンプトの⋯メニューからここに移動してください。"
+      },
       "kindFilterLabel": "種類で絞り込む",
       "kinds": {
         "shared": "共有"
@@ -3788,12 +4231,14 @@
       "saveFailed": "このプロンプトを保存できませんでした。",
       "searchPlaceholder": "プロンプトを検索…",
       "sections": {
+        "folders": "フォルダー",
         "included": "標準搭載",
-        "shared": "チームと共有",
+        "shared": "あなたと共有",
+        "team": "プロンプト",
         "yours": "あなたのもの"
       },
       "select": "プロンプトを選択",
-      "shareWithTeam": "チームと共有",
+      "shareWithTeam": "共有",
       "subtitle": "システムプロンプトは、モデルの回答方法を指示します。選んだプロンプトはエージェントを使わないチャットで使われ、エージェントはそれぞれ独自のものを選びます。",
       "unsavedChanges": "保存されていない変更があります。保存せずに離れると失われます。",
       "useInChats": "{{name}} をチャットで使用",
@@ -3853,7 +4298,6 @@
       "deleteWarning": "「{{name}}」を削除しますか？",
       "deleting": "削除中…",
       "deletingTitle": "削除中...",
-      "editAlt": "編集",
       "editChunk": "チャンクを編集",
       "editChunkDescription": "{{file}} · チャンク {{n}} · {{tokens}} トークン",
       "editChunkDescriptionUnplaced": "{{file}} · 編集済みチャンク · {{tokens}} トークン",
@@ -3874,14 +4318,19 @@
         "sync": "ソースを同期できませんでした。",
         "syncFrequency": "同期頻度を変更できませんでした。"
       },
-      "fileAlt": "ファイル",
       "fileName": "名前",
       "files": "ファイル",
       "filesByline_one": "{{files}} ファイル · {{tokens}} トークン",
       "filesByline_other": "{{files}} ファイル · {{tokens}} トークン",
+      "filesFailed_one": "前回の同期で {{count}} 件のファイルの最新版をインデックスできませんでした。以前にインデックスされたファイルは、前の内容で検索に表示されることがあります。",
+      "filesFailed_other": "前回の同期で {{count}} 件のファイルの最新版をインデックスできませんでした。以前にインデックスされたファイルは、前の内容で検索に表示されることがあります。",
       "filesLoadError": "ファイルを読み込めませんでした",
       "filterFiles": "ファイルを絞り込む",
-      "folderAlt": "フォルダ",
+      "folders": {
+        "emptyHint": "ここにナレッジを追加するか、ソースの⋯メニューからここに移動してください。",
+        "noMatchIn": "{{name}} 内に「{{query}}」に一致するものはありません。",
+        "searchAll": "すべてのナレッジを検索"
+      },
       "goToSources": "ナレッジへ移動",
       "graphrag": {
         "badge": "GraphRAG",
@@ -3986,7 +4435,6 @@
       "kinds": {
         "all": "すべて",
         "files": "ファイル",
-        "shared": "共有",
         "synced": "同期",
         "websites": "ウェブサイト",
         "wikis": "Wiki"
@@ -3998,17 +4446,13 @@
       "needsAttention": "要対応",
       "nextChunk": "次のチャンク",
       "noChunks": "チャンクが見つかりません",
-      "noChunksAlt": "チャンクが見つかりません",
       "noData": "ナレッジはまだありません",
       "noKnowledgeFound": "ナレッジが見つかりません",
       "noResults": "結果が見つかりません",
       "pageRange_one": "ソース {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "ソース {{formatted}}件中 {{from}}–{{to}}件",
-      "parentFolderAlt": "親フォルダ",
       "paused": "同期を一時停止中です。再開するには {{name}} を再接続してください。",
-      "preLoaded": "プリロード済み",
       "previousChunk": "前のチャンク",
-      "private": "プライベート",
       "queued": "キュー: {{count}}",
       "reingest": "再インデックス",
       "retrievalOptions": {
@@ -4117,10 +4561,14 @@
         },
         "title": "詳細設定"
       },
-      "searchAlt": "検索",
+      "retryFailedFiles": "今すぐ再試行",
       "searchChunks": "チャンクを検索",
       "searchPlaceholder": "ナレッジを検索…",
-      "shareWithTeam": "チームと共有",
+      "sections": {
+        "folders": "フォルダー",
+        "sources": "ソース"
+      },
+      "shareWithTeam": "共有",
       "size": "サイズ",
       "subtitle": "DocsGPT が検索・引用できるコンテンツ：アップロード、ウェブサイト、Wiki、接続から同期したコンテンツ。",
       "syncConfirmation": "「{{sourceName}}」を同期しますか？",
@@ -4133,6 +4581,14 @@
         "weekly": "毎週"
       },
       "syncNow": "今すぐ同期",
+      "syncPaused": {
+        "account": "同期は一時停止中です：{{reason}}",
+        "noPayer": "定期同期は一時停止中です：チーム内に支払える人がいません。",
+        "noPayerSince": "定期同期は {{date}} から一時停止中です：チーム内に支払える人がいません。",
+        "other": "定期同期は一時停止中です。",
+        "otherSince": "定期同期は {{date}} から一時停止中です。",
+        "scheduled": "定期同期は一時停止中です：{{reason}}"
+      },
       "syncStarted": "{{name}} を同期しています…",
       "syncing": "同期中...",
       "testRetrieval": {
@@ -4471,6 +4927,11 @@
       "deleteTeamError": "チームを削除できませんでした。",
       "descriptionLabel": "説明",
       "descriptionPlaceholder": "このチームの目的は？（任意）",
+      "detail": {
+        "backToTeams": "チーム一覧に戻る",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "このチームは存在しないか、あなたはメンバーではありません。"
+      },
       "drawer": {
         "accessIn": "{{team}} でのアクセス権",
         "capabilitiesHint": "所有者のアクセス設定に基づきます。ここでは読み取り専用です。",
@@ -4480,6 +4941,7 @@
         "open": "{{type}}を開く",
         "otherTeamsHint": "ほかのチームとも共有していますか？それらは「共有を管理」で管理します。",
         "owner": "所有者",
+        "paused": "{{name}} がチームにいない間、共有は一時停止されます。再び追加されると共有が再開されます。",
         "removeGrant": "アクセス権を削除",
         "shared": "共有日",
         "sharedOnBy": "{{date}}（{{name}}）",
@@ -4494,7 +4956,6 @@
           "viewer": "閲覧者"
         }
       },
-      "editTeam": "編集",
       "editorHint": {
         "agent": "編集者はログ、スケジュール、アクセス情報を含めて変更できます。",
         "agentNoAccessDetails": "編集者はログとスケジュールを含めて変更できますが、アクセス情報は変更できません。",
@@ -4509,7 +4970,31 @@
         "tool": "編集者はアクションの変更と認証情報の置き換えができますが、シークレットは読めません。",
         "toolNoCredentials": "編集者はアクションを変更できますが、認証情報は変更できません。"
       },
+      "errors": {
+        "borrowedResource": "このエージェントは自分が所有していないソース、ツール、プロンプトを使っているため、別のチームと共有したり外部からアクセスさせたりできません。先にエージェントから外してください。",
+        "invalidPolicy": "このチームのアイテムをチーム外に出せる人を選んでください。",
+        "lastAdmin": "チームには管理者が少なくとも1人必要です。先に別のメンバーを管理者にしてください。",
+        "ownerMustTransfer": "あなたはこのチームの所有者です。先に別のメンバーに譲渡してください。",
+        "ownerProtected": "チームの所有者は降格も削除もできません。",
+        "policyOwnerOnly": "ロックを解除できるのはチームの所有者だけです。",
+        "roleRequired": "このチームでのあなたのロールではこの操作はできません。",
+        "shareNotMember": "共有できるのは、あなたが所属しているチームだけです。",
+        "shareSameTeam": "これはすでにそのチームのものです。",
+        "shareViewerOnly": "別のチームはチームのアイテムを使えますが、編集はできません。",
+        "shareWholeTeamOnly": "チームのアイテムは、1人ではなくチーム全体と共有されます。",
+        "teamItemSharedOutside": "このエージェントは、そのチームのアイテムを使えない人と共有されています。チーム外と共有していないエージェントで使うか、先にその共有を停止してください。",
+        "teamLocked": "このチームはロックされているため、チーム外に出せるものはありません。ロックを解除できるのは所有者だけです。",
+        "teamNotEmpty": "チームはまだアイテムを所有しています。先に移動するか削除してください。",
+        "usesTeamItems": "このエージェントはチームのアイテムを使っているため、それらを使える人とだけ共有できます。"
+      },
       "label": "チーム",
+      "leave": {
+        "action": "チームを退出",
+        "description": "{{team}} のエージェント、ナレッジ、ツール、プロンプト、チャットにアクセスできなくなります。そのエージェントに設定したスケジュールと、あなたが支払っている外部アクセスは、誰かが引き継ぐまで一時停止し、チームと共有していた個人アイテムは共有されなくなります。管理者はいつでもあなたを再び追加できます。",
+        "done": "{{team}} を退出しました。",
+        "error": "チームを退出できませんでした。",
+        "title": "{{team}} を退出しますか？"
+      },
       "loadError": "チームの読み込みに失敗しました。",
       "memberCount_one": "{{formatted}}人のメンバー",
       "memberCount_other": "{{formatted}}人のメンバー",
@@ -4524,13 +5009,136 @@
       "newTeam": "新しいチーム",
       "noMembers": "メンバーはまだいません。「メンバーを追加」からメールアドレスで招待してください。",
       "noTeams": "チームはまだありません。",
-      "nothingShared": "まだ何も共有されていません。エージェント、ソース、プロンプト、ツールのメニューから共有できます。",
+      "notEmpty": {
+        "connectionsHint": "接続は移動できません。チームの管理者がチームのコネクタページで削除します。",
+        "counts": {
+          "agent_one": "エージェント {{count}} 件",
+          "agent_other": "エージェント {{count}} 件",
+          "connection_one": "接続 {{count}} 件",
+          "connection_other": "接続 {{count}} 件",
+          "custom_model_one": "カスタムモデル {{count}} 件",
+          "custom_model_other": "カスタムモデル {{count}} 件",
+          "folder_one": "フォルダー {{count}} 件",
+          "folder_other": "フォルダー {{count}} 件",
+          "other_one": "その他のレコード {{count}} 件",
+          "other_other": "その他のレコード {{count}} 件",
+          "prompt_one": "プロンプト {{count}} 件",
+          "prompt_other": "プロンプト {{count}} 件",
+          "source_one": "ソース {{count}} 件",
+          "source_other": "ソース {{count}} 件",
+          "tool_one": "ツール {{count}} 件",
+          "tool_other": "ツール {{count}} 件",
+          "workflow_one": "ワークフロー {{count}} 件",
+          "workflow_other": "ワークフロー {{count}} 件"
+        },
+        "customModelsHint": "カスタムモデルは移動できません。チームの管理者がチームのカスタムモデルページで削除します。",
+        "hint": "個人に移動するか削除してから、チームを削除してください。",
+        "open": "{{name}} を開く",
+        "openConnectors": "コネクタを開く",
+        "openCustomModels": "カスタムモデルを開く",
+        "title": "{{name}} はまだアイテムを所有しています"
+      },
       "openTeamError": "チームの詳細を読み込めませんでした。",
+      "outside": {
+        "confirm": {
+          "changeTitle": "アイテムをチーム外に出せる人を変更しますか？",
+          "kept": "何も削除されません。ロックを解除すると、すべて元に戻ります。",
+          "lockIntro": "ロック中は次のようになります：",
+          "lockStops": "誰もこのチームのアイテムを別のチームと共有したり、エージェントをチーム外に公開したり、アイテムをチーム外に移動したり、エージェントをエクスポートしたりできません。",
+          "lockTitle": "{{team}} をロックしますか？",
+          "ownerUnlocks": "再びロックを解除できるのは所有者だけです。",
+          "pauses": {
+            "chatLinks": "チームの共有チャットリンクが開けなくなります",
+            "publishedAny": "エージェントが API キー、ウィジェット、公開リンク、Webhook 経由で応答しなくなります",
+            "published_one": "{{formatted}} 件のエージェントが API キー、ウィジェット、公開リンク、Webhook 経由で応答しなくなります",
+            "published_other": "{{formatted}} 件のエージェントが API キー、ウィジェット、公開リンク、Webhook 経由で応答しなくなります",
+            "sharesAny": "別のチームとの共有が一時停止します",
+            "shares_one": "別のチームとの {{formatted}} 件の共有が一時停止します",
+            "shares_other": "別のチームとの {{formatted}} 件の共有が一時停止します"
+          },
+          "returns": {
+            "chatLinks": "チームの共有チャットリンクが再び開けるようになります",
+            "publishedAny": "エージェントが API キー、ウィジェット、公開リンク、Webhook 経由で再び応答します",
+            "published_one": "{{formatted}} 件のエージェントが API キー、ウィジェット、公開リンク、Webhook 経由で再び応答します",
+            "published_other": "{{formatted}} 件のエージェントが API キー、ウィジェット、公開リンク、Webhook 経由で再び応答します",
+            "sharesAny": "別のチームとの共有が再び有効になります",
+            "shares_one": "別のチームとの {{formatted}} 件の共有が再び有効になります",
+            "shares_other": "別のチームとの {{formatted}} 件の共有が再び有効になります"
+          },
+          "submit": {
+            "change": "変更",
+            "lock": "ロック",
+            "unlock": "ロック解除"
+          },
+          "toAdmins": "編集者はアイテムをチーム外に出せなくなります。編集者が支払っている外部アクセスは、管理者が引き継ぐまで一時停止します。編集者が行った共有はそのまま残ります。",
+          "toEditors": "編集者も、このチームのアイテムを別のチームと共有し、エージェントの API キー、ウィジェット、公開リンク、Webhook をオンにできるようになります。",
+          "unlockIntro": "次のものが元どおりに戻ります：",
+          "unlockTitle": "{{team}} のロックを解除しますか？"
+        },
+        "description": "チーム外とは、別のチーム、またはエージェントの API キー、ウィジェット、公開リンク、Webhook のことです。",
+        "fromAnotherTeam": "別のチームから",
+        "fromTeams": {
+          "intro": "このチームが使える、別のチームのアイテムです。元のチームのものなので、ここでは誰も変更したり、さらに共有したりできません。",
+          "remove": "このチームから削除",
+          "removeAgain": "再び共有できるのは {{from}} だけです。",
+          "removeError": "このチームから削除できませんでした。",
+          "removeLabel": "{{name}} をこのチームから削除",
+          "removeTitle": "{{name}} を {{team}} から削除しますか？",
+          "title": "別のチームから共有"
+        },
+        "hint": {
+          "admins": "管理者と所有者は、このチームのアイテムを別のチームと共有し、エージェントの API キー、ウィジェット、公開リンク、Webhook をオンにできます。",
+          "editors": "編集者もできます。閲覧者はできません。",
+          "locked": "誰もできません。すでにチーム外にあるものは一時停止し、所有者がロックを解除するまで、アイテムをチーム外に移動したりエクスポートしたりできません。"
+        },
+        "label": "このチームのアイテムをチーム外に出せる人",
+        "ownerOnly": "ロックを解除できるのはチームの所有者だけです。",
+        "paused": "{{team}} のロック中は一時停止",
+        "policy": {
+          "admins": "管理者と所有者",
+          "editors": "編集者も含める",
+          "locked": "誰もできない（ロック）"
+        },
+        "policyError": "アイテムをチーム外に出せる人を変更できませんでした。",
+        "published": {
+          "open": "開く",
+          "openLabel": "{{name}} を開く",
+          "title": "チーム外からアクセス可能"
+        },
+        "shares": {
+          "by": "共有者: {{name}}",
+          "empty": "このチームのものはチーム外に共有されていません。",
+          "intro": "別のチームが使える、このチームのアイテムと、チーム外からアクセスできるエージェントです。",
+          "loadError": "このチームがチーム外に共有しているものを読み込めませんでした。",
+          "locked": "{{team}} はロックされています。所有者がロックを解除するまで、これらは一時停止中です。",
+          "policy": "アイテムをチーム外に出せる人：{{policy}}",
+          "revoke": "共有を停止",
+          "revokeError": "共有を停止できませんでした。",
+          "revokeLabel": "{{team}} との {{name}} の共有を停止",
+          "revokeTitle": "{{team}} との {{name}} の共有を停止しますか？",
+          "title": "チーム外に共有",
+          "with": "{{team}} と共有"
+        },
+        "stops": {
+          "agent": "{{team}} のメンバーはこのエージェントとチャットできなくなります。チャットは引き続き閲覧できます。",
+          "agents": "{{team}} の次のエージェントは、これなしで動作するようになります：{{names}}。",
+          "none": "{{team}} ではまだ何も使っていません。",
+          "unknown": "{{team}} でこれを使っているものは、これなしで動作するようになります。",
+          "usedBy_one": "{{team}} の {{formatted}} 件のエージェントがこれを使っており、これなしで動作するようになります。",
+          "usedBy_other": "{{team}} の {{formatted}} 件のエージェントがこれを使っており、これなしで動作するようになります。"
+        },
+        "title": "チーム外"
+      },
       "pageRange_one": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "pageRange_other": "チーム {{formatted}}件中 {{from}}–{{to}}件",
       "remove": "削除",
+      "removeMember": {
+        "personalItemsPaused": "{{name}} がチームにいない間、これらは {{team}} と共有されなくなり、再び追加されると元に戻ります。チームが必要としているものを残すには、先に {{name}} にチームへ移動するよう依頼してください。",
+        "personalItems_one": "{{name}} が {{team}} と共有している個人アイテム {{count}} 件",
+        "personalItems_other": "{{name}} が {{team}} と共有している個人アイテム {{count}} 件",
+        "teamItemsStay": "{{name}} が追加したチームのアイテムは {{team}} に残ります。{{name}} はそれらにアクセスできなくなります。いつでも再び追加できます。"
+      },
       "removeMemberConfirmation": "「{{name}}」を {{team}} から削除しますか？",
-      "removeMemberConsequence": "{{team}} と共有されたすべてにアクセスできなくなります。いつでも再度追加できます。",
       "removeMemberError": "メンバーを削除できませんでした。",
       "resourceType": {
         "agent": "エージェント",
@@ -4540,11 +5148,20 @@
       },
       "roleAdmin": "管理者",
       "roleChangeError": "ロールを変更できませんでした（最後の管理者は保護されています）。",
+      "roleHints": {
+        "admin": "さらにアイテムの削除、メンバーとロールの管理、外部からのアクセスの有効化ができます。",
+        "editor": "さらにアイテムの追加、編集、移動、整理とログの閲覧ができます。",
+        "viewer": "チームのエージェント、ナレッジ、ツール、プロンプトを使えます。"
+      },
       "roleMember": "メンバー",
       "save": "保存",
       "searchMembers": "メンバーを検索…",
       "selectTeamHint": "チームを選択して、メンバーと共有リソースを管理します。",
       "selectTeamTitle": "チームが選択されていません",
+      "settingsTab": {
+        "deleteHint": "削除できるのは空のチームだけです。先にエージェント、ナレッジ、ツール、プロンプト、フォルダーを移動するか削除してください。",
+        "details": "詳細"
+      },
       "share": {
         "access": "アクセス",
         "accessLevel": {
@@ -4552,6 +5169,7 @@
           "viewer": "閲覧者"
         },
         "addPlaceholder": "ユーザーまたはチームを追加…",
+        "addedByYou": "あなたが追加",
         "allSummary": "{{name}} · チーム: {{teams}} · ユーザー: {{people}}",
         "andMore_one": "ほか {{formatted}} 件",
         "andMore_other": "ほか {{formatted}} 件",
@@ -4566,6 +5184,9 @@
         "loadError": "現在の共有状況を読み込めませんでした。",
         "noMatches": "ユーザーまたはチームが見つかりません。",
         "noTeams": "まだどのチームにも所属していません。設定 → チームで作成してください。",
+        "notOwnedByTeam": "共有中（チームの所有ではありません）",
+        "ownOfferBody": "あなたが抜けてもチームに残ります。",
+        "ownOfferTitle": "{{team}} が所有すべきですか？",
         "owner": "所有者",
         "peopleGroup": "ユーザー",
         "peopleWithAccess": "アクセス権を持つユーザー",
@@ -4578,7 +5199,6 @@
         "shareError": "チームと共有できませんでした。",
         "showAll": "すべて表示（{{formatted}}）",
         "subtitle": "チームメンバーは使用でき、編集者は変更もできます。所有者はあなたのままです。",
-        "teamLabel": "チーム",
         "teamsGroup": "チーム",
         "titleGeneric": "この{{type}}を共有",
         "titleNamed": "「{{name}}」を共有",
@@ -4598,6 +5218,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "{{service}} からサインアウト済み",
             "connectionNeedsReconnectNoService": "サインアウト済み",
+            "connectionPaused": "チームの {{service}} アカウントが一時停止中",
+            "connectionPausedNoService": "チームのアカウントが一時停止中",
             "connectionRemoved": "{{service}} アカウントは削除済み",
             "connectionRemovedNoService": "アカウントは削除済み",
             "connectorDisabled": "管理者が {{service}} をオフにしました",
@@ -4610,6 +5232,8 @@
             "sponsorCannotEditItem": "{{person}} はこれを編集できなくなりました",
             "sponsorCannotEditItemOther": "追加した人がこれを編集できなくなりました",
             "sponsorCannotEditItemYou": "これを編集できなくなりました",
+            "teamLocked": "所属チームがロック中",
+            "teamShareEnded": "所属チームが共有を終了",
             "unknown": "実行されていません"
           },
           "stopped": "停止中",
@@ -4624,6 +5248,11 @@
       },
       "sharedCount_one": "{{formatted}}件の共有",
       "sharedCount_other": "{{formatted}}件の共有",
+      "sharedItems": {
+        "empty": "このチームと個人アイテムを共有している人はいません。",
+        "intro": "これらはチームではなく、共有した人のものです。チームが必要としているものは所有者に移動を依頼してください。",
+        "title": "チームと共有された個人アイテム"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} 編集者",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} 編集者",
@@ -4639,18 +5268,36 @@
         "noMatches": "一致するものはありません。",
         "pageRange_one": "リソース {{formatted}}件中 {{from}}–{{to}}件",
         "pageRange_other": "リソース {{formatted}}件中 {{from}}–{{to}}件",
+        "paused": "一時停止中：{{name}} がチームを離れました",
         "search": "共有を検索…"
       },
-      "sharedResources": "共有リソース",
       "sharedWithTeam": "このチームと共有中（{{count}}）",
       "sourceManual": "手動で追加",
       "sourceScim": "SCIM経由",
       "sourceSso": "SSO経由",
       "subtitle": "チーム、メンバー、共有リソースを管理します。",
-      "teamActions": "チームアクション",
+      "tabs": {
+        "label": "チームのページ",
+        "members": "メンバー",
+        "settings": "設定",
+        "shared": "共有された個人アイテム",
+        "usage": "使用状況"
+      },
       "teamNamePlaceholder": "チーム名",
       "teamSubtitle": "このチームのメンバーと共有リソースを管理します。",
       "teamsHeading": "あなたのチーム",
+      "transfer": {
+        "action": "譲渡",
+        "confirm": "{{team}} を {{name}} に譲渡しますか？",
+        "consequence": "その人が所有者兼管理者になります。元に戻せるのは新しい所有者だけです。",
+        "description": "チームの削除と譲渡ができるのは所有者だけです。",
+        "error": "チームを譲渡できませんでした。",
+        "memberLabel": "新しい所有者",
+        "noMatches": "一致する他のメンバーはいません。",
+        "placeholder": "メンバーを選択",
+        "submit": "譲渡",
+        "title": "所有権の譲渡"
+      },
       "unshare": "共有を解除",
       "unshareError": "リソースの共有を解除できませんでした。",
       "updateFailed": "更新に失敗しました"
@@ -4698,9 +5345,13 @@
       "fieldDescription": "フィールドの説明",
       "fieldName": "フィールド名",
       "fieldType": "フィールドタイプ",
+      "fileFailed": "ツールは追加されましたが、このフォルダーには入れられませんでした。",
       "filledBy": "入力元",
       "filters": {
         "all": "すべて"
+      },
+      "folders": {
+        "emptyHint": "ここでツールを追加するか、ツールの⋯メニューからここに移動してください。"
       },
       "groupAdded": "追加済み",
       "groupBuiltIn": "組み込み",
@@ -4773,6 +5424,15 @@
         "sharedByEditor": "{{owner}} が共有 · あなたは編集者です",
         "sharedCredentialsNotice": "保存済みの認証情報は表示されません。入力した内容は、このツールを使うすべての人の認証情報を置き換えます。",
         "sharedOAuthOwnerOnly": "このサーバーの接続を変更したり、サインインを再接続したりできるのはオーナーだけです。名前の変更とアクションの編集は引き続き行えます。",
+        "team": {
+          "eachPerson": "各自が自分のアカウントでサインイン",
+          "eachPersonHint": "このサーバーを使う人は、それぞれ自分のアカウントでサインインします。まず個人で、このサーバーに自分でサインインしておく必要があります。",
+          "oauthNewServerOnly": "サインインが必要なサーバー（OAuth）をチームで使うには、新しいサーバーとして追加してください。",
+          "signInInPersonal": "個人でサインイン",
+          "teamOnce": "チームとして一度だけ、あなたのアカウントでサインイン",
+          "teamOnceHint": "チームの全員が、あなたがサインインしたアカウントを使います。あなたが接続した、チームの接続になります。",
+          "whoSignsIn": "サインインする人"
+        },
         "testBeforeSave": "保存する前に接続をテストしてください。",
         "testConnection": "接続をテスト",
         "timeout": "タイムアウト（秒）",
@@ -4796,12 +5456,28 @@
       "savedSecretPlaceholder": "保存済み · 置き換えるには新しい値を入力",
       "searchActions": "アクションを検索...",
       "searchPlaceholder": "ツールを検索…",
+      "sections": {
+        "folders": "フォルダー"
+      },
       "selectToolSetup": "ツールを追加",
       "settingsIconAlt": "設定アイコン",
-      "shareWithTeam": "チームと共有",
+      "shareWithTeam": "共有",
       "sharedBy": "{{team}} が共有",
       "statusUpdateFailed": "このツールをチャットで使うかどうかを変更できませんでした。",
       "subtitle": "エージェントが実行できる操作です。標準搭載のツールはDocsGPTに付属しています。接続したサービスのツールは、そのサービスの下にまとめて表示されます。",
+      "team": {
+        "addFailed": "ツールを追加できませんでした。もう一度お試しください。",
+        "connectForTeam": "チーム用にアカウントを接続",
+        "connectForTeamHint": "コネクタのページで、チーム全体用の{{name}}アカウントを接続します。そのツールはチームの全員に対してそのアカウントで動作します。",
+        "connectInPersonal": "個人で自分のアカウントを接続",
+        "eachPerson": "各自が自分のアカウントでサインイン",
+        "eachPersonHint": "このツールを使う人は、それぞれ自分のアカウントで{{name}}にサインインします。アカウントは共有されません。",
+        "eachPersonMeta": "各自のアカウント",
+        "serviceDescription": "チームのツールがどの{{name}}アカウントで動作するかを選んでください。",
+        "serviceTitle": "{{name}}をチームに追加",
+        "teamAccount": "チームのアカウントを使う",
+        "teamAccountHint": "チームの{{name}}アカウントとそのツールは、コネクタのページで管理します。チームの全員に対してそのアカウントで動作します。"
+      },
       "toolActions": "ツールアクション",
       "toolIconTitle": "{{name}}のアイコン",
       "triggerLabel_one": "ツール、{{formatted}} 件選択中",
@@ -4851,14 +5527,284 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "チームを切り替え",
+      "ariaLabel": "ワークスペースを切り替え",
       "createTeam": "チームを作成",
       "logoAlt": "DocsGPT ロゴ",
-      "manageTeams": "チームを管理",
-      "personal": "個人アカウント",
-      "personalSubtitle": "個人ワークスペース",
-      "roleAdmin": "管理者",
-      "roleMember": "メンバー"
+      "manageTeams": "チームを管理"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "deleteAll": {
+        "confirm": "{{name}} のチャットをすべて削除しますか？",
+        "consequence": "{{name}} で始めたチャットはメッセージごとすべて削除されます。ほかのワークスペースのチャットは残ります。この操作は元に戻せません。"
+      },
+      "mismatch": "このエージェントは、このチャットとは別のワークスペースに属しています。",
+      "notFound": "このチームのメンバーではなくなったため、ここではチャットを続けられません。",
+      "switchTo": "{{name}} に切り替える",
+      "thisTeam": "このチーム"
+    },
+    "common": {
+      "personal": "個人",
+      "roles": {
+        "admin": "管理者",
+        "editor": "編集者",
+        "owner": "所有者",
+        "viewer": "閲覧者"
+      },
+      "you": "あなた"
+    },
+    "folders": {
+      "alsoInFolder": "このフォルダーにあるその他の項目"
+    },
+    "menu": {
+      "moveToPersonal": "個人に移動…",
+      "moveToTeam": "チームに移動…"
+    },
+    "move": {
+      "access": {
+        "gainsDetail": "{{team}} の編集者と管理者は変更でき、閲覧者は使用できます。",
+        "gainsNone": "ほかにアクセスできるようになる人はいません",
+        "gains_one": "{{count}}人がアクセスできるようになります",
+        "gains_other": "{{count}}人がアクセスできるようになります",
+        "loseTeamNone": "ほかにアクセスを失う人はいません",
+        "loseTeam_one": "{{team}} の{{count}}人がアクセスできなくなります",
+        "loseTeam_other": "{{team}} の{{count}}人がアクセスできなくなります",
+        "losesShared_one": "{{team}} の外で共有した{{count}}人がアクセスできなくなります：{{names}}。",
+        "losesShared_other": "{{team}} の外で共有した{{count}}人がアクセスできなくなります：{{names}}。",
+        "onlyYou": "共有するまで、あなただけが使えます。"
+      },
+      "anotherTeam": "別のチーム",
+      "borrow": {
+        "in_one": "{{names}} はチーム外から利用でき、この移動でチームに入るものを使っています。外部アクセスでそれを提供することはできません。一緒に移動するか、外部アクセスをオフにするか、先にそれらのアイテムを外してください。",
+        "in_other": "{{names}} はチーム外から利用でき、この移動でチームに入るものを使っています。外部アクセスでそれを提供することはできません。一緒に移動するか、外部アクセスをオフにするか、先にそれらのアイテムを外してください。",
+        "keeps_one": "あなたのエージェント {{names}} は移動するものを使っています。チームから引き続き使えますが、その間は公開できません。",
+        "keeps_other": "あなたのエージェント {{names}} は移動するものを使っています。チームから引き続き使えますが、その間は公開できません。",
+        "out_one": "{{names}} は {{team}} に残り、この移動で持ち出すものを使っています。一緒に移動するか、先にそれらのアイテムを外してください。",
+        "out_other": "{{names}} は {{team}} に残り、この移動で持ち出すものを使っています。一緒に移動するか、先にそれらのアイテムを外してください。"
+      },
+      "cannotTitle": "移動できません",
+      "chats": {
+        "in_one": "これを使ったあなたのチャット{{count}}件が {{team}} に移ります。",
+        "in_other": "これを使ったあなたのチャット{{count}}件が {{team}} に移ります。",
+        "out_one": "これを使ったあなたのチャット{{count}}件が個人に移ります。",
+        "out_other": "これを使ったあなたのチャット{{count}}件が個人に移ります。"
+      },
+      "comesAlong": "一緒に移動",
+      "comesWith": "「{{name}}」と一緒に移動",
+      "customModelHint": "残すには、先にカスタムモデルでチームに追加してください。",
+      "done": {
+        "personal": "「{{name}}」は個人ワークスペースに移動しました。",
+        "team": "「{{name}}」は {{team}} のものになりました。"
+      },
+      "doneButton": "完了",
+      "droppedShares": {
+        "description": "それらのチームでこれを使っているものは動かなくなります。",
+        "title": "他のチームとの共有が終了します",
+        "with": "{{team}} と共有"
+      },
+      "effects": {
+        "removed_from_holder": "使用している側から外されます。",
+        "stays": "そのまま残ります。"
+      },
+      "errors": {
+        "already_in_workspace": "すでにそこにあります。",
+        "credentials_unavailable": "保存されたキーを今は移動できません。後でもう一度お試しください。",
+        "credentials_unreadable_one": "{{names}} の保存されたシークレットを読み取れないため、移動できません。先に入力し直してください。",
+        "credentials_unreadable_other": "{{names}} の保存されたシークレットを読み取れないため、移動できません。先に入力し直してください。",
+        "fingerprint_required": "もう一度プランを確認してから移動してください。",
+        "folder_not_found": "そのフォルダはもう存在しません。",
+        "folder_too_deep": "そのフォルダは深すぎます。フォルダは最大3階層までです。",
+        "invalid_request": "この移動はできません。",
+        "move_failed": "移動に失敗しました。何も変更されていません。",
+        "move_needs_admin": "チーム外から利用できるエージェントを持ち込めるのはチームの管理者だけです。",
+        "move_plan_changed": "変更がありました。もう一度確認してください",
+        "move_would_borrow": "チーム外から利用できるエージェントが、この移動で持ち出すものを使っています。",
+        "not_a_person": "アイテムを移動できるのは人だけです。",
+        "not_found": "もう存在しません。",
+        "nothing_to_move": "移動できるアイテムがありません。",
+        "team_locked": "{{team}} はロックされているため、ここから移動できるものはありません。ロックを解除できるのは所有者だけです。",
+        "workspace_not_found": "そのチームは利用できなくなりました。",
+        "workspace_role_required": "そこでのあなたのロールではこの移動はできません。"
+      },
+      "folderLabel": "フォルダ",
+      "foldersFailed": "移動先のフォルダを読み込めなかったため、最上位に置かれます。",
+      "kinds": {
+        "agent": "エージェント",
+        "folder": "フォルダ",
+        "model": "モデル",
+        "prompt": "プロンプト",
+        "source": "ソース",
+        "tool": "ツール"
+      },
+      "listSeparator": "、",
+      "modelRemaps": {
+        "in": "「{{from}}」→ チームの「{{to}}」",
+        "out": "「{{from}}」→ あなたの「{{to}}」",
+        "title": "一致するカスタムモデルに切り替わります"
+      },
+      "needsAdmin_one": "{{names}} はチーム外から利用できます（キー、公開リンク、Webhook）。これを持ち込めるのは {{team}} の管理者だけです。先に外部アクセスをオフにするか、管理者に依頼してください。",
+      "needsAdmin_other": "{{names}} はチーム外から利用できます（キー、公開リンク、Webhook）。これらを持ち込めるのは {{team}} の管理者だけです。先に外部アクセスをオフにするか、管理者に依頼してください。",
+      "noFolder": "フォルダなし",
+      "openIn": "{{name}} を開く",
+      "othersYouCantOpen_one": "あなたが開けないエージェント{{count}}件",
+      "othersYouCantOpen_other": "あなたが開けないエージェント{{count}}件",
+      "outside": {
+        "apiKey": "APIキーとウィジェット",
+        "publicLink": "公開リンク",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} が所有します",
+        "teamDetail": "あなたが抜けてもチームに残ります。追加した人としてあなたの名前は残ります。",
+        "you": "あなたが所有します",
+        "youDetail": "{{team}} から個人ワークスペースに移ります。"
+      },
+      "payerYou": "あなた",
+      "pays": {
+        "chats": "チャットは各自が支払います。",
+        "outside": "外部からのアクセス（{{list}}）は引き続き有効で、{{name}} が支払います。",
+        "schedules_one": "{{count}}件のスケジュールは引き続き実行され、{{names}} が支払います。",
+        "schedules_other": "{{count}}件のスケジュールは引き続き実行され、{{names}} が支払います。",
+        "title": "支払う人は変わりません"
+      },
+      "planChanged": "変更がありました。もう一度確認してください",
+      "quoted": "「{{name}}」",
+      "reasons": {
+        "connection_account": "このワークスペースに残るアカウントでサインインしています。",
+        "connector_synced": "このワークスペースに残るアカウントから同期されています。",
+        "credentials_unreadable": "保存されたシークレットを読み取れなくなっています。",
+        "custom_model": "チームにない個人のカスタムモデルです。",
+        "custom_model_out": "あなたが持っていないチームのカスタムモデルです。",
+        "in_knowledge_folder": "エージェントが読むフォルダに入っています。移動するのはそのソースだけです。",
+        "not_yours": "ほかの人のものなので、移動できません。",
+        "remote_device": "ペアリングしたデバイスで動作します。"
+      },
+      "renames": {
+        "folder": "フォルダ「{{from}}」は「{{to}}」になります",
+        "other": "「{{from}}」は「{{to}}」になります",
+        "slug": "エージェントのアドレス「{{from}}」は「{{to}}」になります",
+        "title": "名前の重複を避けるため変更されます"
+      },
+      "sharedRefs": {
+        "from": "{{team}} からの共有を通じて使用",
+        "title": "別のチームの共有により維持"
+      },
+      "someone": "誰か",
+      "submit": "{{name}} に移動",
+      "teamLabel": "チーム",
+      "teamLocked_one": "{{names}} はチーム外からアクセスできます（キー、公開リンク、Webhook）。{{team}} はロックされているため移動できません。先に外部アクセスをオフにしてください。",
+      "teamLocked_other": "{{names}} はチーム外からアクセスできます（キー、公開リンク、Webhook）。{{team}} はロックされているため移動できません。先に外部アクセスをオフにしてください。",
+      "titleToPersonal": "「{{name}}」を個人に移動",
+      "titleToTeam": "「{{name}}」をチームに移動",
+      "unnamed": "開けないアイテム",
+      "withReasons": {
+        "in_folder": "フォルダ内",
+        "same_workflow": "同じワークフロー",
+        "used_by_agent": "エージェントが使用"
+      }
+    },
+    "notices": {
+      "lost": "{{name}} のメンバーではなくなったため、個人に切り替えました",
+      "lostUnnamed": "そのチームのメンバーではなくなったため、個人に切り替えました",
+      "ownerInactive": "外部からのアクセスは一時停止中です：所有者のアカウントが無効化されています。",
+      "ownerInactiveShort": "外部アクセス停止中",
+      "roleChanged": "{{name}} でのあなたの役割が変わりました。ページには今できることが表示されます。",
+      "switched": "{{name}} に切り替えました"
+    },
+    "page": {
+      "sharedFromTeams": {
+        "from": "{{team}} から",
+        "title": "このチームと共有"
+      },
+      "sharedWithYou": "あなたと共有"
+    },
+    "pickers": {
+      "inAgentFolder": "{{folder}}（このエージェントのフォルダー）",
+      "inWorkflowFolder": "{{folder}}（このワークフローのフォルダー）",
+      "otherFolders": "ほかのフォルダー",
+      "thisTeam": "このチーム"
+    },
+    "share": {
+      "access": "アクセス",
+      "adminsOnly": "これらを変更できるのは管理者だけで、エージェントのページで行います。",
+      "apiKey": "APIキーとウィジェット",
+      "belongsTo": "これは {{team}} のものです。アクセスはチームのメンバーシップに従います。",
+      "everyoneInTeam": "{{team}} の全員",
+      "fromTeam": "チーム経由",
+      "manageMembers": "メンバーを管理",
+      "members_one": "{{count}}人、チームでのロールに応じて",
+      "members_other": "{{count}}人、チームでのロールに応じて",
+      "off": "オフ",
+      "on": "オン",
+      "onPaidBy": "オン · {{name}} が支払い",
+      "outside": {
+        "again": "いつでも再度共有できます。",
+        "locked": "{{team}} はロックされているため、ほかのチームと共有できるものはありません。ロックを解除できるのは所有者だけです。",
+        "noMatches": "チームが見つかりません。",
+        "noTargets": "共有先にできるほかのチームに参加していません。",
+        "pausedLocked": "{{owner}} がロックされている間は一時停止中",
+        "picker": "共有先のチーム",
+        "pickerPlaceholder": "チームを選択…",
+        "pickerSearch": "チームを検索…",
+        "received": {
+          "body": "{{owner}} が {{team}} の全員と共有しています。",
+          "bodyNoOwner": "ほかのチームが {{team}} の全員と共有しています。",
+          "note": "使うことはできますが、変更したり、ほかの人と共有したりすることはできません。"
+        },
+        "revoke": "共有を停止",
+        "revokeAgent": "{{team}} のメンバーはこのエージェントとチャットできなくなります。これまでのチャットは引き続き読めます。",
+        "revokeConfirm": "{{team}} との共有を停止しますか？",
+        "revokeUnused": "{{team}} のメンバーはこれを使えなくなります。",
+        "revokeUsed_one": "{{team}} の {{formatted}} 個のエージェントがこれを使っており、これなしで動作するようになります。",
+        "revokeUsed_other": "{{team}} の {{formatted}} 個のエージェントがこれを使っており、これなしで動作するようになります。",
+        "share": "共有",
+        "shareError": "そのチームと共有できませんでした。",
+        "sharedBy": "{{name}} が共有",
+        "sharedByYou": "あなたが共有",
+        "teamsTitle": "ほかのチームと共有",
+        "title": "チーム外",
+        "unknownTeam": "参加していないチーム",
+        "unshareError": "共有を停止できませんでした。",
+        "usedBy_one": "{{formatted}} 個のエージェントが使用中",
+        "usedBy_other": "{{formatted}} 個のエージェントが使用中",
+        "uses": {
+          "fromTeam": "{{team}} から：{{items}}。",
+          "hidden_one": "表示できないアイテム {{count}} 件",
+          "hidden_other": "表示できないアイテム {{count}} 件",
+          "moveTo": "{{team}} に移動",
+          "note": "このエージェントはチームのアイテムを使っているため、それらを使える人だけが候補に表示されます。",
+          "remove": "ほかの人と共有するには、エージェントからそれらを削除してください。",
+          "someTeam": "ほかのチーム"
+        },
+        "warning": {
+          "agent": "{{team}} のメンバーはこのエージェントとチャットできます。{{owner}} のナレッジとツールで動作します。{{owner}} でこのエージェントのログとインサイトを見られる人には、メンバーの質問が見えます。",
+          "always": "メンバーはこれを変更したり、さらに共有したり、これを使うエージェントを公開したりできません。共有はいつでも停止でき、その時点で {{team}} でこれを使っているものは停止します。",
+          "prompt": "{{team}} のメンバーはこれを読み、自分のエージェントで使えます。",
+          "source": "{{team}} のメンバーはこの中のすべてのファイルを読み、自分のエージェントで使えます。",
+          "teamModels_one": "{{team}} のメンバーは、{{owner}} のモデル {{names}} でこのエージェントを使います。",
+          "teamModels_other": "{{team}} のメンバーは、{{owner}} のモデル {{names}} でこのエージェントを使います。",
+          "toolMember": "各メンバーは自分のアカウントを使います。",
+          "toolStored": "{{team}} のメンバーは、{{owner}} の保存済みアカウントでこのツールを実行します。メンバーが行う操作は {{owner}} として行われます。"
+        }
+      },
+      "payerYou": "あなた",
+      "publicLink": "公開リンク",
+      "teamTitle": "「{{name}}」を使える人",
+      "teamTitleGeneric": "この{{type}}を使える人",
+      "webhook": "Webhook",
+      "yourRole": "{{team}} の{{role}}"
+    },
+    "switcher": {
+      "onlyYou": "あなただけ",
+      "personal": "個人",
+      "teamMeta_one": "{{count}}人 · {{role}}",
+      "teamMeta_other": "{{count}}人 · {{role}}",
+      "teamRole": "チーム · {{role}}",
+      "teams": "チーム"
+    },
+    "team": {
+      "navEntry": "チーム"
     }
   }
 }

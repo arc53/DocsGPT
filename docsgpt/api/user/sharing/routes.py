@@ -9,6 +9,8 @@ from flask_restx import fields, inputs, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.answer.services.compression.types import is_compression_summary_row
+from docsgpt.api.user.resource_access import borrowed_refs, borrowed_refusal
 from docsgpt.storage.db import agent_defaults
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.agents import STORED_PROMPT_PRESETS, AgentsRepository
@@ -19,6 +21,7 @@ from docsgpt.storage.db.repositories.shared_conversations import (
 )
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import check_required_fields
+from docsgpt.workspaces.outside import CODE_TEAM_LOCKED, POLICY_LOCKED, may_take_outside, outside_minimum, team_policy
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +161,130 @@ def _find_reusable_share_agent(
     return mapping
 
 
+def team_chat_link_paused(conn, team_id: Optional[Any]) -> bool:
+    """Whether a chat's share link is paused because its team is locked.
+
+    A team chat's link takes the chat outside the team, so it follows the
+    team's outside policy: while the team is locked its links answer as if
+    they didn't exist, and unlocking brings them back. A Personal chat
+    (``team_id`` None) never depends on a team.
+
+    Args:
+        conn: Open connection.
+        team_id: The conversation's ``team_id``.
+
+    Returns:
+        bool: True while the chat's team is locked.
+    """
+    return team_id is not None and team_policy(conn, str(team_id)) == POLICY_LOCKED
+
+
+def agent_team_locked(conn, agent_id: Optional[Any], *, lock: Optional[str] = None) -> bool:
+    """Whether the team that owns a chat's agent is locked.
+
+    A chat's link carries its agent's answers outside, so the outside policy
+    of the agent's team holds as well as the chat's own team's: a receiving
+    team's chat on another team's agent pauses while that team is locked, as
+    every other way outside to that agent does. A personal agent never
+    depends on a team.
+
+    Args:
+        conn: Open connection.
+        agent_id: The conversation's ``agent_id``.
+        lock: ``share`` to hold the team row until the transaction ends (a write racing a lock).
+
+    Returns:
+        bool: True while the agent's team is locked.
+    """
+    from docsgpt.api.user.resource_access import resource_owner
+    from docsgpt.workspaces.principal import team_of_principal
+
+    if not agent_id or not looks_like_uuid(str(agent_id)):
+        return False
+    team_id = team_of_principal(resource_owner(conn, "agent", str(agent_id)))
+    return team_id is not None and team_policy(conn, team_id, lock=lock) == POLICY_LOCKED
+
+
+def chat_link_paused(conn, conversation: dict) -> bool:
+    """Whether a chat's share link is paused: its team or its agent's team is locked.
+
+    Args:
+        conn: Open connection.
+        conversation: The conversation row (``team_id``, ``agent_id``).
+
+    Returns:
+        bool: True while either team is locked.
+    """
+    return team_chat_link_paused(conn, conversation.get("team_id")) or agent_team_locked(
+        conn, conversation.get("agent_id")
+    )
+
+
+def _team_chat_share_refusal(conn, conversation: dict, user: str, is_promptable: bool):
+    """The 403 for sharing a team chat other than as a read-only snapshot the team's outside policy allows, or None.
+
+    Who may make the link follows the policy: Admins, or Editors too under
+    ``editors``; nobody while the team is locked (``team_locked``). Any
+    chat, Personal included, also waits while the team that owns its agent is
+    locked (``team_locked``). The policy rows are held until the share is
+    written, so a lock set meanwhile lands first or waits for it.
+
+    Args:
+        conn: Open connection.
+        conversation: The conversation row (the caller's own).
+        user: The caller.
+        is_promptable: A promptable link was asked for.
+
+    Returns:
+        A Flask response, or None when the share may go ahead.
+    """
+    from docsgpt.workspaces.roles import role_at_least, team_role_for
+
+    if agent_team_locked(conn, conversation.get("agent_id"), lock="share"):
+        return make_response(
+            jsonify({
+                "success": False,
+                "error": CODE_TEAM_LOCKED,
+                "message": "The team that owns this chat's agent is locked: its answers can't be shared outside.",
+            }),
+            403,
+        )
+    team_id = conversation.get("team_id")
+    if not team_id:
+        return None
+    if is_promptable:
+        return make_response(
+            jsonify({
+                "success": False,
+                "error": "promptable_share_personal_only",
+                "message": "A chat in a team workspace can only be shared as a read-only link.",
+            }),
+            403,
+        )
+    role = team_role_for(conn, user, str(team_id))
+    policy = team_policy(conn, str(team_id), lock="share")
+    if may_take_outside(role, policy):
+        return None
+    if policy == POLICY_LOCKED and role_at_least(role, "editor"):
+        return make_response(
+            jsonify({
+                "success": False,
+                "error": CODE_TEAM_LOCKED,
+                "message": "This team is locked: its chats can't be shared outside it.",
+            }),
+            403,
+        )
+    who = "admins and editors" if outside_minimum(policy) == "editor" else "admins"
+    return make_response(
+        jsonify({
+            "success": False,
+            "error": "workspace_role_required",
+            "message": f"Only the team's {who} can share a chat from its workspace.",
+        }),
+        403,
+    )
+
+
 @sharing_ns.route("/share")
 class ShareConversation(Resource):
     share_conversation_model = api.model(
@@ -209,6 +336,11 @@ class ShareConversation(Resource):
                         404,
                     )
                 conv_pg_id = str(conversation["id"])
+                # Outward exposure belongs to the team: a team chat's link is
+                # a read-only snapshot made by whom its outside policy allows;
+                # the promptable link, which mints an agent and key, stays Personal.
+                if refusal := _team_chat_share_refusal(conn, conversation, user, is_promptable):
+                    return refusal
                 current_n_queries = conv_repo.message_count(conv_pg_id)
 
                 if is_promptable:
@@ -227,6 +359,18 @@ class ShareConversation(Resource):
                         conn, data.get("source"), user
                     )
                     retriever = data.get("retriever")
+                    # The link hands its agent's API key to every browser that
+                    # opens it: never with someone else's source.
+                    borrowed = borrowed_refs(conn, user, [("source", source_pg_id)] if source_pg_id else [])
+                    if borrowed:
+                        body, status = borrowed_refusal(conn, borrowed, user)
+                        source = body["resources"][0]
+                        owner = source["owner"]["label"] or "someone else"
+                        body["message"] = body["error"] = (
+                            f'A promptable link can\'t use the source "{source["name"]}" from {owner}: anyone '
+                            "who opens the link can search it. Share without that source, or pick one of your own."
+                        )
+                        return make_response(jsonify(body), status)
 
                     reusable = _find_reusable_share_agent(
                         conn, user,
@@ -387,11 +531,27 @@ class GetPubliclySharedConversations(Resource):
                             404,
                         )
                     conversation = dict(row._mapping)
+                if chat_link_paused(conn, conversation):
+                    # Answered like a link that doesn't exist: a locked team's chats, and its agent's answers,
+                    # don't leave it.
+                    return make_response(
+                        jsonify(
+                            {
+                                "success": False,
+                                "error": "might have broken url or the conversation does not exist",
+                            }
+                        ),
+                        404,
+                    )
 
                 messages = conv_repo.get_messages(conv_pg_id)
                 first_n = shared.get("first_n_queries") or 0
                 conversation_queries = []
+                # ``first_n_queries`` counts stored rows, so slice before
+                # dropping the compression summaries earlier versions stored.
                 for msg in messages[:first_n]:
+                    if is_compression_summary_row(msg):
+                        continue
                     wake = _shared_wake(msg.get("metadata"))
                     query = {
                         # A woken turn's prompt is the event text written for the model; the share shows the event.

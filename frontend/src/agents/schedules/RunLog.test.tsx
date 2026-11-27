@@ -126,6 +126,44 @@ describe('RunLog', () => {
     expect(failed.querySelector('p')).toBeNull();
   });
 
+  it('names a pause skip and says it stands for the runs after it', async () => {
+    store.runs = [
+      {
+        ...runs[0],
+        id: 'pl',
+        status: 'skipped',
+        error_type: 'payer_left',
+        error: 'payer_left',
+        prompt_tokens: 0,
+        generated_tokens: 0,
+      },
+      {
+        ...runs[0],
+        id: 'oa',
+        status: 'failed',
+        error_type: 'payer_out_of_allowance',
+        error: 'quota exceeded',
+      },
+    ];
+    await act(async () => root.render(<RunLog scheduleId="s1" />));
+    const [skipped, stopped] = Array.from(
+      container.querySelectorAll('tbody tr'),
+    );
+    expect(skipped.textContent).toContain(
+      '(activity.now.errorType.payer_left)',
+    );
+    expect(skipped.textContent).toContain(
+      'agents.schedules.runLog.pausedStreak',
+    );
+    // A run stopped mid-way at the allowance is one run, not a streak.
+    expect(stopped.textContent).toContain(
+      '(activity.now.errorType.payer_out_of_allowance)',
+    );
+    expect(stopped.textContent).not.toContain(
+      'agents.schedules.runLog.pausedStreak',
+    );
+  });
+
   const many = (n: number) =>
     Array.from({ length: n }, (_, i) => ({ ...runs[0], id: `r${i}` }));
   const flush = async () => {

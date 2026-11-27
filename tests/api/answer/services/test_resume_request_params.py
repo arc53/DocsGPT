@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import types
 import uuid
+from contextlib import nullcontext
 from unittest.mock import MagicMock
 
 import pytest
@@ -120,7 +121,7 @@ def _openai_llm(monkeypatch, api_flavor: str):
 
 
 @pytest.fixture
-def resume(monkeypatch):
+def resume(monkeypatch, pg_conn):
     """Resume a saved state with a given request body; returns the agent kwargs."""
     from docsgpt.agents import agent_creator as ac_mod
     from docsgpt.api.answer.services import continuation_service as cont_mod
@@ -128,7 +129,13 @@ def resume(monkeypatch):
     from docsgpt.llm import llm_creator as llm_creator_mod
     from docsgpt.llm.handlers import handler_creator as handler_mod
 
-    def _run(state: dict, data: dict, *, llm=None, real_agent: bool = False):
+    # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+    monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
+
+    def _run(
+        state: dict, data: dict, *, llm=None, real_agent: bool = False, external_caller: bool = False,
+        seen: dict | None = None,
+    ):
         cont_service = MagicMock()
         cont_service.claim_state.return_value = copy.deepcopy(state)
         monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
@@ -141,8 +148,10 @@ def resume(monkeypatch):
             monkeypatch.setattr(
                 ac_mod.AgentCreator, "create_agent", lambda *a, **kw: created.update(kw) or MagicMock(),
             )
-        processor = sp_mod.StreamProcessor(dict(data), {"sub": OWNER})
+        processor = sp_mod.StreamProcessor(dict(data), {"sub": OWNER}, external_caller=external_caller)
         processor.trace_source = "v1"
+        if seen is not None:
+            seen["processor"] = processor
         result = processor.resume_from_tool_actions(
             tool_actions=[{"call_id": "call_1", "result": "total: 41.20"}],
             conversation_id=str(uuid.uuid4()),
@@ -235,3 +244,24 @@ class TestResumedCallCarriesTheParams:
         assert sent["max_completion_tokens"] == 256
         assert sent["temperature"] == 0.2
         assert sent["seed"] == 7
+
+
+class TestWhoReadsTheResumedTurn:
+    """The rest of a resumed turn reads as whoever resumes it, judged from the resuming request alone."""
+
+    def test_a_key_resume_reads_as_nobody_though_its_token_is_the_owners(self, resume, pg_conn):
+        # ``/v1`` hands the run the key owner's token; the key is what authenticates it, so another team's item
+        # shared with the owner's side stays out of the rest of the turn.
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+
+        key = f"k-{uuid.uuid4().hex}"
+        agent = AgentsRepository(pg_conn).create(OWNER, "Keyed", "published", key=key)
+        seen: dict = {}
+        state = _state(agent_id=str(agent["id"]), external_api_caller=True)
+        resume(state, {"api_key": key}, external_caller=True, seen=seen)
+        assert seen["processor"]._run_reader == ""
+
+    def test_a_signed_in_resume_reads_as_its_caller(self, resume):
+        seen: dict = {}
+        resume(_state(), {}, seen=seen)
+        assert seen["processor"]._run_reader == OWNER

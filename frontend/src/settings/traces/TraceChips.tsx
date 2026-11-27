@@ -1,5 +1,6 @@
 import {
   Brain,
+  CircleDollarSign,
   Coins,
   Search,
   Timer,
@@ -11,14 +12,14 @@ import { useTranslation } from 'react-i18next';
 
 import { Badge } from '@/components/ui/badge';
 import { TraceCounts } from '../types';
-import { formatDurationMs, formatTokens } from './traceUtils';
+import { formatCost, formatDurationMs, formatTokens } from './traceUtils';
 
 type TraceChipsProps = {
   durationMs?: number;
   counts: TraceCounts;
 };
 
-/** Compact stat chips for a trace: duration, LLM calls, tokens, tools, RAG time, errors. */
+/** Compact stat chips for a trace: duration, LLM calls, tokens, cost, tools, RAG time, errors. */
 export default function TraceChips({ durationMs, counts }: TraceChipsProps) {
   const { t } = useTranslation();
   const chips: {
@@ -49,6 +50,12 @@ export default function TraceChips({ durationMs, counts }: TraceChipsProps) {
         input: formatTokens(counts.input_tokens),
         output: formatTokens(counts.output_tokens),
       }),
+    });
+  if (counts.cost_usd && counts.cost_usd > 0)
+    chips.push({
+      key: 'cost',
+      icon: <CircleDollarSign className="size-3" />,
+      label: formatCost(counts.cost_usd),
     });
   if (counts.tool_calls)
     chips.push({

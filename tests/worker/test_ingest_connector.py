@@ -223,6 +223,58 @@ class TestIngestConnectorSkipsUnchangedSync:
 
         connector.download_to_directory.assert_called_once()
 
+    def test_a_retrieval_edit_keeps_an_unchanged_selection(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None)})
+        # PATCH /api/sources/<id>/config with retrieval fields only: they take effect live.
+        SourcesRepository(pg_conn).update(
+            str(src["id"]), "dave", {"config": {"retrieval": {"chunks": 12, "exposure": "agentic_tool"}}},
+        )
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "unchanged"
+        connector.download_to_directory.assert_not_called()
+
+    def test_a_fingerprint_stored_under_the_legacy_scheme_still_matches_and_is_restored(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-1"
+        config = {"retrieval": {"chunks": 3}}
+        legacy = worker._connector_sync_fingerprint("fp-1", config, legacy=True)
+        src = _gdrive_source(pg_conn, {"sync_fingerprint": legacy})
+        SourcesRepository(pg_conn).update(str(src["id"]), "dave", {"config": config})
+
+        result = _sync(worker, task_self, str(src["id"]))
+
+        assert result["status"] == "unchanged"
+        connector.download_to_directory.assert_not_called()
+        stored = SourcesRepository(pg_conn).get(str(src["id"]), "dave")["remote_data"]["sync_fingerprint"]
+        assert stored == worker._connector_sync_fingerprint("fp-1", config)
+
+    def test_a_legacy_fingerprint_that_cannot_be_stored_again_still_skips(
+        self, pg_conn, patch_worker_db, task_self, monkeypatch, _mock_connector_pipeline,
+    ):
+        from docsgpt import worker
+
+        connector = _mock_connector_pipeline
+        connector.sync_fingerprint.return_value = "fp-1"
+        src = _gdrive_source(
+            pg_conn, {"sync_fingerprint": worker._connector_sync_fingerprint("fp-1", None, legacy=True)},
+        )
+        monkeypatch.setattr(worker, "_save_source_sync_state", MagicMock(side_effect=RuntimeError("db down")))
+
+        assert _sync(worker, task_self, str(src["id"]))["status"] == "unchanged"
+        connector.download_to_directory.assert_not_called()
+
     @pytest.mark.parametrize("stored, current", [(None, "fp-1"), ("fp-1", None)])
     def test_missing_fingerprint_reingests(
         self, pg_conn, patch_worker_db, task_self, _mock_connector_pipeline, stored, current,
@@ -290,7 +342,46 @@ class TestConnectorSyncFingerprint:
         on = worker._connector_sync_fingerprint("fp", {"retrieval": {"chunks": 4, "show_links": True}})
         off = worker._connector_sync_fingerprint("fp", '{"retrieval": {"chunks": 4, "show_links": false}}')
         assert on == off
-        assert on != worker._connector_sync_fingerprint("fp", {"retrieval": {"chunks": 5, "show_links": True}})
+
+    @pytest.mark.parametrize(
+        "edit",
+        [
+            {"retrieval": {"chunks": 5}},
+            {"retrieval": {"exposure": "agentic_tool", "rephrase_query": False}},
+            {"retrieval": {"reranker": {"type": "decision", "min_relevance": 0.3}}},
+            {"retrieval": {"graph": {"seed_strategy": "relationships"}}},
+            {"graph": {"extraction_model": "other", "gleanings": 1}},
+        ],
+    )
+    def test_a_retrieval_edit_does_not_force_a_reingest(self, edit):
+        # Retrieval settings take effect live; only what an ingest writes keys the fingerprint.
+        from docsgpt import worker
+
+        base = {"chunking": {"max_tokens": 500}}
+        assert worker._connector_sync_fingerprint("fp", base) == worker._connector_sync_fingerprint(
+            "fp", {**base, **edit},
+        )
+
+    def test_the_legacy_fingerprint_hashes_the_whole_config(self):
+        import hashlib
+        import json
+
+        from docsgpt import worker
+
+        config = {"retrieval": {"chunks": 4, "show_links": False}}
+        legacy = hashlib.sha256(
+            json.dumps(
+                {"selection": "fp", "config": {"retrieval": {"chunks": 4}}, "version": worker._CONNECTOR_INGEST_VERSION},
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        assert worker._connector_sync_fingerprint("fp", config, legacy=True) == legacy
+        assert worker._connector_sync_fingerprint("fp", json.dumps(config), legacy=True) == legacy
+        assert worker._connector_sync_fingerprint("fp", config) != legacy
+        # Text that isn't JSON is hashed as it is, as before.
+        assert worker._connector_sync_fingerprint("fp", "not json", legacy=True) != worker._connector_sync_fingerprint(
+            "fp", "other", legacy=True,
+        )
 
     def test_fingerprints_stored_before_web_links_force_one_reingest(self):
         import hashlib
@@ -805,3 +896,23 @@ class TestConnectorUnparsedFiles:
         assert json.loads(uploads[0]["remote_data"])["sync_fingerprint"] == worker._connector_sync_fingerprint(
             "fp-2", None
         )
+
+
+
+@pytest.mark.unit
+def test_a_partly_ocrd_file_keeps_no_fingerprint_without_a_listing(task_self, monkeypatch, _mock_connector_pipeline):
+    """A loader that can't list can't retry one file: missing pages mean the next sync reads everything."""
+    import json
+
+    _mock_connector_pipeline.download_to_directory.return_value = {
+        "files_downloaded": 1, "empty_result": False, "sync_fingerprint": "fp-2",
+    }
+    monkeypatch.setattr(
+        worker, "_incomplete_files",
+        lambda docs, base_dir=None: {"connector/file.md": ("transient", "1 page(s) could not be OCR'd")},
+    )
+    uploads = _uploads(monkeypatch)
+
+    _upload_ingest(task_self)
+
+    assert "sync_fingerprint" not in json.loads(uploads[0]["remote_data"])

@@ -1,10 +1,10 @@
 ---
 title: Agent Basics
+sidebarTitle: 🤖 Agent Basics
 description: Learn about DocsGPT Agents, their types, how to create and manage them, and how they can enhance your interaction with documents and tools.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-21
 ---
 
-import { Callout } from 'nextra/components';
 import Image from 'next/image'; // Assuming you might want to embed images later, like the ones you uploaded.
 
 # Agent Basics
@@ -33,7 +33,7 @@ When you create or configure an agent, you'll work with these key components:
     * **Describe your agent:** A brief description for you or users to understand the agent's purpose.
 
 **Source:**
-    * **Knowledge** (**Select knowledge**): The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know." The picker shows each source's kind and details, lists the selected ones first, filters by kind, and ends with **Go to Knowledge** and **Upload new**; see [Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents).
+    * **Knowledge** (**Select knowledge**): The knowledge base for the agent. You can select from previously uploaded documents or data sources. This is what the agent will "know." The picker shows each source's kind and details, lists the selected ones first, filters by kind, and ends with **Go to Knowledge** and **Upload new**; see [Use knowledge in chats and agents](/Sources/adding-knowledge#use-knowledge-in-chats-and-agents). You can also pick a whole Knowledge folder: it stays up to date, so sources filed in it later reach the agent without editing it. See [Pick a whole folder](/Sources/adding-knowledge#pick-a-whole-folder).
     * **Chunks:** How many relevant text chunks are sent to the LLM with each query, in total across the agent's sources (default 6). The agent form doesn't show it; set `chunks` when creating or updating the agent through the API, or in an imported agent YAML file (see [Agents API](/API/agent-api)).
 
 **Prompt:**
@@ -144,7 +144,7 @@ Once an agent is created, you can:
     * **Open Access Details:** On a published agent, open the **⋯** menu beside the agent's name on the edit screen and choose **Access Details**. It holds the agent's **Public Link**, its API key (with **Reset key**) and its **Webhook URL**. A draft has none of these: publish the agent to create its API key. The public link and webhook URL don't exist until you click **Generate** next to each in that dialog.
     * **Public Link:** Anyone with the link can open the agent and chat with it; it then appears under **Discovered** on their Agents page. They use your agent as it is; they don't get a copy.
     * **Webhook URL:** Lets external applications or services trigger the agent and receive responses programmatically. See [Webhooks](/API/webhooks).
-    * On a team-shared agent, editors can manage Access Details too, unless the owner turns off **Editors can manage access details**.
+    * On a team-shared agent, only the owner manages Access Details unless the owner turns on **Editors can manage access details** (off by default). In a team workspace, Admins manage a team agent's Access Details.
 * **Share it with a team:** Viewers chat with it; editors can also change it. The share dialog lists what the agent uses and whose access each item runs with. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use).
 * **Use it via API:** Every published agent has an API key (in **Access Details**) that can be used with the native [Agent API](/API/agent-api) or the [OpenAI-Compatible API](/API/openai-compatible) so you can drop DocsGPT Agents into any tool that already speaks the chat completions protocol.
 
@@ -156,4 +156,4 @@ You can bootstrap a fresh DocsGPT deployment with a curated set of agents by see
 2. **Ensure dependencies are running** – Postgres must be reachable using `POSTGRES_URI` from `.env` (schema applied via `python scripts/db/init_postgres.py`), and a Celery worker should be available if any agent sources need to be ingested via `ingest_remote`.
 3. **Execute the seeder** – run `python -m docsgpt.seed.commands init`. Add `--force` when you need to reseed an existing environment.
 
-The seeded agents are owned by the `__system__` user. They appear under **Templates** on the Agents page, where users can adopt a copy to use and customize. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.
+The seeded agents are owned by the `__system__` user. The web app doesn't list them; `GET /api/template_agents` returns them, and `POST /api/adopt_agent?id=<id>` copies one into the current workspace: the caller's agents in Personal, or the team's agents in a team, which takes the Editor role or higher. A team's copy keeps only the team's own sources and prompts: the template's sources and stored prompt are left off, so attach the team's own before using it. Environment variable placeholders such as `${MY_TOKEN}` inside tool configs are resolved during the seeding process.

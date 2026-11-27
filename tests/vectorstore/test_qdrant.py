@@ -5,7 +5,7 @@ through langchain, so these exercise the real client in ``:memory:`` mode
 rather than asserting against mocks.
 """
 
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -89,6 +89,20 @@ def other(populated):
 
 @pytest.mark.unit
 class TestQdrantStore:
+    def test_clears_parent_metadata_without_embedding(self, store):
+        ids = store.add_texts(
+            ["first child", "second child"],
+            [{"parent_text": "parent"}, {"parent_text": "parent"}],
+        )
+        embed = Mock(wraps=store._embeddings.embed_documents)
+        store._embeddings.embed_documents = embed
+
+        updated = store.clear_parent_text(ids)
+
+        assert updated == [(chunk_id, chunk_id) for chunk_id in ids]
+        assert all("parent_text" not in chunk["metadata"] for chunk in store.get_chunks())
+        embed.assert_not_called()
+
     def test_source_id_strips_index_prefix(self, store):
         assert store._source_id == "src-A"
 

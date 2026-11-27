@@ -19,6 +19,7 @@ from .artifacts import artifacts_ns
 from .attachments import attachments_ns
 from .background_jobs import background_jobs_ns
 from .conversations import conversations_ns
+from .folders import folders_ns
 from .drafter import drafter_ns
 from .mcp_apps import mcp_apps_ns
 from .me import me_ns
@@ -38,6 +39,7 @@ from .teams import teams_ns
 from .tools import tools_mcp_ns, tools_ns
 from .workflow_runs import workflow_runs_ns
 from .workflows import workflows_ns
+from .workspaces import workspaces_ns
 
 
 user = Blueprint("user", __name__)
@@ -60,6 +62,8 @@ api.add_namespace(background_jobs_ns)
 # Conversations
 api.add_namespace(conversations_ns)
 
+# Folders (agents and knowledge; /api/agents/folders/* are agent-only aliases)
+api.add_namespace(folders_ns)
 # Draft with DocsGPT (fills a form from a description; session-only)
 api.add_namespace(drafter_ns)
 
@@ -113,3 +117,6 @@ api.add_namespace(tools_mcp_ns)
 # Workflows, and the runs they leave behind
 api.add_namespace(workflows_ns)
 api.add_namespace(workflow_runs_ns)
+
+# Workspaces (the switcher's list, moving items into and out of a team)
+api.add_namespace(workspaces_ns)

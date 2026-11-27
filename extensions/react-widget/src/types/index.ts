@@ -182,7 +182,6 @@ export interface WidgetCoreHandle {
 }
 
 export interface WidgetCoreProps extends WidgetProps {
-  widgetRef?: React.RefObject<HTMLDivElement> | null;
   handleClose?: React.MouseEventHandler | undefined;
   isOpen: boolean;
   prefilledQuery?: string;

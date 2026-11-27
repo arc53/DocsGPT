@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 
 import { MultiSelectPopover } from '../../components/MultiSelectPopover';
 import PickerFooter from '../../components/PickerFooter';
+import type { HolderFolder } from '../../components/pickerScope';
 import {
   type PickerTool,
   toolPickerItems,
@@ -55,6 +56,11 @@ export type ToolsPickerProps<T extends PickerTool> = {
   /** Who added a tool ("Added by Lena"), joined to its row's line. */
   addedBy?: (id: string) => string | null;
   /**
+   * The folder the agent or workflow is filed in: its tools come first,
+   * then the other folders' tools, until a search is typed.
+   */
+  holderFolder?: HolderFolder | null;
+  /**
    * Signs a broken connection behind the reader's tools in again; given, a
    * notice above the footer offers it.
    */
@@ -80,7 +86,8 @@ export type ToolsPickerProps<T extends PickerTool> = {
  * groups them with a kind track, a remote device's status, who added a tool,
  * a remove-only row for each picked tool the reader can't list, a notice
  * for a connection that needs signing in again, and a footer to Tools and to
- * Add tool.
+ * Add tool. Opened from an agent or workflow filed in a folder, that
+ * folder's tools come first; a search names each match's folder.
  */
 export default function ToolsPicker<T extends PickerTool>({
   open,
@@ -94,6 +101,7 @@ export default function ToolsPicker<T extends PickerTool>({
   connections,
   catalog,
   addedBy,
+  holderFolder,
   onReconnect,
   trigger,
   onNavigate,
@@ -103,6 +111,15 @@ export default function ToolsPicker<T extends PickerTool>({
 }: ToolsPickerProps<T>) {
   const { t } = useTranslation();
   const [addToolState, setAddToolState] = useState<ActiveState>('INACTIVE');
+  // The search, so the folder groups give way to cmdk's matches while one
+  // is typed. Each open starts empty.
+  const [search, setSearch] = useState('');
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setSearch('');
+  }
+  const searching = search.trim() !== '';
   const offered = useMemo(() => tools.filter(filter), [tools, filter]);
   // The offered tools, then a row for each attached one not among them.
   const rows = useMemo<PickerTool[]>(() => {
@@ -161,6 +178,8 @@ export default function ToolsPicker<T extends PickerTool>({
         // Who added a tool joins its line ("a@x · Added by Bob"), so the
         // row keeps one line.
         lineSuffix: addedBy ? (tool) => addedBy(tool.id) : undefined,
+        holderFolder: searching ? null : holderFolder,
+        otherFoldersHeading: t('workspace.pickers.otherFolders'),
       }),
     [
       addedBy,
@@ -168,8 +187,10 @@ export default function ToolsPicker<T extends PickerTool>({
       catalog,
       connections,
       deviceOnline,
+      holderFolder,
       kinds.items,
       listed,
+      searching,
       t,
     ],
   );
@@ -206,6 +227,8 @@ export default function ToolsPicker<T extends PickerTool>({
         selectedFirst
         loneGroupHeading={false}
         filters={kinds.filters}
+        search={search}
+        onSearchChange={setSearch}
         selectedIds={selectedIds}
         onToggle={onToggle}
         searchPlaceholder={t('settings.tools.searchPlaceholder')}

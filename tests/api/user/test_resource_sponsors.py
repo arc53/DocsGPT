@@ -275,6 +275,8 @@ class TestActiveSponsor:
     def test_sponsor_losing_the_resource_stops(self, pg_conn):
         agent_id, team_id = _agent(pg_conn)
         tool = str(UserToolsRepository(pg_conn).create(OTHER, "api_tool")["id"])
+        # A grant works only while its owner is in the team.
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
         TeamResourceGrantsRepository(pg_conn).grant(
             team_id, "tool", tool, OTHER, OTHER, access_level="editor", target_user_id=EDITOR
         )
@@ -417,6 +419,8 @@ class TestRunTime:
         shared = str(SourcesRepository(pg_conn).create("shared-src", user_id=OTHER)["id"])
         if not TeamMembersRepository(pg_conn).is_member(OWNER, team_id):
             TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        # A grant works only while its owner is in the team.
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)
         TeamResourceGrantsRepository(pg_conn).grant(team_id, "source", shared, OTHER, OTHER)
         AgentsRepository(pg_conn).update_by_id(str(agent["id"]), {"extra_source_ids": [shared]})
 
@@ -434,6 +438,7 @@ class TestRunTime:
         agent, team_id, _, _, source = self._sponsored_agent(app, pg_conn)
         shared = str(SourcesRepository(pg_conn).create("shared-src", user_id=OTHER)["id"])
         TeamMembersRepository(pg_conn).add_member(team_id, OWNER)
+        TeamMembersRepository(pg_conn).add_member(team_id, OTHER)  # a grant needs its owner in the team
         TeamResourceGrantsRepository(pg_conn).grant(team_id, "source", shared, OTHER, OTHER)
         foreign = str(SourcesRepository(pg_conn).create("foreign-src", user_id="sp-stranger")["id"])
         AgentsRepository(pg_conn).update_by_id(str(agent["id"]), {"extra_source_ids": [shared, foreign]})

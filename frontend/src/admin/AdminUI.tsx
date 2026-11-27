@@ -39,17 +39,21 @@ export function userName(userId: string, email?: string | null): string {
 }
 
 /**
- * A user in an admin table: the email on file over the full user id, or the
- * id alone. Admins filter and set quotas by the id, so it is never cut.
+ * A user in an admin table: the label (the server's name for the account:
+ * the email, or "Team <name>" for a team's own account), else the email on
+ * file, over the full user id; or the id alone. Admins filter and set
+ * quotas by the id, so it is never cut.
  */
 export function UserIdentity({
   userId,
   email,
+  label,
 }: {
   userId: string;
   email?: string | null;
+  label?: string | null;
 }) {
-  const mail = emailOf(email);
+  const mail = emailOf(label) ?? emailOf(email);
   if (!mail) {
     return <span className="font-mono text-xs wrap-anywhere">{userId}</span>;
   }
@@ -105,13 +109,6 @@ export function fmtMs(n?: number | null): string {
   return n < 1000 ? `${Math.round(n)}ms` : `${(n / 1000).toFixed(1)}s`;
 }
 
-export function fmtCompact(n?: number | null): string {
-  return new Intl.NumberFormat(undefined, {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(n ?? 0);
-}
-
 // Humanized event labels + semantic color tier, shared by the activity feed
 // and the user-detail modal so the same event reads identically everywhere.
 // Unknown names fall back to a title-cased form of the name itself, so an
@@ -142,11 +139,30 @@ const EVENT_LABELS: Record<string, string> = {
   'team.create': 'Team created',
   'team.delete': 'Team deleted',
   'team.member_add': 'Member added',
+  // Older rows; the event is `team.member_role_changed` now.
   'team.member_role': 'Member role changed',
+  'team.member_role_changed': 'Member role changed',
   'team.member_remove': 'Member removed',
   'team.share': 'Resource shared',
   'team.unshare': 'Resource unshared',
   'team.transfer_owner': 'Ownership transferred',
+  'team.item_moved_in': 'Item moved into team',
+  'team.item_moved_out': 'Item moved out of team',
+  'team.folder_moved_in': 'Folder moved into team',
+  'team.folder_moved_out': 'Folder moved out of team',
+  'team.schedule_taken_over': 'Schedule taken over',
+  'team.outside_access_taken_over': 'Outside access taken over',
+  'team.chats_exported': 'Team chats exported',
+  'team.outside_policy_changed': 'Outside policy changed',
+  'team.item_shared_with_team': 'Item shared with another team',
+  'team.item_unshared_from_team': 'Item unshared from another team',
+  'team.connection_added': 'Team account connected',
+  'team.connection_reconnected': 'Team account reconnected',
+  'team.connection_disconnected': 'Team account disconnected',
+  'team.connection_removed': 'Team account removed',
+  'team.model_added': 'Team model added',
+  'team.model_updated': 'Team model changed',
+  'team.model_removed': 'Team model removed',
   'source.created': 'Source created',
   'source.deleted': 'Source deleted',
   'source.reingested': 'Source reingested',
@@ -164,7 +180,23 @@ const EVENT_LABELS: Record<string, string> = {
   'guardrail.attachment': 'Guardrail (attachment)',
 };
 
-export function eventLabel(event: string): string {
+/**
+ * How an audit event reads. A team model added by copying a person's own
+ * (`detail.copied`) says so.
+ *
+ * Args:
+ *   event: The event name.
+ *   detail: The row's metadata, when the caller has it.
+ *
+ * Returns:
+ *   The label.
+ */
+export function eventLabel(
+  event: string,
+  detail?: Record<string, unknown> | null,
+): string {
+  if (event === 'team.model_added' && detail?.copied === true)
+    return 'Team model copied from Personal';
   const known = EVENT_LABELS[event];
   if (known) return known;
   // "source.reingested" -> "Source reingested"
@@ -191,6 +223,10 @@ const WARNING_EVENTS = new Set([
   'quota_policy_deleted',
   'team.member_remove',
   'team.unshare',
+  'team.item_unshared_from_team',
+  'team.connection_disconnected',
+  'team.connection_removed',
+  'team.model_removed',
 ]);
 
 export function eventTone(event: string): Tone {

@@ -30,11 +30,14 @@ import {
 import { AppDispatch } from '../store';
 import { ChatCompanionContext, type AnswerSource } from './chatCompanion';
 import { handleSendFeedback } from './conversationHandlers';
+import { followItemWorkspace } from './followWorkspace';
+import type { WorkspaceItemFields } from '../workspace/itemOrigin';
 import { AgentCardSkeleton } from './ChatLoadingSkeleton';
 import ConversationMessages from './ConversationMessages';
 import SourcesPanel from './SourcesPanel';
 import { FEEDBACK, Query } from './conversationModels';
 import { pendingQuestionCall, type QuestionAction } from './questionCall';
+import { lastShownIndex } from './shownQueries';
 import { composerSubmitTarget, resendPlan } from './turnSubmission';
 import { ToolCallsType } from './types';
 import {
@@ -46,7 +49,7 @@ import {
   resumeQuestion,
   selectQueries,
   selectStatus,
-  submitToolActions,
+  decideToolCall,
   updateQuery,
 } from './conversationSlice';
 import { getSendReadiness } from '../components/message-input/armedSend';
@@ -142,11 +145,22 @@ export default function Conversation() {
       dispatch(
         loadConversation({
           id: urlConversationId,
-          // An agent's chat opened by its URL: the agent resolves before the
-          // chat applies, so its card and the messages land in one render.
-          // Read on its own, the card landed after the messages and pushed
-          // them down.
-          resolveAgent: urlAgentId ? () => fetchAgent(urlAgentId) : undefined,
+          // A chat opened by its URL from another workspace takes the app
+          // there before it applies: the switch closes the open chat, so
+          // applied first it would show and then go. The page reloads in
+          // the new workspace and finds the chat already open.
+          // An agent's chat: the agent resolves before the chat applies, so
+          // its card and the messages land in one render. Read on its own,
+          // the card landed after the messages and pushed them down.
+          resolveAgent: async (data) => {
+            await dispatch(
+              followItemWorkspace(
+                (data as WorkspaceItemFields | null)?.workspace,
+              ),
+            );
+            // A chat without an agent's route has no agent card.
+            return urlAgentId ? fetchAgent(urlAgentId) : null;
+          },
         }),
       )
         .unwrap()
@@ -178,7 +192,19 @@ export default function Conversation() {
         userService
           .getAgent(urlAgentId, token)
           .then((response) => (response.ok ? response.json() : null))
-          .then((agent: Agent | null) => {
+          .then(async (agent: Agent | null) => {
+            if (cancelled) return;
+            // A new chat with an agent of another workspace (a link) is
+            // started there, or the server refuses it; the page reloads in
+            // that workspace. A chat that exists keeps its own.
+            if (
+              agent &&
+              isNewChatRoute &&
+              (await dispatch(
+                followItemWorkspace((agent as WorkspaceItemFields).workspace),
+              ))
+            )
+              return;
             if (cancelled) return;
             if (agent) dispatch(setSelectedAgent(agent));
             // Not another agent's card under this agent's URL, but a pick
@@ -210,11 +236,8 @@ export default function Conversation() {
 
   const handleToolAction = useCallback(
     (callId: string, decision: 'approved' | 'denied', comment?: string) => {
-      dispatch(
-        submitToolActions({
-          toolActions: [{ call_id: callId, decision, comment }],
-        }),
-      );
+      // Held until the turn's other approvals are decided, then sent together.
+      void dispatch(decideToolCall({ callId, decision, comment }));
     },
     [dispatch],
   );
@@ -444,7 +467,7 @@ export default function Conversation() {
 
   useEffect(() => {
     if (queries.length) {
-      const last = queries[queries.length - 1];
+      const last = queries[lastShownIndex(queries)];
       if (last.error) setLastQueryReturnedErr(true);
       if (last.response) setLastQueryReturnedErr(false);
     }
@@ -656,6 +679,7 @@ export default function Conversation() {
                 }
                 // A send now would go to the chat still applied, not the URL's.
                 sendBlocked={isLoadingUrlChat}
+                usageNotice
                 showSourceButton={selectedAgent ? false : true}
                 showToolButton={selectedAgent ? false : true}
               />

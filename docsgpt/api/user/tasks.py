@@ -122,17 +122,20 @@ def _emit_ingest_poison_event(task_name, bound):
 
     The guard returns before the worker runs, so the worker's own failed
     event never fires — without this the upload toast spins on "training".
+    It goes out the way the worker's own event would: for a team's source, to
+    the person who started it while they are still in the team, else to the
+    team's admins, and never to the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
-    from docsgpt.worker import close_failed_ingest_progress
+    from docsgpt.worker import _publish_source_event, close_failed_ingest_progress
 
     close_failed_ingest_progress(source_id)
-    publish_user_event(
+    _publish_source_event(
         user,
+        bound.get("actor_id"),
         "source.ingest.failed",
         {
             "source_id": str(source_id),
@@ -166,7 +169,14 @@ def ingest(
     idempotency_key=None,
     source_id=None,
     copy_files=None,
+    folder_id=None,
+    actor_id=None,
+    sync_manifest=None,
 ):
+    """Ingest an upload; ``actor_id`` is the uploader when ``user`` is a team's principal (the owner).
+
+    ``sync_manifest`` is the record of the uploaded files the new source starts with.
+    """
     resp = ingest_worker(
         self,
         directory,
@@ -181,6 +191,9 @@ def ingest(
         source_id=source_id,
         # Only when given, so the worker's call shape is unchanged otherwise.
         **({"copy_files": copy_files} if copy_files else {}),
+        **({"folder_id": folder_id} if folder_id else {}),
+        **({"sync_manifest": sync_manifest} if sync_manifest else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
@@ -193,8 +206,9 @@ def ingest(
 def ingest_remote(
     self, source_data, job_name, user, loader,
     config=None, idempotency_key=None, source_id=None, connection_id=None,
-    sync_frequency="never",
+    sync_frequency="never", folder_id=None, actor_id=None,
 ):
+    """Ingest a remote source; ``actor_id`` is who added it when ``user`` is a team's principal (the owner)."""
     resp = remote_worker(
         self, source_data, job_name, user, loader,
         sync_frequency=sync_frequency,
@@ -202,6 +216,8 @@ def ingest_remote(
         idempotency_key=idempotency_key,
         source_id=source_id,
         connection_id=connection_id,
+        **({"folder_id": folder_id} if folder_id else {}),
+        **({"actor_id": actor_id} if actor_id else {}),
     )
     return resp
 
@@ -229,10 +245,10 @@ def reembed_wiki_page(
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="convert_source_to_wiki")
-def convert_source_to_wiki(self, source_id, user, idempotency_key=None):
+def convert_source_to_wiki(self, source_id, user, idempotency_key=None, actor_id=None):
     from docsgpt.worker import convert_source_to_wiki_worker
 
-    resp = convert_source_to_wiki_worker(self, source_id, user)
+    resp = convert_source_to_wiki_worker(self, source_id, user, actor_id=actor_id)
     return resp
 
 
@@ -240,16 +256,19 @@ def _emit_graph_poison_event(task_name, bound):
     """Publish a terminal ``graph.extract.failed`` when the poison-guard trips.
 
     The guard returns before the worker runs, so the worker's own failed event
-    never fires — without this the build UI spins forever.
+    never fires — without this the build UI spins forever. For a team's source
+    it reaches the person who started the build while they are still in the
+    team, never the team's principal.
     """
     user = bound.get("user")
     source_id = bound.get("source_id")
     if not user or not source_id:
         return
-    from docsgpt.events.publisher import publish_user_event
+    from docsgpt.worker import _publish_source_event
 
-    publish_user_event(
+    _publish_source_event(
         user,
+        bound.get("actor_id"),
         "graph.extract.failed",
         {
             "source_id": str(source_id),
@@ -261,15 +280,18 @@ def _emit_graph_poison_event(task_name, bound):
 
 @celery.task(**DURABLE_TASK)
 @with_idempotency(task_name="extract_graph", on_poison=_emit_graph_poison_event)
-def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False):
+def extract_graph(self, source_id, user, idempotency_key=None, chunk_ids=None, sync=False, actor_id=None):
     """Build a source's graph; with ``chunk_ids`` (a page change), extract only those chunks.
 
     ``sync`` (after a sync re-embedded the source) carries the graph over by
-    chunk content and extracts only new text.
+    chunk content and extracts only new text. ``actor_id`` (who added the
+    knowledge) pays for the extraction's model calls and hears its events.
     """
     from docsgpt.worker import extract_graph_worker
 
-    return extract_graph_worker(self, source_id, user, chunk_ids=chunk_ids, sync=sync)
+    return extract_graph_worker(
+        self, source_id, user, chunk_ids=chunk_ids, sync=sync, **({"actor_id": actor_id} if actor_id else {}),
+    )
 
 
 # Beat-driven dispatch tasks default to ``acks_late=False``: a SIGKILL
@@ -574,11 +596,16 @@ def ingest_connector_task(
     source_id=None,
     connection_id=None,
     actor_id=None,
+    folder_id=None,
+    retry_failed=None,
 ):
     """Ingest or sync a connector source; a new source keeps ``sync_frequency`` (``None`` is "never").
 
     ``actor_id`` is the user who asked, when not the owner (a team editor's
     re-ingest or Sync now): the ``source.ingest.*`` events go to them too.
+    This task runs the syncs someone asks for (scheduled ones run
+    ``sync_connector_source``), so a sync retries every file the last one
+    could not read unless ``retry_failed`` says otherwise.
     """
     from docsgpt.worker import ingest_connector
 
@@ -600,6 +627,11 @@ def ingest_connector_task(
         idempotency_key=idempotency_key,
         source_id=source_id,
         actor_id=actor_id,
+        **(
+            {"retry_failed": True if retry_failed is None else bool(retry_failed)}
+            if operation_mode == "sync" else {}
+        ),
+        **({"folder_id": folder_id} if folder_id else {}),
     )
     return resp
 
@@ -1009,6 +1041,8 @@ def setup_periodic_tasks(sender, **kwargs):
     # Vectors of ingests that ended without a source, once they are
     # INGEST_ORPHAN_TTL_HOURS old.
     sender.add_periodic_task(timedelta(hours=1), cleanup_orphaned_ingests.s(), name="cleanup-orphaned-ingests")
+    # Stored parses of source files unused for PARSE_CACHE_TTL_DAYS.
+    sender.add_periodic_task(timedelta(hours=24), cleanup_parsed_files.s(), name="cleanup-parsed-files")
     # Conversation analytics (``docsgpt.analytics.tasks``). The sweep and the
     # digest run on ANALYTICS_QUEUE and are only scheduled while
     # DECISION_ANALYTICS_ENABLED is on (beat reads it when it starts; RedBeat
@@ -1048,8 +1082,19 @@ def setup_periodic_tasks(sender, **kwargs):
 # terminal ``mcp.oauth.failed``; the hard limit is the prefork backstop.
 # Generous so a human actively clicking through OAuth isn't cut off.
 @celery.task(bind=True, soft_time_limit=600, time_limit=660)
-def mcp_oauth_task(self, config, user):
-    resp = mcp_oauth(self, config, user)
+def mcp_oauth_task(self, config, user, actor=None):
+    """Sign in to an MCP server; ``user`` owns the sign-in, ``actor`` is the Admin signing in for a team.
+
+    Args:
+        self: The bound task.
+        config: The MCP server config.
+        user: The person, or a team's principal.
+        actor: For a team's sign-in, the Admin who follows it (its events and status are theirs).
+
+    Returns:
+        What :func:`docsgpt.worker.mcp_oauth` returns.
+    """
+    resp = mcp_oauth(self, config, user, actor)
     return resp
 
 
@@ -1274,6 +1319,18 @@ def cleanup_content_scores(self):
     with engine.begin() as conn:
         deleted = ContentScoresRepository(conn).purge_unseen_for(ttl_days)
     return {"deleted": deleted, "ttl_days": ttl_days}
+
+
+@celery.task(bind=True, acks_late=False)
+def cleanup_parsed_files(self):
+    """Delete stored parses of source files unused for ``PARSE_CACHE_TTL_DAYS``, with their storage files."""
+    from docsgpt.core.settings import settings
+    if not settings.POSTGRES_URI:
+        return {"deleted": 0, "skipped": "POSTGRES_URI not set"}
+
+    from docsgpt.parser.parse_cache import cleanup_stale_parses
+
+    return cleanup_stale_parses(settings.PARSE_CACHE_TTL_DAYS)
 
 
 @celery.task(bind=True, acks_late=False, autoretry_for=(), max_retries=0)

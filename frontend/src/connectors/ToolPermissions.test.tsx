@@ -89,12 +89,20 @@ describe('ToolPermissions', () => {
     container.remove();
   });
 
+  let lastStore: ReturnType<typeof store> | null = null;
+  const toastMessage = () =>
+    (
+      lastStore!.getState() as {
+        actionToast: { current: { message: string } | null };
+      }
+    ).actionToast.current?.message;
   const render = async (
     value: ConnectionTool,
     children?: ReactNode,
     groupHeadingAs?: 'h4' | 'h5' | 'h6',
   ) => {
     const s = store();
+    lastStore = s;
     await act(async () => {
       root.render(
         <Provider store={s}>
@@ -453,5 +461,28 @@ describe('ToolPermissions', () => {
         container.querySelector('[data-testid="tool-injection-warning"]'),
       ).toBeNull();
     });
+  });
+  it("says only a team's Admins change its account's tools when the server refuses", async () => {
+    connectors.setToolPermissions.mockResolvedValue({
+      success: false,
+      error: 'connection_admin_required',
+    });
+    await render(tool([action('get_issue', 'read', 'always')]));
+    await act(async () => choice('read', 'ask').click());
+    expect(toastMessage()).toBe(
+      'settings.connectors.team.errors.adminRequired',
+    );
+    // The choice goes back.
+    expect(choice('read', 'always').getAttribute('data-state')).toBe('on');
+  });
+
+  it('keeps the generic line for any other failure', async () => {
+    connectors.setToolPermissions.mockResolvedValue({
+      success: false,
+      error: 'Tool not found',
+    });
+    await render(tool([action('get_issue', 'read', 'always')]));
+    await act(async () => choice('read', 'ask').click());
+    expect(toastMessage()).toBe('settings.connectors.permission.saveFailed');
   });
 });

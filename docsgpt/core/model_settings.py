@@ -65,6 +65,11 @@ class ModelCapabilities:
     # breakpoints, so a turn that resends its history unchained reads the
     # cache back only through them; earlier models reject the field with a 400.
     prompt_cache_breakpoints: bool = False
+    # Chat Completions only: send a stored thought back as ``reasoning_content``
+    # on its assistant message. DeepSeek thinking mode requires it on a
+    # tool-call turn and most endpoints ignore it, but some (Mistral) refuse
+    # the request with a 422, so they set this to false.
+    send_reasoning_content: bool = True
 
 
 @dataclass
@@ -82,7 +87,8 @@ class AvailableModel:
     # Sent in the API call's ``model`` field; falls back to ``self.id``
     # for built-ins where id IS the upstream name.
     upstream_model_id: Optional[str] = None
-    # "builtin" for catalog YAMLs, "user" for BYOM records.
+    # "builtin" for catalog YAMLs, "user" for a person's BYOM records,
+    # "team" for a team's (owned by its principal).
     source: str = "builtin"
     # Decrypted/resolved at registry-merge time. Never serialized.
     api_key: Optional[str] = field(default=None, repr=False, compare=False)

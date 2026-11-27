@@ -193,7 +193,11 @@
         "empty_output": "没有产生任何输出",
         "internal": "内部错误",
         "missed": "错过了运行时间",
+        "no_payer": "已暂停：无人为此付费",
         "overlap": "上一次运行仍在进行",
+        "owner_inactive": "已暂停：所有者的账户已被禁用",
+        "payer_left": "已暂停：付费人已离开团队或失去了角色",
+        "payer_out_of_allowance": "付费人的额度已用完",
         "stream_error": "回答流中断",
         "timeout": "超时",
         "tool_not_allowed": "工具未被允许"
@@ -307,31 +311,11 @@
     "exportAgentFailed": "导出智能体失败",
     "filters": {
       "all": "全部",
-      "byDocsGPT": "由DocsGPT提供",
       "byMe": "我的",
-      "shared": "与我共享",
-      "team": "团队"
+      "shared": "与我共享"
     },
     "folders": {
-      "backToRoot": "返回",
-      "createFolder": "创建文件夹",
-      "currentFolder": "此文件夹",
-      "delete": "删除",
-      "deleteConfirm": "删除“{{name}}”？",
-      "deleteConsequence": "其中的智能体会移出文件夹，不会被删除。",
-      "empty": "此文件夹为空",
-      "folderName": "文件夹名称",
-      "menuAriaLabel": "{{folderName}} 的操作",
-      "move": "移动",
-      "moveTitle": "将“{{name}}”移动到",
-      "moveTo": "移动",
-      "moveToFolder": "移动到文件夹",
-      "newFolder": "新建文件夹",
-      "noFolder": "无文件夹 (根目录)",
-      "noFolders": "暂无文件夹",
-      "noSubfolders": "没有子文件夹",
-      "openFolder": "打开文件夹",
-      "rename": "重命名"
+      "emptyHint": "在此创建智能体，或通过智能体的 ⋯ 菜单将其移入。"
     },
     "form": {
       "advanced": {
@@ -476,7 +460,8 @@
       "errors": {
         "publishFailed": "无法发布该助手，请重试。",
         "saveDraftFailed": "无法保存草稿，请重试。",
-        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。"
+        "staleWrite": "在你打开此智能体后，其他人保存了它。你的更改仍在这里：复制所需内容，重新加载页面后再次应用。",
+        "teamConnectionAdded": "无法添加 {{tools}}：此智能体可被团队外的人使用（API 密钥、公开链接、Webhook 或其他团队），而为团队连接的账号上的工具只能由团队成员在应用内使用。"
       },
       "externalKb": "外部知识库",
       "guardrails": {
@@ -578,6 +563,13 @@
         "savedVersion": "已保存版本",
         "unsavedChanges": "你有未保存的更改。保存之前，预览使用已保存的版本。"
       },
+      "refusedModels": {
+        "line": "此智能体无法使用 {{names}}。",
+        "remove": "从智能体中移除",
+        "separator": "、",
+        "unlisted_one": "{{count}} 个此处未提供的模型",
+        "unlisted_other": "{{count}} 个此处未提供的模型"
+      },
       "resourceStates": {
         "ask": {
           "admin": "请让管理员重新开启。",
@@ -593,6 +585,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} 的 {{service}} 账户需要重新登录。",
           "connectionNeedsReconnectNoService": "{{name}} 需要重新登录。",
+          "connectionPaused": "{{name}} 使用团队的 {{service}} 账号，该账号已暂停。团队管理员可以在连接器页面重新连接它。",
+          "connectionPausedNoService": "{{name}} 使用的团队账号已暂停。团队管理员可以在连接器页面重新连接它。",
           "connectionRemoved": "{{name}} 使用的 {{service}} 账户已被移除。",
           "connectionRemovedNoService": "{{name}} 使用的账户已被移除。",
           "connectorDisabled": "管理员已关闭 {{service}}，因此 {{name}} 无法运行。",
@@ -605,6 +599,8 @@
           "sponsorCannotEditItem": "{{name}} 此前以 {{person}} 的访问权限运行，而其已无法编辑它。",
           "sponsorCannotEditItemOther": "{{name}} 此前以其他人的访问权限运行，而其已无法编辑它。",
           "sponsorCannotEditItemYou": "{{name}} 此前以你的访问权限运行，而你已无法编辑它。",
+          "teamLocked": "{{name}} 属于另一个团队，该团队已锁定，因此在其解除锁定之前无法在此使用。",
+          "teamShareEnded": "{{name}} 属于另一个团队，该团队已不再在此共享它。请让该团队重新共享。",
           "unknown": "{{name}} 未在运行。"
         },
         "reconnectLabel": "重新连接 {{name}}",
@@ -646,6 +642,8 @@
         "confirm": "以我的访问权限添加",
         "description_one": "智能体的所有者无法使用此项目。如果添加它，它会以你的访问权限为所有使用此智能体的人运行。",
         "description_other": "智能体的所有者无法使用这些项目。如果添加它们，它们会以你的访问权限为所有使用此智能体的人运行。",
+        "folderLive_one": "你之后归档到此文件夹的来源也会以你的权限运行。",
+        "folderLive_other": "你之后归档到这些文件夹的来源也会以你的权限运行。",
         "stopNote_one": "如果你失去编辑权限，它将停止运行。",
         "stopNote_other": "如果你失去编辑权限，它们将停止运行。",
         "takeOverConfirm": "以我的访问权限运行",
@@ -653,6 +651,7 @@
         "takeOverDescription_other": "智能体的所有者无法使用这些项目。它们将以你的访问权限为所有使用此智能体的人运行。",
         "title": "以你的访问权限运行？",
         "types": {
+          "folder": "文件夹",
           "prompt": "提示词",
           "source": "来源",
           "tool": "工具"
@@ -877,6 +876,7 @@
         "openConversation": "打开对话",
         "output": "输出",
         "scheduledFor": "计划时间",
+        "skippedWithType": "已跳过（{{type}}）",
         "started": "开始",
         "status": "状态",
         "title": "运行详情",
@@ -890,6 +890,7 @@
         "duration": "时长",
         "empty": "此计划尚无运行记录。",
         "loadFailed": "无法加载运行记录。",
+        "pausedStreak": "之后的运行也因同样的原因被跳过，直到下一行。",
         "when": "时间"
       },
       "runNow": "立即运行",
@@ -939,15 +940,18 @@
         "emptyState": "未找到共享智能体。",
         "title": "与我共享"
       },
-      "team": {
-        "description": "队友与您共享的智能体",
-        "emptyState": "尚未有智能体共享给您的团队。",
-        "title": "团队"
+      "sharedWithYou": {
+        "description": "其他人与您共享的智能体",
+        "emptyState": "还没有人与您共享智能体。"
       },
-      "template": {
-        "description": "DocsGPT提供的智能体",
-        "emptyState": "未找到模板智能体。",
-        "title": "由DocsGPT提供"
+      "team": {
+        "description": "团队拥有的智能体，团队中的每个人都可以使用。",
+        "emptyState": "此团队还没有智能体。",
+        "title": "智能体"
+      },
+      "teamShared": {
+        "description": "其他团队与此团队共享的智能体，团队中的每个人都可以与之聊天。",
+        "emptyState": "还没有其他团队与此团队共享智能体。"
       },
       "user": {
         "description": "您创建或发布的智能体",
@@ -955,7 +959,7 @@
         "title": "我的智能体"
       }
     },
-    "shareWithTeam": "与团队共享",
+    "shareWithTeam": "分享",
     "shared": {
       "connectedTools": "已连接的工具",
       "loadError": "无法加载此智能体。",
@@ -970,9 +974,16 @@
     "title": "智能体",
     "tryDifferentSearch": "请尝试不同的搜索词",
     "typeModal": {
+      "blankAgent": "空白智能体",
+      "blankWorkflow": "空白工作流",
       "classicDescription": "创建一个使用单一模型、工具和知识来源的标准 AI 智能体",
       "classicTitle": "经典智能体",
+      "describeLabel": "描述这个智能体",
+      "describePlaceholder": "我们网站上回答配送问题的智能体",
       "description": "选择要创建的智能体类型",
+      "draftDescription": "说说它的用途，DocsGPT 会和你一起一步步构建。",
+      "newTitle": "新建智能体",
+      "templatesLabel": "或从模板开始",
       "title": "创建新智能体",
       "workflowDescription": "设计包含不同模型、条件逻辑和状态管理的复杂多步骤工作流",
       "workflowTitle": "工作流智能体"
@@ -1321,6 +1332,7 @@
         "monitor": "监控条件已触发",
         "monitor_expired": "监控已过期",
         "monitor_paused": "监控已暂停",
+        "payer_left": "已暂停，等待有人接管",
         "schedule": "计划任务已完成",
         "schedule_failed": "计划任务失败",
         "schedule_paused": "计划任务已暂停",
@@ -1419,6 +1431,10 @@
     "share": "分享"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "此智能体已达到上限：过去 {{hours}} 小时内已使用 {{limit}} 次请求中的 {{used}} 次。请稍后再试。",
+      "tokens": "此智能体已达到上限：过去 {{hours}} 小时内已使用 {{limit}} 令牌中的 {{used}}。请稍后再试。"
+    },
     "answer": "回答",
     "artifacts": {
       "backToList": "返回文件列表",
@@ -1532,6 +1548,7 @@
     },
     "quotaExceeded": {
       "cost": "您已使用 {{limit}} 用量预算中的 {{used}}。预算将于 {{resetsAt}} 重置。",
+      "reached": "您已达到使用额度，因此此回答已停止。",
       "tokens": "您已使用 {{limit}} 令牌配额中的 {{used}}。配额将于 {{resetsAt}} 重置。"
     },
     "reasoning": "推理",
@@ -1642,6 +1659,7 @@
     },
     "toolApproval": {
       "approve": "批准",
+      "approveAll": "全部批准 ({{formatted}})",
       "approveAlways": "批准，不再询问",
       "connect": "连接 {{name}}",
       "connectTitle": "此工具需要你的 {{name}} 账号。",
@@ -1660,9 +1678,13 @@
       "skip": "跳过",
       "state": {
         "approval": "需要批准",
+        "approved": "已批准",
+        "denied": "已拒绝",
         "notConnected": "未连接"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "撤销",
+      "waitingForOthers": "此回答中的其他请求都决定后才会发送。"
     },
     "toolChip": {
       "accessingMemory": "已访问记忆",
@@ -1777,7 +1799,7 @@
         "finish": "完成",
         "folded": "{{step}}：{{result}}",
         "goTo": "前往{{field}}",
-        "intro": "我们一起一步步搭建这个智能体：基本信息、知识、提示词与开场问题，最后是限制与安全。\n\n选择一个起点，或告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
+        "intro": "我们一起一步步搭建这个智能体：基本信息、知识、提示词与开场问题，最后是限制与安全。\n\n选择一个模板，或告诉我它要做什么、谁会使用它。你说得越详细，我要问的问题就越少。",
         "missing": {
           "agentType": "智能体类型",
           "contextLimit": "有效的上下文上限",
@@ -1825,6 +1847,7 @@
         "other_step": "属于其他步骤的更改"
       },
       "fields": {
+        "folders": "知识库文件夹",
         "limits": "使用限制"
       },
       "formEdited": "你在表单中更改了 {{fields}}。",
@@ -1893,6 +1916,7 @@
     "changeModel": "更换模型",
     "counts": {
       "agents_other": "{{count}} 个智能体",
+      "folders_other": "{{count}} 个文件夹",
       "models_other": "{{count}} 个模型",
       "prompts_other": "{{count}} 个提示词",
       "sources_other": "{{count}} 个知识源",
@@ -2049,15 +2073,54 @@
     "startOver": "重新开始",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "人力资源",
+              "it": "IT",
+              "office": "办公与设施",
+              "policies": "公司制度"
+            },
+            "text": "它涵盖哪些领域？"
+          }
+        },
         "description": "团队的人事、IT 和制度问题",
+        "short": "内部服务台",
         "title": "内部服务台"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "案件档案",
+              "contracts": "合同",
+              "papers": "论文",
+              "reports": "报告"
+            },
+            "text": "这些是什么文档？"
+          },
+          "users": {
+            "options": {
+              "clients": "客户",
+              "me": "只有我",
+              "team": "我的团队"
+            },
+            "text": "谁会使用它？"
+          }
+        },
         "description": "检索你的文档并注明出处",
+        "short": "研究助手",
         "title": "研究助手"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "公司或产品叫什么名字？"
+          }
+        },
         "description": "回答访客问题，不确定时转人工",
+        "short": "网站聊天",
         "title": "面向客户的网站聊天"
       }
     },
@@ -2071,6 +2134,23 @@
     "stop": "停止",
     "stoppedDescription": "你停止了本轮。表单没有变化。",
     "suggestionsLabel": "开始方式",
+    "templates": {
+      "browse": "浏览全部模板",
+      "categories": {
+        "all": "全部",
+        "customerSupport": "客户支持",
+        "internal": "内部",
+        "research": "研究"
+      },
+      "categoriesLabel": "模板类别",
+      "description_one": "{{formatted}} 个模板。选择一个，DocsGPT 会和你一起构建。",
+      "description_other": "{{formatted}} 个模板。选择一个，DocsGPT 会和你一起构建。",
+      "empty": "没有匹配的模板",
+      "search": "搜索模板",
+      "showAll": "全部模板",
+      "showMore": "显示更多",
+      "title": "模板"
+    },
     "title": "用 DocsGPT 起草",
     "topics": {
       "add_other": "添加 {{formatted}} 个主题",
@@ -2132,6 +2212,98 @@
     "sharedWithMe": "与我共享",
     "spaces": "空间",
     "updated": "更新于 {{date}}"
+  },
+  "folders": {
+    "and": "{{first}}和{{second}}",
+    "counts": {
+      "agent_one": "{{formatted}} 个智能体",
+      "agent_other": "{{formatted}} 个智能体",
+      "also": "另有{{list}}",
+      "empty": "空",
+      "folder_one": "{{formatted}} 个文件夹",
+      "folder_other": "{{formatted}} 个文件夹",
+      "prompt_one": "{{formatted}} 个提示词",
+      "prompt_other": "{{formatted}} 个提示词",
+      "source_one": "{{formatted}} 个来源",
+      "source_other": "{{formatted}} 个来源",
+      "tool_one": "{{formatted}} 个工具",
+      "tool_other": "{{formatted}} 个工具"
+    },
+    "create": "创建",
+    "current": "当前",
+    "delete": "删除",
+    "deleteConfirm": "删除“{{name}}”？",
+    "deleteEmpty": "此文件夹为空，不会删除其他内容。",
+    "deleteFolder": "删除文件夹",
+    "deleteMoves_one": "其中的内容（{{what}}）将移到{{parent}}，不会删除任何内容。",
+    "deleteMoves_other": "其中的内容（{{what}}）将移到{{parent}}，不会删除任何内容。",
+    "deletedRenamed_one": "文件夹已删除。为避免重名，已重命名 {{formatted}} 个文件夹：{{list}}。",
+    "deletedRenamed_other": "文件夹已删除。为避免重名，已重命名 {{formatted}} 个文件夹：{{list}}。",
+    "depthLimit": "文件夹最多 3 层",
+    "emptyTitle": "此文件夹为空",
+    "errors": {
+      "cantFile": "无法将此项目放入文件夹。",
+      "cycle": "文件夹不能移动到自身或其子文件夹中。",
+      "deleteFailed": "无法删除文件夹，请重试。",
+      "invalidName": "请使用 1 到 80 个字符，不含换行。",
+      "itemNotInTeam": "团队的文件夹只能存放团队自己的项目。请先将该项目移到团队。",
+      "loadFailed": "无法加载文件夹。",
+      "moveFailed": "无法移动，请重试。",
+      "nameTaken": "已存在同名文件夹。",
+      "notFound": "此文件夹已不存在。",
+      "openFailed": "该文件夹已不存在。",
+      "saveFailed": "无法保存文件夹，请重试。",
+      "teamItemNotFileable": "团队的项目不能放入个人文件夹。",
+      "tooDeep": "文件夹最多 3 层。"
+    },
+    "inParent": "位于{{name}}",
+    "listSeparator": "、",
+    "menuLabel": "{{name}} 的操作",
+    "move": "移动",
+    "moveTitle": "移动“{{name}}”",
+    "moveToFolder": "移动到文件夹",
+    "name": "文件夹名称",
+    "newFolder": "新建文件夹",
+    "noFolder": "无文件夹",
+    "noMatches": "没有匹配的文件夹",
+    "noSubfolders": "里面没有文件夹",
+    "openFolder": "打开{{name}}",
+    "picker": {
+      "allOf": "{{name}} 全部",
+      "back": "返回",
+      "deletedFolder": "已删除的文件夹",
+      "deletedLine": "已不存在，请移除。",
+      "deleted_one": "一个已选文件夹已被删除。请在列表中移除它。",
+      "deleted_other": "{{formatted}} 个已选文件夹已被删除。请在列表中移除它们。",
+      "hintMany_one": "{{names}} 是文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "hintMany_other": "{{names}} 是文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "hintOne_one": "{{name}} 是一个文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "hintOne_other": "{{name}} 是一个文件夹：包括现有的 {{formatted}} 个来源，以及之后添加的来源。",
+      "inFolder": "此文件夹中",
+      "includedWith": "已随{{name}}包含",
+      "live": "{{what}} · 包括新来源",
+      "ownersFolder": "{{person}} 的文件夹",
+      "partial": "已选 {{picked}}/{{total}}",
+      "stopped": "{{name}} 已停止：这是 {{person}} 的文件夹，而该用户已无法编辑此智能体。",
+      "stoppedOther": "{{name}} 已停止：其所有者已无法编辑此智能体。",
+      "stoppedShort": "已停止"
+    },
+    "rename": "重命名",
+    "renameTitle": "重命名文件夹",
+    "root": {
+      "agent": "我的智能体",
+      "prompt": "提示词",
+      "source": "知识库",
+      "teamAgent": "智能体",
+      "tool": "工具"
+    },
+    "searchFolders": "搜索文件夹…",
+    "searchIn": "在{{name}}中搜索…",
+    "tooDeep": "层级过深",
+    "usedByWarningNoNames_one": "{{formatted}} 个智能体正在使用此文件夹，将失去其中的来源。",
+    "usedByWarningNoNames_other": "{{formatted}} 个智能体正在使用此文件夹，将失去其中的来源。",
+    "usedByWarning_one": "{{formatted}} 个智能体正在使用此文件夹，将失去其中的来源：{{names}}。",
+    "usedByWarning_other": "{{formatted}} 个智能体正在使用此文件夹，将失去其中的来源：{{names}}。"
   },
   "help": "帮助",
   "hero": {
@@ -2202,6 +2374,8 @@
       "resetKey": "重置密钥",
       "resetKeyConfirm": "重置“{{name}}”的 API 密钥？",
       "resetKeyConsequence": "当前密钥会立即失效，所有使用它的地方都需要更新。此操作无法撤销。",
+      "teamLocked": "{{team}} 已锁定，因此此智能体不能有公开链接、API 密钥或 Webhook。只有团队所有者才能解除锁定。",
+      "teamLockedNoTeam": "此团队已锁定，因此此智能体不能有公开链接、API 密钥或 Webhook。只有团队所有者才能解除锁定。",
       "test": "测试",
       "title": "访问详情",
       "webhookUrl": "Webhook URL"
@@ -2231,16 +2405,9 @@
       "type": "类型"
     },
     "createAPIKey": {
-      "apiKeyName": "API 密钥名称",
-      "chunks": "每个查询处理的块",
-      "create": "创建",
-      "label": "创建新的 API 密钥",
-      "prompt": "选择活动提示",
       "sourceDoc": "源文档"
     },
     "deleteConv": {
-      "confirm": "删除所有对话？",
-      "consequence": "您账户中的所有对话及其消息都会被删除。此操作无法撤销。",
       "delete": "删除"
     },
     "importAgent": {
@@ -2249,15 +2416,21 @@
       "continueToAgent": "前往智能体",
       "description": "上传智能体 YAML 文件。来源和工具会与你的账号进行匹配；缺少的项目可在下一步中映射或创建。新智能体以草稿形式导入；重新导入会更新匹配的智能体，并保留其当前状态。",
       "dropzoneText": "点击上传或拖放 .yaml 文件",
+      "folderFor": "用于 {{name}} 的文件夹",
+      "folderMatched": "{{name}}：使用你的文件夹",
+      "folderMissing": "{{name}}：你没有同名文件夹",
       "import": "导入",
       "importError": "导入失败",
       "invalidFileType": "仅支持 .yaml 或 .yml 文件",
       "leaveUnattached": "暂不关联",
       "modelCustom": "{{name}}：自定义模型",
+      "modelLeftOff": "{{name}}：还不是团队的模型，将被省略",
       "models": "模型",
+      "planWarningsTitle": "导入前请检查：",
       "readError": "无法读取此智能体文件",
       "review": "检查",
       "secretPlaceholder": "{{field}}（留空则跳过此工具）",
+      "sourceFor": "用于 {{name}} 的来源",
       "sourceMatched": "{{name}}：使用你现有的来源",
       "sourceMissing": "{{name}}：未找到",
       "sources": "来源",
@@ -2327,12 +2500,8 @@
       "viewDescription": "内置提示无法编辑。复制后可创建您自己的可编辑副本。"
     },
     "saveKey": {
-      "apiKeyLabel": "API 密钥",
-      "confirm": "我已保存密钥",
       "copied": "已复制",
-      "copy": "复制",
-      "disclaimer": "这是您的密钥唯一一次展示机会。",
-      "note": "请保存您的密钥"
+      "copy": "复制"
     },
     "searchConversations": {
       "noResults": "未找到结果",
@@ -2345,7 +2514,6 @@
       "option": "允许用户进行更多查询。"
     },
     "uploadDoc": {
-      "cancel": "取消",
       "choose": "选择文件",
       "connectors": {
         "auth": {
@@ -2410,9 +2578,7 @@
         }
       },
       "label": "添加知识",
-      "link": "链接",
       "name": "名称",
-      "noFilesSelected": "未选择文件",
       "progress": {
         "clear": "清除",
         "collapseDetails": "折叠上传详情",
@@ -2423,10 +2589,9 @@
         "failed": "上传失败",
         "ingestionFailed": "导入失败。",
         "parsing": "正在解析文件...",
-        "partialDownload_one": "有 {{count}} 个项目未能下载，已被跳过。请同步此来源以重试。",
-        "partialDownload_other": "有 {{count}} 个项目未能下载，已被跳过。请同步此来源以重试。",
+        "partialDownload_one": "有 {{count}} 个项目未能读取，已被跳过。请同步此来源以重试。",
+        "partialDownload_other": "有 {{count}} 个项目未能读取，已被跳过。请同步此来源以重试。",
         "preparing": "准备上传",
-        "tokenLimit": "超出令牌限制，请考虑上传较小的文档",
         "tooManyFiles": "此来源的文件数超过上限 {{limit}} 个。请选择更小的文件夹、路径或选择范围。",
         "tooManyTokens": "此来源的文本超过 {{limit}} 个令牌的上限。请将其拆分为更小的来源。",
         "training": "正在上传",
@@ -2434,18 +2599,13 @@
         "uploadProgress": "上传进度 {{progress}}%",
         "wait": "这可能需要几分钟"
       },
-      "remote": "从网站收集",
       "removeFile": "移除 {{name}}",
       "repoUrl": "存储库 URL",
       "select": "选择如何将文档上传到 DocsGPT",
       "selectFolder": "或选择整个文件夹",
       "selectSource": "添加知识",
       "selectedFiles": "已选择的文件",
-      "start": "开始聊天",
       "train": "添加到知识库",
-      "uploadedFiles": "已上传文件",
-      "urlLink": "URL 链接",
-      "wait": "请稍等 ...",
       "website": {
         "addAnotherPage": "再添加一个页面",
         "discovery": {
@@ -2627,6 +2787,198 @@
     "previousPage": "上一页",
     "range": "第 {{from}}–{{to}} 条，共 {{total}} 条"
   },
+  "payer": {
+    "access": {
+      "notice": "外部访问已暂停。{{reason}}",
+      "noticeUnknown": "外部访问已暂停。",
+      "paused": "已暂停",
+      "pausedBecause": "已暂停 · {{reason}}",
+      "takenOver": "现在由您为此智能体的外部使用付费。"
+    },
+    "common": {
+      "access": {
+        "apiKey": "API 密钥",
+        "publicLink": "公开链接",
+        "webhook": "Webhook"
+      },
+      "errors": {
+        "maxSchedules": "您的计划任务已达上限。请删除一个后重试。",
+        "noOutsideAccess": "此智能体没有开启任何外部访问，因此无可接管。",
+        "notAvailableToTokens": "使用访问令牌无法接管。请登录应用后操作。",
+        "notFound": "此项已不存在，或您已无法打开它。",
+        "roleRequired": "您在此团队中的角色不允许接管此项。",
+        "teamLocked": "此团队已锁定，因此无法从外部访问其中的任何内容。",
+        "teamOnly": "只有属于团队的项目才能被接管。"
+      },
+      "paidBy": "付费人：{{name}}",
+      "paidByYou": "付费人：您",
+      "pause": {
+        "noPayer": "无人为此付费。",
+        "outOfAllowance": "{{name}} 的额度已用完，直到 {{date}}。",
+        "outOfAllowanceUndated": "付费人的额度已用完。",
+        "outOfAllowanceUnnamed": "付费人的额度已用完，直到 {{date}}。",
+        "outOfAllowanceYou": "您的额度已用完，直到 {{date}}。",
+        "ownerInactive": "运行所用的账户已停用。",
+        "payerLeft": "{{name}} 已离开 {{team}} 或失去了为此付费的角色。",
+        "payerLeftNoTeam": "{{name}} 已离开团队或失去了为此付费的角色。",
+        "payerLeftTeam": "{{name}} 已离开 {{team}}。",
+        "payerLeftTeamNoTeam": "{{name}} 已离开团队。",
+        "payerLeftTeamUnnamed": "付费人已离开团队。",
+        "payerLeftUnnamed": "付费人已离开团队或失去了为此付费的角色。",
+        "payerLostRole": "{{name}} 在 {{team}} 中已不再拥有为此付费的角色。",
+        "payerLostRoleNoTeam": "{{name}} 已不再拥有为此付费的角色。",
+        "payerLostRoleUnnamed": "付费人已不再拥有为此付费的角色。",
+        "teamLocked": "{{team}} 已锁定，因此无法从外部访问其中的任何内容。",
+        "teamLockedNoTeam": "团队已锁定，因此无法从外部访问其中的任何内容。",
+        "withSince": "{{reason}}自 {{date}} 起暂停。"
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "从现在起由您为其外部使用付费",
+          "youPayDetail": "通过其 API 密钥和 Webhook 的请求，以及未登录访客通过其公开链接发出的请求，计入您的额度，而不是 {{name}} 的。已登录的访客自行支付其聊天费用。此前的用量仍归 {{name}}。",
+          "youPayUnnamed": "通过其 API 密钥和 Webhook 的请求，以及未登录访客通过其公开链接发出的请求，计入您的额度。已登录的访客自行支付其聊天费用。"
+        },
+        "failed": "未能接管。请重试。",
+        "limitApplies": "智能体的限额仍然有效",
+        "limitDetail": "无论谁付费，智能体都会在达到自身限额时停止。",
+        "schedule": {
+          "youPay": "从现在起由您为其运行付费",
+          "youPayDetail": "运行计入您的额度，而不是 {{name}} 的。此前的运行仍归 {{name}}。",
+          "youPayUnnamed": "运行计入您的额度。"
+        },
+        "submit": "接管",
+        "title": "接管“{{name}}”？"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "此智能体已暂停，目前无法回答。",
+        "noPayer": "目前无人为此智能体的使用付费，因此它无法回答。"
+      },
+      "near": {
+        "day": "您已用掉今天额度的 {{percent}}%。额度将于 {{time}} 重置。",
+        "month": "您已用掉{{month}}额度的 {{percent}}%。额度将于 {{date}} 重置。",
+        "week": "您已用掉本周额度的 {{percent}}%。额度将于 {{date}} 重置。"
+      },
+      "reached": {
+        "body": "{{covers}}{{resets}}",
+        "covers": {
+          "agent": "它涵盖您与智能体的聊天、您设置的计划任务以及您发布的智能体。",
+          "all": "它涵盖您在所有工作区的聊天、您设置的计划任务以及您发布的智能体。",
+          "direct": "它涵盖您在所有工作区中不使用智能体的聊天。"
+        },
+        "publicLinkSignedOut": "公开链接（面向未登录的访客）",
+        "published": "{{name}} 已停止通过其{{access}}回答。",
+        "schedules_one": "您设置的 {{count}} 个计划任务已暂停。",
+        "schedules_other": "您设置的 {{count}} 个计划任务已暂停。",
+        "seeUsage": "查看您的用量",
+        "title": {
+          "day": "您已达到今天的额度",
+          "month": "您已达到{{month}}的额度",
+          "week": "您已达到本周的额度"
+        }
+      },
+      "resets": {
+        "date": "额度将于 {{date}} 重置。",
+        "time": "额度将于 {{time}} 重置。"
+      }
+    },
+    "schedules": {
+      "takenOver": "现在由您为此计划任务的运行付费。"
+    },
+    "team": {
+      "byAgent": {
+        "deleted": "已删除的智能体",
+        "empty": "此期间未使用任何智能体。",
+        "limitOn": "已开启智能体限额",
+        "movedOut": "已移出团队",
+        "noLimit": "无智能体限额",
+        "outsideNoPayer": "外部访问无人付费",
+        "outsidePaidBy": "外部访问由 {{name}} 付费",
+        "outsidePaidByYou": "外部访问由您付费",
+        "people_one": "{{formatted}} 人",
+        "people_other": "{{formatted}} 人",
+        "requests_one": "{{formatted}} 次请求",
+        "requests_other": "{{formatted}} 次请求",
+        "title": "按智能体",
+        "totalsOnly": "没有智能体的聊天以及之后删除的智能体只计入总计。"
+      },
+      "byPerson": {
+        "left": "已离开团队",
+        "title": "按成员",
+        "you": "您"
+      },
+      "demote": {
+        "description": "换成新角色后，{{name}} 无法再在 {{team}} 中为这些付费。",
+        "submit": "更改角色",
+        "title": "将“{{name}}”改为{{role}}？"
+      },
+      "empty": "此期间这里没有任何用量。",
+      "export": {
+        "action": "导出",
+        "description": "将此工作区的所有聊天导出为一个文件：谁、何时、哪个智能体。个人聊天永远不包含在内。每次导出都会写入审计日志。",
+        "failed": "无法导出聊天。请重试。",
+        "title": "导出聊天"
+      },
+      "loadError": "无法加载用量报告。",
+      "notALimit": "一个人在这里的用量会和其在其他地方的用量一起计入其个人额度。此页面上没有任何限额。",
+      "paused": {
+        "access": "通过{{access}}的外部访问",
+        "accessAll": "外部访问",
+        "description": "在有人接管或付费人的额度重置之前，它们会保持暂停。",
+        "openConnection": "打开",
+        "openConnectionLabel": "在连接器页面打开“{{name}}”",
+        "schedule": "{{agent}} 的计划任务",
+        "scheduleNoAgent": "计划任务",
+        "sync": "定时同步",
+        "syncNoPayer": "团队中没有人能为其付费。",
+        "takeOverLabel": "接管“{{name}}”",
+        "title": "已暂停",
+        "unnamed": "无标题"
+      },
+      "period": {
+        "current": {
+          "day": "今天",
+          "month": "本月",
+          "week": "本周"
+        },
+        "label": "期间",
+        "previous": {
+          "day": "昨天",
+          "month": "上月",
+          "week": "上周"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "由 {{name}} 付费。管理员可以在智能体页面上接管。",
+        "access_one": "{{count}} 个智能体的外部访问将暂停",
+        "access_other": "{{count}} 个智能体的外部访问将暂停",
+        "connectionsDetail": "在另一位团队管理员于连接器页面用自己的账号重新连接之前，团队无法将这些账号用于同步或工具。",
+        "connections_one": "{{name}} 连接的 {{count}} 个团队账号将暂停",
+        "connections_other": "{{name}} 连接的 {{count}} 个团队账号将暂停",
+        "customModelsDetail": "这些密钥仍在使用。如果某个密钥是 {{name}} 个人的，请在团队的自定义模型页面上替换它。",
+        "customModels_one": "{{name}} 为团队添加的 {{count}} 个自定义模型",
+        "customModels_other": "{{name}} 为团队添加的 {{count}} 个自定义模型",
+        "schedulesDetail": "由 {{name}} 付费。编辑者或管理员可以在智能体的计划任务页面上接管。",
+        "schedules_one": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停",
+        "schedules_other": "{{name}} 在团队智能体上设置的 {{count}} 个计划任务将暂停"
+      },
+      "showAll": "显示全部（{{formatted}}）",
+      "showFewer": "收起",
+      "stats": {
+        "chats": "聊天",
+        "chatsDetail": "由聊天的人付费",
+        "people_one": "{{formatted}} 人使用",
+        "people_other": "{{formatted}} 人使用",
+        "runs": "无人参与的运行",
+        "runsDetail": "计划任务、API 密钥、小组件和 Webhook，由设置它们的人付费",
+        "used": "在 {{team}} 中的用量"
+      },
+      "tokens_one": "{{formatted}} 个 token",
+      "tokens_other": "{{formatted}} 个 token"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "它没有 Boundaries 部分，智能体可能会执行隐藏在文档或工具结果中的指令",
@@ -2775,7 +3127,6 @@
     "analytics": {
       "completed": "已完成",
       "failed": "失败",
-      "filterByChatbot": "按聊天机器人筛选",
       "filterOptions": {
         "hour": "小时",
         "last15Days": "15 天",
@@ -2998,18 +3349,30 @@
       "positiveFeedback": "正向反馈",
       "promptTokens": "提示词令牌",
       "quota": {
-        "cost": "费用",
-        "resets": "{{resetsAt}} 重置",
-        "scope": {
-          "agent": "通过智能体",
-          "direct": "不使用智能体的聊天"
+        "allowance": "您的额度",
+        "parts": {
+          "chat": "您的聊天",
+          "chatDetail": "在个人空间和您的团队中",
+          "other": "其他",
+          "otherDetail": "构建知识，以及分项统计之前的用量",
+          "published": "您发布的智能体",
+          "publishedDetail": "其 API 密钥、公开链接和 Webhook",
+          "schedule": "您设置的计划任务",
+          "scheduleDetail": "其运行，以及您设置的监控"
         },
-        "title": "您的用量配额",
-        "tokens": "令牌",
+        "resetsAt": "{{time}} 重置",
+        "resetsOn": "{{date}} 重置",
+        "scope": {
+          "agent": "您与智能体的聊天、您的计划任务以及您发布的智能体",
+          "all": "您付费的一切",
+          "direct": "您不使用智能体的聊天"
+        },
+        "titleDay": "您今天的用量",
+        "titleMonth": "您的用量（{{month}}）",
+        "titleWeek": "您本周的用量",
         "usedOf": "{{used}} / {{limit}}"
       },
       "scheduledRuns": "计划运行",
-      "selectChatbot": "选择聊天机器人",
       "skipped": "已跳过",
       "stats": {
         "feedback": "反馈",
@@ -3054,6 +3417,7 @@
       "connectionStatus": {
         "connected": "已连接",
         "disconnected": "已断开",
+        "paused": "已暂停",
         "pending": "等待登录"
       },
       "createFailed": "无法添加连接器。请重试。",
@@ -3086,6 +3450,7 @@
         "mcp_resend": "发送电子邮件并管理联系人、受众和域名。",
         "mcp_sentry": "查看 Sentry 问题、事件和发布版本。",
         "mcp_stripe": "查看 Stripe 中的客户、付款和订阅。",
+        "mcp_supabase": "列出数据表、运行 SQL、查看日志并管理 Supabase 项目。",
         "mcp_trello": "查找 Trello 看板和卡片，并创建和更新卡片。",
         "mcp_twelvedata": "查询股票、外汇、加密货币和 ETF 的行情、历史价格、技术指标和基本面数据。",
         "mcp_zapier": "使用 Zapier MCP 账户中启用的操作读取或更新已连接的应用。",
@@ -3157,6 +3522,8 @@
       },
       "fieldHints": {
         "github_access_token": "细粒度令牌，授予 Contents 和 Metadata 的读取权限。如需让智能体进行更改，还需授予 Issues 和 Pull requests 的读写权限。<link>在 GitHub 上创建令牌</link>",
+        "mcp_supabase_project_ref": "在 Supabase 控制台的 Project Settings > General 中复制。此连接只能访问该项目。",
+        "ntfy_server_url": "设置后，所有消息和访问令牌都会发送到此服务器。留空时，令牌只会发送到 ntfy.sh。",
         "telegram_chat_id": "消息只会发送到此聊天。添加机器人并给它发一条消息，然后用 <link>getUpdates</link> 找到聊天 ID。"
       },
       "fields": {
@@ -3168,6 +3535,8 @@
         "client_secret": "客户端密钥",
         "endpoint_url": "自定义端点 URL",
         "github_access_token": "个人访问令牌",
+        "mcp_supabase_project_ref": "项目 ID",
+        "ntfy_server_url": "服务器 URL",
         "ntfy_token": "访问令牌",
         "number_posts": "帖子数量",
         "postgres_token": "连接字符串",
@@ -3304,6 +3673,7 @@
         "custom": "自定义",
         "disabledByAdmin": "已被管理员停用",
         "needsAdminSetup": "需要管理员设置",
+        "paused": "已暂停",
         "reconnect": "重新连接"
       },
       "statusFilterLabel": "按状态筛选",
@@ -3315,6 +3685,43 @@
       },
       "subtitle": "将 DocsGPT 连接到团队使用的服务。一个连接可以把内容同步到知识库，也可以为智能体提供工具。",
       "syncContent": "同步内容",
+      "team": {
+        "adminOnly": "只有团队管理员可以连接或更改团队的账号。",
+        "connectForTeam": "为团队连接",
+        "connectedBy": "由 {{name}} 连接",
+        "connectedByYou": "由你连接",
+        "emptyAdmin": "还没有为团队连接任何账号。连接一个后，团队里的每个人都能使用。",
+        "emptyMember": "还没有为团队连接任何账号。团队管理员可以连接一个。",
+        "errors": {
+          "accountAlreadyConnected": "团队已经连接了此账号。请使用那个连接。",
+          "adminRequired": "只有团队管理员可以对团队的账号执行此操作。",
+          "connectPersonalFirst": "请先在“个人”中连接你自己的此服务账号。之后每个人都用自己的账号登录。",
+          "invalidOwner": "无法确定此账号属于你还是团队。请刷新页面后重试。",
+          "memberModeNotAllowed": "管理员已将此服务设为使用一个共享账号，因此不能每个人用自己的账号登录。",
+          "notFound": "此连接已不存在，或你无权查看。",
+          "paused": "此团队账号已暂停。团队管理员可以重新连接它。",
+          "personalOnly": "团队的来源只能通过为团队连接的账号读取。团队管理员可以在“连接器”页面连接一个。",
+          "pickerOwnerOnly": "只有连接此账号的人可以选择从中同步哪些内容。",
+          "teamConnectionOutside": "它使用了为团队连接的账号上的工具。这类工具只能由团队成员在应用内使用。",
+          "teamConnectionOutsideNamed": "它使用了为团队连接的账号上的 {{tools}}。这类工具只能由团队成员在应用内使用。",
+          "teamWorkspaceRequired": "请切换到该团队，再为它连接账号。"
+        },
+        "notice": "这些账号属于团队。你自己的账号在“个人”中。",
+        "paused": "已暂停：{{reason}}",
+        "pausedHintAdmin": "用你的账号重新连接，或断开连接。",
+        "pausedHintMember": "团队管理员可以重新连接它。",
+        "pausedUnknown": "已暂停",
+        "pickerOwnerOnly": "只有连接此账号的 {{name}} 可以选择从中同步哪些内容。",
+        "reconnect": {
+          "body": "此账号由 {{name}} 连接。重新连接后，团队今后将使用你的账号，同步费用由你支付。",
+          "bodyUnnamed": "重新连接后，团队今后将使用你的账号，同步费用由你支付。",
+          "confirm": "用我的账号重新连接",
+          "dropNote": "你的账号无法打开的文件会在下次同步时移除。你可以在来源中重新选择它们。",
+          "sources_other": "有 {{formatted}} 个来源从中同步：",
+          "title": "用你的账号重新连接？"
+        },
+        "teamAccount": "团队账号"
+      },
       "unverified": "此服务器未经 DocsGPT 审核。请只连接你信任的服务器。",
       "wizard": {
         "account": "账号",
@@ -3365,6 +3772,7 @@
         "toolsHeading": "工具（{{formatted}}）",
         "toolsUnavailable": "无法访问 {{name}} 的工具。请重试，或将其关闭以继续。",
         "tryInChat": "在聊天中试试",
+        "urlParameterInvalid": "请检查此值：格式不符合要求。",
         "waiting": "请在打开的窗口中完成 {{name}} 登录。"
       }
     },
@@ -3405,6 +3813,7 @@
       "editTitle": "编辑自定义模型",
       "empty": "未找到模型",
       "errors": {
+        "apiKeyNewHost": "请输入新主机的 API 密钥。已保存的密钥只会发送到保存时所用的主机。",
         "apiKeyRequired": "API 密钥必填",
         "baseUrlInvalid": "请输入有效的 URL",
         "baseUrlRequired": "Base URL 必填",
@@ -3423,7 +3832,8 @@
         "modelId": "模型 ID"
       },
       "hints": {
-        "apiKeyEdit": "留空以保留现有密钥。"
+        "apiKeyEdit": "地址仍在同一主机时，留空则保留已保存的密钥。",
+        "apiKeyNewHost": "地址指向新的主机：请输入该主机的 API 密钥。已保存的密钥只会发送到保存时所用的主机。"
       },
       "label": "自定义模型",
       "loadError": "无法加载你的模型。",
@@ -3446,6 +3856,48 @@
       "save": "保存",
       "searchPlaceholder": "搜索模型...",
       "subtitle": "接入你自己的 OpenAI 兼容模型。",
+      "team": {
+        "actions": {
+          "disable": "禁用",
+          "enable": "启用"
+        },
+        "addedBy": "由 {{name}} 添加",
+        "addedByYou": "由你添加",
+        "copy": {
+          "action": "复制到团队",
+          "body": "团队会获得 {{name}} 的独立副本，使用你的 API 密钥。你的模型保持不变。",
+          "bodyTo": "{{team}} 会获得 {{name}} 的独立副本，使用你的 API 密钥。你的模型保持不变。",
+          "confirm": "复制",
+          "done": "已将 {{name}} 复制到 {{team}}。",
+          "team": "团队",
+          "title": "复制到团队"
+        },
+        "delete": {
+          "fellBack": "请检查以下项目的模型：{{names}}",
+          "mayBeUsed": "使用它的团队智能体将改用默认模型，设置为该模型的工作流步骤会停止，直到有人选择其他模型。此操作无法撤销。",
+          "usedBy": "{{names}} 正在使用。智能体将改用默认模型；设置为该模型的工作流步骤会停止，直到有人选择其他模型。此操作无法撤销。"
+        },
+        "emptyAdmin": "还没有为团队添加任何模型。添加一个后，团队里的每个人都能使用。",
+        "emptyMember": "还没有为团队添加任何模型。团队管理员可以添加一个。",
+        "errors": {
+          "adminRequired": "只有团队管理员可以向团队添加自定义模型。请管理员添加后再导入。",
+          "alreadyInTeam": "团队已有此模型。",
+          "chatPersonalOnly": "你自己的自定义模型不能在团队聊天中使用。请选择团队的模型或整个实例提供的模型。",
+          "credentialsUnreadable": "无法读取此模型的 API 密钥。请先更换密钥，再复制模型。",
+          "modelAdminRequired": "只有团队管理员可以更改团队的模型。",
+          "notAvailableToTokens": "团队的自定义模型只能在应用中更改，不能使用访问令牌更改。",
+          "notFound": "此模型已不存在，或你无权查看。",
+          "personalOnly": "团队的智能体和工作流只能使用该团队的自定义模型。请选择团队的模型或整个实例提供的模型。",
+          "roleRequired": "只有团队管理员可以为团队添加模型。",
+          "teamIdRequired": "请选择要将模型复制到的团队。",
+          "teamNotFound": "该团队已不存在，或你不是其成员。",
+          "teamOnly": "团队的自定义模型只能由该团队的智能体和工作流使用。请选择你自己的模型或整个实例提供的模型。",
+          "teamWorkspaceRequired": "请切换到该团队，再为它添加模型。"
+        },
+        "notice": "这些模型属于团队。你自己的模型在“个人”中。",
+        "pickerGroup": "团队模型",
+        "teamModel": "团队模型"
+      },
       "testConnection": "测试连接",
       "testHintNew": "请填写 Base URL、模型 ID 和 API 密钥以启用连接测试。",
       "testSuccess": "连接成功。"
@@ -3489,6 +3941,7 @@
         "cancel": "取消",
         "descriptionLabel": "描述（可选）",
         "descriptionPlaceholder": "对智能体可见，以便其选择正确的设备。",
+        "expired": "此代码已过期。请生成新代码以配对设备。",
         "formSubtitle": "为新设备设置名称、描述和审批模式。",
         "fullAccessWarning": "完全访问：智能体无需询问即可在此机器上运行任何命令。安全拒绝列表仍然有效。",
         "installLink": "还没有 docsgpt-cli？安装它",
@@ -3508,21 +3961,13 @@
       "subtitle": "配对远程机器，让智能体可以通过 shell 命令操作它们。"
     },
     "general": {
-      "addNew": "添加新的",
-      "chunks": "每个查询处理的块",
-      "convHistory": "对话历史",
       "dark": "暗色",
-      "default": "默认",
-      "deleteAllDescription": "永久删除您账户中的所有对话。此操作无法撤销。",
+      "deleteAllInWorkspace": "永久删除您在 {{name}} 中开始的所有聊天。此操作无法撤销。",
       "deleteAllLabel": "删除所有对话",
-      "high": "高",
       "label": "一般",
       "language": "语言",
       "languageDescription": "菜单和标签的语言。",
       "light": "浅色",
-      "low": "低",
-      "medium": "中",
-      "none": "无",
       "sections": {
         "appearance": "外观",
         "dangerZone": "危险操作",
@@ -3533,15 +3978,12 @@
       "taskModelDescription": "用于起草表单、构建知识图谱和检查监控。对话使用智能体的模型。",
       "taskModelFailed": "{{model}} 无法运行你的上一个任务：其提供商拒绝了 API 密钥。请选择其他模型，或请管理员检查密钥。",
       "taskModelFailedItem": "· 密钥被拒绝",
-      "taskModelInstanceDefault": "使用实例默认值（{{model}}）",
-      "taskModelInstanceDefaultUnnamed": "使用实例默认值",
       "taskModelLoadError": "无法加载任务模型。",
       "taskModelSaveFailed": "无法保存任务模型，请重试。",
       "taskModelUnavailable": "你的任务模型已无法运行（已被停用或移除），因此改用实例默认值。如果该模型恢复，会再次使用它；在此选择一个选项即可替换它。",
       "taskModelUnavailableValue": "模型不可用",
       "theme": "主题",
-      "themeDescription": "浅色或深色界面。",
-      "unlimited": "无限"
+      "themeDescription": "浅色或深色界面。"
     },
     "insights": {
       "label": "洞察"
@@ -3578,7 +4020,6 @@
         "dislike": "踩",
         "like": "赞"
       },
-      "filterByChatbot": "按聊天机器人筛选",
       "label": "日志",
       "labels": {
         "asksHuman": "要求人工",
@@ -3614,7 +4055,6 @@
       "retriedStep_other": "{{node}}：尝试 {{count}} 次",
       "running": "运行中",
       "searchPlaceholder": "搜索日志...",
-      "selectChatbot": "选择聊天机器人",
       "subtitle": "查看和监控 API 调用及会话日志",
       "trace": {
         "chips": {
@@ -3760,6 +4200,9 @@
       "filters": {
         "all": "全部"
       },
+      "folders": {
+        "emptyHint": "在此添加提示词，或通过提示词的 ⋯ 菜单将其移入。"
+      },
       "kindFilterLabel": "按类型筛选",
       "kinds": {
         "shared": "共享"
@@ -3786,12 +4229,14 @@
       "saveFailed": "无法保存此提示词。",
       "searchPlaceholder": "搜索提示词…",
       "sections": {
+        "folders": "文件夹",
         "included": "自带",
-        "shared": "团队共享",
+        "shared": "与您共享",
+        "team": "提示词",
         "yours": "你的"
       },
       "select": "选择提示词",
-      "shareWithTeam": "与团队共享",
+      "shareWithTeam": "共享",
       "subtitle": "系统提示词决定模型如何回答。你选择的提示词用于不使用智能体的聊天；智能体使用各自的提示词。",
       "unsavedChanges": "您有未保存的更改，如果不保存就离开将会丢失。",
       "useInChats": "在聊天中使用 {{name}}",
@@ -3851,7 +4296,6 @@
       "deleteWarning": "删除“{{name}}”？",
       "deleting": "正在删除…",
       "deletingTitle": "正在删除...",
-      "editAlt": "编辑",
       "editChunk": "编辑文本块",
       "editChunkDescription": "{{file}} · 第 {{n}} 个文本块 · {{tokens}} 个令牌",
       "editChunkDescriptionUnplaced": "{{file}} · 已编辑的文本块 · {{tokens}} 个令牌",
@@ -3872,14 +4316,19 @@
         "sync": "无法同步来源。",
         "syncFrequency": "无法更改同步频率。"
       },
-      "fileAlt": "文件",
       "fileName": "名称",
       "files": "文件",
       "filesByline_one": "{{files}} 个文件 · {{tokens}} 个令牌",
       "filesByline_other": "{{files}} 个文件 · {{tokens}} 个令牌",
+      "filesFailed_one": "上次同步时有 {{count}} 个文件的最新版本未能编入索引。之前已编入索引的文件可能仍以旧内容出现在搜索中。",
+      "filesFailed_other": "上次同步时有 {{count}} 个文件的最新版本未能编入索引。之前已编入索引的文件可能仍以旧内容出现在搜索中。",
       "filesLoadError": "无法加载文件",
       "filterFiles": "筛选文件",
-      "folderAlt": "文件夹",
+      "folders": {
+        "emptyHint": "在此添加知识，或通过来源的 ⋯ 菜单将其移入。",
+        "noMatchIn": "{{name}}中没有与“{{query}}”匹配的内容。",
+        "searchAll": "搜索全部知识"
+      },
       "goToSources": "前往知识库",
       "graphrag": {
         "badge": "GraphRAG",
@@ -3984,7 +4433,6 @@
       "kinds": {
         "all": "全部",
         "files": "文件",
-        "shared": "共享",
         "synced": "已同步",
         "websites": "网站",
         "wikis": "Wiki"
@@ -3996,17 +4444,13 @@
       "needsAttention": "需要处理",
       "nextChunk": "下一个文本块",
       "noChunks": "未找到文本块",
-      "noChunksAlt": "未找到文本块",
       "noData": "还没有知识",
       "noKnowledgeFound": "未找到知识",
       "noResults": "未找到结果",
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个来源",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个来源",
-      "parentFolderAlt": "父文件夹",
       "paused": "同步已暂停。重新连接 {{name}} 以继续。",
-      "preLoaded": "预加载",
       "previousChunk": "上一个文本块",
-      "private": "私有",
       "queued": "已排队：{{count}}",
       "reingest": "重新索引",
       "retrievalOptions": {
@@ -4115,10 +4559,14 @@
         },
         "title": "高级设置"
       },
-      "searchAlt": "搜索",
+      "retryFailedFiles": "立即重试",
       "searchChunks": "搜索文本块",
       "searchPlaceholder": "搜索知识…",
-      "shareWithTeam": "与团队共享",
+      "sections": {
+        "folders": "文件夹",
+        "sources": "来源"
+      },
+      "shareWithTeam": "分享",
       "size": "大小",
       "subtitle": "DocsGPT 可以搜索和引用的内容：上传的文件、网站、Wiki，以及从连接同步的内容。",
       "syncConfirmation": "同步“{{sourceName}}”？",
@@ -4131,6 +4579,14 @@
         "weekly": "每周"
       },
       "syncNow": "立即同步",
+      "syncPaused": {
+        "account": "同步已暂停：{{reason}}",
+        "noPayer": "定时同步已暂停：团队中没有人可以为其付费。",
+        "noPayerSince": "定时同步自 {{date}} 起暂停：团队中没有人可以为其付费。",
+        "other": "定时同步已暂停。",
+        "otherSince": "定时同步自 {{date}} 起暂停。",
+        "scheduled": "定时同步已暂停：{{reason}}"
+      },
       "syncStarted": "正在同步 {{name}}…",
       "syncing": "同步中...",
       "testRetrieval": {
@@ -4469,6 +4925,11 @@
       "deleteTeamError": "无法删除团队。",
       "descriptionLabel": "描述",
       "descriptionPlaceholder": "这个团队的用途是什么？（可选）",
+      "detail": {
+        "backToTeams": "返回团队列表",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "该团队不存在，或者您不在其中。"
+      },
       "drawer": {
         "accessIn": "{{team}} 中的访问权限",
         "capabilitiesHint": "来自所有者的访问设置。此处只读。",
@@ -4478,6 +4939,7 @@
         "open": "打开{{type}}",
         "otherTeamsHint": "也与其他团队共享了？这些授权在“管理共享”中管理。",
         "owner": "所有者",
+        "paused": "{{name}} 不在团队期间，共享已暂停。若重新添加此人，共享将恢复。",
         "removeGrant": "移除访问权限",
         "shared": "共享时间",
         "sharedOnBy": "{{date}}，由 {{name}}",
@@ -4492,7 +4954,6 @@
           "viewer": "查看者"
         }
       },
-      "editTeam": "编辑",
       "editorHint": {
         "agent": "编辑者可以修改它，包括日志、计划和访问详情。",
         "agentNoAccessDetails": "编辑者可以修改它，包括日志和计划，但不能修改访问详情。",
@@ -4507,7 +4968,31 @@
         "tool": "编辑者可以更改操作并替换凭据，但无法读取密钥。",
         "toolNoCredentials": "编辑者可以更改操作，但不能更改凭据。"
       },
+      "errors": {
+        "borrowedResource": "此智能体使用了不属于它的来源、工具或提示词，因此无法与其他团队共享，也无法从外部访问。请先将它们从智能体中移除。",
+        "invalidPolicy": "请选择谁可以将此团队的项目带到团队外部。",
+        "lastAdmin": "团队至少需要一名管理员。请先将其他人设为管理员。",
+        "ownerMustTransfer": "您是该团队的所有者。请先将其转让给其他成员。",
+        "ownerProtected": "团队所有者不能被降级或移除。",
+        "policyOwnerOnly": "只有团队所有者才能解除锁定。",
+        "roleRequired": "您在此团队中的角色不允许此操作。",
+        "shareNotMember": "您只能与自己所在的团队共享。",
+        "shareSameTeam": "此项目已属于该团队。",
+        "shareViewerOnly": "其他团队可以使用团队的项目，但不能编辑。",
+        "shareWholeTeamOnly": "团队的项目只能与整个团队共享，不能与单个人共享。",
+        "teamItemSharedOutside": "此智能体已与无法使用该团队项目的人共享。请在未与团队外部共享的智能体中使用它，或先停止该共享。",
+        "teamLocked": "此团队已锁定，因此其中的任何内容都不能带到团队外部。只有其所有者才能解除锁定。",
+        "teamNotEmpty": "团队仍拥有一些项目。请先移动或删除它们。",
+        "usesTeamItems": "此智能体使用了团队的项目，因此只能与可以使用这些项目的人共享。"
+      },
       "label": "团队",
+      "leave": {
+        "action": "退出团队",
+        "description": "您将无法再访问 {{team}} 的智能体、知识、工具、提示词和聊天。您为其智能体设置的计划任务以及由您付费的外部访问会暂停，直到有人接管；您与该团队共享的个人项目将不再共享。管理员可以重新添加您。",
+        "done": "您已退出 {{team}}。",
+        "error": "无法退出团队。",
+        "title": "退出 {{team}}？"
+      },
       "loadError": "加载团队失败。",
       "memberCount_one": "{{formatted}} 名成员",
       "memberCount_other": "{{formatted}} 名成员",
@@ -4522,13 +5007,136 @@
       "newTeam": "新建团队",
       "noMembers": "暂无成员。使用“添加成员”通过邮箱邀请他人。",
       "noTeams": "暂无团队。",
-      "nothingShared": "尚未共享任何内容。可从智能体、来源、提示词或工具的菜单中共享。",
+      "notEmpty": {
+        "connectionsHint": "连接无法移动。团队管理员可在团队的连接器页面上移除它们。",
+        "counts": {
+          "agent_one": "{{count}} 个智能体",
+          "agent_other": "{{count}} 个智能体",
+          "connection_one": "{{count}} 个连接",
+          "connection_other": "{{count}} 个连接",
+          "custom_model_one": "{{count}} 个自定义模型",
+          "custom_model_other": "{{count}} 个自定义模型",
+          "folder_one": "{{count}} 个文件夹",
+          "folder_other": "{{count}} 个文件夹",
+          "other_one": "{{count}} 条其他记录",
+          "other_other": "{{count}} 条其他记录",
+          "prompt_one": "{{count}} 个提示词",
+          "prompt_other": "{{count}} 个提示词",
+          "source_one": "{{count}} 个来源",
+          "source_other": "{{count}} 个来源",
+          "tool_one": "{{count}} 个工具",
+          "tool_other": "{{count}} 个工具",
+          "workflow_one": "{{count}} 个工作流",
+          "workflow_other": "{{count}} 个工作流"
+        },
+        "customModelsHint": "自定义模型无法移动。团队管理员可在团队的自定义模型页面上移除它们。",
+        "hint": "将它们移到个人空间或删除，然后再删除团队。",
+        "open": "打开 {{name}}",
+        "openConnectors": "打开连接器",
+        "openCustomModels": "打开自定义模型",
+        "title": "{{name}} 仍拥有一些项目"
+      },
       "openTeamError": "无法加载团队详情。",
+      "outside": {
+        "confirm": {
+          "changeTitle": "更改谁可以将项目带到团队外部？",
+          "kept": "不会删除任何内容：解除锁定后一切都会恢复。",
+          "lockIntro": "锁定期间：",
+          "lockStops": "任何人都不能与其他团队共享其项目、向外部发布其智能体、将项目移出团队或导出其智能体。",
+          "lockTitle": "锁定 {{team}}？",
+          "ownerUnlocks": "只有所有者才能再次解除锁定。",
+          "pauses": {
+            "chatLinks": "团队共享的聊天链接将无法打开",
+            "publishedAny": "智能体将不再通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_one": "{{formatted}} 个智能体将不再通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_other": "{{formatted}} 个智能体将不再通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "sharesAny": "与其他团队的共享将暂停",
+            "shares_one": "与其他团队的 {{formatted}} 项共享将暂停",
+            "shares_other": "与其他团队的 {{formatted}} 项共享将暂停"
+          },
+          "returns": {
+            "chatLinks": "团队共享的聊天链接将恢复打开",
+            "publishedAny": "智能体将恢复通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_one": "{{formatted}} 个智能体将恢复通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "published_other": "{{formatted}} 个智能体将恢复通过 API 密钥、小组件、公开链接或 Webhook 回答",
+            "sharesAny": "与其他团队的共享将恢复",
+            "shares_one": "与其他团队的 {{formatted}} 项共享将恢复",
+            "shares_other": "与其他团队的 {{formatted}} 项共享将恢复"
+          },
+          "submit": {
+            "change": "更改",
+            "lock": "锁定",
+            "unlock": "解除锁定"
+          },
+          "toAdmins": "编辑者将不能再把项目带到团队外部。由编辑者付费的外部访问会暂停，直到管理员接管。编辑者已做的共享保持不变。",
+          "toEditors": "编辑者将可以与其他团队共享此团队的项目，并为智能体开启 API 密钥、小组件、公开链接或 Webhook。",
+          "unlockIntro": "以下内容将恢复原样：",
+          "unlockTitle": "解除 {{team}} 的锁定？"
+        },
+        "description": "团队外部指其他团队，或智能体的 API 密钥、小组件、公开链接或 Webhook。",
+        "fromAnotherTeam": "来自其他团队",
+        "fromTeams": {
+          "intro": "此团队可以使用的其他团队的项目。它们仍归对方所有：这里的任何人都不能修改或继续共享。",
+          "remove": "从此团队移除",
+          "removeAgain": "只有 {{from}} 才能再次共享。",
+          "removeError": "无法从此团队移除。",
+          "removeLabel": "从此团队移除 {{name}}",
+          "removeTitle": "从 {{team}} 移除 {{name}}？",
+          "title": "来自其他团队的共享"
+        },
+        "hint": {
+          "admins": "管理员和所有者可以与其他团队共享此团队的项目，并为智能体开启 API 密钥、小组件、公开链接或 Webhook。",
+          "editors": "编辑者也可以。查看者始终不可以。",
+          "locked": "任何人都不可以。已在团队外部的内容会暂停；在所有者解除锁定之前，项目不能移出团队或导出。"
+        },
+        "label": "谁可以将此团队的项目带到团队外部",
+        "ownerOnly": "只有团队所有者才能解除锁定。",
+        "paused": "{{team}} 锁定期间已暂停",
+        "policy": {
+          "admins": "管理员和所有者",
+          "editors": "编辑者也可以",
+          "locked": "任何人都不可以（已锁定）"
+        },
+        "policyError": "无法更改谁可以将项目带到团队外部。",
+        "published": {
+          "open": "打开",
+          "openLabel": "打开 {{name}}",
+          "title": "可从外部访问"
+        },
+        "shares": {
+          "by": "由 {{name}} 共享",
+          "empty": "此团队没有任何内容共享到团队外部。",
+          "intro": "其他团队可以使用的此团队项目，以及可从外部访问的智能体。",
+          "loadError": "无法加载此团队共享到外部的内容。",
+          "locked": "{{team}} 已锁定：在其所有者解除锁定之前，这些都处于暂停状态。",
+          "policy": "谁可以将项目带到团队外部：{{policy}}",
+          "revoke": "停止共享",
+          "revokeError": "无法停止共享。",
+          "revokeLabel": "停止与 {{team}} 共享 {{name}}",
+          "revokeTitle": "停止与 {{team}} 共享 {{name}}？",
+          "title": "共享到团队外部",
+          "with": "已与 {{team}} 共享"
+        },
+        "stops": {
+          "agent": "{{team}} 的成员将无法再与它聊天。他们的聊天记录仍可阅读。",
+          "agents": "{{team}} 中的这些智能体将在没有它的情况下运行：{{names}}。",
+          "none": "{{team}} 中还没有任何内容使用它。",
+          "unknown": "{{team}} 中使用它的内容将在没有它的情况下运行。",
+          "usedBy_one": "{{team}} 中有 {{formatted}} 个智能体使用它，之后将在没有它的情况下运行。",
+          "usedBy_other": "{{team}} 中有 {{formatted}} 个智能体使用它，之后将在没有它的情况下运行。"
+        },
+        "title": "团队外部"
+      },
       "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个团队",
       "remove": "移除",
+      "removeMember": {
+        "personalItemsPaused": "{{name}} 不在团队期间，这些项目将停止与 {{team}} 共享；若重新添加此人，共享将恢复。如需保留团队依赖的项目，请先让 {{name}} 把它们移入团队。",
+        "personalItems_one": "{{name}} 与 {{team}} 共享的 {{count}} 个个人项目",
+        "personalItems_other": "{{name}} 与 {{team}} 共享的 {{count}} 个个人项目",
+        "teamItemsStay": "{{name}} 添加的团队项目会留在 {{team}}。{{name}} 将无法再访问它们；您可以随时重新添加此人。"
+      },
       "removeMemberConfirmation": "将“{{name}}”从 {{team}} 移除？",
-      "removeMemberConsequence": "对方将无法再访问与 {{team}} 共享的所有内容。您可以随时重新添加。",
       "removeMemberError": "无法移除成员。",
       "resourceType": {
         "agent": "智能体",
@@ -4538,11 +5146,20 @@
       },
       "roleAdmin": "管理员",
       "roleChangeError": "无法更改角色（最后一名管理员受保护）。",
+      "roleHints": {
+        "admin": "还可以删除项目、管理成员和角色，并开启外部访问。",
+        "editor": "还可以添加、编辑、移动和归档项目，并查看日志。",
+        "viewer": "使用团队的智能体、知识、工具和提示词。"
+      },
       "roleMember": "成员",
       "save": "保存",
       "searchMembers": "搜索成员…",
       "selectTeamHint": "选择一个团队以管理其成员和共享资源。",
       "selectTeamTitle": "未选择团队",
+      "settingsTab": {
+        "deleteHint": "只能删除空团队。请先移动或删除其智能体、知识、工具、提示词和文件夹。",
+        "details": "详情"
+      },
       "share": {
         "access": "访问权限",
         "accessLevel": {
@@ -4550,6 +5167,7 @@
           "viewer": "查看者"
         },
         "addPlaceholder": "添加人员或团队…",
+        "addedByYou": "由您添加",
         "allSummary": "{{name}} · 团队：{{teams}} · 人员：{{people}}",
         "andMore_one": "还有 {{formatted}} 个",
         "andMore_other": "还有 {{formatted}} 个",
@@ -4564,6 +5182,9 @@
         "loadError": "无法加载当前共享情况。",
         "noMatches": "未找到人员或团队。",
         "noTeams": "您还不是任何团队的成员。请在 设置 → 团队 中创建一个。",
+        "notOwnedByTeam": "已共享，不归团队所有",
+        "ownOfferBody": "即使您离开，它也会留在团队中。",
+        "ownOfferTitle": "要让 {{team}} 拥有它吗？",
         "owner": "所有者",
         "peopleGroup": "人员",
         "peopleWithAccess": "有权访问的人员",
@@ -4576,7 +5197,6 @@
         "shareError": "无法与该团队共享。",
         "showAll": "显示全部 {{formatted}} 个",
         "subtitle": "团队成员可以使用它；编辑者还可以修改它。您仍是所有者。",
-        "teamLabel": "团队",
         "teamsGroup": "团队",
         "titleGeneric": "共享此{{type}}",
         "titleNamed": "共享“{{name}}”",
@@ -4596,6 +5216,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "已退出 {{service}}",
             "connectionNeedsReconnectNoService": "已退出登录",
+            "connectionPaused": "团队的 {{service}} 账号已暂停",
+            "connectionPausedNoService": "团队账号已暂停",
             "connectionRemoved": "{{service}} 账号已移除",
             "connectionRemovedNoService": "账号已移除",
             "connectorDisabled": "{{service}} 已被管理员关闭",
@@ -4608,6 +5230,8 @@
             "sponsorCannotEditItem": "{{person}} 已无法编辑它",
             "sponsorCannotEditItemOther": "添加者已无法编辑它",
             "sponsorCannotEditItemYou": "你已无法编辑它",
+            "teamLocked": "所属团队已锁定",
+            "teamShareEnded": "所属团队已停止共享",
             "unknown": "未在运行"
           },
           "stopped": "已停止",
@@ -4622,6 +5246,11 @@
       },
       "sharedCount_one": "{{formatted}} 项共享",
       "sharedCount_other": "{{formatted}} 项共享",
+      "sharedItems": {
+        "empty": "还没有人与此团队共享个人项目。",
+        "intro": "这些项目属于共享它们的人，而不属于团队。请让所有者把团队依赖的项目移入团队。",
+        "title": "与团队共享的个人项目"
+      },
       "sharedList": {
         "badgeWithEditors_one": "{{level}} · +{{formatted}} 编辑者",
         "badgeWithEditors_other": "{{level}} · +{{formatted}} 编辑者",
@@ -4637,18 +5266,36 @@
         "noMatches": "没有匹配项。",
         "pageRange_one": "第 {{from}}–{{to}} 个，共 {{formatted}} 个资源",
         "pageRange_other": "第 {{from}}–{{to}} 个，共 {{formatted}} 个资源",
+        "paused": "已暂停：{{name}} 已离开团队",
         "search": "搜索共享…"
       },
-      "sharedResources": "共享资源",
       "sharedWithTeam": "已与此团队共享（{{count}}）",
       "sourceManual": "手动添加",
       "sourceScim": "通过 SCIM",
       "sourceSso": "通过 SSO",
       "subtitle": "管理您的团队、成员和共享资源。",
-      "teamActions": "团队操作",
+      "tabs": {
+        "label": "团队页面",
+        "members": "成员",
+        "settings": "设置",
+        "shared": "共享的个人项目",
+        "usage": "用量"
+      },
       "teamNamePlaceholder": "团队名称",
       "teamSubtitle": "管理成员以及与此团队共享的资源。",
       "teamsHeading": "您的团队",
+      "transfer": {
+        "action": "转让",
+        "confirm": "将 {{team}} 转让给 {{name}}？",
+        "consequence": "此人将成为所有者和管理员。只有新的所有者才能再转让回来。",
+        "description": "只有所有者可以删除或转让团队。",
+        "error": "无法转让团队。",
+        "memberLabel": "新所有者",
+        "noMatches": "没有其他匹配的成员。",
+        "placeholder": "选择成员",
+        "submit": "转让",
+        "title": "转让所有权"
+      },
       "unshare": "取消共享",
       "unshareError": "无法取消共享该资源。",
       "updateFailed": "更新失败"
@@ -4696,9 +5343,13 @@
       "fieldDescription": "字段描述",
       "fieldName": "字段名称",
       "fieldType": "字段类型",
+      "fileFailed": "工具已添加，但无法放入此文件夹。",
       "filledBy": "填写方式",
       "filters": {
         "all": "全部"
+      },
+      "folders": {
+        "emptyHint": "在此添加工具，或通过工具的 ⋯ 菜单将其移入。"
       },
       "groupAdded": "已添加",
       "groupBuiltIn": "内置",
@@ -4771,6 +5422,15 @@
         "sharedByEditor": "由 {{owner}} 共享 · 你是编辑者",
         "sharedCredentialsNotice": "已保存的凭据不会显示。你输入的内容将为所有使用此工具的人替换它们。",
         "sharedOAuthOwnerOnly": "只有所有者可以更改此服务器的连接或重新连接其登录。你仍然可以重命名它并编辑其操作。",
+        "team": {
+          "eachPerson": "每个人用自己的账号登录",
+          "eachPersonHint": "使用此服务器的每个人都用自己的账号登录。你需要先在“个人”中自己登录此服务器。",
+          "oauthNewServerOnly": "要在团队中使用需要登录的服务器（OAuth），请将其作为新服务器添加。",
+          "signInInPersonal": "在“个人”中登录",
+          "teamOnce": "团队用你的账号登录一次",
+          "teamOnceHint": "团队中的每个人都使用你登录的账号。它会成为团队的连接，由你连接。",
+          "whoSignsIn": "由谁登录"
+        },
         "testBeforeSave": "保存前先测试连接。",
         "testConnection": "测试连接",
         "timeout": "超时（秒）",
@@ -4794,12 +5454,28 @@
       "savedSecretPlaceholder": "已保存 · 输入新值以替换",
       "searchActions": "搜索操作...",
       "searchPlaceholder": "搜索工具…",
+      "sections": {
+        "folders": "文件夹"
+      },
       "selectToolSetup": "添加工具",
       "settingsIconAlt": "设置图标",
-      "shareWithTeam": "与团队共享",
+      "shareWithTeam": "共享",
       "sharedBy": "由 {{team}} 共享",
       "statusUpdateFailed": "无法更改此工具是否用于你的聊天。",
       "subtitle": "智能体可以执行的操作。自带工具随 DocsGPT 提供。已连接服务提供的工具归在该服务下。",
+      "team": {
+        "addFailed": "无法添加工具。请重试。",
+        "connectForTeam": "为团队连接账号",
+        "connectForTeamHint": "在“连接器”页面为整个团队连接一个 {{name}} 账号。之后它的工具会用该账号为团队中的每个人运行。",
+        "connectInPersonal": "在“个人”中连接你自己的账号",
+        "eachPerson": "每个人用自己的账号登录",
+        "eachPersonHint": "使用此工具的每个人都用自己的账号登录 {{name}}。不共享任何账号。",
+        "eachPersonMeta": "每个人自己的账号",
+        "serviceDescription": "选择团队的工具使用谁的 {{name}} 账号运行。",
+        "serviceTitle": "将 {{name}} 添加到团队",
+        "teamAccount": "使用团队账号",
+        "teamAccountHint": "团队的 {{name}} 账号及其工具在“连接器”页面中管理。它们用该账号为团队中的每个人运行。"
+      },
       "toolActions": "工具操作",
       "toolIconTitle": "{{name}} 图标",
       "triggerLabel_one": "工具，已选 {{formatted}} 个",
@@ -4849,14 +5525,284 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "切换团队",
+      "ariaLabel": "切换工作区",
       "createTeam": "创建团队",
       "logoAlt": "DocsGPT 标志",
-      "manageTeams": "管理团队",
-      "personal": "个人账户",
-      "personalSubtitle": "个人工作区",
-      "roleAdmin": "管理员",
-      "roleMember": "成员"
+      "manageTeams": "管理团队"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "deleteAll": {
+        "confirm": "删除您在 {{name}} 中的所有聊天？",
+        "consequence": "您在 {{name}} 中开始的每个聊天都会连同其消息一起删除。您其他工作区中的聊天会保留。此操作无法撤销。"
+      },
+      "mismatch": "此智能体属于与此聊天不同的工作区。",
+      "notFound": "您已不在此团队中，因此无法在这里继续聊天。",
+      "switchTo": "切换到 {{name}}",
+      "thisTeam": "此团队"
+    },
+    "common": {
+      "personal": "个人",
+      "roles": {
+        "admin": "管理员",
+        "editor": "编辑者",
+        "owner": "所有者",
+        "viewer": "查看者"
+      },
+      "you": "您"
+    },
+    "folders": {
+      "alsoInFolder": "此文件夹中的其他内容"
+    },
+    "menu": {
+      "moveToPersonal": "移至个人…",
+      "moveToTeam": "移至团队…"
+    },
+    "move": {
+      "access": {
+        "gainsDetail": "{{team}} 中的编辑者和管理员可以修改它，查看者可以使用它。",
+        "gainsNone": "没有其他人获得访问权限",
+        "gains_one": "{{count}} 人将获得访问权限",
+        "gains_other": "{{count}} 人将获得访问权限",
+        "loseTeamNone": "没有其他人失去访问权限",
+        "loseTeam_one": "{{team}} 中的 {{count}} 人将失去访问权限",
+        "loseTeam_other": "{{team}} 中的 {{count}} 人将失去访问权限",
+        "losesShared_one": "您在 {{team}} 之外共享过的 {{count}} 人将失去访问权限：{{names}}。",
+        "losesShared_other": "您在 {{team}} 之外共享过的 {{count}} 人将失去访问权限：{{names}}。",
+        "onlyYou": "在您共享之前，只有您可以使用。"
+      },
+      "anotherTeam": "另一个团队",
+      "borrow": {
+        "in_one": "{{names}} 可从团队外部访问，并且使用了此次移动带入团队的内容，而外部访问不得提供这些内容。请将其一并移动、关闭其外部访问，或先从中移除这些项目。",
+        "in_other": "{{names}} 可从团队外部访问，并且使用了此次移动带入团队的内容，而外部访问不得提供这些内容。请将其一并移动、关闭其外部访问，或先从中移除这些项目。",
+        "keeps_one": "您的智能体 {{names}} 使用了要移动的内容。它可以继续从团队使用这些内容，但在此期间无法发布。",
+        "keeps_other": "您的智能体 {{names}} 使用了要移动的内容。它们可以继续从团队使用这些内容，但在此期间无法发布。",
+        "out_one": "{{names}} 留在 {{team}} 中，并使用了此次移动带走的内容。请将其一并移动，或先从中移除这些项目。",
+        "out_other": "{{names}} 留在 {{team}} 中，并使用了此次移动带走的内容。请将其一并移动，或先从中移除这些项目。"
+      },
+      "cannotTitle": "无法移动",
+      "chats": {
+        "in_one": "您使用它的 {{count}} 个聊天将移至 {{team}}。",
+        "in_other": "您使用它的 {{count}} 个聊天将移至 {{team}}。",
+        "out_one": "您使用它的 {{count}} 个聊天将移至个人。",
+        "out_other": "您使用它的 {{count}} 个聊天将移至个人。"
+      },
+      "comesAlong": "一起移动",
+      "comesWith": "随“{{name}}”一起移动",
+      "customModelHint": "要保留它，请先在自定义模型中将它添加到团队。",
+      "done": {
+        "personal": "“{{name}}”现在位于您的个人空间。",
+        "team": "“{{name}}”现在归 {{team}} 所有。"
+      },
+      "doneButton": "完成",
+      "droppedShares": {
+        "description": "这些团队中使用它们的内容将停止运行。",
+        "title": "与其他团队的共享将结束",
+        "with": "已与 {{team}} 共享"
+      },
+      "effects": {
+        "removed_from_holder": "它将从使用它的地方移除。",
+        "stays": "它会留在原处。"
+      },
+      "errors": {
+        "already_in_workspace": "它已经在那里了。",
+        "credentials_unavailable": "保存的密钥暂时无法移动。请稍后再试。",
+        "credentials_unreadable_one": "无法读取 {{names}} 保存的密钥，因此无法移动。请先重新输入。",
+        "credentials_unreadable_other": "无法读取 {{names}} 保存的密钥，因此无法移动。请先重新输入。",
+        "fingerprint_required": "请再次检查计划，然后再移动。",
+        "folder_not_found": "该文件夹已不存在。",
+        "folder_too_deep": "该文件夹层级太深：文件夹最多嵌套 3 层。",
+        "invalid_request": "无法进行此次移动。",
+        "move_failed": "移动失败，未做任何更改。",
+        "move_needs_admin": "只有团队管理员才能移入可从团队外部访问的智能体。",
+        "move_plan_changed": "内容有变化，请再检查一次",
+        "move_would_borrow": "一个可从团队外部访问的智能体使用了此次移动带走的内容。",
+        "not_a_person": "只有人员才能移动项目。",
+        "not_found": "它已不存在。",
+        "nothing_to_move": "这些项目都无法移动。",
+        "team_locked": "{{team}} 已锁定，因此其中的任何内容都不能移出。只有其所有者才能解除锁定。",
+        "workspace_not_found": "该团队已不可用。",
+        "workspace_role_required": "您在那里的角色不允许此次移动。"
+      },
+      "folderLabel": "文件夹",
+      "foldersFailed": "无法加载那里的文件夹，因此它将放在顶层。",
+      "kinds": {
+        "agent": "智能体",
+        "folder": "文件夹",
+        "model": "模型",
+        "prompt": "提示词",
+        "source": "来源",
+        "tool": "工具"
+      },
+      "listSeparator": "、",
+      "modelRemaps": {
+        "in": "“{{from}}” → 团队的“{{to}}”",
+        "out": "“{{from}}” → 您的“{{to}}”",
+        "title": "切换为匹配的自定义模型"
+      },
+      "needsAdmin_one": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），只有 {{team}} 的管理员才能将其移入。请先关闭其外部访问，或请管理员处理。",
+      "needsAdmin_other": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），只有 {{team}} 的管理员才能将其移入。请先关闭其外部访问，或请管理员处理。",
+      "noFolder": "无文件夹",
+      "openIn": "打开 {{name}}",
+      "othersYouCantOpen_one": "{{count}} 个您无法打开的智能体",
+      "othersYouCantOpen_other": "{{count}} 个您无法打开的智能体",
+      "outside": {
+        "apiKey": "API 密钥和小组件",
+        "publicLink": "公开链接",
+        "webhook": "Webhook"
+      },
+      "owner": {
+        "team": "{{team}} 将拥有它",
+        "teamDetail": "即使您离开，它也会留在团队中。您仍会显示为添加它的人。",
+        "you": "您将拥有它",
+        "youDetail": "它将离开 {{team}}，进入您的个人空间。"
+      },
+      "payerYou": "您",
+      "pays": {
+        "chats": "每个人为自己的聊天付费。",
+        "outside": "外部访问（{{list}}）继续运行，由 {{name}} 付费。",
+        "schedules_one": "{{count}} 个计划任务继续运行，由 {{names}} 付费。",
+        "schedules_other": "{{count}} 个计划任务继续运行，由 {{names}} 付费。",
+        "title": "付费方不变"
+      },
+      "planChanged": "内容有变化，请再检查一次",
+      "quoted": "“{{name}}”",
+      "reasons": {
+        "connection_account": "使用留在此工作区的账号登录。",
+        "connector_synced": "从留在此工作区的账号同步。",
+        "credentials_unreadable": "其保存的密钥已无法读取。",
+        "custom_model": "团队没有的个人自定义模型。",
+        "custom_model_out": "您没有的团队自定义模型。",
+        "in_knowledge_folder": "位于智能体读取的文件夹中；只有其中的来源会一起移动。",
+        "not_yours": "属于其他人，您无法移动。",
+        "remote_device": "在已配对的设备上运行。"
+      },
+      "renames": {
+        "folder": "文件夹“{{from}}”将变为“{{to}}”",
+        "other": "“{{from}}”将变为“{{to}}”",
+        "slug": "智能体地址“{{from}}”将变为“{{to}}”",
+        "title": "为避免重名而重命名"
+      },
+      "sharedRefs": {
+        "from": "通过 {{team}} 的共享使用",
+        "title": "通过另一个团队的共享保留"
+      },
+      "someone": "某人",
+      "submit": "移至 {{name}}",
+      "teamLabel": "团队",
+      "teamLocked_one": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），而 {{team}} 已锁定，因此无法移入。请先关闭其外部访问。",
+      "teamLocked_other": "{{names}} 可从团队外部访问（密钥、公开链接或 Webhook），而 {{team}} 已锁定，因此无法移入。请先关闭其外部访问。",
+      "titleToPersonal": "将“{{name}}”移至个人",
+      "titleToTeam": "将“{{name}}”移至团队",
+      "unnamed": "您无法打开的项目",
+      "withReasons": {
+        "in_folder": "在文件夹中",
+        "same_workflow": "在同一工作流中",
+        "used_by_agent": "由智能体使用"
+      }
+    },
+    "notices": {
+      "lost": "您已不在 {{name}} 中，已切换到个人",
+      "lostUnnamed": "您已不在该团队中，已切换到个人",
+      "ownerInactive": "外部访问已暂停：其所有者的账户已被禁用。",
+      "ownerInactiveShort": "外部访问已暂停",
+      "roleChanged": "您在 {{name}} 中的角色已更改。页面现在显示您可以执行的操作。",
+      "switched": "已切换到 {{name}}"
+    },
+    "page": {
+      "sharedFromTeams": {
+        "from": "来自 {{team}}",
+        "title": "与此团队共享"
+      },
+      "sharedWithYou": "与您共享"
+    },
+    "pickers": {
+      "inAgentFolder": "在 {{folder}}（此智能体的文件夹）中",
+      "inWorkflowFolder": "在 {{folder}}（此工作流的文件夹）中",
+      "otherFolders": "在其他文件夹中",
+      "thisTeam": "此团队"
+    },
+    "share": {
+      "access": "访问权限",
+      "adminsOnly": "只有管理员可以在智能体页面上更改这些设置。",
+      "apiKey": "API 密钥和小组件",
+      "belongsTo": "它属于 {{team}}。访问权限取决于团队成员身份。",
+      "everyoneInTeam": "{{team}} 中的所有人",
+      "fromTeam": "来自团队",
+      "manageMembers": "管理成员",
+      "members_one": "{{count}} 人，按其团队角色",
+      "members_other": "{{count}} 人，按其团队角色",
+      "off": "关闭",
+      "on": "开启",
+      "onPaidBy": "开启 · 由 {{name}} 付费",
+      "outside": {
+        "again": "您可以随时再次共享。",
+        "locked": "{{team}} 已锁定，因此其中的任何内容都不能与其他团队共享。只有其所有者才能解除锁定。",
+        "noMatches": "未找到团队。",
+        "noTargets": "您没有加入可以与之共享的其他团队。",
+        "pausedLocked": "{{owner}} 锁定期间已暂停",
+        "picker": "要共享的团队",
+        "pickerPlaceholder": "选择团队…",
+        "pickerSearch": "搜索团队…",
+        "received": {
+          "body": "{{owner}} 将它与 {{team}} 的所有人共享。",
+          "bodyNoOwner": "另一个团队将它与 {{team}} 的所有人共享。",
+          "note": "您可以使用它，但不能修改它，也不能与其他人共享。"
+        },
+        "revoke": "停止共享",
+        "revokeAgent": "{{team}} 的成员将无法再与它聊天。他们以前的聊天仍可阅读。",
+        "revokeConfirm": "停止与 {{team}} 共享？",
+        "revokeUnused": "{{team}} 的成员将无法再使用它。",
+        "revokeUsed_one": "{{team}} 中有 {{formatted}} 个智能体使用它，之后将在没有它的情况下运行。",
+        "revokeUsed_other": "{{team}} 中有 {{formatted}} 个智能体使用它，之后将在没有它的情况下运行。",
+        "share": "共享",
+        "shareError": "无法与该团队共享。",
+        "sharedBy": "由 {{name}} 共享",
+        "sharedByYou": "由您共享",
+        "teamsTitle": "与其他团队共享",
+        "title": "团队外部",
+        "unknownTeam": "您未加入的团队",
+        "unshareError": "无法停止共享。",
+        "usedBy_one": "{{formatted}} 个智能体在使用",
+        "usedBy_other": "{{formatted}} 个智能体在使用",
+        "uses": {
+          "fromTeam": "来自 {{team}}：{{items}}。",
+          "hidden_one": "{{count}} 个您看不到的项目",
+          "hidden_other": "{{count}} 个您看不到的项目",
+          "moveTo": "移至 {{team}}",
+          "note": "此智能体使用了团队的项目，因此只会推荐可以使用这些项目的人。",
+          "remove": "从智能体中移除它们，才能与其他人共享。",
+          "someTeam": "另一个团队"
+        },
+        "warning": {
+          "agent": "{{team}} 的成员可以与它聊天。它使用 {{owner}} 的知识和工具运行。{{owner}} 中能查看其日志和洞察的人可以看到他们的问题。",
+          "always": "他们不能修改它、继续共享它，也不能发布使用它的智能体。您可以随时停止共享；届时 {{team}} 中使用它的一切都会停止。",
+          "prompt": "{{team}} 的成员可以阅读它，并在自己的智能体中使用。",
+          "source": "{{team}} 的成员可以阅读其中的每个文件，并在自己的智能体中使用它。",
+          "teamModels_one": "{{team}} 的成员将使用 {{owner}} 的模型 {{names}} 运行此智能体。",
+          "teamModels_other": "{{team}} 的成员将使用 {{owner}} 的模型 {{names}} 运行此智能体。",
+          "toolMember": "每位成员使用自己的账户。",
+          "toolStored": "{{team}} 的成员将使用 {{owner}} 保存的账户运行此工具。他们用它执行的操作都以 {{owner}} 的身份进行。"
+        }
+      },
+      "payerYou": "您",
+      "publicLink": "公开链接",
+      "teamTitle": "谁可以使用“{{name}}”",
+      "teamTitleGeneric": "谁可以使用此{{type}}",
+      "webhook": "Webhook",
+      "yourRole": "{{team}} 的{{role}}"
+    },
+    "switcher": {
+      "onlyYou": "仅您自己",
+      "personal": "个人",
+      "teamMeta_one": "{{count}} 人 · {{role}}",
+      "teamMeta_other": "{{count}} 人 · {{role}}",
+      "teamRole": "团队 · {{role}}",
+      "teams": "团队"
+    },
+    "team": {
+      "navEntry": "团队"
     }
   }
 }

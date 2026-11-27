@@ -1,5 +1,6 @@
 import type { Question } from '../components/QuestionCards';
 import type { Query } from './conversationModels';
+import { lastShownIndex } from './shownQueries';
 import type { ToolCallsType } from './types';
 
 /** The chat's clarifying-questions tool (docsgpt/agents/tools/ask_user.py). */
@@ -185,7 +186,7 @@ export function readAnswers(
  *   The waiting `ask_user` call, or null.
  */
 export function pendingQuestionCall(queries: Query[]): ToolCallsType | null {
-  const last = queries[queries.length - 1];
+  const last = queries[lastShownIndex(queries)];
   return (
     last?.tool_calls?.find((call) => questionState(call) === 'awaiting') ?? null
   );

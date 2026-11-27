@@ -51,6 +51,10 @@ os.environ.setdefault("AUTO_VECTOR_SCHEMA", "false")
 os.environ.setdefault("TRACES_ENABLED", "false")
 # A dev .env often turns conversation insights on; tests that need them say so.
 os.environ.setdefault("DECISION_ANALYTICS_ENABLED", "false")
+# The parse cache reads and writes ``parsed_files`` through its own DB session,
+# which would reach the operator's dev database from any test that parses a
+# file. Off by default; the parse-cache tests switch it on against pg_conn.
+os.environ.setdefault("PARSE_CACHE_ENABLED", "false")
 # Importing ``docsgpt.app`` pins the embedding model in whatever database
 # ``POSTGRES_URI`` names, unless the environment names the model. Name the
 # settings default, so importing the app from a test writes to no database
@@ -725,3 +729,13 @@ def flask_app():
 
     app = Flask(__name__)
     return app
+
+
+@pytest.fixture(autouse=True)
+def _fresh_ocr_limiters():
+    """Start every test with no OCR request limiter, so a 429 one test halved never slows another."""
+    from docsgpt.parser.file.ocr_limiter import reset_limiters
+
+    reset_limiters()
+    yield
+    reset_limiters()

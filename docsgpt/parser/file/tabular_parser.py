@@ -229,7 +229,7 @@ class CSVParser(BaseParser):
             raise ValueError("csv module is required to read CSV files.")
         text_list = []
         separator = detect_file_separator(file)
-        with open(file, "r") as fp:
+        with open(file, "r", encoding="utf-8", errors=errors) as fp:
             csv_reader = csv.reader(fp, delimiter=separator)
             for row in csv_reader:
                 text_list.append(", ".join(row))

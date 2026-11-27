@@ -27,4 +27,9 @@ export type AvailableToolType = {
   /** `built_in`, `service` (a connector's tool) or `custom` (MCP / OpenAPI). */
   group?: 'built_in' | 'service' | 'custom';
   connector_key?: string | null;
+  /**
+   * In a team, on a service tool: the team has no account for it, so only
+   * "each person signs in with their own account" is on offer.
+   */
+  member_only?: boolean;
 };

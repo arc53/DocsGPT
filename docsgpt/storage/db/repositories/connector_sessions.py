@@ -20,6 +20,9 @@ Shape notes:
   (tokens that don't fit anywhere else, per-provider scratch data).
   Promoted columns (``session_token``, ``user_email``, ``status``,
   ``token_info``) are the ones route/auth code queries by.
+* A team's connection is owned by the team's principal and names the person
+  who connected it in ``connected_by``; nobody else's row names anyone there
+  (``connector_sessions_connected_by_chk``, migration 0065).
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ _UPDATABLE_SCALARS = {
     "server_url", "session_token", "user_email", "status", "expires_at",
     "connector_key", "display_name", "account_label", "auth_kind",
     "encrypted_credentials", "has_refresh_token", "last_error", "last_used_at", "account_name",
+    "connected_by",
 }
 _UPDATABLE_JSONB = {"session_data", "token_info", "scopes"}
 
@@ -202,18 +206,37 @@ class ConnectorSessionsRepository:
         status: str = "connected",
         encrypted_credentials: Optional[str] = None,
         has_refresh_token: bool = False,
+        connected_by: Optional[str] = None,
     ) -> Optional[dict]:
-        """Insert a connection; return None when that account already exists."""
+        """Insert a connection; return None when that account already exists.
+
+        Args:
+            user_id: The owner: a person, or a team's principal.
+            provider: The provider tag.
+            connector_key: The catalog key.
+            auth_kind: ``oauth``, ``api_key``, ``mcp_oauth`` or ``none``.
+            display_name: The name shown for it.
+            account_label: The account's identity.
+            server_url: The MCP server, if any.
+            status: The initial status.
+            encrypted_credentials: The sealed secrets, if any.
+            has_refresh_token: Whether the secrets hold a refresh token.
+            connected_by: The person connecting a team's account; required when
+                ``user_id`` is a principal and refused otherwise (by the database).
+
+        Returns:
+            The new row, or None when that account already exists.
+        """
         result = self._conn.execute(
             text(
                 """
                 INSERT INTO connector_sessions (
                     user_id, provider, server_url, connector_key, auth_kind, display_name,
-                    account_label, status, encrypted_credentials, has_refresh_token, session_data
+                    account_label, status, encrypted_credentials, has_refresh_token, session_data, connected_by
                 )
                 VALUES (
                     :user_id, :provider, :server_url, :connector_key, :auth_kind, :display_name,
-                    :account_label, :status, :encrypted_credentials, :has_refresh_token, '{}'::jsonb
+                    :account_label, :status, :encrypted_credentials, :has_refresh_token, '{}'::jsonb, :connected_by
                 )
                 ON CONFLICT (user_id, provider, COALESCE(server_url, ''), COALESCE(account_label, ''))
                 DO NOTHING
@@ -231,10 +254,49 @@ class ConnectorSessionsRepository:
                 "status": status,
                 "encrypted_credentials": encrypted_credentials,
                 "has_refresh_token": has_refresh_token,
+                "connected_by": connected_by,
             },
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def set_connected_by(self, connection_id: str, user_id: str) -> bool:
+        """Record ``user_id`` as the person who connected a team's account.
+
+        Args:
+            connection_id: The team connection.
+            user_id: The person; the database refuses a principal, and any
+                value on a connection that isn't a team's.
+
+        Returns:
+            True when the row exists and was updated.
+        """
+        return self.update(str(connection_id), {"connected_by": user_id})
+
+    def connected_by_counts(self, principal: str, user_ids: list[str]) -> dict[str, int]:
+        """How many of a team's connections each person connected.
+
+        Args:
+            principal: The team's principal id.
+            user_ids: The people to count for.
+
+        Returns:
+            ``{user_id: count}`` for every id given, 0 for those who connected none.
+        """
+        ids = sorted({str(u) for u in user_ids if u})
+        if not ids:
+            return {}
+        counts = dict.fromkeys(ids, 0)
+        result = self._conn.execute(
+            text(
+                "SELECT connected_by, count(*) FROM connector_sessions "
+                "WHERE user_id = :principal AND connected_by = ANY(:ids) GROUP BY connected_by"
+            ),
+            {"principal": principal, "ids": ids},
+        )
+        for user_id, count in result.fetchall():
+            counts[user_id] = int(count)
+        return counts
 
     def find_account(
         self, user_id: str, provider: str, *, server_url: Optional[str], account_label: Optional[str],
@@ -436,15 +498,12 @@ class ConnectorSessionsRepository:
         provider: str,
         server_url: Optional[str],
         patch: dict,
+        connected_by: Optional[str] = None,
     ) -> dict:
         """Upsert by shallow-merging ``patch`` into ``session_data``.
 
         Writes ``server_url`` to the scalar column so downstream
-        ``get_by_user_and_server_url`` lookups can find the row. If
-        ``patch`` still carries a ``"server_url"`` key (legacy callers)
-        it is stripped before merging so the scalar column stays the
-        single source of truth and we don't duplicate it inside the
-        JSONB blob.
+        ``get_by_user_and_server_url`` lookups can find the row.
 
         Args:
             user_id: Owner of the session.
@@ -454,6 +513,9 @@ class ConnectorSessionsRepository:
             patch: Shallow-merge payload for ``session_data``. Keys
                 mapped to ``None`` are *dropped* from the stored doc
                 (used by the redirect-URI-mismatch clear path).
+            connected_by: The person connecting a team's account, written
+                when the row is created (an existing row keeps its own).
+                Without it, a row under a team's principal is refused.
 
         Returns:
             The upserted row as a dict.
@@ -464,10 +526,6 @@ class ConnectorSessionsRepository:
             so MCP's per-URL rows and OAuth's single-row-per-user rows
             both upsert idempotently.
         """
-        # Defensively strip ``server_url`` from ``patch`` — the scalar
-        # column is authoritative now. Callers still pass it for
-        # backwards compatibility during the transition.
-        patch = {k: v for k, v in patch.items() if k != "server_url"}
         set_entries = {k: v for k, v in patch.items() if v is not None}
         drop_keys = [k for k, v in patch.items() if v is None]
 
@@ -475,11 +533,11 @@ class ConnectorSessionsRepository:
             text(
                 """
                 INSERT INTO connector_sessions (
-                    user_id, provider, server_url, session_data
+                    user_id, provider, server_url, session_data, connected_by
                 )
                 VALUES (
                     :user_id, :provider, :server_url,
-                    CAST(:patch AS jsonb)
+                    CAST(:patch AS jsonb), :connected_by
                 )
                 ON CONFLICT (user_id, provider, COALESCE(server_url, ''), COALESCE(account_label, ''))
                 DO UPDATE SET
@@ -496,6 +554,7 @@ class ConnectorSessionsRepository:
                 "server_url": server_url,
                 "patch": json.dumps(set_entries),
                 "drop_keys": "{" + ",".join(f'"{k}"' for k in drop_keys) + "}",
+                "connected_by": connected_by,
             },
         )
         return row_to_dict(result.fetchone())
@@ -512,15 +571,4 @@ class ConnectorSessionsRepository:
             sql += " AND server_url = :server_url"
             params["server_url"] = server_url
         result = self._conn.execute(text(sql), params)
-        return result.rowcount > 0
-
-    def delete_by_session_token(self, session_token: str, user_id: str) -> bool:
-        """Delete the session behind ``session_token`` only if ``user_id`` owns it."""
-        result = self._conn.execute(
-            text(
-                "DELETE FROM connector_sessions "
-                "WHERE session_token = :token AND user_id = :user_id"
-            ),
-            {"token": session_token, "user_id": user_id},
-        )
         return result.rowcount > 0

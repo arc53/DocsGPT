@@ -2,22 +2,34 @@
 
 import datetime
 import secrets
+from typing import Optional
 
 from flask import current_app, jsonify, make_response, request
 from flask_restx import fields, Namespace, Resource
 from sqlalchemy import text as _sql_text
 
 from docsgpt.api import api
+from docsgpt.api.audit import record_event
 from docsgpt.core.settings import settings
-from docsgpt.api.user.agents.graph_checks import refuse_unfinished_graph
+from docsgpt.api.user.agents.graph_checks import refuse_borrowed_outside_access, refuse_unfinished_graph
 from docsgpt.api.user.agents.starters import stored_starters
 from docsgpt.api.user.base import resolve_tool_details
-from docsgpt.api.user.resource_access import AccessDenied, require, resolve
+from docsgpt.api.user.resource_access import (
+    AccessDenied,
+    ResourceAccess,
+    best_effort,
+    require,
+    resolve,
+)
+from docsgpt.api.user.received_shares import in_request_workspace
+from docsgpt.quotas.pause import PayerChecks, outside_access_pause
 from docsgpt.storage.db.base_repository import looks_like_uuid
-from docsgpt.storage.db.repositories.agents import AgentsRepository, expose_prompt_preset
+from docsgpt.storage.db.repositories.agents import AgentsRepository, agent_row_to_dict, expose_prompt_preset
 from docsgpt.storage.db.repositories.users import UsersRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.utils import generate_image_url
+from docsgpt.workspaces.locks import lock_owner_items
+from docsgpt.workspaces.principal import is_principal_id
 
 agents_sharing_ns = Namespace(
     "agents", description="Agent management operations", path="/api"
@@ -25,8 +37,98 @@ agents_sharing_ns = Namespace(
 
 
 # A caller who reached an agent only through its public link may chat with it
-# and pin it; a team grant, when there is one, gives more.
-LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"]}
+# and pin it; a team grant, when there is one, gives more. ``origin: link``
+# says so outright, so the composer knows the publisher pays for the chat
+# rather than reading it from the fields a grant would add.
+LINK_SHARED_ACCESS = {"access": "viewer", "allowed_actions": ["pin", "use"], "origin": "link"}
+
+
+def access_payer_fields(ra: ResourceAccess, agent: dict, user: str, *, turning_on: bool) -> dict:
+    """The ``access_payer_id`` write that goes with outside access a team Admin sets up: that Admin pays for it.
+
+    A team has no credit, so whoever turns on a team agent's first way in
+    (key, public link or webhook) pays for the traffic that comes in through
+    them all. Turning on a second way in, rotating something already on, or
+    any other save keeps the payer: only Take over moves it. It is filled in
+    when none is recorded. A personal agent records none: its owner pays.
+
+    Args:
+        ra: The caller's access to the agent (from ``require(..., "manage_access_details")``).
+        agent: The agent row before the write.
+        user: The caller.
+        turning_on: True when this write turns outside access on (a new key, link or webhook).
+
+    Returns:
+        dict: ``{"access_payer_id": user}`` to merge into the agent update, or ``{}``.
+    """
+    if not ra.is_team_item or is_principal_id(user):
+        return {}
+    if not agent.get("access_payer_id") or (turning_on and not outside_access_kinds(agent)):
+        return {"access_payer_id": user}
+    return {}
+
+
+def outside_access_kinds(agent: dict) -> list[str]:
+    """Which ways in from outside are switched on, in a fixed order: ``api_key``, ``public_link``, ``webhook``.
+
+    Args:
+        agent: The agent row.
+
+    Returns:
+        list[str]: The kinds that are on; empty when none is.
+    """
+    switched_on = {
+        "api_key": bool(agent.get("key")),
+        "public_link": bool(agent.get("shared") and agent.get("shared_token")),
+        "webhook": bool(agent.get("incoming_webhook_token")),
+    }
+    return [kind for kind, on in switched_on.items() if on]
+
+
+def outside_access_state(
+    conn, agent: dict, ra: ResourceAccess, user: str, *, checks: Optional[PayerChecks] = None
+) -> dict:
+    """An agent's ``outside_access`` block: what is on, who pays, why it is paused and whether ``user`` may take over.
+
+    Who pays, and why and until when it is paused, are for a reader who
+    manages the access (``manage_access_details``, or the person owner);
+    anyone else (a team item's share dialog) reads only what is on.
+
+    Args:
+        conn: Open database connection.
+        agent: The agent row.
+        ra: The reader's access to the agent.
+        user: The reader.
+        checks: The request's :class:`PayerChecks`, to share across a list; a fresh one when None.
+
+    Returns:
+        dict: ``api_key``, ``public_link``, ``webhook`` (bools); ``paid_by`` (``{user_id, label}`` of a team
+        agent's payer, the label their email when on file, else their id; None on a personal agent, whose
+        owner pays, and while nothing is on or nobody pays); ``paused_for`` (``{reason, until}`` or None);
+        ``can_take_over`` (a team agent with something on, the reader holds ``manage_access_details`` and
+        is not already the payer). ``paid_by`` and ``paused_for`` are None for a reader without
+        ``manage_access_details``.
+    """
+    kinds = outside_access_kinds(agent)
+    manages = ra.can("manage_access_details")
+    payer = agent.get("access_payer_id") if (ra.is_team_item and kinds) else None
+    paid_by = None
+    if payer and manages:
+        paid_by = {"user_id": payer, "label": UsersRepository(conn).emails_for([payer]).get(payer) or payer}
+    pause = best_effort(
+        conn, "the agent's outside-access pause", lambda: outside_access_pause(conn, agent, checks=checks), None,
+    ) if manages else None
+    return {
+        "api_key": "api_key" in kinds,
+        "public_link": "public_link" in kinds,
+        "webhook": "webhook" in kinds,
+        "paid_by": paid_by,
+        "paused_for": pause.payload() if pause else None,
+        "can_take_over": bool(
+            ra.is_team_item and kinds and manages
+            and not is_principal_id(user) and payer != user
+        ),
+    }
 
 
 def _link_access(conn, agent_id: str, user_id) -> dict:
@@ -39,10 +141,12 @@ def _link_access(conn, agent_id: str, user_id) -> dict:
 
     Returns:
         The caller's own access (owner or a team grant) when they have one,
-        else viewer with ``pin`` and ``use``.
+        else viewer with ``pin`` and ``use``. Another team's agent shared
+        with the caller's team lives in that team (the one the request is
+        made from, when several receive it), so the page follows it there.
     """
     if user_id:
-        ra = resolve(conn, "agent", agent_id, user_id)
+        ra = in_request_workspace(conn, resolve(conn, "agent", agent_id, user_id), user_id)
         if ra is not None:
             return ra.payload()
     return dict(LINK_SHARED_ACCESS)
@@ -299,6 +403,19 @@ class ShareAgent(Resource):
                     # Anyone with the link runs the agent's graph: a workflow
                     # agent's must be a finished one.
                     refusal = refuse_unfinished_graph(conn, agent)
+                    # A new link reaches people the owner never shared with:
+                    # not for an agent using someone else's tool or source.
+                    # Replacing a link it has opens nothing new.
+                    if refusal is None and not (agent.get("shared") and agent.get("shared_token")):
+                        # A move of the owner's items runs wholly before this check or after this link.
+                        lock_owner_items(conn, owner_id)
+                        # Lock, then read again: a save that held the lock has committed the items it added.
+                        agent = repo.get_by_id(ra.resource_id)
+                        if not agent:
+                            return make_response(
+                                jsonify({"success": False, "message": "Agent not found"}), 404
+                            )
+                        refusal = refuse_borrowed_outside_access(conn, agent, user)
                     if refusal is not None:
                         return refusal
                     shared_metadata = {
@@ -308,12 +425,15 @@ class ShareAgent(Resource):
                         ).isoformat(),
                     }
                     shared_token = secrets.token_urlsafe(32)
+                    # A team Admin who turns the link on pays for its traffic.
+                    already_on = bool(agent.get("shared") and agent.get("shared_token"))
                     repo.update(
                         str(agent["id"]), owner_id,
                         {
                             "shared": True,
                             "shared_token": shared_token,
                             "shared_metadata": shared_metadata,
+                            **access_payer_fields(ra, agent, user, turning_on=not already_on),
                         },
                     )
                 else:
@@ -331,3 +451,70 @@ class ShareAgent(Resource):
         return make_response(
             jsonify({"success": True, "shared_token": shared_token}), 200
         )
+
+
+def _refusal(status: int, error: str, message: str):
+    return make_response(jsonify({"success": False, "error": error, "message": message}), status)
+
+
+@agents_sharing_ns.route("/agents/<string:agent_id>/outside_access/take_over")
+class TakeOverOutsideAccess(Resource):
+    @api.doc(
+        description=(
+            "Become the person who pays for a team agent's outside access (its API key, public link and "
+            "webhook). Needs the Admin role in the team; not available on a personal agent, whose owner "
+            "pays. Returns {success, outside_access, changed}; changed is false when the caller already "
+            "pays. Refusals: 404 agent_not_found, 403 workspace_role_required, 409 take_over_team_only, "
+            "409 no_outside_access."
+        ),
+    )
+    def post(self, agent_id):
+        decoded_token = request.decoded_token
+        if not decoded_token:
+            return make_response(jsonify({"success": False}), 401)
+        user = decoded_token.get("sub")
+        try:
+            with db_session() as conn:
+                ra = resolve(conn, "agent", agent_id, user)
+                if ra is None:
+                    return _refusal(404, "agent_not_found", "Agent not found")
+                if not ra.is_team_item:
+                    return _refusal(
+                        409, "take_over_team_only", "Only a team's agent can be taken over: here its owner pays.",
+                    )
+                if is_principal_id(user) or not ra.can("manage_access_details"):
+                    return _refusal(
+                        403, "workspace_role_required", "Taking over needs the admin role in the team",
+                    )
+                # Locked, so two Admins taking over at once each see the payer the other left.
+                agent = agent_row_to_dict(
+                    conn.execute(
+                        _sql_text("SELECT * FROM agents WHERE id = CAST(:id AS uuid) FOR UPDATE"),
+                        {"id": ra.resource_id},
+                    ).fetchone()
+                )
+                if not agent:
+                    return _refusal(404, "agent_not_found", "Agent not found")
+                kinds = outside_access_kinds(agent)
+                if not kinds:
+                    return _refusal(409, "no_outside_access", "This agent has no API key, public link or webhook")
+                previous = agent.get("access_payer_id")
+                changed = previous != user
+                if changed:
+                    # A bookkeeping column: the agent's updated_at stays.
+                    AgentsRepository(conn).update(str(agent["id"]), ra.owner_id, {"access_payer_id": user})
+                    agent["access_payer_id"] = user
+                    record_event(
+                        conn,
+                        "team.outside_access_taken_over",
+                        actor=user,
+                        team_id=ra.team_id,
+                        agent_id=str(agent["id"]),
+                        access=kinds,
+                        **{"from": previous, "to": user},
+                    )
+                state = outside_access_state(conn, agent, ra, user)
+        except Exception as err:
+            current_app.logger.error(f"Error taking over outside access: {err}", exc_info=True)
+            return make_response(jsonify({"success": False}), 400)
+        return make_response(jsonify({"success": True, "outside_access": state, "changed": changed}), 200)

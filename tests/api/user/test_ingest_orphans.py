@@ -161,12 +161,26 @@ class TestPurgeVectors:
 
         monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
         store = MagicMock()
-        store.purge_index.return_value = 12
+        store.purge_index.side_effect = [12, 3]
         with patch("docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore", return_value=store) as made:
-            assert ingest_orphans._purge_vectors("s-1") == 12
+            assert ingest_orphans._purge_vectors("s-1") == 15
 
-        assert made.call_args.kwargs["source_id"] == "s-1"
-        store.purge_index.assert_called_once_with(batch_size=ingest_orphans.PURGE_BATCH_SIZE)
+        assert made.call_args_list[0].kwargs["source_id"] == "s-1"
+        # A rebuild staged for the source goes with it.
+        assert made.call_args_list[1].kwargs["source_id"] == "s-1:staging"
+        assert store.purge_index.call_count == 2
+        store.purge_index.assert_called_with(batch_size=ingest_orphans.PURGE_BATCH_SIZE)
+
+    def test_a_store_that_never_stages_purges_the_source_alone(self, monkeypatch):
+        from docsgpt.api.user import ingest_orphans
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "qdrant", raising=False)
+        store = MagicMock()
+        store.purge_index.return_value = 4
+        with patch("docsgpt.vectorstore.vector_creator.VectorCreator.create_vectorstore", return_value=store) as made:
+            assert ingest_orphans._purge_vectors("s-1") == 4
+        assert [call.kwargs["source_id"] for call in made.call_args_list] == ["s-1"]
 
     def test_faiss_has_nothing_to_purge(self, monkeypatch):
         from docsgpt.api.user import ingest_orphans
@@ -197,9 +211,28 @@ class TestOrphanReport:
         assert set(report) == {stalled, fresh, "legacy-no-row"}
         assert report[stalled]["vectors"] == 30
         assert report[stalled]["swept"] is True
+        assert report[stalled]["swept"] is True
         assert report[fresh]["swept"] is False
         assert report["legacy-no-row"]["status"] is None
         assert report["legacy-no-row"]["swept"] is False
+
+    def test_a_staged_rebuild_belongs_to_its_source(self, pg_conn, monkeypatch):
+        from docsgpt.api.user import ingest_orphans
+        from docsgpt.core.settings import settings
+
+        monkeypatch.setattr(settings, "VECTOR_STORE", "pgvector", raising=False)
+        kept = "7a000000-0000-0000-0000-000000000031"
+        _seed_source(pg_conn, kept)
+        stalled = _seed_progress(pg_conn, source_id="7a000000-0000-0000-0000-000000000032")
+        counts = {kept: 50, f"{kept}:staging": 40, f"{stalled}:staging": 7}
+
+        with patch("docsgpt.vectorstore.pgvector.chunk_counts_by_source", return_value=counts):
+            report = {row["source_id"]: row for row in ingest_orphans.orphan_report(pg_conn)}
+
+        # A source's rebuild in progress is not an orphan; one of a source that is gone is, swept with it.
+        assert set(report) == {f"{stalled}:staging"}
+        assert report[f"{stalled}:staging"]["vectors"] == 7
+        assert report[f"{stalled}:staging"]["swept"] is True
 
     def test_other_stores_list_the_rows_without_counts(self, pg_conn, monkeypatch):
         from docsgpt.api.user import ingest_orphans

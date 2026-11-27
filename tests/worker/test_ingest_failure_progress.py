@@ -207,7 +207,7 @@ def test_the_poison_guard_closes_the_row():
         "docsgpt.worker.close_failed_ingest_progress",
         side_effect=lambda source_id: seen.append(("close", source_id)),
     ), patch(
-        "docsgpt.events.publisher.publish_user_event",
+        "docsgpt.worker.publish_user_event",
         side_effect=lambda user, kind, payload, **kw: seen.append((kind, payload["source_id"])),
     ):
         _emit_ingest_poison_event("ingest", {"user": "u1", "source_id": "src-9"})

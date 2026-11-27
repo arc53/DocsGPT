@@ -1302,3 +1302,209 @@ class TestDownloadReportsWhatItLost:
 
         assert result["files_downloaded"] == 6
         assert (result["files_failed"], result["folders_failed"], result["files_skipped"]) == (0, 0, 0)
+
+
+class TestListSelection:
+    """``list_selection`` lists from metadata alone, with the paths a full download writes."""
+
+    BASE = "https://graph.microsoft.com/v1.0"
+
+    def _graph(self, routes):
+        """Patch ``requests.get`` to answer each URL from ``routes`` (url -> response)."""
+        calls = []
+
+        def get(url, **kwargs):
+            calls.append(url)
+            response = routes.get(url)
+            return response if response is not None else _graph_response(404)
+
+        return patch("docsgpt.parser.connectors.share_point.loader.requests.get", side_effect=get), calls
+
+    def _tree(self):
+        pdf = {"mimeType": "application/pdf"}
+        return {
+            f"{self.BASE}/me/drive/items/folder": _graph_response(data={"id": "folder", "name": "Docs"}),
+            f"{self.BASE}/me/drive/items/folder/children": _graph_response(data={"value": [
+                {"id": "a", "name": "a.pdf", "file": pdf, "cTag": "c1", "eTag": "e1", "webUrl": "https://sp/a"},
+                {"id": "sub", "name": "Sub", "folder": {}},
+                {"id": "exe", "name": "x.exe", "file": {"mimeType": "application/x-msdownload"}},
+            ]}),
+            f"{self.BASE}/me/drive/items/sub/children": _graph_response(data={"value": [
+                {"id": "b", "name": "b.pdf", "file": pdf, "eTag": "e2"},
+            ]}),
+            f"{self.BASE}/me/drive/items/one": _graph_response(
+                data={"id": "one", "name": "top.pdf", "file": pdf, "cTag": "c3", "webUrl": "https://sp/one"}
+            ),
+            f"{self.BASE}/me/drive/items/a/content": _graph_response(content=b"A"),
+            f"{self.BASE}/me/drive/items/b/content": _graph_response(content=b"B"),
+            f"{self.BASE}/me/drive/items/one/content": _graph_response(content=b"ONE"),
+        }
+
+    @pytest.mark.unit
+    def test_lists_files_with_versions_and_download_paths(self, loader):
+        graph, calls = self._graph(self._tree())
+        with graph:
+            listing = loader.list_selection({"folder_ids": ["folder"], "file_ids": ["one"], "recursive": True})
+        assert not any(url.endswith("/content") for url in calls)
+        assert listing.complete
+        assert sorted((e.id, e.path, e.version, e.url) for e in listing.entries) == [
+            ("a", os.path.join("Docs", "a.pdf"), "c1", "https://sp/a"),
+            ("b", os.path.join("Docs", "Sub", "b.pdf"), "e2", None),
+            ("one", "top.pdf", "c3", "https://sp/one"),
+        ]
+
+    @pytest.mark.unit
+    def test_paths_match_the_full_download(self, loader, tmp_path):
+        tree = self._tree()
+        graph, _ = self._graph(tree)
+        config = {"folder_ids": ["folder"], "file_ids": ["one"], "recursive": True}
+        with graph:
+            listing = loader.list_selection(config)
+        # The full download asks for each file's metadata again; answer as the listing saw it.
+        tree[f"{self.BASE}/me/drive/items/a"] = _graph_response(data={"id": "a", "name": "a.pdf", "file": {"mimeType": "application/pdf"}})
+        tree[f"{self.BASE}/me/drive/items/b"] = _graph_response(data={"id": "b", "name": "b.pdf", "file": {"mimeType": "application/pdf"}})
+        graph, _ = self._graph(tree)
+        with graph:
+            loader.download_to_directory(str(tmp_path), config)
+        written = sorted(
+            os.path.relpath(os.path.join(root, name), tmp_path)
+            for root, _, names in os.walk(tmp_path) for name in names
+        )
+        assert written == sorted(e.path for e in listing.entries)
+
+    @pytest.mark.unit
+    def test_incomplete_when_a_subfolder_cannot_be_listed(self, loader):
+        tree = self._tree()
+        tree[f"{self.BASE}/me/drive/items/sub/children"] = _graph_response(500)
+        graph, _ = self._graph(tree)
+        with graph:
+            listing = loader.list_selection({"folder_ids": ["folder"]})
+        assert not listing.complete
+        assert [e.id for e in listing.entries] == ["a"]
+
+    @pytest.mark.unit
+    def test_download_files_fetches_only_the_given_ids(self, loader, tmp_path):
+        graph, calls = self._graph(self._tree())
+        with graph:
+            loader.list_selection({"folder_ids": ["folder"], "recursive": True})
+            calls.clear()
+            result = loader.download_files(str(tmp_path), ["b", "missing"])
+        assert calls == [f"{self.BASE}/me/drive/items/b/content"]
+        assert (tmp_path / "Docs" / "Sub" / "b.pdf").read_bytes() == b"B"
+        assert result["file_ids"] == {os.path.join("Docs", "Sub", "b.pdf"): "b"}
+        assert result["failures"]["missing"]["kind"] == "transient"
+
+    @pytest.mark.unit
+    def test_children_of_a_shared_drive_folder_keep_its_drive(self, loader):
+        tree = {
+            f"{self.BASE}/drives/d1/items/f": _graph_response(data={"id": "f", "name": "Shared"}),
+            f"{self.BASE}/drives/d1/items/f/children": _graph_response(data={"value": [
+                {"id": "x", "name": "x.pdf", "file": {"mimeType": "application/pdf"}, "parentReference": {"driveId": "d1"}},
+            ]}),
+        }
+        graph, _ = self._graph(tree)
+        with graph:
+            listing = loader.list_selection({"folder_ids": ["d1:f"]})
+        assert [e.id for e in listing.entries] == ["d1:x"]
+
+
+class TestListSelectionDuplicates:
+    @pytest.mark.unit
+    def test_a_file_picked_and_in_a_picked_folder_is_listed_once(self, loader):
+        base = TestListSelection.BASE
+        pdf = {"mimeType": "application/pdf"}
+        routes = {
+            f"{base}/me/drive/items/x": _graph_response(data={"id": "x", "name": "a.pdf", "file": pdf, "cTag": "c"}),
+            f"{base}/me/drive/items/folder": _graph_response(data={"id": "folder", "name": "F"}),
+            f"{base}/me/drive/items/folder/children": _graph_response(data={"value": [
+                {"id": "x", "name": "a.pdf", "file": pdf, "cTag": "c"},
+            ]}),
+        }
+        graph, _ = TestListSelection()._graph(routes)
+        with graph:
+            listing = loader.list_selection({"file_ids": ["x"], "folder_ids": ["folder"]})
+        assert [(e.id, e.path) for e in listing.entries] == [("x", os.path.join("F", "a.pdf"))]
+        assert loader._listed == listing.by_id()
+
+
+class TestListSelectionFailures:
+    BASE = TestListSelection.BASE
+
+    @pytest.mark.unit
+    def test_what_it_cannot_read_is_counted(self, loader):
+        tree = TestListSelection()._tree()
+        tree[f"{self.BASE}/me/drive/items/broken"] = _graph_response(500)
+        tree[f"{self.BASE}/me/drive/items/badfolder"] = _graph_response(500)
+        graph, _ = TestListSelection()._graph(tree)
+        with graph:
+            listing = loader.list_selection({"file_ids": "broken", "folder_ids": "badfolder"})
+        assert not listing.complete and listing.unread == 2 and listing.entries == []
+
+    @pytest.mark.unit
+    def test_a_missing_picked_file_is_just_absent(self, loader):
+        graph, _ = TestListSelection()._graph({})
+        with graph:
+            listing = loader.list_selection({"file_ids": ["gone"]})
+        assert listing.complete and listing.entries == []
+
+    @pytest.mark.unit
+    def test_a_rejected_sign_in_propagates(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        with patch.object(loader, "_graph_request", side_effect=ConnectorAuthError("401")):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"file_ids": ["x"]})
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"folder_ids": ["f"]})
+
+    @pytest.mark.unit
+    def test_download_failures_are_kept_per_file(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import FileEntry
+
+        loader._listed = {
+            "big": FileEntry(id="big", path="big.pdf"),
+            "flaky": FileEntry(id="flaky", path="flaky.pdf"),
+            "evil": FileEntry(id="evil", path="../evil.pdf"),
+            "ok": FileEntry(id="ok", path="d/ok.pdf", url="https://sp/ok"),
+        }
+        base = TestListSelection.BASE
+        routes = {
+            f"{base}/me/drive/items/big/content": _graph_response(413),
+            f"{base}/me/drive/items/flaky/content": _graph_response(503),
+            f"{base}/me/drive/items/ok/content": _graph_response(content=b"OK"),
+        }
+        graph, _ = TestListSelection()._graph(routes)
+        with graph:
+            result = loader.download_files(str(tmp_path), ["big", "flaky", "evil", "ok"])
+        kinds = {k: v["kind"] for k, v in result["failures"].items()}
+        assert kinds == {"big": "permanent", "flaky": "transient", "evil": "permanent"}
+        assert result["file_urls"] == {"d/ok.pdf": "https://sp/ok"}
+        assert (tmp_path / "d" / "ok.pdf").read_bytes() == b"OK"
+
+    @pytest.mark.unit
+    def test_a_rejected_sign_in_stops_the_download(self, loader, tmp_path):
+        from docsgpt.parser.connectors.base import ConnectorAuthError, FileEntry
+
+        loader._listed = {"x": FileEntry(id="x", path="x.pdf")}
+        with patch.object(loader, "_graph_request", side_effect=ConnectorAuthError("401")):
+            with pytest.raises(ConnectorAuthError):
+                loader.download_files(str(tmp_path), ["x"])
+
+    @pytest.mark.unit
+    def test_a_subfolder_listing_that_fails_on_auth_propagates(self, loader):
+        from docsgpt.parser.connectors.base import ConnectorAuthError
+
+        calls = {"n": 0}
+        folder = _graph_response(data={"value": [{"id": "sub", "name": "Sub", "folder": {}}]})
+
+        def request(method, url, **kwargs):
+            calls["n"] += 1
+            if url.endswith("/sub/children"):
+                raise ConnectorAuthError("401")
+            if url.endswith("/children"):
+                return folder
+            return _graph_response(data={"id": "f", "name": "F"})
+
+        with patch.object(loader, "_graph_request", side_effect=request):
+            with pytest.raises(ConnectorAuthError):
+                loader.list_selection({"folder_ids": ["f"]})

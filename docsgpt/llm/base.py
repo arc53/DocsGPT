@@ -19,6 +19,7 @@ from docsgpt.llm.deadlines import (
     timed_stream,
 )
 from docsgpt.error import bounded_error_text, provider_failure_text
+from docsgpt.quotas.payer import current_run_billing
 from docsgpt.usage import gen_token_usage, stream_token_usage
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,17 @@ _STREAM_RETRYABLE_TRANSPORT_ERRORS = tuple(
     for module in (httpx2, httpx)
     for name in _TRANSPORT_ERROR_NAMES
 ) + (openai.APIConnectionError,)
+
+
+def _check_run_limits() -> None:
+    """Refuse the next model call of the run in progress when one of its limits is used up.
+
+    Raises:
+        RunLimitReached: From the run's ``RunLimits.check_call``.
+    """
+    billing = current_run_billing()
+    if billing is not None and billing.limits is not None:
+        billing.limits.check_call()
 
 
 def fallback_reason(error: BaseException) -> str:
@@ -733,6 +745,10 @@ class BaseLLM(ABC):
         """
 
         check_round()
+        # The run's limits, before the primary and again before a retry or a
+        # fallback: the call that crossed a limit has completed, so the next
+        # one is refused.
+        _check_run_limits()
 
         def decorated_method():
             method = getattr(self, method_name)
@@ -762,6 +778,8 @@ class BaseLLM(ABC):
             fallback_kwargs = self._fallback_request(fallback, kwargs, e)
             if fallback_kwargs is None:
                 raise
+            # The primary may have recorded usage before it failed.
+            _check_run_limits()
             self._responding_provider = fallback.provider_name
             logger.warning(
                 "Primary LLM failed. Falling back to %s. Error: %s", fallback.model_id, provider_failure_text(e)
@@ -954,6 +972,7 @@ class BaseLLM(ABC):
                     f"Primary LLM transport error before any output; "
                     f"retrying once. Error: {str(e)}"
                 )
+                _check_run_limits()
                 # Emit a fresh stream-start so dashboards get one start/
                 # finish pair per attempt (stream_token_usage fires a
                 # finish per decorated_method invocation).
@@ -1006,6 +1025,8 @@ class BaseLLM(ABC):
             fallback_kwargs = self._fallback_request(fallback, kwargs, e)
             if fallback_kwargs is None:
                 raise
+            # The primary may have recorded usage before it failed.
+            _check_run_limits()
             self._responding_provider = fallback.provider_name
             logger.warning(
                 "Primary LLM failed mid-stream. Falling back to %s. Error: %s",

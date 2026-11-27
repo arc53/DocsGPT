@@ -66,6 +66,16 @@ class TestSearchInvalidAPIKey:
             with pytest.raises(InvalidAPIKey):
                 search("does-not-exist", "hello", 5)
 
+    def test_a_deactivated_owners_key_is_paused(self):
+        from docsgpt.api.owner_pause import AgentPausedError
+
+        agent = {"id": "a1", "user_id": "owner", "source_id": "s1"}
+        with _fake_db_readonly(agent), patch(
+            "docsgpt.api.owner_pause.any_deactivated", return_value=True
+        ):
+            with pytest.raises(AgentPausedError):
+                search("k", "hello", 5)
+
     def test_raises_search_failed_on_db_error(self):
         @contextmanager
         def _yield_conn():

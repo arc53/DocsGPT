@@ -17,7 +17,7 @@ from starlette.responses import JSONResponse
 
 from docsgpt.api.oidc.denylist import is_denied as oidc_session_denied
 from docsgpt.api.pat.tokens import is_pat
-from docsgpt.auth import handle_auth
+from docsgpt.auth import handle_auth, principal_refusal
 from docsgpt.core import log_context
 from docsgpt.core.settings import settings
 
@@ -46,6 +46,10 @@ async def authenticate(
     """
     # A personal access token resolves against Postgres; keep that sync read off the event loop.
     decoded = await anyio.to_thread.run_sync(handle_auth, request)
+    # Checked again here, whatever the decoder: nobody acts as a team principal.
+    refusal = principal_refusal(decoded)
+    if refusal is not None:
+        return None, JSONResponse(refusal, status_code=401)
     if not decoded:
         return None, None
     if "error" in decoded:

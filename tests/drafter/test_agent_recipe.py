@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
@@ -77,7 +78,9 @@ def one_conn():
         tracker.opened += 1
         yield tracker.conn
 
-    with patch("docsgpt.storage.db.session.db_readonly", _readonly), patch.object(agent_recipe, "load_models"):
+    with patch("docsgpt.storage.db.session.db_readonly", _readonly), patch.object(
+        agent_recipe, "load_models"
+    ), patch.object(agent_recipe, "load_folders"):
         yield tracker
 
 
@@ -339,7 +342,8 @@ class TestAvailability:
         assert one_conn.opened == 1
         # What the form uses is handed over, so the overview lists it whatever its caps.
         read_ws.assert_called_once_with(one_conn.conn, "alice", "a1",
-                                        pinned={"sources": [SOURCE_ID], "tools": [], "prompts": [PROMPT_ID]})
+                                        pinned={"sources": [SOURCE_ID], "tools": [], "prompts": [PROMPT_ID]},
+                                        team_id=None)
         prompt.assert_called_once_with(one_conn.conn, "alice", PROMPT_ID)
         # The agent row is read once, and the saved sources and the conversations count reuse it.
         agent.assert_called_once_with(one_conn.conn, "alice", "a1")
@@ -555,7 +559,7 @@ class TestInstructions:
 
     def test_internal_looking_tools_are_asked_about_too(self):
         text = instructions(_req(), _ws())
-        assert "If a source looks internal" in text
+        assert "If a source or folder looks internal" in text
 
     def test_a_public_agent_never_gets_a_tool_into_internal_systems(self):
         text = instructions(_req(), _ws())
@@ -600,7 +604,7 @@ class TestInstructions:
 
     def test_the_prompt_step_writes_from_the_attached_knowledge(self):
         text = instructions(_req({}, step="prompt"), _ws())
-        assert "from the sources and tools already on the form" in text
+        assert "from the sources, knowledge folders and tools already on the form" in text
 
     @pytest.mark.parametrize("starter,marker", [
         ("website", 'started from "Website chat for customers"'),
@@ -1486,3 +1490,556 @@ def test_the_loop_sends_a_settled_question_back():
                             llm_factory=fake.factory))
     assert "already settle" in fake.calls[1]["messages"][-1]["content"]
     assert events[-1]["type"] == "proposal"
+
+
+# ---------------------------------------------------------------------------
+# Knowledge folders on the form
+# ---------------------------------------------------------------------------
+
+FOLDER_ID = "44444444-4444-4444-4444-444444444444"
+FED_ID = "55555555-5555-5555-5555-555555555555"
+KF_USER, KF_OTHER = "kf-alice", "kf-mallory"
+
+
+@contextmanager
+def _through(conn):
+    """The recipe's load reads through ``conn``, without the model registry."""
+
+    @contextmanager
+    def _same():
+        yield conn
+
+    with patch("docsgpt.storage.db.session.db_readonly", _same), patch.object(agent_recipe, "load_models"):
+        yield
+
+
+def _kfolder(conn, owner, name, parent=None):
+    from docsgpt.storage.db.repositories.folders import FoldersRepository
+
+    return str(FoldersRepository(conn).create(owner, name, resource_type="source", parent_id=parent)["id"])
+
+
+def _filed(conn, folder_id, owner, name, structure=None):
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+    sid = str(SourcesRepository(conn).create(name, user_id=owner, directory_structure=structure)["id"])
+    FolderItemsRepository(conn).file(owner, "source", sid, folder_id)
+    return sid
+
+
+def _kf_req(user, context) -> DraftRequest:
+    return DraftRequest(user, "agent", [{"role": "user", "content": "Improve it"}], context, "drafter:t")
+
+
+@pytest.mark.unit
+class TestKnowledgeFolderContext:
+    def test_folders_are_cleaned_and_offered_unless_the_form_says_not(self):
+        form = parse_context({"form": {"folders": [FOLDER_ID.upper(), FOLDER_ID, 3, "", " "]}})["form"]
+        assert form["folders"] == [FOLDER_ID] and form["folders_offered"] is True
+        form = parse_context({"form": {"folders": "nope", "folders_offered": False}})["form"]
+        assert form["folders"] == [] and form["folders_offered"] is False
+        assert parse_context({"form": {"folders_offered": "false"}})["form"]["folders_offered"] is True
+
+    def test_the_model_reads_the_folders_the_server_kept(self):
+        folder = {"id": FOLDER_ID, "name": "Carriers", "sources": [{"id": FED_ID, "name": "Rates"}]}
+        req = _req({"folders": [FOLDER_ID]})
+        assert context_data(req, _ws(knowledge_folders=[folder]))["knowledge_folders"] == [folder]
+        # The form's ids alone are client input: nothing the server didn't keep reaches the model.
+        assert "knowledge_folders" not in context_data(req, _ws())
+
+    def test_a_folder_only_form_is_a_change_request_and_its_sources_are_the_agents(self):
+        folder = {"id": FOLDER_ID, "name": "Carriers", "sources": [{"id": FED_ID, "name": "Rates"}]}
+        text = instructions(_req({"folders": [FOLDER_ID]}), _ws(knowledge_folders=[folder]))
+        assert "change request" in text and "knowledge_folders" in text
+        assert "never say the agent has no knowledge" in text
+        assert "knowledge_folders" not in instructions(_req(), _ws())
+
+    def test_improve_mode_reads_the_folders_sources_as_the_agents_own(self):
+        from docsgpt.drafter.agent_instructions import CONVERSATION_RULES, STEP_GUIDES
+
+        assert "knowledge_folders" in CONVERSATION_RULES
+        assert "knowledge folders" in STEP_GUIDES["prompt"]
+
+    def test_a_fed_source_can_be_a_gap_link(self):
+        folder = {"id": FOLDER_ID, "name": "Carriers", "sources": [{"id": FED_ID, "name": "Rates"}]}
+        links = [{"kind": "source", "id": FED_ID}, {"kind": "source", "id": "made-up"}]
+        assert agent_recipe._gap_links(links, _ws(knowledge_folders=[folder]), set()) == [
+            {"kind": "source", "id": FED_ID, "name": "Rates"}]
+
+    def test_a_knowledge_message_about_what_a_folder_feeds_is_not_a_claim(self):
+        message = "I set it to research; the sources stay the ones the Carriers folder feeds."
+        req = _req({"folders": [FOLDER_ID]}, "Make it classic", step="knowledge")
+        req.can_correct = True
+        kept = _ws(knowledge_folders=[{"id": FOLDER_ID, "name": "Carriers", "sources": []}])
+        proposal = validate({"message": message, "fields": {"agent_type": "research"}}, req, kept)
+        assert proposal["fields"] == {"agent_type": "research"}
+        # A folder id the server didn't keep backs no claim.
+        with pytest.raises(ProposalInvalid, match="set sources"):
+            validate({"message": message, "fields": {"agent_type": "research"}}, req, _ws())
+
+
+class TestKnowledgeFolderLoad:
+    def test_the_forms_folder_shows_the_sources_it_feeds(self, pg_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        top = _kfolder(pg_conn, KF_USER, "Carriers")
+        child = _kfolder(pg_conn, KF_USER, "EU", parent=top)
+        rates = _filed(pg_conn, top, KF_USER, "Rates guide")
+        rail = _filed(pg_conn, child, KF_USER, "Rail notes")
+        context = parse_context({"form": {"folders": [top.upper()]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+        assert ws.knowledge_folders == [{"id": top, "name": "Carriers", "sources": [
+            {"id": rates, "name": "Rates guide"}, {"id": rail, "name": "Rail notes"}]}]
+        assert context_data(_kf_req(KF_USER, context), ws)["knowledge_folders"] == ws.knowledge_folders
+        assert run_read_tool("get_source", ws, {"source_id": rail})["name"] == "Rail notes"
+        assert "change request" in instructions(_kf_req(KF_USER, context), ws)
+
+    def test_a_folder_the_caller_may_not_attach_reveals_nothing(self, pg_conn):
+        theirs = _kfolder(pg_conn, KF_OTHER, "Secret plans")
+        salaries = _filed(pg_conn, theirs, KF_OTHER, "Salaries 2026")
+        made_up = "66666666-6666-6666-6666-666666666666"
+        context = parse_context({"form": {"folders": [theirs, made_up]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+        assert ws.knowledge_folders == []
+        req = _kf_req(KF_USER, context)
+        seen = json.dumps(context_data(req, ws)) + instructions(req, ws) + json.dumps(ws.summary())
+        for secret in (theirs, made_up, salaries, "Secret plans", "Salaries"):
+            assert secret not in seen
+        # An empty form stays empty: an id the caller sent proves nothing.
+        assert "The form is empty" in instructions(req, ws)
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        assert "error" in run_read_tool("get_source", ws, {"source_id": salaries})
+
+    def test_a_saved_agents_folders_read_as_its_run_does(self, pg_conn):
+        # An editor improving the owner's agent: the owner's folder stays, its private source is only counted.
+        from tests.api.user.test_resource_sponsors import _agent, EDITOR, OWNER
+
+        folder = _kfolder(pg_conn, OWNER, "Owner docs")
+        _filed(pg_conn, folder, OWNER, "Owner private")
+        gone = "77777777-7777-7777-7777-777777777777"
+        agent_id, _team = _agent(pg_conn, knowledge_folder_ids=[folder, gone])
+        context = parse_context({"agent_id": agent_id, "form": {"folders": [folder, gone]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+            assert ws.knowledge_folders == [
+                {"id": folder, "name": "Owner docs", "sources": [], "more_sources": 1},
+                {"id": gone, "name": None, "sources": [], "stopped": "deleted"},
+            ]
+            # On a new agent's form the same folder is not the editor's to attach.
+            assert AGENT_RECIPE.load_workspace(EDITOR, parse_context({"form": {"folders": [folder]}})) \
+                .knowledge_folders == []
+
+    def test_a_team_workspace_attaches_the_teams_folders_only(self, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        team = TeamsRepository(pg_conn).create("Ops", "ops-kf", KF_USER)
+        tid = str(team["id"])
+        TeamMembersRepository(pg_conn).add_member(tid, KF_USER, role="team_editor")
+        team_folder = _kfolder(pg_conn, principal_id(tid), "Team docs")
+        mine = _kfolder(pg_conn, KF_USER, "Mine")
+        context = parse_context({"form": {"folders": [team_folder, mine]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context, team_id=tid)
+        assert [f["id"] for f in ws.knowledge_folders] == [team_folder]
+
+    def test_the_safety_step_topic_folders_include_a_fed_sources(self, pg_conn, monkeypatch):
+        from docsgpt.core.settings import settings
+        from docsgpt.storage.db.repositories.sources import SourcesRepository
+
+        monkeypatch.setattr(settings, "DECISION_ANALYTICS_ENABLED", True)
+        page = {"token_count": 10}
+        direct = str(SourcesRepository(pg_conn).create("Guide", user_id=KF_USER,
+                                                       directory_structure={"install": {"a.md": page}})["id"])
+        folder = _kfolder(pg_conn, KF_USER, "Billing docs")
+        _filed(pg_conn, folder, KF_USER, "Billing", structure={"billing": {"b.md": page}})
+        context = parse_context({"step": "safety", "form": {"sources": [direct], "folders": [folder]}})
+        with _through(pg_conn), patch("docsgpt.decisions.available", return_value=True):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+        assert sorted(f["name"] for f in ws.folders) == ["billing", "install"]
+
+
+class TestKnowledgeFolderCatalogue:
+    def test_the_agent_recipe_lists_the_folders_it_may_attach_and_reads_them(self, pg_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        listed = _kfolder(pg_conn, KF_USER, "Carriers")
+        rates = _filed(pg_conn, listed, KF_USER, "Rates guide")
+        on_form = _kfolder(pg_conn, KF_USER, "Fresh")
+        context = parse_context({"form": {"folders": [on_form]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+            # The form's folder is listed first, even with nothing filed in it yet.
+            assert [row["id"] for row in ws.folder_rows] == [on_form, listed]
+            assert ws.counts()["folders"] == 2
+            req = _kf_req(KF_USER, context)
+            assert "get_folder" in AGENT_RECIPE.offered_tools(req, ws)
+            assert "get_folder lists a folder's sources" in instructions(req, ws)
+            assert run_read_tool("get_folder", ws, {"folder_id": listed})["sources"] == [
+                {"id": rates, "name": "Rates guide"}]
+        assert ws.proposable_folders() == {on_form, listed}
+        assert ws.folder_sources(listed) == [rates] and ws.folder_sources(on_form) == []
+
+    def test_a_form_that_offers_no_folders_lists_none_but_still_reads_its_own(self, pg_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+
+        listed = _kfolder(pg_conn, KF_USER, "Carriers")
+        _filed(pg_conn, listed, KF_USER, "Rates guide")
+        on_form = _kfolder(pg_conn, KF_USER, "Fresh")
+        fresh = _filed(pg_conn, on_form, KF_USER, "Fresh notes")
+        context = parse_context({"form": {"folders": [on_form], "folders_offered": False}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+            assert ws.folder_rows == [] and "folders" not in ws.counts() and "folders" not in ws.summary()
+            assert [f["id"] for f in ws.knowledge_folders] == [on_form]
+            assert "error" in run_read_tool("get_folder", ws, {"folder_id": listed})
+            assert run_read_tool("get_folder", ws, {"folder_id": on_form})["sources"] == [
+                {"id": fresh, "name": "Fresh notes"}]
+            assert "error" in run_read_tool("list_workspace", ws, {"kind": "folders"})
+        assert ws.proposable_folders() == {on_form}
+
+    def test_a_saved_agents_folder_feeds_what_its_run_reads(self, pg_conn):
+        from tests.api.user.test_resource_sponsors import _agent, EDITOR, OWNER
+
+        folder = _kfolder(pg_conn, OWNER, "Owner docs")
+        private = _filed(pg_conn, folder, OWNER, "Owner private")
+        agent_id, _team = _agent(pg_conn, knowledge_folder_ids=[folder])
+        context = parse_context({"agent_id": agent_id, "form": {"folders": [folder]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+        # Not the editor's to list, but on the form: a proposal may keep it, and it feeds the owner's source.
+        assert folder not in ws.ids("folders") and ws.proposable_folders() == {folder}
+        assert ws.folder_sources(folder) == [private]
+
+    def test_no_folders_offer_no_folder_read(self):
+        assert "get_folder" not in AGENT_RECIPE.offered_tools(_req(), _ws())
+
+
+# ---------------------------------------------------------------------------
+# Proposing knowledge folders
+# ---------------------------------------------------------------------------
+
+CARRIERS = "a1111111-1111-1111-1111-111111111111"
+EU = "a2222222-2222-2222-2222-222222222222"
+OTHER = "a3333333-3333-3333-3333-333333333333"
+MATES = "a4444444-4444-4444-4444-444444444444"
+RATES = "b1111111-1111-1111-1111-111111111111"
+RAIL = "b2222222-2222-2222-2222-222222222222"
+MISC = "b3333333-3333-3333-3333-333333333333"
+PRIVATE = "b4444444-4444-4444-4444-444444444444"
+
+
+def _fws(kept=(), **kwargs) -> AgentWorkspace:
+    """Carriers > EU and Other, all the caller's to attach; ``kept`` folders are on the form as step 2 kept them."""
+    from docsgpt.drafter.catalog import FolderTree
+
+    tree = FolderTree(names={CARRIERS: "Carriers", EU: "EU", OTHER: "Other"},
+                      parents={CARRIERS: None, EU: CARRIERS, OTHER: None}, children={CARRIERS: [EU]},
+                      filed={CARRIERS: [RATES], EU: [RAIL], OTHER: [MISC]})
+    rows = {CARRIERS: {"id": CARRIERS, "name": "Carriers", "sources": 2},
+            EU: {"id": EU, "name": "EU", "path": "Carriers", "sources": 1},
+            OTHER: {"id": OTHER, "name": "Other", "sources": 1}}
+    ws = _ws(sources=[{"id": SOURCE_ID, "name": "Help Center"}, {"id": RATES, "name": "Rates"},
+                      {"id": RAIL, "name": "Rail notes"}, {"id": MISC, "name": "Misc"}],
+             folder_rows=list(rows.values()), folder_tree=tree)
+    ws.attachable["folders"] = list(rows)
+    ws.found["folders"] = rows
+    for fid in kept:
+        name = rows[fid]["name"] if fid in rows else "Mate's docs"
+        ws.knowledge_folders.append({"id": fid, "name": name, "sources": []})
+        ws.knowledge_folder_feeds[fid] = ws.folder_sources(fid) if fid in rows else [PRIVATE]
+    for key, value in kwargs.items():
+        setattr(ws, key, value)
+    return ws
+
+
+@pytest.mark.unit
+class TestProposingFolders:
+    def test_folders_follow_sources_in_the_knowledge_step(self):
+        from docsgpt.drafter.agent_form import FIELDS, STEP_FIELDS
+
+        assert STEP_FIELDS["knowledge"] == ("sources", "folders", "tools", "agent_type")
+        assert FIELDS.index("folders") == FIELDS.index("sources") + 1
+        assert AGENT_RECIPE.proposal_schema["properties"]["fields"]["properties"]["folders"]["type"] == "array"
+
+    def test_ids_the_caller_cannot_attach_are_dropped_and_the_rest_lower_cased(self):
+        out = _validate({"folders": [CARRIERS.upper(), "made-up", MATES]}, ws=_fws())
+        assert out["fields"]["folders"] == [CARRIERS]
+        assert out["dropped"] == [{"field": "folders", "id": "made-up", "reason": "not_found"},
+                                  {"field": "folders", "id": MATES, "reason": "not_found"}]
+        # Every id dropped: the form's list stays as it is.
+        assert "folders" not in _validate({"folders": ["made-up"]}, ws=_fws())["fields"]
+
+    def test_the_forms_own_ids_are_not_trusted_only_what_the_server_kept(self):
+        out = _validate({"folders": [MATES]}, form={"folders": [MATES]}, ws=_fws())
+        assert "folders" not in out["fields"] and out["dropped"][0]["id"] == MATES
+
+    def test_a_source_inside_a_chosen_folder_is_taken_off_with_a_reason(self):
+        out = _validate({"folders": [CARRIERS], "sources": [SOURCE_ID, RAIL]}, ws=_fws(),
+                        reasons=[{"field": "folders", "summary": "Carriers · live"}])
+        assert out["fields"] == {"folders": [CARRIERS], "sources": [SOURCE_ID]}
+        reason = next(r["summary"] for r in out["reasons"] if r["field"] == "sources")
+        assert "Rail notes" in reason and "Carriers" in reason
+
+    def test_a_long_sources_reason_is_shortened_so_the_note_stays_whole(self):
+        from docsgpt.drafter.agent_form import REASON_SUMMARY_MAX
+
+        out = _validate({"folders": [CARRIERS], "sources": [SOURCE_ID, RAIL]}, ws=_fws(),
+                        reasons=[{"field": "sources", "summary": "Help Center answers " + "x" * 160}])
+        reason = next(r["summary"] for r in out["reasons"] if r["field"] == "sources")
+        assert reason.startswith("Help Center answers")
+        assert reason.endswith("… · Left out Rail notes: the folder Carriers already feeds it")
+        assert len(reason) <= REASON_SUMMARY_MAX
+
+    def test_folders_alone_take_off_a_form_source_they_feed(self):
+        out = _validate({"folders": [CARRIERS]}, form={"sources": [RATES, SOURCE_ID]}, ws=_fws())
+        assert out["fields"] == {"folders": [CARRIERS], "sources": [SOURCE_ID]}
+        assert [r["field"] for r in out["reasons"]] == ["sources"]
+
+    def test_a_folder_inside_a_chosen_folder_is_dropped(self):
+        assert _validate({"folders": [EU, CARRIERS, OTHER]}, ws=_fws())["fields"]["folders"] == [CARRIERS, OTHER]
+
+    def test_removing_a_folder_puts_none_of_its_sources_back(self):
+        out = _validate({"folders": []}, form={"folders": [CARRIERS]}, ws=_fws(kept=[CARRIERS]))
+        assert out["fields"] == {"folders": []}
+
+    def test_a_form_already_holding_a_folder_and_a_source_inside_it_is_left_alone(self):
+        form = {"folders": [CARRIERS], "sources": [RATES]}
+        assert _validate({"name": "Carrier desk"}, form=form, ws=_fws(kept=[CARRIERS]))["fields"] == {
+            "name": "Carrier desk"}
+        assert _validate({"folders": [CARRIERS]}, form=form, ws=_fws(kept=[CARRIERS]))["fields"] == {
+            "sources": []}
+
+    def test_a_kept_folder_the_caller_cannot_attach_stays_and_feeds_what_the_run_reads(self):
+        form = {"folders": [MATES], "sources": [PRIVATE, SOURCE_ID]}
+        out = _validate({"folders": [MATES, OTHER]}, form=form, ws=_fws(kept=[MATES]))
+        assert out["fields"] == {"folders": [MATES, OTHER], "sources": [SOURCE_ID]} and out["dropped"] == []
+
+    def test_unchanged_folders_are_left_out(self):
+        assert _validate({"folders": [CARRIERS]}, form={"folders": [CARRIERS]},
+                         ws=_fws(kept=[CARRIERS]))["fields"] == {}
+
+    def test_the_cap_counts_only_the_folders_a_proposal_adds(self):
+        ws = _fws()
+        many = [f"c{i:07d}-0000-0000-0000-000000000000" for i in range(agent_recipe.MAX_REFS + 1)]
+        ws.attachable["folders"] += many
+        with pytest.raises(ProposalInvalid, match="folders"):
+            _validate({"folders": many}, ws=ws)
+
+    def test_folders_draft_the_knowledge_step_ahead(self):
+        out = _validate({"name": "Desk", "folders": [CARRIERS]}, step="basics", ws=_fws())
+        assert out["steps"] == ["basics", "knowledge"]
+
+    def test_a_knowledge_message_about_a_drafted_folders_sources_is_not_a_claim(self):
+        req = _req({}, "Use the carriers folder", step="knowledge")
+        req.can_correct = True
+        proposal = validate({"message": "I attached the Carriers folder and its sources.",
+                             "fields": {"folders": [CARRIERS]}}, req, _fws())
+        assert proposal["fields"] == {"folders": [CARRIERS]}
+
+    def test_a_form_that_offers_no_folders_takes_none_and_says_nothing_of_them(self):
+        form = {"folders_offered": False}
+        out = _validate({"folders": [CARRIERS], "name": "Desk"}, form=form, ws=_fws(), step="knowledge")
+        assert "folders" not in out["fields"] and out["dropped"] == []
+        text = instructions(_req(form, step="knowledge"), _fws())
+        assert "- folders:" not in text and "set only: sources, tools, agent_type" in text
+        assert "knowledge folders, by id" not in text
+
+    def test_the_model_is_told_how_to_pick_folders_when_it_may(self):
+        for req in (_req({}, step="knowledge"), _req({"name": "Desk"})):
+            text = instructions(req, _fws())
+            assert "- folders:" in text and "never in sources" in text and "live" in text
+        assert "set only: sources, folders, tools, agent_type" in instructions(_req({}, step="knowledge"), _fws())
+        # Nothing to pick: not a word about setting folders.
+        assert "- folders:" not in instructions(_req({}, step="knowledge"), _ws())
+
+    def test_a_docs_gap_drafts_no_folder_either(self):
+        from docsgpt.drafter.agent_instructions import INSIGHTS_RULES
+
+        assert "no source, folder, prompt or starter change" in INSIGHTS_RULES
+
+
+def test_an_editor_keeps_the_owners_folder_and_adds_their_own(pg_conn):
+    from tests.api.user.test_resource_sponsors import _agent, EDITOR, OWNER
+
+    owners = _kfolder(pg_conn, OWNER, "Owner docs")
+    private = _filed(pg_conn, owners, OWNER, "Owner private")
+    theirs = _kfolder(pg_conn, EDITOR, "Editor docs")
+    _filed(pg_conn, theirs, EDITOR, "Editor notes")
+    agent_id, _team = _agent(pg_conn, knowledge_folder_ids=[owners], source_id=private)
+    context = parse_context({"agent_id": agent_id, "form": {"folders": [owners], "sources": [private]}})
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(EDITOR, context)
+    proposal = validate({"message": "m", "fields": {"folders": [owners, theirs]}}, _kf_req(EDITOR, context), ws)
+    assert proposal["fields"] == {"folders": [owners, theirs], "sources": []}
+
+
+@pytest.fixture
+def editors_folder(pg_conn):
+    """An editor's folder holding their own source and one shared with them for use only, which the owner of the
+    agent they edit can't use (it is on the agent directly): ``(editor, folder, shared, own, context)``."""
+    from docsgpt.storage.db.repositories.folders import FolderItemsRepository
+    from docsgpt.storage.db.repositories.sources import SourcesRepository
+    from tests.api.user.test_folder_knowledge import _share
+    from tests.api.user.test_resource_sponsors import _agent, EDITOR, OTHER
+
+    folder = _kfolder(pg_conn, EDITOR, "Editor docs")
+    shared = str(SourcesRepository(pg_conn).create("Shared runbook", user_id=OTHER)["id"])
+    _share(pg_conn, shared, OTHER, EDITOR)
+    FolderItemsRepository(pg_conn).file(EDITOR, "source", shared, folder)
+    own = _filed(pg_conn, folder, EDITOR, "Editor notes")
+    agent_id, _team = _agent(pg_conn, source_id=shared)
+    context = parse_context({"agent_id": agent_id, "form": {"sources": [shared, own]}})
+    return EDITOR, folder, shared, own, context
+
+
+def test_an_editors_drafted_folder_takes_off_only_what_it_would_feed_the_owners_agent(pg_conn, editors_folder):
+    # The editor may use the shared source but not sponsor it, and the owner can't use it: their folder would feed
+    # the owner's agent none of it, so its direct attachment stays.
+    editor, folder, shared, _own, context = editors_folder
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(editor, context)
+        assert shared in ws.ids("sources")
+        proposal = validate({"message": "m", "fields": {"folders": [folder]}}, _kf_req(editor, context), ws)
+    # The editor's own source the folder feeds still comes off; the shared one stays.
+    assert proposal["fields"] == {"folders": [folder], "sources": [shared]}
+    reason = next(r["summary"] for r in proposal["reasons"] if r["field"] == "sources")
+    assert "Editor notes" in reason and "Shared runbook" not in reason
+
+
+def test_get_folder_lists_what_the_folder_would_feed_the_saved_agent(pg_conn, editors_folder):
+    from docsgpt.drafter.read_tools import run_read_tool
+
+    editor, folder, _shared, own, context = editors_folder
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(editor, context)
+        detail = run_read_tool("get_folder", ws, {"folder_id": folder})
+    assert detail["sources"] == [{"id": own, "name": "Editor notes"}] and "more_sources" not in detail
+    # A new agent's form reads the caller's tree: the editor will own the agent, so both feed it.
+    with _through(pg_conn):
+        ws = AGENT_RECIPE.load_workspace(editor, parse_context({"form": {}}))
+        detail = run_read_tool("get_folder", ws, {"folder_id": folder})
+    assert len(detail["sources"]) == 2
+
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups
+# ---------------------------------------------------------------------------
+
+
+def _statements(conn):
+    """Collect the SQL statements run on ``conn`` while the block runs."""
+    from sqlalchemy import event
+
+    seen: list[str] = []
+
+    @contextmanager
+    def _watch():
+        def _seen(_conn, _cursor, statement, *args):
+            seen.append(statement)
+
+        event.listen(conn, "before_cursor_execute", _seen)
+        try:
+            yield seen
+        finally:
+            event.remove(conn, "before_cursor_execute", _seen)
+
+    return _watch()
+
+
+class TestNothingToReadOffersNothing:
+    def _turn(self, conn, user):
+        context = parse_context({"form": {}, "step": "knowledge"})
+        with _through(conn):
+            ws = AGENT_RECIPE.load_workspace(user, context)
+        req = _kf_req(user, context)
+        return ws, req
+
+    def test_a_tree_holding_only_agents_or_empty_folders_reads_like_no_tree(self, pg_conn):
+        from docsgpt.drafter.read_tools import run_read_tool
+        from docsgpt.storage.db.repositories.agents import AgentsRepository
+        from docsgpt.storage.db.repositories.folders import FolderItemsRepository, FoldersRepository
+
+        agents_only = str(FoldersRepository(pg_conn).create(KF_USER, "My agents", resource_type="agent")["id"])
+        bot = str(AgentsRepository(pg_conn).create(KF_USER, "Bot", "draft")["id"])
+        FolderItemsRepository(pg_conn).file(KF_USER, "agent", bot, agents_only)
+        _kfolder(pg_conn, KF_USER, "Empty")
+        ws, req = self._turn(pg_conn, KF_USER)
+        bare, bare_req = self._turn(pg_conn, "kf-nobody")
+        assert "get_folder" not in AGENT_RECIPE.offered_tools(req, ws)
+        assert AGENT_RECIPE.offered_tools(req, ws) == AGENT_RECIPE.offered_tools(bare_req, bare)
+        assert instructions(req, ws) == instructions(bare_req, bare)
+        assert ws.summary() == bare.summary() and ws.counts() == bare.counts()
+        assert "error" in run_read_tool("list_workspace", ws, {"kind": "folders"})
+
+
+class TestFoldersOutsideTheCallersReach:
+    def test_a_viewer_sending_the_agents_folders_reads_none_of_them(self, pg_conn):
+        from tests.api.user.test_resource_sponsors import _agent, OWNER, VIEWER
+
+        folder = _kfolder(pg_conn, OWNER, "Owner secrets")
+        hidden = _filed(pg_conn, folder, OWNER, "Owner salaries")
+        own = _kfolder(pg_conn, VIEWER, "Viewer docs")
+        agent_id, _team = _agent(pg_conn, knowledge_folder_ids=[folder])
+        context = parse_context({"agent_id": agent_id, "form": {"folders": [folder, own]}})
+        with _through(pg_conn), _statements(pg_conn) as seen:
+            ws = AGENT_RECIPE.load_workspace(VIEWER, context)
+        assert [f["id"] for f in ws.knowledge_folders] == [own]
+        req = _kf_req(VIEWER, context)
+        shown = json.dumps(context_data(req, ws)) + instructions(req, ws) + json.dumps(ws.summary())
+        for secret in (folder, hidden, "Owner secrets", "Owner salaries"):
+            assert secret not in shown
+        # The agent's folder is never expanded: only the viewer's own is.
+        assert sum("WITH RECURSIVE" in s for s in seen) == 1
+
+    def test_someone_outside_a_team_naming_it_reads_personal(self, pg_conn):
+        from docsgpt.storage.db.repositories.team_members import TeamMembersRepository
+        from docsgpt.storage.db.repositories.teams import TeamsRepository
+        from docsgpt.workspaces.principal import principal_id
+
+        team = TeamsRepository(pg_conn).create("Ops", "ops-kf-out", "kf-admin")
+        tid = str(team["id"])
+        TeamMembersRepository(pg_conn).add_member(tid, "kf-admin", role="team_admin")
+        team_folder = _kfolder(pg_conn, principal_id(tid), "Team plans")
+        filed = _filed(pg_conn, team_folder, principal_id(tid), "Team pricing")
+        context = parse_context({"form": {"folders": [team_folder]}})
+        with _through(pg_conn):
+            ws = AGENT_RECIPE.load_workspace(KF_OTHER, context, team_id=tid)
+        assert ws.owner_id is None and ws.knowledge_folders == [] and ws.folder_rows == []
+        req = _kf_req(KF_OTHER, context)
+        shown = json.dumps(context_data(req, ws)) + instructions(req, ws) + json.dumps(ws.summary())
+        for secret in (team_folder, filed, "Team plans", "Team pricing"):
+            assert secret not in shown
+
+
+def test_read_knowledge_folders_expands_once(pg_conn):
+    folder = _kfolder(pg_conn, KF_USER, "Carriers")
+    _filed(pg_conn, folder, KF_USER, "Rates")
+    context = parse_context({"form": {"folders": [folder]}, "step": "knowledge"})
+    with _through(pg_conn), patch.object(agent_recipe, "load_folders"), _statements(pg_conn) as seen:
+        ws = AGENT_RECIPE.load_workspace(KF_USER, context)
+    assert [f["id"] for f in ws.knowledge_folders] == [folder]
+    assert sum("WITH RECURSIVE" in s for s in seen) == 1
+    # One read for the attach rule, one for the names and owners.
+    assert sum("FROM folders" in s and "RECURSIVE" not in s for s in seen) == 2
+
+
+@pytest.mark.unit
+class TestCoveredReasonNamesNothingPrivate:
+    @pytest.mark.parametrize("fed,text", [([PRIVATE], "Left out 1 source:"),
+                                          ([PRIVATE, "b5555555-5555-5555-5555-555555555555"], "Left out 2 sources:")])
+    def test_sources_the_caller_cannot_attach_are_only_counted(self, fed, text):
+        ws = _fws(kept=[MATES])
+        ws.knowledge_folder_feeds[MATES] = fed
+        form = {"folders": [MATES], "sources": [*fed, SOURCE_ID]}
+        out = _validate({"folders": [MATES, OTHER]}, form=form, ws=ws)
+        assert out["fields"]["sources"] == [SOURCE_ID]
+        [reason] = [r["summary"] for r in out["reasons"] if r["field"] == "sources"]
+        assert reason.startswith(text) and "Mate's docs" in reason
+        assert not any(sid in reason for sid in fed)

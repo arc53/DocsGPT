@@ -1,10 +1,10 @@
 ---
 title: Tools Basics
+sidebarTitle: 🔧 Tools Basics
 description: Understand what DocsGPT Tools are, how they work, and explore the built-in tools available to extend DocsGPT's functionality.
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-23
 ---
 
-import { Callout } from 'nextra/components';
 import Image from 'next/image';
 import { ToolCards } from '../../components/ToolCards';
 
@@ -55,7 +55,7 @@ DocsGPT includes a suite of pre-built tools designed to expand its capabilities 
     {
       title: 'Ntfy',
       link: 'https://github.com/arc53/DocsGPT/blob/main/docsgpt/agents/tools/ntfy.py',
-      description: 'Allows DocsGPT to send push notifications to ntfy topics on a specified server, ideal for alerts and updates.'
+      description: 'Allows DocsGPT to send push notifications to ntfy topics, ideal for alerts and updates. The access token is sent only to ntfy.sh or to the server URL set for the tool.'
     },
     {
       title: 'Telegram Bot',
@@ -122,7 +122,7 @@ Some built-in tools aren't in the catalog because DocsGPT attaches them itself:
 
 In a regular chat (no custom agent), DocsGPT can enable a small set of tools automatically so the assistant is useful out of the box. These are the **default chat tools**, controlled by the `DEFAULT_CHAT_TOOLS` setting:
 
-```env
+```dotenv
 DEFAULT_CHAT_TOOLS=["memory","read_webpage","scheduler"]
 ```
 

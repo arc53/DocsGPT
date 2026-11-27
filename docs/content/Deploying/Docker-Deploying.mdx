@@ -1,10 +1,9 @@
 ---
 title: Docker Deployment of DocsGPT
+sidebarTitle: 🛳️ Docker Setup
 description: "Run DocsGPT with Docker Compose: docsgpt up or pre-built images, HTTPS on your own domain, backups, optional Ollama for local models and the code sandbox."
-lastUpdated: 2026-10-25
+lastUpdated: 2026-11-24
 ---
-
-import { Callout } from 'nextra/components'
 
 # Docker Deployment of DocsGPT
 
@@ -183,12 +182,12 @@ run them:
     keeps it and `down -v` removes it.
 
 **Tags and variants.** `DOCSGPT_IMAGE_TAG` picks the version: a release such
-as `1.1.0`, `latest` (the newest release, the default here) or `develop`
+as `1.2.0`, `latest` (the newest release, the default here) or `develop`
 (follows the `main` branch). `DOCSGPT_IMAGE_VARIANT` picks the flavour: empty for the
 slim default image, or `-docling` for the image with the docling parser
 engine, its models and tesseract baked in (needed for OCR of scanned
 documents, see the [OCR guide](/Sources/ocr)). Both are read from `.env` or
-the shell, e.g. `DOCSGPT_IMAGE_TAG=1.1.0 DOCSGPT_IMAGE_VARIANT=-docling`.
+the shell, e.g. `DOCSGPT_IMAGE_TAG=1.2.0 DOCSGPT_IMAGE_VARIANT=-docling`.
 The same two variables drive `deployment/docker-compose-hub.yaml` in a
 checkout, but there the default tag is `develop`; see
 [Using the Source Checkout](#using-the-source-checkout).
@@ -303,13 +302,13 @@ defaults to the `develop` images, built from the `main` branch, not to the
 latest release. For anything beyond trying DocsGPT out, pin a release in `.env`:
 
 ```bash
-DOCSGPT_IMAGE_TAG=1.1.0
+DOCSGPT_IMAGE_TAG=1.2.0
 ```
 
 Pin it through the variable, not by editing `image:` in the file: the variable
 sets the backend, worker and frontend images together.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 The checkout Compose files (and `setup.sh`/`setup.ps1`, which run them) are
 meant for local use and development. They publish the API (7091) and the UI
 (5173) on `DOCSGPT_BIND`, `127.0.0.1` by default, and Postgres (password
@@ -476,7 +475,7 @@ so the model is not reloaded each time gunicorn recycles the backend process (se
 [The decider](/Models/decision-model#the-decider)). Turn it on with three lines in `.env`, or with
 `docsgpt up --decider`, which writes them (a random key included):
 
-```env
+```dotenv
 COMPOSE_PROFILES=decider
 DECISION_BASE_URL=http://decider:7095
 DECISION_KEY=<a long random string, e.g. from openssl rand -hex 32>

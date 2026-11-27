@@ -56,8 +56,9 @@ describe('General danger zone', () => {
     expect(header.querySelector('h2')?.textContent).toBe(
       'settings.general.sections.dangerZone',
     );
+    // It names the workspace whose chats it deletes.
     expect(header.textContent).toContain(
-      'settings.general.deleteAllDescription',
+      'settings.general.deleteAllInWorkspace',
     );
     // No SettingRow left inside the zone.
     expect(card.querySelector('[data-slot="setting-row"]')).toBeNull();

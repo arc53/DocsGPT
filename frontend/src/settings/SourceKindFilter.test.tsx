@@ -88,7 +88,6 @@ describe('useSourceKindFilter', () => {
       ['settings.sources.kinds.files', '8'],
       ['settings.sources.kinds.websites', '2'],
       ['settings.sources.kinds.wikis', '1'],
-      ['settings.sources.kinds.shared', '1'],
     ]);
     expect(
       container.querySelector('[data-slot="toggle-group"]')?.className,
@@ -99,8 +98,6 @@ describe('useSourceKindFilter', () => {
     render(library);
     pick('websites');
     expect(rows()).toEqual(['site', 'team-site']);
-    pick('shared');
-    expect(rows()).toEqual(['team-site']);
   });
 
   it('opens on All again', () => {

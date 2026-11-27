@@ -40,6 +40,7 @@ const service = vi.hoisted(() => ({
   getPreferences: vi.fn(),
   updatePreferences: vi.fn(),
   getUserTools: vi.fn(),
+  getFolders: vi.fn(),
 }));
 vi.mock('../api/services/userService', () => ({ default: service }));
 
@@ -88,8 +89,11 @@ const confirm = vi.hoisted(() => ({
   },
 }));
 vi.mock('../modals/ConfirmationModal', () => ({
-  default: (props: NonNullable<typeof confirm.props>) => {
-    confirm.props = props;
+  // Only an open confirm counts: the folder dialogs keep a closed one.
+  default: (
+    props: NonNullable<typeof confirm.props> & { modalState?: string },
+  ) => {
+    if (props.modalState !== 'INACTIVE') confirm.props = props;
     return null;
   },
 }));
@@ -107,6 +111,7 @@ import preferenceReducer, {
   setPrompt,
   setToken,
 } from '../preferences/preferenceSlice';
+import workspaceReducer from '../workspace/workspaceSlice';
 import Prompts from './Prompts';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -150,6 +155,8 @@ const viewer = {
   id: 'p-team',
   name: 'Deal desk',
   type: 'team',
+  // Shared with the caller: its own section, by origin.
+  origin: 'shared',
   team_access: 'viewer',
   preview: 'Brief the rep.',
   access: 'viewer',
@@ -178,6 +185,7 @@ describe('Prompts page', () => {
       reducer: {
         preference: preferenceReducer,
         actionToast: actionToastReducer,
+        workspace: workspaceReducer,
       },
     });
 
@@ -188,6 +196,7 @@ describe('Prompts page', () => {
       response({ success: true }),
     );
     service.getUserTools.mockImplementation(() => response({ success: false }));
+    service.getFolders.mockImplementation(() => response({ folders: [] }));
     drafter.config = null;
     media.isMobile = false;
     promptChecks.value = [];
@@ -256,7 +265,7 @@ describe('Prompts page', () => {
     );
   const chatPromptId = () => store.getState().preference.prompt.id;
 
-  it('lists Included, Yours and Shared with team as filled cards', async () => {
+  it('lists Included, Yours and Shared with you as filled cards', async () => {
     await render();
     const headings = Array.from(container.querySelectorAll('h2')).map(
       (h) => h.textContent,
@@ -265,7 +274,7 @@ describe('Prompts page', () => {
     expect(headings).toEqual([
       'settings.prompts.sections.included3',
       'settings.prompts.sections.yours2',
-      'settings.prompts.sections.shared1',
+      'workspace.page.sharedWithYou1',
     ]);
     expect(titles()).toEqual([
       'default',

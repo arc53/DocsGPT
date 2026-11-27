@@ -9,6 +9,7 @@ import { backgroundListenerMiddleware } from './backgroundJobs/backgroundListene
 import backgroundReducer from './backgroundJobs/backgroundSlice';
 import chatToolsReducer from './conversation/chatToolsSlice';
 import connectorsReducer from './connectors/connectorsSlice';
+import foldersReducer from './components/folders/foldersSlice';
 import schedulesReducer from './agents/schedules/schedulesSlice';
 import workflowPreviewReducer from './agents/workflow/workflowPreviewSlice';
 import {
@@ -18,7 +19,10 @@ import {
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
 import actionToastReducer from './notifications/actionToastSlice';
 import notificationsReducer from './notifications/notificationsSlice';
-import { getStoredRecentDocs } from './preferences/preferenceApi';
+import {
+  getStoredRecentDocs,
+  getStoredRecentFolders,
+} from './preferences/preferenceApi';
 import { presetPrompts } from './prompts/promptAccess';
 import {
   Preference,
@@ -26,23 +30,29 @@ import {
   prefSlice,
 } from './preferences/preferenceSlice';
 import monitorsReducer from './monitors/monitorsSlice';
+import usageReducer, {
+  connectUsage,
+  usageListenerMiddleware,
+} from './payer/usageSlice';
 import graphBuildReducer from './settings/graphBuildSlice';
 import teamsReducer from './teams/teamsSlice';
 import uploadReducer from './upload/uploadSlice';
+import {
+  connectWorkspaceClient,
+  workspaceListenerMiddleware,
+} from './workspace/workspaceListener';
+import workspaceReducer from './workspace/workspaceSlice';
 
-const key = localStorage.getItem('DocsGPTApiKey');
-const chunks = localStorage.getItem('DocsGPTChunks');
 const selectedModel = localStorage.getItem('DocsGPTSelectedModel');
 
 const preloadedState: { preference: Preference } = {
   preference: {
-    apiKey: key ?? '',
     token: localStorage.getItem('authToken') ?? null,
     // The server's choice replaces it once loaded (useDataInitializer).
     prompt: { name: 'default', id: 'default', type: 'public' },
     prompts: presetPrompts(),
-    chunks: JSON.parse(chunks ?? '6').toString(),
     selectedDocs: getStoredRecentDocs(),
+    selectedFolders: getStoredRecentFolders(),
     conversations: {
       data: null,
       loading: false,
@@ -51,14 +61,11 @@ const preloadedState: { preference: Preference } = {
     sourceDocsFailed: false,
     modalState: 'INACTIVE',
     paginatedDocuments: null,
-    templateAgents: null,
     agents: null,
     sharedAgents: null,
     selectedAgent: null,
     selectedModel: selectedModel ? JSON.parse(selectedModel) : null,
     availableModels: [],
-    modelsLoading: false,
-    agentFolders: null,
     roles: [],
     rolesResolved: false,
     ttsAvailable: true,
@@ -85,19 +92,29 @@ const store = configureStore({
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
     connectors: connectorsReducer,
+    folders: foldersReducer,
     chatTools: chatToolsReducer,
     monitors: monitorsReducer,
     background: backgroundReducer,
     activity: activityReducer,
+    workspace: workspaceReducer,
+    usage: usageReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(
+      // First, so requests follow a switch before any other listener fetches.
+      workspaceListenerMiddleware.middleware,
       prefListenerMiddleware.middleware,
       conversationListenerMiddleware.middleware,
       backgroundListenerMiddleware.middleware,
       activityListenerMiddleware.middleware,
+      usageListenerMiddleware.middleware,
     ),
 });
+
+connectWorkspaceClient(store);
+// The chat stream handlers tell the usage slice when a turn ends.
+connectUsage(store);
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;

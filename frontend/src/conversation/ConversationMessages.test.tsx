@@ -182,6 +182,28 @@ describe('ConversationMessages', () => {
     expect(container.textContent).not.toContain('Knowledge');
   });
 
+  it('hides a stored compression summary but keeps the turns after it in place', () => {
+    onKnowledgeAdded.mockReset();
+    render(
+      [
+        { prompt: 'first question', response: 'first answer' },
+        {
+          prompt: '[Context Compression Summary]',
+          response: 'summary text',
+          compressionSummary: true,
+        },
+        overflow,
+      ],
+      true,
+    );
+    expect(container.textContent).not.toContain('Context Compression Summary');
+    expect(container.textContent).not.toContain('summary text');
+    expect(container.textContent).toContain('first answer');
+    // The overflow turn keeps its stored index for actions on it.
+    act(() => (action() as HTMLButtonElement).click());
+    expect(onKnowledgeAdded).toHaveBeenCalledWith(2);
+  });
+
   it("shows the server's text for an error it has no wording for", () => {
     render([
       { prompt: 'q', error: 'Blocked by policy.', errorCode: 'guardrail' },
@@ -648,6 +670,30 @@ describe('ConversationMessages', () => {
       },
     ]);
     expect(container.textContent).toContain('ask-1');
+    expect(container.textContent).toContain('Too many requests');
+    expect(
+      container.querySelector('[aria-label="conversation.retry"]'),
+    ).toBeNull();
+  });
+
+  // The same for approvals: deciding the cards again is the retry.
+  it('keeps waiting approvals in view beside a refused resume error', () => {
+    render([
+      {
+        prompt: 'create two issues',
+        error: 'Too many requests',
+        tool_calls: [
+          {
+            call_id: 'approve-1',
+            tool_name: 'github',
+            action_name: 'create_issue',
+            arguments: {},
+            status: 'awaiting_approval',
+          },
+        ],
+      },
+    ]);
+    expect(container.textContent).toContain('approve-1');
     expect(container.textContent).toContain('Too many requests');
     expect(
       container.querySelector('[aria-label="conversation.retry"]'),

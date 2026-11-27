@@ -36,7 +36,9 @@ import {
   Status,
   TERMINATED_RESPONSE_PLACEHOLDER,
 } from './conversationModels';
+import { lastShownIndex } from './shownQueries';
 import { curatedErrorText } from './curatedError';
+import WorkspaceMismatchAction from './WorkspaceMismatchAction';
 import StreamingStatusLine from './StreamingStatusLine';
 import { pendingQuestionCall, type QuestionAction } from './questionCall';
 import { cn } from '@/lib/utils';
@@ -155,7 +157,10 @@ export default function ConversationMessages({
   );
 
   const hasMessages = queries.length > 0;
-  const lastQuery = queries[queries.length - 1];
+  // A stored compression summary is not shown, so the last message is the
+  // last one that is.
+  const lastIndex = lastShownIndex(queries);
+  const lastQuery = queries[lastIndex];
   const lastTurnContentLength =
     (lastQuery?.thought?.length ?? 0) + (lastQuery?.response?.length ?? 0);
   const stickToBottomRef = useRef(true);
@@ -373,19 +378,22 @@ export default function ConversationMessages({
     : 'w-full max-w-290 px-2 md:w-10/12 lg:w-9/12 xl:w-8/12 2xl:w-7/12';
 
   const renderResponseView = (query: Query, index: number) => {
-    const isLastMessage = index === queries.length - 1;
     const bubbleMargin = DEFAULT_BUBBLE_MARGIN;
 
     // Error first; reconciler-failed rows may carry partial thought/
     // tool_calls and would otherwise fall into the answer branch.
     if (query.error) {
-      // A resume the server refused leaves the questions waiting: answering
-      // them is the retry, and resending the prompt would start a new turn.
+      // A resume the server refused leaves the questions or approvals
+      // waiting: answering them is the retry, and resending the prompt would
+      // start a new turn.
       const waitingQuestions = pendingQuestionCall([query]) !== null;
+      const waitingApprovals = Boolean(
+        query.tool_calls?.some((call) => call.status === 'awaiting_approval'),
+      );
       // A woken turn's prompt is the background event: retrying would send
       // it as the user's own message.
       const retryButton =
-        query.wake || waitingQuestions ? undefined : (
+        query.wake || waitingQuestions || waitingApprovals ? undefined : (
           <IconButton
             label={t('conversation.retry')}
             variant="ghost-muted"
@@ -427,7 +435,8 @@ export default function ConversationMessages({
       const showPartial =
         (query.errorCode === 'time_limit' && hasPartialProgress) ||
         Boolean(query.workflow?.steps.length) ||
-        waitingQuestions;
+        waitingQuestions ||
+        waitingApprovals;
       return (
         <Fragment key={`${index}-ERROR`}>
           {showPartial ? (
@@ -470,6 +479,8 @@ export default function ConversationMessages({
                   files={knowledgeFiles}
                   onAdded={() => onKnowledgeAdded?.(index)}
                 />
+              ) : query.errorCode === 'workspace_mismatch' ? (
+                <WorkspaceMismatchAction agentId={agentId} />
               ) : undefined
             }
           />
@@ -490,8 +501,7 @@ export default function ConversationMessages({
       // the run id alone is enough to render its produced artifacts.
       query.workflow_run_id;
     if (hasContent) {
-      const isCurrentlyStreaming =
-        status === 'loading' && index === queries.length - 1;
+      const isCurrentlyStreaming = status === 'loading' && index === lastIndex;
       return (
         <Fragment key={`${index}-ANSWER`}>
           {query.notice ? (
@@ -533,7 +543,7 @@ export default function ConversationMessages({
       );
     }
 
-    if (status === 'loading' && index === queries.length - 1) {
+    if (status === 'loading' && index === lastIndex) {
       return (
         <div
           className={cn(
@@ -599,6 +609,7 @@ export default function ConversationMessages({
           >
             {headerContent}
             {queries.map((query, index) => {
+              if (query.compressionSummary) return null;
               const responseView = renderResponseView(query, index);
               return (
                 <Fragment key={`${index}-query-fragment`}>
@@ -632,11 +643,7 @@ export default function ConversationMessages({
                   {responseView && (
                     <MessageScrollerItem
                       messageId={`a-${index}`}
-                      ref={
-                        index === queries.length - 1
-                          ? setStreamingAnswer
-                          : undefined
-                      }
+                      ref={index === lastIndex ? setStreamingAnswer : undefined}
                     >
                       {responseView}
                     </MessageScrollerItem>

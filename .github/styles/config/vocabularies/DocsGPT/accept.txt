@@ -29,6 +29,7 @@ EOL
 ESLint
 feedbacks
 Figma
+Fumadocs
 GPUs
 Groq
 hardcode

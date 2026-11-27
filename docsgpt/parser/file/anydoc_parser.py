@@ -157,6 +157,9 @@ class AnydocParser(BaseParser):
         # parse: request and token counts of an API engine, and for a fully
         # scanned file the fallback's page count.
         self._last_ocr_metadata: Optional[Tuple[Path, Dict]] = None
+        # (path, count) of scanned pages the most recent parse left out
+        # because their OCR failed: the document is incomplete.
+        self._last_ocr_failed: Optional[Tuple[Path, int]] = None
 
     def _init_parser(self) -> Dict:
         # Import for real rather than trusting ``find_spec``: a wheel whose
@@ -195,6 +198,7 @@ class AnydocParser(BaseParser):
         self._last_warnings = None
         self._last_ocr_pages = None
         self._last_ocr_metadata = None
+        self._last_ocr_failed = None
         try:
             content = anydoc.to_markdown(str(path))
         except anydoc.ResourceLimitError as exc:
@@ -342,12 +346,16 @@ class AnydocParser(BaseParser):
         beats a rejected upload, and the loud-failure path stays reserved
         for fully scanned files. anydoc's PDF markdown carries no page
         separators, so the OCR'd pages are appended after the text pages
-        rather than spliced into position.
+        rather than spliced into position. The pages left out are counted in
+        the file's ``ocr_pages_failed`` metadata, so nothing stores the
+        partial text as if it were whole. A rate limit is the exception: it
+        raises (``OcrRateLimitedError``), so the reader parses the file again
+        later, and the pages already recognised are not sent twice.
         """
         fallback = self.fallback_parser
         if not (getattr(fallback, "ocr_enabled", False) and hasattr(fallback, "ocr_pages")):
             return content
-        from docsgpt.parser.file.ocr_parser import scanned_page_indices
+        from docsgpt.parser.file.ocr_parser import OcrRateLimitedError, scanned_page_indices
 
         indices = scanned_page_indices(path)
         if not indices:
@@ -367,13 +375,17 @@ class AnydocParser(BaseParser):
                 path.name,
                 exc_info=True,
             )
+            self._last_ocr_failed = (path, len(indices))
             return content
         extra: List[str] = []
+        failed = 0
         if getattr(fallback, "batch_ocr_pages", False) is True:
             # The native parser takes every page at once, so an API engine can
             # keep several in flight, and still skips a page that fails.
             try:
                 texts = fallback.ocr_pages(path, indices, skip_failed=True)
+            except OcrRateLimitedError:
+                raise
             except Exception:  # noqa: BLE001 - keep the text pages rather than fail the file
                 logger.warning(
                     "OCR of the scanned pages of %s failed; indexing the text pages only",
@@ -381,6 +393,7 @@ class AnydocParser(BaseParser):
                     exc_info=True,
                 )
                 texts = {}
+            failed = sum(1 for index in indices if index not in texts)
             extra = [texts[index] for index in indices if (texts.get(index) or "").strip()]
             usage = getattr(fallback, "last_ocr_usage", None) or {}
             if usage:
@@ -389,7 +402,10 @@ class AnydocParser(BaseParser):
             for index in indices:
                 try:
                     text = fallback.ocr_pages(path, [index]).get(index, "")
+                except OcrRateLimitedError:
+                    raise
                 except Exception:  # noqa: BLE001 - one page's failure must not drop the others
+                    failed += 1
                     logger.warning(
                         "OCR of page %d of %s failed; skipping that page",
                         index + 1,
@@ -399,6 +415,8 @@ class AnydocParser(BaseParser):
                     continue
                 if text and text.strip():
                     extra.append(text)
+        if failed:
+            self._last_ocr_failed = (path, failed)
         if not extra:
             return content
         self._last_ocr_pages = (path, len(extra))
@@ -416,6 +434,9 @@ class AnydocParser(BaseParser):
         ocr = self._last_ocr_pages
         if ocr is not None and ocr[0] == Path(file):
             metadata["ocr_pages"] = ocr[1]
+        failed = self._last_ocr_failed
+        if failed is not None and failed[0] == Path(file):
+            metadata["ocr_pages_failed"] = failed[1]
         return metadata
 
     def _delegate(

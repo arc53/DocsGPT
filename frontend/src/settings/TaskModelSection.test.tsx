@@ -66,17 +66,31 @@ vi.mock('../components/ui/select', () => ({
       {children}
     </div>
   ),
-  SelectValue: ({ children }: { children?: React.ReactNode }) => (
-    <span data-testid="value">{children}</span>
+  SelectValue: ({
+    children,
+    placeholder,
+  }: {
+    children?: React.ReactNode;
+    placeholder?: string;
+  }) => (
+    <span data-testid="value" data-placeholder={placeholder}>
+      {children}
+    </span>
   ),
   SelectContent: ({
     children,
     fit,
+    capped,
   }: {
     children: React.ReactNode;
     fit?: boolean;
+    capped?: boolean;
   }) => (
-    <div data-testid="content" data-fit={fit || undefined}>
+    <div
+      data-testid="content"
+      data-fit={fit || undefined}
+      data-capped={capped || undefined}
+    >
       {children}
     </div>
   ),
@@ -114,9 +128,6 @@ const json = (body: unknown, ok = true) => ({
   json: () => Promise.resolve(body),
 });
 
-// The select value of "Use instance default".
-const INSTANCE = '__instance__';
-
 const MODELS = [
   { id: 'gpt-a', display_name: 'GPT A', provider: 'openai', source: 'builtin' },
   { id: 'gpt-b', display_name: 'GPT B', provider: 'openai', source: 'builtin' },
@@ -130,10 +141,14 @@ const select = () =>
   container.querySelector<HTMLElement>('[data-testid="select"]');
 const item = (value: string) =>
   container.querySelector<HTMLButtonElement>(`[data-item="${value}"]`)!;
+// What the trigger shows while no option is picked.
+const placeholder = () =>
+  container.querySelector<HTMLElement>('[data-testid="value"]')?.dataset
+    .placeholder;
 
-async function render(prefs: Record<string, unknown>) {
+async function render(prefs: Record<string, unknown>, models = MODELS) {
   getPreferences.mockResolvedValue(json({ success: true, ...prefs }));
-  getModels.mockResolvedValue(json({ models: MODELS }));
+  getModels.mockResolvedValue(json({ models }));
   await act(async () => root.render(<TaskModelSection />));
 }
 
@@ -153,7 +168,7 @@ afterEach(async () => {
 });
 
 describe('Task model row', () => {
-  it('lists the instance default, then built-in then own models, the instance default picked when none is stored', async () => {
+  it("lists built-in then own models and nothing else, the instance's model picked when none is stored", async () => {
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
     expect(container.querySelector('h2')?.textContent).toBe(
       'settings.general.sections.models',
@@ -162,16 +177,13 @@ describe('Task model row', () => {
     expect(container.textContent).toContain(
       'settings.general.taskModelDescription',
     );
-    expect(select()?.dataset.value).toBe(INSTANCE);
+    expect(select()?.dataset.value).toBe('gpt-b');
     const items = Array.from(
       container.querySelectorAll<HTMLButtonElement>('[data-item]'),
     ).map((b) => b.textContent);
-    expect(items).toEqual([
-      'settings.general.taskModelInstanceDefault(GPT B)',
-      'GPT A',
-      'GPT B',
-      'My Llama',
-    ]);
+    expect(items).toEqual(['GPT A', 'GPT B', 'My Llama']);
+    // Showing the instance's model saves nothing.
+    expect(updatePreferences).not.toHaveBeenCalled();
     const labels = Array.from(
       container.querySelectorAll('[data-testid="group-label"]'),
     ).map((l) => l.textContent);
@@ -181,12 +193,47 @@ describe('Task model row', () => {
     ]);
   });
 
+  it('shows no group headings while every model is built-in', async () => {
+    await render(
+      { task_model_id: null, instance_task_model_id: 'gpt-b' },
+      MODELS.filter((m) => m.source === 'builtin'),
+    );
+    expect(item('gpt-a')).not.toBeNull();
+    expect(container.querySelector('[data-testid="group-label"]')).toBeNull();
+  });
+
+  it("never offers a team's model, even if the list carried one", async () => {
+    getPreferences.mockResolvedValue(
+      json({
+        success: true,
+        task_model_id: null,
+        instance_task_model_id: null,
+      }),
+    );
+    getModels.mockResolvedValue(
+      json({
+        models: [
+          ...MODELS,
+          {
+            id: 'ops',
+            display_name: 'Ops',
+            provider: 'openai',
+            source: 'team',
+          },
+        ],
+      }),
+    );
+    await act(async () => root.render(<TaskModelSection />));
+    expect(item('gpt-a')).not.toBeNull();
+    expect(container.querySelector('[data-item="ops"]')).toBeNull();
+  });
+
   it('shows the stored pick', async () => {
     await render({ task_model_id: 'mine', instance_task_model_id: 'gpt-b' });
     expect(select()?.dataset.value).toBe('mine');
   });
 
-  it('saves every pick, the instance default as null', async () => {
+  it("saves every pick, the instance's model as no pick of the user's own", async () => {
     updatePreferences.mockResolvedValue(json({ success: true }));
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
     await act(async () => item('gpt-a').click());
@@ -195,19 +242,14 @@ describe('Task model row', () => {
       'token',
     );
     expect(select()?.dataset.value).toBe('gpt-a');
-    // The instance's own model, picked by name, is a pick of its own.
+    // Back on the instance's model: the user follows the instance again.
     await act(async () => item('gpt-b').click());
-    expect(updatePreferences).toHaveBeenLastCalledWith(
-      { task_model_id: 'gpt-b' },
-      'token',
-    );
-    expect(select()?.dataset.value).toBe('gpt-b');
-    await act(async () => item(INSTANCE).click());
     expect(updatePreferences).toHaveBeenLastCalledWith(
       { task_model_id: null },
       'token',
     );
-    expect(select()?.dataset.value).toBe(INSTANCE);
+    expect(select()?.dataset.value).toBe('gpt-b');
+    expect(updatePreferences).toHaveBeenCalledTimes(2);
     expect(dispatch).not.toHaveBeenCalled();
   });
 
@@ -302,15 +344,26 @@ describe('Task model row', () => {
     );
   });
 
-  it('offers the instance default unnamed when no model would run', async () => {
+  it('picks no option when no model would run, and saves the one then picked', async () => {
+    updatePreferences.mockResolvedValue(json({ success: true }));
     await render({ task_model_id: null, instance_task_model_id: null });
-    expect(select()?.dataset.value).toBe(INSTANCE);
-    expect(item(INSTANCE).textContent).toBe(
-      'settings.general.taskModelInstanceDefaultUnnamed',
+    expect(select()?.dataset.value).toBe('');
+    expect(placeholder()).toBe('conversation.selectModel');
+    await act(async () => item('gpt-a').click());
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: 'gpt-a' },
+      'token',
     );
+    expect(select()?.dataset.value).toBe('gpt-a');
   });
 
-  it('says when the stored pick can no longer run, and Use instance default clears it', async () => {
+  it("picks no option when the instance's model is not in the list", async () => {
+    await render({ task_model_id: null, instance_task_model_id: 'hidden' });
+    expect(select()?.dataset.value).toBe('');
+    expect(placeholder()).toBe('conversation.selectModel');
+  });
+
+  it("says when the stored pick can no longer run, and the instance's model clears it", async () => {
     updatePreferences.mockResolvedValue(json({ success: true }));
     await render({
       task_model_id: null,
@@ -319,15 +372,34 @@ describe('Task model row', () => {
     });
     // No option is picked: the stored model is in none of them.
     expect(select()?.dataset.value).toBe('');
+    expect(placeholder()).toBe('settings.general.taskModelUnavailableValue');
     expect(container.textContent).toContain(
       'settings.general.taskModelUnavailable',
     );
-    await act(async () => item(INSTANCE).click());
+    await act(async () => item('gpt-b').click());
     expect(updatePreferences).toHaveBeenLastCalledWith(
       { task_model_id: null },
       'token',
     );
-    expect(select()?.dataset.value).toBe(INSTANCE);
+    expect(select()?.dataset.value).toBe('gpt-b');
+    expect(container.textContent).not.toContain(
+      'settings.general.taskModelUnavailable',
+    );
+  });
+
+  it('replaces a stored pick that can no longer run with another model', async () => {
+    updatePreferences.mockResolvedValue(json({ success: true }));
+    await render({
+      task_model_id: null,
+      task_model_unavailable: true,
+      instance_task_model_id: 'gpt-b',
+    });
+    await act(async () => item('mine').click());
+    expect(updatePreferences).toHaveBeenLastCalledWith(
+      { task_model_id: 'mine' },
+      'token',
+    );
+    expect(select()?.dataset.value).toBe('mine');
     expect(container.textContent).not.toContain(
       'settings.general.taskModelUnavailable',
     );
@@ -340,7 +412,7 @@ describe('Task model row', () => {
       task_model_unavailable: true,
       instance_task_model_id: 'gpt-b',
     });
-    await act(async () => item(INSTANCE).click());
+    await act(async () => item('gpt-b').click());
     expect(select()?.dataset.value).toBe('');
     expect(container.textContent).toContain(
       'settings.general.taskModelUnavailable',
@@ -373,41 +445,27 @@ describe('Task model row', () => {
         .querySelector('[data-testid="content"]')!
         .hasAttribute('data-fit'),
     ).toBe(true);
+    // And stops at the height of a long list, like the chat's model picker.
+    expect(
+      container
+        .querySelector('[data-testid="content"]')!
+        .hasAttribute('data-capped'),
+    ).toBe(true);
     expect(trigger.className).not.toContain('sm:w-56');
     expect(trigger.title).toBe('My Llama');
     expect(item('mine').querySelector('span.truncate')?.textContent).toBe(
       'My Llama',
     );
-    expect(item(INSTANCE).querySelector('span.truncate')?.textContent).toBe(
-      'settings.general.taskModelInstanceDefault(GPT B)',
-    );
   });
 
-  // Live check: on a 390px phone "Use instance default (DocsGPT Mod…" cut
-  // the model's name by a pixel.
-  it("shows the instance default without its model's name on a phone, where the trigger can't fit both", async () => {
+  it("shows the instance's model as its item does, like any pick", async () => {
     await render({ task_model_id: null, instance_task_model_id: 'gpt-b' });
-    const value = container.querySelector('[data-testid="value"]')!;
-    const phone = value.querySelector('.sm\\:hidden')!;
-    const wider = value.querySelector('.sm\\:block')!;
-    expect(phone.textContent).toBe(
-      'settings.general.taskModelInstanceDefaultUnnamed',
-    );
-    expect(wider.textContent).toBe(
-      'settings.general.taskModelInstanceDefault(GPT B)',
-    );
-    expect(wider.className.split(' ')).toContain('hidden');
-    // The title names the model there too.
-    expect(
-      container.querySelector<HTMLElement>('[data-testid="trigger"]')!.title,
-    ).toBe('settings.general.taskModelInstanceDefault(GPT B)');
-  });
-
-  it('shows any other pick as its item does', async () => {
-    await render({ task_model_id: 'mine', instance_task_model_id: 'gpt-b' });
     expect(
       container.querySelector('[data-testid="value"]')!.childElementCount,
     ).toBe(0);
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="trigger"]')!.title,
+    ).toBe('GPT B');
   });
 
   const REFUSED = { code: 'model_auth', at: '2026-11-10T09:00:00Z' };

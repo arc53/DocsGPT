@@ -11,32 +11,32 @@ vi.mock('react-i18next', () => ({
 const api = vi.hoisted(() => ({
   createTool: vi.fn(),
   getUserTools: vi.fn(),
+  createMemberTool: vi.fn(),
 }));
+const BUILT_INS = vi.hoisted(() => [
+  {
+    name: 'memory',
+    displayName: 'Memory',
+    description: 'Remembers',
+    configRequirements: {},
+    actions: [],
+    group: 'built_in',
+  },
+  {
+    name: 'brave',
+    displayName: 'Brave',
+    description: 'Searches',
+    configRequirements: {
+      token: { type: 'string', label: 'Token', required: true },
+    },
+    actions: [],
+    group: 'built_in',
+  },
+]);
 vi.mock('../api/services/userService', () => ({
   default: {
     getAvailableTools: vi.fn(async () => ({
-      json: async () => ({
-        data: [
-          {
-            name: 'memory',
-            displayName: 'Memory',
-            description: 'Remembers',
-            configRequirements: {},
-            actions: [],
-            group: 'built_in',
-          },
-          {
-            name: 'brave',
-            displayName: 'Brave',
-            description: 'Searches',
-            configRequirements: {
-              token: { type: 'string', label: 'Token', required: true },
-            },
-            actions: [],
-            group: 'built_in',
-          },
-        ],
-      }),
+      json: async () => ({ data: [...BUILT_INS, ...server.tools] }),
     })),
     createTool: (...a: unknown[]) => api.createTool(...a),
     getUserTools: (...a: unknown[]) => api.getUserTools(...a),
@@ -50,6 +50,7 @@ vi.mock('../api/services/connectorsService', () => ({
       connectors: server.catalog,
     })),
     listConnections: vi.fn(async () => ({ success: true, connections: [] })),
+    createMemberTool: (...a: unknown[]) => api.createMemberTool(...a),
   },
 }));
 
@@ -109,7 +110,14 @@ const entry = (overrides: Record<string, unknown>) => ({
   ...overrides,
 });
 
-const server = vi.hoisted(() => ({ catalog: [] as unknown[] }));
+const lastStore = vi.hoisted(() => ({
+  current: null as null | { getState: () => unknown },
+}));
+const server = vi.hoisted(() => ({
+  catalog: [] as unknown[],
+  // Service tools `/api/available_tools` lists (a team's, with `member_only`).
+  tools: [] as unknown[],
+}));
 
 describe('AddToolModal', () => {
   let container: HTMLDivElement;
@@ -117,6 +125,8 @@ describe('AddToolModal', () => {
 
   beforeEach(() => {
     launch.mockClear();
+    server.tools = [];
+    api.createMemberTool.mockReset();
     server.catalog = [
       entry({
         key: 'mcp:notion',
@@ -166,13 +176,48 @@ describe('AddToolModal', () => {
 
   const render = async (
     props: Partial<React.ComponentProps<typeof AddToolModal>> = {},
+    team?: { role: string; catalog: unknown[] },
   ) => {
+    const connectors = connectorsReducer(undefined, { type: 'init' });
     const store = configureStore({
       reducer: {
         connectors: connectorsReducer,
         preference: (state = { token: null }) => state,
+        // A team workspace for the team cases; a switch is recorded.
+        ...(team && {
+          workspace: (
+            state = {
+              current: 't1',
+              workspaces: [
+                { id: 'personal', kind: 'personal', name: 'Personal' },
+                { id: 't1', kind: 'team', name: 'Ops', role: team.role },
+              ],
+            },
+            action: { type: string; payload?: { id: string } },
+          ) =>
+            action.type === 'workspace/switched'
+              ? { ...state, current: action.payload!.id }
+              : state,
+        }),
       },
-    });
+      preloadedState: team
+        ? {
+            connectors: {
+              ...connectors,
+              teams: {
+                t1: {
+                  catalog: team.catalog,
+                  connections: [],
+                  loaded: true,
+                  failed: false,
+                  latestRequestId: null,
+                },
+              },
+            },
+          }
+        : undefined,
+    } as Parameters<typeof configureStore>[0]);
+    lastStore.current = store;
     const setModalState = vi.fn();
     await act(async () => {
       root.render(
@@ -440,6 +485,169 @@ describe('AddToolModal', () => {
       };
       await act(async () => again.onClose());
       expect(onToolsCreated).toHaveBeenCalledTimes(1);
+    });
+  });
+  describe('in a team', () => {
+    const teamCatalog = () => [
+      entry({
+        key: 'github',
+        name: 'GitHub',
+        icon: 'github',
+        connection_count: 1,
+        connected_count: 1,
+        state: 'connected',
+      }),
+      entry({
+        key: 'mcp:notion',
+        name: 'Notion',
+        icon: 'notion',
+        publisher: 'preset',
+      }),
+      entry({
+        key: 'google_drive',
+        name: 'Google Drive',
+        icon: 'drive',
+        capabilities: ['sync'],
+      }),
+    ];
+    const option = (id: string) =>
+      document.body.querySelector<HTMLButtonElement>(
+        `[data-testid="team-service-${id}"]`,
+      );
+    const buttonNamed = (label: string) =>
+      Array.from(
+        document.body.querySelectorAll<HTMLButtonElement>('button'),
+      ).find((b) => b.textContent === label);
+    const browseAll = () =>
+      Array.from(document.body.querySelectorAll('a')).find(
+        (a) => a.textContent === 'settings.connectors.browseAll',
+      );
+
+    beforeEach(() => {
+      server.tools = [
+        {
+          name: 'github',
+          displayName: 'GitHub',
+          description: 'Code',
+          configRequirements: {},
+          actions: [],
+          group: 'service',
+          connector_key: 'github',
+          member_only: false,
+        },
+      ];
+      api.createMemberTool.mockResolvedValue({ success: true, id: 'tool-m' });
+    });
+
+    it("lists the team's services to an Editor and adds one on each person's own account", async () => {
+      const onToolsCreated = vi.fn();
+      await render(
+        { onToolsCreated },
+        { role: 'editor', catalog: teamCatalog() },
+      );
+      expect(service('github')).not.toBeNull();
+      expect(service('google_drive')).toBeNull();
+      await act(async () => service('github')!.click());
+      // Never a connect run: a personal account would not reach the team.
+      expect(launch).not.toHaveBeenCalled();
+      // The team's account is an Admin's to point to.
+      expect(option('team-account')).toBeNull();
+      await act(async () => option('each-person')!.click());
+      expect(api.createMemberTool).toHaveBeenCalledWith(
+        { connector_key: 'github' },
+        null,
+      );
+      expect(onToolsCreated).toHaveBeenCalledWith(['tool-m']);
+      expect(option('each-person')).toBeNull();
+    });
+
+    it('offers a Viewer no services', async () => {
+      await render({}, { role: 'viewer', catalog: teamCatalog() });
+      expect(service('github')).toBeNull();
+      expect(service('mcp:notion')).toBeNull();
+    });
+
+    it("points an Admin to the team's account when the team holds one", async () => {
+      const onNavigate = vi.fn();
+      await render({ onNavigate }, { role: 'admin', catalog: teamCatalog() });
+      await act(async () => service('github')!.click());
+      expect(option('each-person')).not.toBeNull();
+      const account = option('team-account')!;
+      expect(account.textContent).toContain('settings.tools.team.teamAccount');
+      await act(async () => account.click());
+      expect(onNavigate).toHaveBeenCalledWith(
+        '/settings/connectors?connector=github',
+      );
+      expect(api.createMemberTool).not.toHaveBeenCalled();
+    });
+
+    it('offers an Admin to connect one for the team when it holds none', async () => {
+      // An MCP preset has no tool in the list: its card says it.
+      await render({}, { role: 'owner', catalog: teamCatalog() });
+      await act(async () => service('mcp:notion')!.click());
+      expect(option('team-account')!.textContent).toContain(
+        'settings.tools.team.connectForTeam',
+      );
+    });
+
+    it('offers to connect in Personal when the adder has no account of their own', async () => {
+      api.createMemberTool.mockResolvedValue({
+        success: false,
+        error: 'connect_personal_first',
+        connector_key: 'github',
+        message: 'Connect your own account to this service first',
+      });
+      const onNavigate = vi.fn();
+      const onToolsCreated = vi.fn();
+      await render(
+        { onNavigate, onToolsCreated },
+        { role: 'editor', catalog: teamCatalog() },
+      );
+      await act(async () => service('github')!.click());
+      await act(async () => option('each-person')!.click());
+      expect(onToolsCreated).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain(
+        'settings.connectors.team.errors.connectPersonalFirst',
+      );
+      await act(async () =>
+        buttonNamed('settings.tools.team.connectInPersonal')!.click(),
+      );
+      expect(onNavigate).toHaveBeenCalledWith(
+        '/settings/connectors?connector=github',
+        expect.objectContaining({ beforeLeave: expect.any(Function) }),
+      );
+      // Personal holds the person's own accounts: leaving switches there.
+      act(() => onNavigate.mock.calls[0][1].beforeLeave());
+      expect(
+        (lastStore.current!.getState() as { workspace: { current: string } })
+          .workspace.current,
+      ).toBe('personal');
+    });
+
+    it('says when an admin made the service run on one shared account', async () => {
+      api.createMemberTool.mockResolvedValue({
+        success: false,
+        error: 'member_mode_not_allowed',
+        code: 'member_mode_not_allowed',
+      });
+      await render({}, { role: 'editor', catalog: teamCatalog() });
+      await act(async () => service('github')!.click());
+      await act(async () => option('each-person')!.click());
+      expect(document.body.textContent).toContain(
+        'settings.connectors.team.errors.memberModeNotAllowed',
+      );
+      expect(buttonNamed('settings.tools.team.connectInPersonal')).toBe(
+        undefined,
+      );
+    });
+
+    it('links Browse all for an Admin only', async () => {
+      await render({}, { role: 'editor', catalog: teamCatalog() });
+      expect(browseAll()).toBeUndefined();
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await render({}, { role: 'admin', catalog: teamCatalog() });
+      expect(browseAll()).toBeDefined();
     });
   });
 });

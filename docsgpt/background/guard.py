@@ -15,17 +15,25 @@ The engine is rebuilt here from the agent row (its ``config.guardrails``
 merged with the instance floor), the way a turn of that agent builds it, and
 its decisions are recorded against the message the data belongs to. As in
 the foreground, a guardrail that raises lets the text through and logs.
+
+A judge check calls a model. It bills the payer of the run the data belongs
+to: the run in progress when it set one, else the person the data belongs to,
+and for data of a team agent's outside traffic (owned by the team's
+principal) whoever pays for that agent's published access.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from contextlib import nullcontext
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import text as sql_text
 
 from docsgpt.guardrails.types import Stage, resolve_tool_result
+from docsgpt.quotas.payer import billed_to, current_run_billing, published_access_payer
+from docsgpt.workspaces.principal import is_principal_id
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +73,17 @@ class _EngineOwner:
 
 
 def _agent_row(agent_id: Optional[str]) -> Optional[Dict[str, Any]]:
-    """The agent's ``config``, ``key`` and ``default_model_id``, or None."""
+    """The agent's ``config``, ``key``, ``default_model_id`` and who owns and pays for it, or None."""
     if not agent_id:
         return None
     from docsgpt.storage.db.session import db_readonly
 
     with db_readonly() as conn:
         row = conn.execute(
-            sql_text("SELECT config, key, default_model_id FROM agents WHERE id = CAST(:id AS uuid)"),
+            sql_text(
+                "SELECT config, key, default_model_id, user_id, access_payer_id FROM agents "
+                "WHERE id = CAST(:id AS uuid)"
+            ),
             {"id": str(agent_id)},
         ).fetchone()
     return dict(row._mapping) if row is not None else None
@@ -109,7 +120,32 @@ def engine_for(*, user_id: Optional[str], agent_id: Optional[str]) -> Any:
     if not config.enabled or not config.has_any(Stage.TOOL_RESULT):
         return None
     owner = _EngineOwner(user_id=str(user_id or ""), agent_id=agent_id, agent_row=row, config=config)
-    return build_engine(owner)
+    engine = build_engine(owner)
+    payer = _judge_payer(user_id, row)
+    if payer:
+        try:
+            engine.judge_payer = payer
+        except AttributeError:
+            logger.warning("guardrail engine takes no payer; its judge bills %s", user_id)
+    return engine
+
+
+def _judge_payer(user_id: Optional[str], row: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Who the judge bills when the run in progress names no payer, or None to bill ``user_id`` itself.
+
+    Args:
+        user_id: Who the data belongs to.
+        row: The agent row from :func:`_agent_row`.
+
+    Returns:
+        The published-access payer when ``user_id`` is a team principal, else None.
+    """
+    billing = current_run_billing()
+    if billing is not None and billing.payer:
+        return billing.payer
+    if is_principal_id(user_id):
+        return published_access_payer(row or {})
+    return None
 
 
 def scan(
@@ -137,10 +173,13 @@ def scan(
     """
     if engine is None or not isinstance(value, str) or not value:
         return value
+    payer = getattr(engine, "judge_payer", None)
+    billing = billed_to(payer) if isinstance(payer, str) and payer else nullcontext()
     try:
         engine.context.tool_name = tool_name
         engine.context.action_name = action_name
-        decision = engine.evaluate(value, Stage.TOOL_RESULT)
+        with billing:
+            decision = engine.evaluate(value, Stage.TOOL_RESULT)
     except Exception:
         logger.exception("Background tool-result guardrail failed for %s.%s", tool_name, action_name)
         return value

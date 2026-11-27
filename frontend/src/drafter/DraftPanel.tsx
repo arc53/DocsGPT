@@ -70,7 +70,16 @@ const FOOTER_KEYS = {
 } as const;
 
 // The order the "Looked at your workspace" line lists counts in.
-const COUNT_KEYS = ['sources', 'tools', 'prompts', 'models', 'agents'] as const;
+const COUNT_KEYS = [
+  'sources',
+  'folders',
+  'tools',
+  'prompts',
+  'models',
+  'agents',
+] as const;
+// Counts the line leaves out at zero: most workspaces have no knowledge folders.
+const SHOWN_FROM_ONE: readonly string[] = ['folders'];
 
 /**
  * A first-screen suggestion: a click sends its text, or runs `onSelect`
@@ -828,9 +837,12 @@ function InsightsLine({ count, days }: { count: number; days: number }) {
 /** "Looked at your workspace: 6 knowledge sources · 11 tools", one muted line. */
 function WorkspaceLine({ counts }: { counts: DrafterCounts }) {
   const { t } = useTranslation();
-  const parts = COUNT_KEYS.filter((key) => typeof counts[key] === 'number').map(
-    (key) => t(`drafter.counts.${key}`, { count: counts[key] }),
-  );
+  const parts = COUNT_KEYS.filter((key) => {
+    const count = counts[key];
+    return (
+      typeof count === 'number' && (count > 0 || !SHOWN_FROM_ONE.includes(key))
+    );
+  }).map((key) => t(`drafter.counts.${key}`, { count: counts[key] }));
   return (
     <div
       data-item="status"

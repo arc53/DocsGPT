@@ -373,7 +373,8 @@ class TestCompressMidExecution:
                 "gpt-4",
                 decoded_token,
                 user_id="user1",
-                model_user_id=None, persist_query_index=None,
+                model_user_id=None, persist_query_index=None, turn_index=None, turn_message_id=None,
+                persist_point=True,
             )
 
     def test_loads_conversation_when_not_provided(

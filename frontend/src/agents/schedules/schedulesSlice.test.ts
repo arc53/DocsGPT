@@ -236,6 +236,28 @@ describe('schedulesSlice SSE event handling', () => {
     expect(runs[0].error).toBe('LLM exploded');
   });
 
+  it('schedule.run.skipped marks the run as skipped with its pause reason', () => {
+    let state = seedWithSchedule();
+    const envelope: SSEEvent = {
+      id: 'evt-skip',
+      ts: '2026-05-19T12:07:00Z',
+      type: 'schedule.run.skipped',
+      payload: {
+        run_id: 'run-1',
+        schedule_id: 'sched-1',
+        status: 'skipped',
+        error_type: 'payer_out_of_allowance',
+        error: 'payer_out_of_allowance',
+      },
+    };
+    state = reducer(state, sseEventReceived(envelope));
+    const runs = selectRunsForSchedule({ schedules: state }, 'sched-1');
+    expect(runs[0].status).toBe('skipped');
+    expect(runs[0].error_type).toBe('payer_out_of_allowance');
+    // A skipped run didn't run, so the schedule's last run stays.
+    expect(state.byAgent['agent-1'][0].last_run_at).toBeUndefined();
+  });
+
   it('schedule.autopaused flips the schedule status to paused', () => {
     let state = seedWithSchedule();
     const envelope: SSEEvent = {

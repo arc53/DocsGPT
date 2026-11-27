@@ -211,6 +211,24 @@ describe('SchedulesView', () => {
     expect(failed.textContent).toContain('3');
   });
 
+  it('counts a schedule paused for its payer as paused, not active', async () => {
+    view.list = [
+      { ...schedules[0], next_run_at: '2099-09-20T07:00:00Z' },
+      {
+        ...schedules[0],
+        id: 's3',
+        next_run_at: '2099-09-21T07:00:00Z',
+        paused_for: { reason: 'payer_left' },
+      },
+    ];
+    await act(async () => root.render(schedulePage()));
+    const active = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-slot="card"]'),
+    ).find((c) => c.textContent?.includes('agents.schedules.stats.active'))!;
+    expect(active.textContent).toContain('1');
+    expect(active.textContent).toContain('agents.schedules.stats.paused:1');
+  });
+
   it('switches Recurring and One-time with underline tabs', async () => {
     const tabs = Array.from(container.querySelectorAll('[role="tab"]'));
     expect(tabs.map((t) => t.textContent)).toEqual([

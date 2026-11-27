@@ -214,7 +214,7 @@ class TestTestMCPServerConfig:
         assert "private" in response.json["error"]
         assert response.json["message"] == response.json["error"]
 
-    def test_connection_success(self, app):
+    def test_connection_success(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -223,7 +223,7 @@ class TestTestMCPServerConfig:
             "tools_count": 3, "tools": ["a", "b", "c"],
         }
 
-        with patch(
+        with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=fake_tool,
         ), app.test_request_context(
@@ -243,7 +243,7 @@ class TestTestMCPServerConfig:
         assert response.json["success"] is True
         assert response.json["tools_count"] == 3
 
-    def test_connection_failure_returns_200_with_failure_message(self, app):
+    def test_connection_failure_returns_200_with_failure_message(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -251,7 +251,7 @@ class TestTestMCPServerConfig:
             "success": False, "message": "Cannot reach server",
         }
 
-        with patch(
+        with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=fake_tool,
         ), app.test_request_context(
@@ -269,7 +269,7 @@ class TestTestMCPServerConfig:
         assert response.status_code == 200
         assert response.json["success"] is False
 
-    def test_oauth_required_returns_200(self, app):
+    def test_oauth_required_returns_200(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -281,7 +281,7 @@ class TestTestMCPServerConfig:
             "message": "OAuth required",
         }
 
-        with patch(
+        with _patch_db(pg_conn), patch(
             "docsgpt.api.user.tools.mcp.MCPTool",
             return_value=fake_tool,
         ), app.test_request_context(
@@ -387,13 +387,15 @@ class TestMCPServerSave:
         assert response.status_code == 400
         assert response.json["error"].startswith("Invalid server URL: ")
 
-    def test_oauth_missing_task_id_returns_400(self, app):
+    def test_oauth_missing_task_id_returns_400(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import MCPServerSave
 
         # No OAuth task and no stored sign-in that works.
         unauthorized = MagicMock()
         unauthorized.discover_tools.side_effect = RuntimeError("401")
-        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=unauthorized), app.test_request_context(
+        with _patch_db(pg_conn), patch(
+            "docsgpt.api.user.tools.mcp.MCPTool", return_value=unauthorized
+        ), app.test_request_context(
             "/api/mcp_server/save", method="POST",
             json={
                 "displayName": "Srv",
@@ -856,13 +858,13 @@ class TestMCPOAuthCancel:
 
         assert response.status_code == 401
 
-    def test_the_test_route_records_who_started_the_sign_in(self, app):
+    def test_the_test_route_records_who_started_the_sign_in(self, app, pg_conn):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         mock_mcp_tool = MagicMock()
         mock_mcp_tool.test_connection.return_value = {"requires_oauth": True, "task_id": "task-1"}
         manager = MagicMock()
-        with patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=mock_mcp_tool), \
+        with _patch_db(pg_conn), patch("docsgpt.api.user.tools.mcp.MCPTool", return_value=mock_mcp_tool), \
                 patch("docsgpt.api.user.tools.mcp.get_redis_instance", return_value=MagicMock()), \
                 patch("docsgpt.api.user.tools.mcp.MCPOAuthManager", return_value=manager):
             with app.test_request_context(

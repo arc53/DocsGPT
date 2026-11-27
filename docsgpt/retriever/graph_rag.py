@@ -29,7 +29,9 @@ import networkx as nx
 from docsgpt.core.settings import settings
 from docsgpt.graphrag import graphrag_available
 from docsgpt.graphrag.store import GraphStore
-from docsgpt.retriever.base import BaseRetriever, SearchOutcome, budget_text
+from docsgpt.retriever.base import (
+    BaseRetriever, SearchOutcome, budget_text, expand_to_parent, parent_dedupe_key,
+)
 from docsgpt.retriever.classic_rag import ClassicRAG
 from docsgpt.retriever.labels import labels_from_metadata
 from docsgpt.storage.db.source_config import GraphRetrievalConfig
@@ -595,25 +597,44 @@ class GraphRAGRetriever(BaseRetriever):
         pool_budget = max(int(max(self.doc_token_limit, self.candidate_tokens or 0) * 0.9), 100)
         pool_tokens = 0
         selected = 0
-        in_selection, in_pool = True, pooled
+        # Tracks parent windows already added so sibling children produced by the
+        # parent_child chunking strategy don't repeat the same passage.
+        seen_parents: set = set()
         for text, metadata in candidates:
-            in_selection = in_selection and selected < source_top_k
-            in_pool = in_pool and len(docs) < pool_k
+            in_selection = selected < source_top_k and cumulative_tokens < token_budget
+            in_pool = pooled and len(docs) < pool_k and pool_tokens < pool_budget
             if not in_selection and not in_pool:
                 break
+
+            # Parent-child expansion: substitute the larger parent window for the
+            # narrow child chunk that was embedded (no-op for other strategies).
+            effective_text = expand_to_parent(metadata, text)
+
+            # Deduplication: sibling children sharing the same parent expand to
+            # identical text — keep only the first (highest-ranked) occurrence.
+            parent_key = parent_dedupe_key(metadata, text, source_id)
+            if parent_key is not None and parent_key in seen_parents:
+                continue
+
             labels = labels_from_metadata(metadata, text, source_id)
             attribution = self._connector_labels.for_source(source_id, metadata)
-            doc_tokens = num_tokens_from_string(budget_text(labels["filename"], text, attribution.get("source_name")))
-            in_selection = in_selection and cumulative_tokens + doc_tokens < token_budget
-            in_pool = in_pool and pool_tokens + doc_tokens < pool_budget
-            if not in_selection and not in_pool:
-                break
-            doc = {"text": text, **labels, **attribution}
+            doc_tokens = num_tokens_from_string(
+                budget_text(labels["filename"], effective_text, attribution.get("source_name"))
+            )
+            selected_candidate = in_selection and cumulative_tokens + doc_tokens < token_budget
+            pooled_candidate = in_pool and pool_tokens + doc_tokens < pool_budget
+            if not selected_candidate and not pooled_candidate:
+                continue
+            if parent_key is not None:
+                seen_parents.add(parent_key)
+            doc = {"text": effective_text, **labels, **attribution}
+            if effective_text != text:
+                doc["matched_text"] = text
             if pooled:
-                doc["_base"] = in_selection
+                doc["_base"] = selected_candidate
                 pool_tokens += doc_tokens
             docs.append(doc)
-            if in_selection:
+            if selected_candidate:
                 cumulative_tokens += doc_tokens
                 selected += 1
         return docs
@@ -655,10 +676,6 @@ class GraphRAGRetriever(BaseRetriever):
             self._classic.per_source_retrieval = original_overrides
             self._classic.base_chunks = original_base
             self._classic.candidate_k, self._classic.candidate_tokens = original_pool
-
-    def _classic_for_source(self, source_id) -> List[Dict[str, Any]]:
-        """Retrieve one source through the batched classic path."""
-        return self._classic_for_sources([source_id])
 
     def _retrieve_with_store(self, store, sources) -> List[Dict[str, Any]]:
         """Split ``sources`` by graph presence, then batch each half.
@@ -751,7 +768,24 @@ class GraphRAGRetriever(BaseRetriever):
         if fallback:
             segments.append(self._classic_for_sources(fallback))
 
-        return [doc for segment in segments for doc in segment]
+        combined = [doc for segment in segments for doc in segment]
+        # Each graph source has a local selection budget. Reapply one budget
+        # after merging sources so expanded parent windows cannot multiply the
+        # model's document allowance by the number of graph sources.
+        combined_limit = max(
+            int(max(self.doc_token_limit, self.candidate_tokens or 0) * 0.9), 100
+        )
+        combined_docs: List[Dict[str, Any]] = []
+        combined_tokens = 0
+        for doc in combined:
+            text = doc.get("text", "")
+            tokens = num_tokens_from_string(
+                budget_text(doc.get("filename"), text, doc.get("source_name"))
+            )
+            if combined_tokens + tokens < combined_limit:
+                combined_docs.append(doc)
+                combined_tokens += tokens
+        return combined_docs
 
     def _get_data(self) -> List[Dict[str, Any]]:
         sources = [source_id for source_id in self.vectorstores if source_id]

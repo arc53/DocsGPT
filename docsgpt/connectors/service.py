@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any, Iterable, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from docsgpt.connectors import catalog
 from docsgpt.connectors.catalog import ConnectorDefinition
@@ -21,15 +21,22 @@ from docsgpt.storage.db.repositories.connector_sessions import (
 from docsgpt.storage.db.session import db_readonly, db_session
 from docsgpt.storage.db.source_config import SourceConfig
 
+if TYPE_CHECKING:
+    from docsgpt.connectors.team import ConnectionAccess
+
 STATUS_CONNECTED = "connected"
 STATUS_RECONNECT = "reconnect_needed"
 STATUS_DISCONNECTED = "disconnected"
 STATUS_ERROR = "error"
 STATUS_PENDING = "pending"
+#: A team's account the person who connected it can't use now (never stored; see :func:`ensure_account_usable`).
+STATUS_PAUSED = "paused"
 
-# Worst first: a card shows the worst status among the user's accounts.
+# Worst first: a card shows the worst status among the user's accounts. A paused team account
+# needs an Admin (a Reconnect, or the person back) but nobody's fresh sign-in, so it ranks below reconnect.
 _STATUS_SEVERITY = {
-    STATUS_RECONNECT: 4,
+    STATUS_RECONNECT: 5,
+    STATUS_PAUSED: 4,
     STATUS_ERROR: 3,
     STATUS_DISCONNECTED: 2,
     STATUS_CONNECTED: 1,
@@ -174,11 +181,42 @@ def _iso(value: Any) -> Optional[str]:
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
-def serialize_connection(row: dict, counts: Optional[dict] = None) -> dict:
-    """Public shape of a connection. Never includes tokens or secrets."""
+def serialize_connection(
+    row: dict,
+    counts: Optional[dict] = None,
+    *,
+    conn: Any = None,
+    viewer: Optional[str] = None,
+    checks: Any = None,
+) -> dict:
+    """Public shape of a connection. Never includes tokens or secrets.
+
+    Args:
+        row: The ``connector_sessions`` row.
+        counts: ``{sources, tools}`` linked to it.
+        conn: Open connection; with ``viewer``, adds who owns it and what the viewer may do.
+        viewer: The person reading it.
+        checks: The request's ``PayerChecks``, shared across a list.
+
+    Returns:
+        The connection's fields. With ``conn`` and ``viewer`` also ``owner``, ``team_id``,
+        ``connected_by``, ``paused_for``, ``allowed_actions`` and ``can_pick``; a team account paused
+        for everyone then reads ``status: paused`` (unless it holds no credentials at all).
+    """
     key = catalog.connector_key_for_row(row)
     definition = catalog.get_definition(key)
     counts = counts or {}
+    payload = _connection_payload(row, key, definition, counts)
+    if conn is not None and viewer:
+        from docsgpt.connectors.team import connection_fields
+
+        payload.update(connection_fields(conn, row, viewer, checks=checks))
+        if payload["paused_for"] and payload["status"] not in (STATUS_PENDING, STATUS_DISCONNECTED):
+            payload["status"] = STATUS_PAUSED
+    return payload
+
+
+def _connection_payload(row: dict, key: Optional[str], definition: Any, counts: dict) -> dict:
     return {
         "id": str(row["id"]),
         "connector_key": key,
@@ -199,15 +237,34 @@ def serialize_connection(row: dict, counts: Optional[dict] = None) -> dict:
         "source_count": counts.get("sources", 0),
         "tool_count": counts.get("tools", 0),
         "credential_mode": row.get("credential_mode"),
+        "url_parameters": connection_url_parameters(row),
     }
 
 
-def list_connections(conn, user_id: str) -> list[dict]:
-    """The user's connections, finished sign-ins only, with resource counts."""
+def list_connections(conn, user_id: str, *, viewer: Optional[str] = None) -> list[dict]:
+    """An owner's connections, finished sign-ins only, with resource counts.
+
+    Args:
+        conn: Open connection.
+        user_id: The owner: the person, or a team's principal.
+        viewer: The person reading the list (defaults to ``user_id``); each entry says what they may do.
+
+    Returns:
+        The serialized connections.
+    """
+    from docsgpt.connectors.team import is_team_connection
+    from docsgpt.quotas.pause import PayerChecks
+
     repo = ConnectorSessionsRepository(conn)
     rows = [r for r in repo.list_for_user(user_id) if normalize_status(r) != STATUS_PENDING]
     counts = repo.resource_counts([str(r["id"]) for r in rows])
-    return [serialize_connection(r, counts.get(str(r["id"]))) for r in rows]
+    checks = PayerChecks()
+    # One lookup names whoever connected each team account, instead of one per row.
+    checks.emails(conn, [r.get("connected_by") for r in rows if is_team_connection(r)])
+    viewer = viewer or user_id
+    return [
+        serialize_connection(r, counts.get(str(r["id"])), conn=conn, viewer=viewer, checks=checks) for r in rows
+    ]
 
 
 def serialize_source(row: dict, connection_status: Optional[str] = None) -> dict:
@@ -301,8 +358,17 @@ def serialize_tool(
     }
 
 
-def connection_detail(conn, row: dict) -> dict:
-    """A connection with the sources and tools it feeds."""
+def connection_detail(conn, row: dict, viewer: Optional[str] = None) -> dict:
+    """A connection with the sources and tools it feeds.
+
+    Args:
+        conn: Open connection.
+        row: The connection, already authorised for the viewer.
+        viewer: The person reading it; adds the owner and permission fields (see :func:`serialize_connection`).
+
+    Returns:
+        The connection with ``sources``, ``tools`` and ``writes``.
+    """
     repo = ConnectorSessionsRepository(conn)
     status = normalize_status(row)
     sources = [serialize_source(s, status) for s in repo.list_sources(str(row["id"]))]
@@ -310,7 +376,7 @@ def connection_detail(conn, row: dict) -> dict:
     tool_rows = repo.list_tools(str(row["id"]))
     names = account_tool_names(conn, tool_rows)
     tools = [serialize_tool(t, account_parameters, names.get(str(t["id"]))) for t in tool_rows]
-    detail = serialize_connection(row, {"sources": len(sources), "tools": len(tools)})
+    detail = serialize_connection(row, {"sources": len(sources), "tools": len(tools)}, conn=conn, viewer=viewer)
     detail["sources"] = sources
     detail["tools"] = tools
     detail["writes"] = builtin_writes(catalog.get_definition(detail["connector_key"]), tool_rows)
@@ -322,6 +388,8 @@ def _card_state(definition: ConnectorDefinition, available: bool, disabled: bool
         return "disabled"
     if status in (STATUS_RECONNECT, STATUS_ERROR):
         return "reconnect"
+    if status == STATUS_PAUSED:
+        return "paused"
     if status == STATUS_CONNECTED:
         return "connected"
     if not available:
@@ -331,20 +399,27 @@ def _card_state(definition: ConnectorDefinition, available: bool, disabled: bool
     return "available"
 
 
-def catalog_for_user(conn, user_id: str, *, is_admin: bool, policies: Optional[dict] = None) -> list[dict]:
-    """Catalog entries with availability and the caller's connection summary.
+def catalog_for_user(
+    conn, user_id: str, *, is_admin: bool, policies: Optional[dict] = None, viewer: Optional[str] = None,
+) -> list[dict]:
+    """Catalog entries with availability and a summary of one owner's connections.
 
     Args:
         conn: Open database connection.
-        user_id: The caller.
+        user_id: Whose connections the cards summarise: the caller, or a team's principal.
         is_admin: Admins see the names of missing server settings; everyone
             else only learns that setup is needed.
         policies: ``connector_key`` to policy row, when admin policies exist.
+        viewer: The caller, when ``user_id`` is a team's principal (a paused team account shows as paused).
+
+    Returns:
+        One entry per connector; ``state`` is ``disabled``, ``reconnect``, ``paused``, ``connected``,
+        ``needs_setup``, ``custom`` or ``available``.
     """
     if policies is None:
         policies = load_policies(conn)
     by_key: dict[str, list[str]] = {}
-    for connection in list_connections(conn, user_id):
+    for connection in list_connections(conn, user_id, viewer=viewer):
         by_key.setdefault(connection["connector_key"], []).append(connection["status"])
 
     entries = []
@@ -380,8 +455,9 @@ def catalog_for_user(conn, user_id: str, *, is_admin: bool, policies: Optional[d
 def disconnect(conn, row: dict) -> dict:
     """Forget a connection's credentials but keep the row and what it feeds.
 
-    Revokes the grant at the provider where that is supported (Google);
-    a failed revocation never blocks forgetting the tokens here. Sources keep
+    Revokes the grant at the provider where that is supported (Google),
+    unless another connection to the same account still holds it; a failed
+    revocation never blocks forgetting the tokens here. Sources keep
     their indexed content and pause syncing; tools stop working until the
     account is reconnected. An MCP server's client registration is kept so
     reconnecting skips dynamic client registration.
@@ -401,7 +477,7 @@ def disconnect(conn, row: dict) -> dict:
         secrets = read_secrets(row)
     except CredentialDecryptionError:
         secrets = {}
-    revoke_at_provider(row, secrets)
+    _revoke_unless_shared(conn, row, secrets)
     _forget_mcp_clients(row)
     kept = {"client_info": secrets["client_info"]} if secrets.get("client_info") else {}
     write_secrets(
@@ -415,6 +491,44 @@ def disconnect(conn, row: dict) -> dict:
         {"id": str(row["id"])},
     )
     return serialize_connection(ConnectorSessionsRepository(conn).get(str(row["id"])))
+
+
+def grant_held_elsewhere(conn, row: dict) -> bool:
+    """Whether another connection still holds credentials for the same account of the same service.
+
+    Google revokes a person's whole grant to the app (every connection signs in through the one
+    client the server is set up with), so revoking for one of their connections, a team's say,
+    would sign out their personal one too, and the reverse.
+
+    Args:
+        conn: Open connection.
+        row: The connection whose credentials are being forgotten.
+
+    Returns:
+        True while another row with the same provider and account holds credentials.
+    """
+    from sqlalchemy import text
+
+    label = account_label(row)
+    if not label or not row.get("provider"):
+        return False
+    return conn.execute(
+        text(
+            "SELECT 1 FROM connector_sessions WHERE provider = :provider AND id <> CAST(:id AS uuid) "
+            "AND COALESCE(account_label, user_email) = :label "
+            "AND (encrypted_credentials IS NOT NULL OR token_info IS NOT NULL) LIMIT 1"
+        ),
+        {"provider": row["provider"], "id": str(row["id"]), "label": label},
+    ).first() is not None
+
+
+def _revoke_unless_shared(conn, row: dict, secrets: dict) -> None:
+    """Revoke the grant at the provider unless another connection still uses it.
+
+    See :func:`grant_held_elsewhere`; the local credentials are forgotten by the caller either way.
+    """
+    if not grant_held_elsewhere(conn, row):
+        revoke_at_provider(row, secrets)
 
 
 def revoke_at_provider(row: dict, secrets: dict) -> bool:
@@ -468,13 +582,22 @@ class ConnectionUnavailable(ValueError):
 
     Attributes:
         connection_id: The connection, when known.
-        status: ``reconnect_needed``, ``disconnected`` or ``missing``.
+        status: ``reconnect_needed``, ``disconnected``, ``missing`` or ``paused``.
+        paused_for: For ``paused``: why, as ``Pause.payload()``; else None.
     """
 
-    def __init__(self, message: str, *, connection_id: Optional[str] = None, status: str = STATUS_RECONNECT):
+    def __init__(
+        self,
+        message: str,
+        *,
+        connection_id: Optional[str] = None,
+        status: str = STATUS_RECONNECT,
+        paused_for: Optional[dict] = None,
+    ):
         super().__init__(message)
         self.connection_id = connection_id
         self.status = status
+        self.paused_for = paused_for
 
 
 class TransientConnectionError(Exception):
@@ -566,6 +689,43 @@ def write_secrets(conn, row: dict, secrets: dict, **fields: Any) -> None:
         scopes = token_info["scopes"]
         update["scopes"] = scopes.split() if isinstance(scopes, str) else list(scopes)
     ConnectorSessionsRepository(conn).update(str(row["id"]), update)
+
+
+PAUSED_ERROR = "This team account is paused: the person who connected it can't use it now. An Admin can reconnect it."
+
+
+def ensure_account_usable(conn, row: dict) -> None:
+    """Refuse a team's account while the person who connected it can't use it.
+
+    A team's connection runs on the account of the person who connected it.
+    While they are deactivated, out of the team or below Admin, or nobody is
+    recorded, the account is not used at all: no token refresh, no
+    credentials, no MCP tokens. The connection is not flagged for reconnect
+    (the grant may be fine); the pause lifts by itself when they are back,
+    or another Admin reconnects it. A personal connection always passes.
+
+    Args:
+        conn: Open connection, or None to open a read-only one when needed.
+        row: The ``connector_sessions`` row.
+
+    Raises:
+        ConnectionUnavailable: ``status="paused"``, with ``paused_for``.
+    """
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if not row or not is_principal_id(row.get("user_id")):
+        return
+    from docsgpt.quotas.pause import connection_pause
+
+    if conn is None:
+        with db_readonly() as own:
+            pause = connection_pause(own, row)
+    else:
+        pause = connection_pause(conn, row)
+    if pause is not None:
+        raise ConnectionUnavailable(
+            PAUSED_ERROR, connection_id=str(row.get("id")), status=STATUS_PAUSED, paused_for=pause.payload(),
+        )
 
 
 def credential_hint(credentials: dict) -> str:
@@ -703,8 +863,9 @@ def get_valid_token_info(connection_id: str, *, rejected_access_token: Optional[
         The decrypted token info, refreshed if it was about to expire.
 
     Raises:
-        ConnectionUnavailable: The connection is missing, disconnected, cannot
-            be decrypted, or its grant was revoked (it is then flagged
+        ConnectionUnavailable: The connection is missing, disconnected, a
+            paused team account (:func:`ensure_account_usable`), cannot be
+            decrypted, or its grant was revoked (it is then flagged
             ``reconnect_needed``).
         TransientConnectionError: The provider failed in a retryable way.
     """
@@ -718,6 +879,8 @@ def get_valid_token_info(connection_id: str, *, rejected_access_token: Optional[
         row = repo.get_for_update(connection_id)
         if row is None:
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
+        # Before any refresh, and never flagged for reconnect: the grant itself may be fine.
+        ensure_account_usable(conn, row)
         status = normalize_status(row)
         if status == STATUS_DISCONNECTED:
             raise ConnectionUnavailable(
@@ -772,6 +935,16 @@ def get_credentials(row: dict) -> dict:
     """The pasted credentials (API keys) of an ``api_key`` connection.
 
     Raises:
+        ConnectionUnavailable: Disconnected, flagged, a paused team account, or undecryptable.
+    """
+    ensure_account_usable(None, row)
+    return _pasted_credentials(row)
+
+
+def _pasted_credentials(row: dict) -> dict:
+    """:func:`get_credentials` once the account is known to be usable.
+
+    Raises:
         ConnectionUnavailable: Disconnected, flagged, or undecryptable.
     """
     status = normalize_status(row)
@@ -792,16 +965,18 @@ def access_credentials(row: dict) -> dict:
     has expired.
 
     Raises:
-        ConnectionUnavailable: Disconnected, flagged, undecryptable, or the
-            refresh was refused (the connection is then flagged).
+        ConnectionUnavailable: Disconnected, flagged, a paused team account,
+            undecryptable, or the refresh was refused (the connection is then flagged).
         TransientConnectionError: The provider failed in a retryable way.
     """
+    ensure_account_usable(None, row)
     if (row.get("auth_kind") or "") == "oauth":
         status = normalize_status(row)
         if status in (STATUS_DISCONNECTED, STATUS_RECONNECT):
             raise ConnectionUnavailable(f"Connection is {status}", connection_id=str(row["id"]), status=status)
         return {"access_token": get_valid_token_info(str(row["id"])).get("access_token")}
-    return get_credentials(row)
+    # The account was just checked: get_credentials would check it again.
+    return _pasted_credentials(row)
 
 
 def connection_parameters(row: Optional[dict]) -> dict:
@@ -867,6 +1042,156 @@ def _api_key_account(
         candidate = f"{label} ({suffix})"
 
 
+class MissingCredentials(ValueError):
+    """Pasted credentials leave a required field empty."""
+
+
+def api_key_credentials(definition, credentials: dict) -> dict:
+    """The pasted credentials a connection stores: every required field, only known fields, no blanks.
+
+    Args:
+        definition: The catalog entry, or None for a connector the catalog no longer knows.
+        credentials: Field key to value, as the user entered them.
+
+    Returns:
+        The credentials to store.
+
+    Raises:
+        MissingCredentials: A required credential field is missing (a ``ValueError``).
+    """
+    fields = {f.key: f for f in definition.credential_fields} if definition is not None else {}
+    if not fields:
+        return {k: v for k, v in credentials.items() if v not in (None, "")}
+    missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]
+    if missing:
+        raise MissingCredentials(f"Missing credentials: {', '.join(missing)}")
+    return {k: v for k, v in credentials.items() if k in fields and v not in (None, "")}
+
+
+def replacement_api_key_label(conn, row: dict, definition, credentials: dict, label: Optional[str] = None) -> str:
+    """The label of a connection whose pasted key is replaced by another person's.
+
+    The old label names the old account, so it is derived again from the new key, the way a new
+    connection's is. Another of the owner's connections may hold the same hint with another key: the
+    label then takes a ``(2)``, ``(3)`` suffix.
+
+    Args:
+        conn: Open connection.
+        row: The connection being reconnected.
+        definition: Its catalog entry, or None.
+        credentials: The new credentials, as :func:`api_key_credentials` returns them.
+        label: What the account is called when the caller knows (a GitHub login); else a hint of the key.
+
+    Returns:
+        A label no other of the owner's connections for that service uses.
+
+    Raises:
+        AccountAlreadyConnected: Another of the owner's connections already holds exactly these credentials.
+    """
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    fields = {f.key: f for f in definition.credential_fields} if definition is not None else {}
+    secret_values = {k: v for k, v in credentials.items() if (fields[k].secret if k in fields else True)}
+    base = label or credential_hint(secret_values or credentials)
+    repo = ConnectorSessionsRepository(conn)
+    candidate, suffix = base, 1
+    while True:
+        other = repo.find_account(
+            row["user_id"], row["provider"], server_url=row.get("server_url"), account_label=candidate,
+        )
+        if other is None or str(other["id"]) == str(row["id"]):
+            return candidate
+        try:
+            if (read_secrets(other).get("credentials") or {}) == credentials:
+                raise AccountAlreadyConnected(str(other["id"]))
+        except CredentialDecryptionError:
+            pass
+        suffix += 1
+        candidate = f"{base} ({suffix})"
+
+
+class ReplacementNeedsAccountName(Exception):
+    """The locked connection says a reconnect replaces the account, and the new account's name wasn't looked up.
+
+    Only for connectors whose account is named by asking the provider (GitHub); the caller looks it up
+    outside the row lock and calls :func:`reconnect_api_key` again with ``label``.
+    """
+
+
+def reconnect_api_key(
+    conn,
+    connection_id: str,
+    user: str,
+    definition,
+    credentials: dict,
+    *,
+    label: Optional[str] = None,
+    names_account: bool = False,
+) -> tuple[dict, ConnectionAccess, bool]:
+    """Store a pasted key on a connection, deciding everything from the row it locks.
+
+    Who may reconnect, whether the key replaces the account or patches it, which fields it must fill and
+    who is recorded as connecting it are all read from the row under ``FOR UPDATE``, so another Admin's
+    reconnect landing first can't have its account patched under someone else's name.
+
+    On a team's connection an Admin other than whoever connected it (or any Admin while the account is
+    paused) replaces the account: every required field, nothing of the old credentials, a label derived
+    from the new key. Otherwise the non-empty fields given overwrite the stored ones.
+
+    Args:
+        conn: Open connection inside a transaction; the row stays locked until it ends.
+        connection_id: The connection.
+        user: The person reconnecting.
+        definition: The connector's catalog entry, or None.
+        credentials: Field key to value, as entered.
+        label: The new account's name, when the caller looked it up (a GitHub login).
+        names_account: The connector names a replaced account by ``label`` only; refuse to replace without it.
+
+    Returns:
+        ``(previous, access, replaced)``: the row as locked before the write, the caller's
+        ``ConnectionAccess`` from it, and whether the account was replaced.
+
+    Raises:
+        ConnectionDenied: The caller may not manage the connection (re-checked under the lock).
+        MissingCredentials: A replacement misses a required field.
+        ReplacementNeedsAccountName: A replacement for a connector that ``names_account`` without ``label``.
+        AccountAlreadyConnected: Another of the owner's connections already holds exactly these credentials.
+    """
+    from docsgpt.connectors.team import authorize_connection
+    from docsgpt.quotas.pause import connection_pause
+    from docsgpt.security.encryption import CredentialDecryptionError
+
+    access = authorize_connection(conn, connection_id, user, "manage", for_update=True)
+    locked = dict(access.row)
+    # A paused account is not theirs to patch: a key pasted now takes it over whole.
+    replace = access.is_team and (user != access.connected_by or connection_pause(conn, locked) is not None)
+    if replace:
+        # Another person's key replaces the account: nothing of the old one may stay, so every field is
+        # theirs and the label names their account.
+        credentials = api_key_credentials(definition, credentials)
+        if names_account and not label:
+            raise ReplacementNeedsAccountName()
+        secrets = {"credentials": credentials}
+        fields = {"account_label": replacement_api_key_label(conn, locked, definition, credentials, label)}
+    else:
+        # read_secrets, not load_secrets: flagging an unreadable row would write it from a second
+        # transaction while this one holds its lock. The new credentials replace it anyway.
+        try:
+            stored = read_secrets(locked)
+        except CredentialDecryptionError:
+            stored = {}
+        # Whoever connected it may change one field and keep the others.
+        merged = {**(stored.get("credentials") or {}), **{k: v for k, v in credentials.items() if v}}
+        secrets = {**stored, "credentials": merged}
+        fields = {}
+    if access.is_team:
+        # A team's account is whoever pasted the key that works now.
+        fields["connected_by"] = user
+    write_secrets(conn, locked, secrets, status=STATUS_CONNECTED, last_error=None, **fields)
+    resume_sources(conn, str(locked["id"]))
+    return locked, access, replace
+
+
 def create_api_key_connection(
     conn,
     user_id: str,
@@ -876,6 +1201,7 @@ def create_api_key_connection(
     label: Optional[str] = None,
     server_url: Optional[str] = None,
     display_name: Optional[str] = None,
+    connected_by: Optional[str] = None,
 ) -> tuple[dict, bool]:
     """Store a connection for pasted credentials, or reuse the matching one.
 
@@ -884,12 +1210,16 @@ def create_api_key_connection(
 
     Args:
         conn: Open connection inside a transaction.
-        user_id: The owner.
+        user_id: The owner: the person, or a team's principal (the caller
+            checked the person may connect for that team).
         definition: The catalog entry (``api_key`` or ``custom_mcp``).
         credentials: Field key to value, as the user entered them.
         label: What the account is called; defaults to a hint of the key.
         server_url: Base URL, for custom MCP servers.
         display_name: Name shown for custom connectors.
+        connected_by: The person connecting a team's account; None for a
+            personal one. A reused team row keeps who connected it (the same
+            key changes nothing about whose it is), unless it names nobody.
 
     Returns:
         ``(row, created)``.
@@ -906,13 +1236,7 @@ def create_api_key_connection(
     preset = catalog.preset_for_url(server_url) if definition.key == "custom_mcp" else None
     ensure_connector_allowed(conn, preset.key if preset else definition.key)
     fields = {f.key: f for f in definition.credential_fields}
-    if fields:
-        missing = [f.label for f in fields.values() if f.required and not str(credentials.get(f.key) or "").strip()]
-        if missing:
-            raise ValueError(f"Missing credentials: {', '.join(missing)}")
-        credentials = {k: v for k, v in credentials.items() if k in fields and v not in (None, "")}
-    else:
-        credentials = {k: v for k, v in credentials.items() if v not in (None, "")}
+    credentials = api_key_credentials(definition, credentials)
     ensure_can_store_credentials()
     secret_values = {k: v for k, v in credentials.items() if (fields.get(k).secret if fields.get(k) else True)}
     repo = ConnectorSessionsRepository(conn)
@@ -920,7 +1244,10 @@ def create_api_key_connection(
         repo, user_id, definition.key, server_url, label or credential_hint(secret_values or credentials), credentials,
     )
     if existing is not None:
-        write_secrets(conn, existing, {"credentials": credentials}, status=STATUS_CONNECTED, last_error=None)
+        named = {"connected_by": connected_by} if connected_by and not existing.get("connected_by") else {}
+        write_secrets(
+            conn, existing, {"credentials": credentials}, status=STATUS_CONNECTED, last_error=None, **named,
+        )
         resume_sources(conn, str(existing["id"]))
         return repo.get(str(existing["id"])), False
     from docsgpt.security.encryption import encrypt_json
@@ -934,6 +1261,7 @@ def create_api_key_connection(
         account_label=account_label,
         server_url=server_url,
         encrypted_credentials=encrypt_json({"credentials": credentials}, user_id),
+        connected_by=connected_by,
     )
     if row is None:  # lost a race with an identical insert
         row = repo.find_account(user_id, definition.key, server_url=server_url, account_label=account_label)
@@ -946,22 +1274,46 @@ def create_api_key_connection(
 # ---------------------------------------------------------------------------
 
 
-def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] = None) -> dict:
+def begin_oauth(
+    conn,
+    owner_id: str,
+    provider: str,
+    connection_id: Optional[str] = None,
+    *,
+    connected_by: Optional[str] = None,
+    replace: bool = False,
+) -> dict:
     """The row an OAuth sign-in writes into when it completes.
 
     Reconnecting passes the connection being reconnected. A new sign-in
     gets a pending row with no account label; the callback moves the tokens
     onto the existing row for that account if there is one.
 
+    Args:
+        conn: Open connection inside a transaction.
+        owner_id: Who owns the connection: the person, or a team's principal
+            (the caller has checked the person may connect for that team).
+        provider: The OAuth connector.
+        connection_id: The connection being reconnected, if any.
+        connected_by: The person connecting a team's account; required for a
+            principal owner (the database refuses a team row without one) and
+            None for a personal connection.
+        replace: The sign-in replaces the account of the team connection
+            ``connection_id`` (its flow records it; :func:`complete_oauth`
+            rewrites the row).
+
     Raises:
-        ConnectionUnavailable: ``connection_id`` is not the caller's
+        ConnectionUnavailable: ``connection_id`` is not ``owner_id``'s
             connection for ``provider``.
+        ValueError: ``replace`` without a connection to replace.
     """
     from sqlalchemy import text
 
+    if replace and not connection_id:
+        raise ValueError("replacing an account needs the connection it replaces")
     repo = ConnectorSessionsRepository(conn)
     if connection_id:
-        row = repo.get_for_user(connection_id, user_id)
+        row = repo.get_for_user(connection_id, owner_id)
         if row is None or row.get("provider") != provider:
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
         return row
@@ -970,8 +1322,10 @@ def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] 
     result = conn.execute(
         text(
             """
-            INSERT INTO connector_sessions (user_id, provider, status, connector_key, auth_kind, display_name)
-            VALUES (:user_id, :provider, 'pending', :provider, 'oauth', :display_name)
+            INSERT INTO connector_sessions (
+                user_id, provider, status, connector_key, auth_kind, display_name, connected_by
+            )
+            VALUES (:user_id, :provider, 'pending', :provider, 'oauth', :display_name, :connected_by)
             ON CONFLICT (user_id, provider, COALESCE(server_url, ''), COALESCE(account_label, ''))
             DO UPDATE SET status = CASE
                 WHEN connector_sessions.status IN ('connected', 'authorized') THEN connector_sessions.status
@@ -979,14 +1333,28 @@ def begin_oauth(conn, user_id: str, provider: str, connection_id: Optional[str] 
             RETURNING *
             """
         ),
-        {"user_id": user_id, "provider": provider, "display_name": definition.name if definition else provider},
+        {
+            "user_id": owner_id,
+            "provider": provider,
+            "display_name": definition.name if definition else provider,
+            "connected_by": connected_by,
+        },
     )
     from docsgpt.storage.db.base_repository import row_to_dict
 
     return row_to_dict(result.fetchone())
 
 
-def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, account: str) -> dict:
+def complete_oauth(
+    conn,
+    state_row: dict,
+    provider: str,
+    token_info: dict,
+    account: str,
+    *,
+    connected_by: Optional[str] = None,
+    replace: bool = False,
+) -> dict:
     """Store a finished OAuth sign-in and return the connection it belongs to.
 
     Signing in to an account that already has a connection updates that
@@ -996,18 +1364,38 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
     sources and tools would silently run as the new account): the new
     account gets its own connection and the original keeps its status.
 
+    The one exception is ``replace``: another Admin reconnecting a team's
+    connection with their own account. The row is rewritten in place (its
+    id stays, so its sources and tools follow), after the old grant is
+    revoked at the provider so a departed person's grant is never used again.
+
+    On a team's connection the person who finished the sign-in becomes its
+    ``connected_by``: the stored grant is theirs now.
+
     Args:
         conn: Open connection inside a transaction.
         state_row: The row named in the OAuth ``state``.
         provider: ``google_drive``, ``share_point`` or ``confluence``.
         token_info: Sanitised token info from the provider.
         account: The account's email or name, shown as "Connected as".
+        connected_by: The person who finished a team's sign-in (the flow's
+            person, re-checked as Admin by the caller); None for a personal one.
+        replace: Rewrite the team connection ``state_row`` in place with the
+            new account (the flow's ``replace_account``).
 
     Returns:
         The connection now holding the sign-in.
+
+    Raises:
+        AccountAlreadyConnected: ``replace`` into an account the team already
+            has another connection for; nothing is written.
+        ValueError: ``replace`` on a connection that isn't a team's, or
+            without ``connected_by``.
     """
     import uuid
 
+    if replace:
+        return _replace_account(conn, state_row, provider, token_info, account, connected_by)
     repo = ConnectorSessionsRepository(conn)
     target = state_row
     definition = catalog.get_definition(provider)
@@ -1021,8 +1409,11 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
         # The row belongs to another account (a reconnect that signed in as someone else).
         target = repo.create(
             state_row["user_id"], provider, connector_key=provider, auth_kind="oauth",
-            display_name=display_name, account_label=account, status=STATUS_PENDING,
+            display_name=display_name, account_label=account, status=STATUS_PENDING, connected_by=connected_by,
         ) or repo.find_account(state_row["user_id"], provider, server_url=None, account_label=account)
+    from docsgpt.workspaces.principal import is_principal_id
+
+    named = {"connected_by": connected_by} if connected_by and is_principal_id(target.get("user_id")) else {}
     write_secrets(
         conn,
         target,
@@ -1036,9 +1427,79 @@ def complete_oauth(conn, state_row: dict, provider: str, token_info: dict, accou
         auth_kind="oauth",
         display_name=display_name,
         last_error=None,
+        **named,
     )
     resume_sources(conn, str(target["id"]))
     return repo.get(str(target["id"]))
+
+
+class AccountAlreadyConnected(Exception):
+    """The team already has a connection for the account a Reconnect signed in to.
+
+    Attributes:
+        connection_id: That other connection.
+    """
+
+    def __init__(self, connection_id: str) -> None:
+        super().__init__("The team already has a connection for this account")
+        self.connection_id = connection_id
+
+
+def _replace_account(
+    conn, state_row: dict, provider: str, token_info: dict, account: str, connected_by: Optional[str],
+) -> dict:
+    """Rewrite a team's connection with another Admin's account, in place.
+
+    Args:
+        conn: Open connection inside a transaction.
+        state_row: The team connection being reconnected.
+        provider: Its OAuth provider.
+        token_info: The new account's sanitised token info.
+        account: The new account's email or name.
+        connected_by: The Admin who signed in; they connect it from now on.
+
+    Returns:
+        The rewritten connection.
+
+    Raises:
+        AccountAlreadyConnected: Another of the team's connections is that account.
+        ValueError: Not a team's connection, or no ``connected_by``.
+    """
+    import uuid
+
+    from docsgpt.security.encryption import CredentialDecryptionError
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if not is_principal_id(state_row.get("user_id")) or not connected_by:
+        raise ValueError("only a team's connection is reconnected with another account")
+    repo = ConnectorSessionsRepository(conn)
+    row = repo.get_for_update(str(state_row["id"])) or state_row
+    other = repo.find_account(row["user_id"], provider, server_url=None, account_label=account)
+    if other is not None and str(other["id"]) != str(row["id"]):
+        raise AccountAlreadyConnected(str(other["id"]))
+    if account_label(row) != account:
+        # The same account's grant is the one just made: revoking it would end both.
+        try:
+            old = read_secrets(row)
+        except CredentialDecryptionError:
+            old = {}
+        _revoke_unless_shared(conn, row, old)
+    _forget_mcp_clients(row)
+    write_secrets(
+        conn,
+        row,
+        {"token_info": token_info},
+        status=STATUS_CONNECTED,
+        session_token=str(uuid.uuid4()),
+        user_email=account,
+        account_label=account,
+        connector_key=provider,
+        auth_kind="oauth",
+        last_error=None,
+        connected_by=connected_by,
+    )
+    resume_sources(conn, str(row["id"]))
+    return repo.get(str(row["id"]))
 
 
 def picker_token(connection_id: str, provider: Optional[str] = None) -> dict:
@@ -1061,25 +1522,20 @@ def picker_token(connection_id: str, provider: Optional[str] = None) -> dict:
     }
 
 
-def claim_session_token(conn, user_id: str, provider: str, session_token: str) -> Optional[dict]:
-    """Link a legacy browser session token to its connection, once.
-
-    Returns the connection when the token belongs to ``user_id`` and
-    ``provider``. The token itself keeps working for the session-token
-    routes during this release, so an older tab does not break.
-    """
-    repo = ConnectorSessionsRepository(conn)
-    row = repo.get_by_session_token(session_token)
-    if not row or row.get("user_id") != user_id or (row.get("provider") or "").lower() != provider.lower():
-        return None
-    return row
-
-
-def resolve_request_connection(user_id: str, provider: Optional[str], data: dict) -> Optional[dict]:
+def resolve_request_connection(
+    user_id: str, provider: Optional[str], data: dict, *, action: Optional[str] = None,
+) -> Optional[dict]:
     """The caller's connection a request names, by ``connection_id`` or legacy ``session_token``.
 
     Returns None unless the caller owns the connection and it belongs to
-    ``provider`` (when given).
+    ``provider`` (when given). With ``action`` (``pick`` to browse the
+    account), a team's connection named by ``connection_id`` is returned too
+    when the caller may do that with it; a session token never names one.
+
+    Raises:
+        ConnectionDenied: With ``action``, a team connection of the caller's
+            team they may not do it with (403); outside the team it is None,
+            as for any connection that isn't theirs.
     """
     connection_id = data.get("connection_id")
     session_token = data.get("session_token")
@@ -1089,6 +1545,8 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
         repo = ConnectorSessionsRepository(conn)
         if connection_id:
             row = repo.get_for_user(str(connection_id), user_id)
+            if row is None and action:
+                row = _team_connection_for(conn, str(connection_id), user_id, action)
         else:
             row = repo.get_by_session_token(session_token)
             if not owns_connector_session(row, user_id, provider):
@@ -1098,6 +1556,18 @@ def resolve_request_connection(user_id: str, provider: Optional[str], data: dict
     if provider and (row.get("provider") or "").lower() != provider.lower():
         return None
     return row
+
+
+def _team_connection_for(conn, connection_id: str, user_id: str, action: str) -> Optional[dict]:
+    """A team's connection ``user_id`` may do ``action`` with, None when it isn't their team's."""
+    from docsgpt.connectors.team import CONNECTION_NOT_FOUND, ConnectionDenied, authorize_connection
+
+    try:
+        return authorize_connection(conn, connection_id, user_id, action).row
+    except ConnectionDenied as denied:
+        if denied.code == CONNECTION_NOT_FOUND:
+            return None
+        raise
 
 
 def owner_sync_connection(conn, owner_id: str, provider: str, connection_id: str) -> Optional[dict]:
@@ -1165,6 +1635,12 @@ def _mcp_row(conn, user_id: str, base_url: str, connection_id: Optional[str], *,
         if row is None or row.get("provider") != mcp_provider(base_url):
             return None
         return row
+    from docsgpt.workspaces.principal import is_principal_id
+
+    if is_principal_id(user_id):
+        # A team's sign-in is only ever used by its connection's id: a tool
+        # that names none (one on each person's own account) never borrows it.
+        return None
     result = conn.execute(
         text(
             "SELECT * FROM connector_sessions WHERE user_id = :user_id AND provider = :provider "
@@ -1177,9 +1653,14 @@ def _mcp_row(conn, user_id: str, base_url: str, connection_id: Optional[str], *,
 
 
 def read_mcp_secrets(user_id: str, base_url: str, connection_id: Optional[str] = None) -> dict:
-    """The MCP OAuth ``tokens`` and ``client_info`` of a server connection."""
+    """The MCP OAuth ``tokens`` and ``client_info`` of a server connection.
+
+    Raises:
+        ConnectionUnavailable: The connection is a paused team account.
+    """
     with db_readonly() as conn:
         row = _mcp_row(conn, user_id, base_url, connection_id)
+        ensure_account_usable(conn, row)
     if row is None:
         return {}
     return load_secrets(row) or {}
@@ -1192,6 +1673,7 @@ def update_mcp_secrets(
     *,
     connection_id: Optional[str] = None,
     status: Optional[str] = None,
+    connected_by: Optional[str] = None,
 ) -> dict:
     """Merge ``patch`` into an MCP connection's secrets (``None`` drops a key).
 
@@ -1200,20 +1682,59 @@ def update_mcp_secrets(
     client or sync still running when its connection was removed would
     otherwise bring it back, holding the tokens it just renewed.
 
+    A team's sign-in is written by its connection's id, or, for a new one,
+    by the Admin signing in for the team (``connected_by``): a team row is
+    never made without them. Their finished sign-in names them as who
+    connected it, also when it takes over another Admin's connection, and
+    is kept only while they may connect for the team.
+
+    Args:
+        user_id: The connection's owner: a person, or a team's principal.
+        base_url: The MCP server (``scheme://host``).
+        patch: Secrets to merge.
+        connection_id: The connection to write, when known.
+        status: A status to set.
+        connected_by: For a team's connection only, the person whose
+            sign-in this is.
+
     Returns:
         The connection row after the update.
 
     Raises:
         ConnectionUnavailable: ``connection_id`` names no connection of this
-            user for this server (removed, or another server's).
+            user for this server (removed, or another server's), a team's
+            row is written by neither id nor person, or the connection is a
+            paused team account (also when ``connected_by`` can't connect
+            for the team).
+        ValueError: ``connected_by`` for a person's own connection.
     """
     from docsgpt.security.encryption import CredentialDecryptionError
+    from docsgpt.workspaces.principal import is_principal_id
 
+    team = is_principal_id(user_id)
+    if connected_by is not None and not team:
+        raise ValueError("Only a team's connection names who connected it")
     with db_session() as conn:
         repo = ConnectorSessionsRepository(conn)
         row = _mcp_row(conn, user_id, base_url, connection_id, lock=True)
-        if row is None and connection_id:
+        if (row is None and connection_id) or (
+            row is not None and connected_by is not None and row.get("user_id") != user_id
+        ):
             raise ConnectionUnavailable("Connection not found", connection_id=connection_id, status="missing")
+        if row is None and team:
+            if connected_by is None:
+                # Never a team row without the person who signed in.
+                raise ConnectionUnavailable("Connection not found", status="missing")
+            row = repo.merge_session_data(
+                user_id, mcp_provider(base_url), base_url, {}, connected_by=connected_by,
+            )
+        taking_over = connected_by is not None and row.get("connected_by") != connected_by
+        if taking_over:
+            # The account becomes this person's: the pause check is theirs.
+            row = {**row, "connected_by": connected_by}
+        ensure_account_usable(conn, row)
+        if taking_over:
+            repo.set_connected_by(str(row["id"]), connected_by)
         if row is None:
             row = repo.merge_session_data(user_id, mcp_provider(base_url), base_url, {})
         try:
@@ -1276,6 +1797,7 @@ def create_tool_for_connection(
     permissions: Optional[dict] = None,
     status: bool = True,
     description: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> dict:
     """Create the tool a connection provides, with read / write defaults.
 
@@ -1295,6 +1817,7 @@ def create_tool_for_connection(
         permissions: Per-action permission overrides.
         status: Whether the tool starts enabled.
         description: Description shown for the tool; defaults to the tool class's.
+        created_by: The person adding a team's tool (a principal owner records nobody by itself).
 
     Returns:
         The new ``user_tools`` row.
@@ -1333,6 +1856,7 @@ def create_tool_for_connection(
         actions=actions,
         status=status,
         connection_id=str(connection["id"]),
+        created_by=created_by,
     )
 
 
@@ -1369,18 +1893,24 @@ def builtin_mcp_config(definition: Optional[ConnectorDefinition], writes: bool =
     return {"server_url": url, "auth_type": "bearer", "transport_type": "http", "timeout": 30}
 
 
-def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dict]:
+def preset_mcp_config(
+    definition: Optional[ConnectorDefinition], connection: Optional[dict] = None,
+) -> Optional[dict]:
     """Tool config of an MCP preset, as its connect flow saves it.
 
     The OAuth tokens are not part of it: they stay on the connection, which
     the tool is linked to, and the executor signs in with them at run time.
-    A keyless preset (``auth_kind: mcp``, such as draw.io) uses no auth.
+    A keyless preset (``auth_kind: mcp``, such as draw.io) uses no auth. A
+    preset that needs URL parameters gets the values its connection kept
+    (see :func:`remember_url_parameters`).
 
     Args:
         definition: The connector.
+        connection: The connection the tool is for.
 
     Returns:
-        The config, or None when the connector is not an MCP preset.
+        The config, or None when the connector is not an MCP preset, or
+        needs URL parameters the connection has no valid values for.
     """
     if (
         definition is None
@@ -1389,8 +1919,11 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
         or "mcp_tool" not in definition.tool_templates
     ):
         return None
+    server_url = catalog.preset_url(definition, connection_url_parameters(connection))
+    if server_url is None:
+        return None
     config = {
-        "server_url": definition.mcp_url,
+        "server_url": server_url,
         "auth_type": "oauth" if definition.auth_kind == "mcp_oauth" else "none",
         "timeout": 30,
         "transport_type": "auto",
@@ -1400,19 +1933,65 @@ def preset_mcp_config(definition: Optional[ConnectorDefinition]) -> Optional[dic
     return config
 
 
-def connection_mcp_config(definition: Optional[ConnectorDefinition], writes: bool = False) -> Optional[dict]:
+def connection_mcp_config(
+    definition: Optional[ConnectorDefinition], writes: bool = False, connection: Optional[dict] = None,
+) -> Optional[dict]:
     """Config of the MCP tool setup can create for a connection: a built-in's or a preset's.
 
     Args:
         definition: The connector.
         writes: For a built-in connector, use its write endpoint (see
             :func:`builtin_mcp_config`).
+        connection: The connection, for a preset that needs URL parameters.
 
     Returns:
         The config, or None when setup creates no MCP tool for this connector
-        (a custom server's tool comes only from its save flow).
+        (a custom server's tool comes only from its save flow, and a preset
+        that needs URL parameters gets one only once they are known).
     """
-    return builtin_mcp_config(definition, writes=writes) or preset_mcp_config(definition)
+    return builtin_mcp_config(definition, writes=writes) or preset_mcp_config(definition, connection)
+
+
+def connection_url_parameters(connection: Optional[dict]) -> dict:
+    """The URL parameter values a connection kept for its preset's server.
+
+    Args:
+        connection: The connection row.
+
+    Returns:
+        Parameter key to value; empty when none were kept.
+    """
+    session_data = _json((connection or {}).get("session_data")) or {}
+    values = session_data.get("url_parameters") if isinstance(session_data, dict) else None
+    return dict(values) if isinstance(values, dict) else {}
+
+
+def remember_url_parameters(conn, connection_id: Optional[str], server_url: Optional[str]) -> None:
+    """Keep on a connection the URL parameters a saved server URL carries.
+
+    A preset's tool deleted from Tools is rebuilt from its connection (see
+    :func:`ensure_connection_tools`), which otherwise knows only the
+    server's origin; the reconnect form also prefills them from here. They
+    are not secret, so they live in ``session_data`` beside driver state.
+
+    Args:
+        conn: Open connection inside a transaction.
+        connection_id: The connection the saved tool is linked to.
+        server_url: The URL the tool was saved with.
+    """
+    values = catalog.url_parameter_values(server_url)
+    if not connection_id or not values:
+        return
+    repo = ConnectorSessionsRepository(conn)
+    row = repo.get(str(connection_id))
+    if row is None:
+        return
+    session_data = _json(row.get("session_data")) or {}
+    session_data = dict(session_data) if isinstance(session_data, dict) else {}
+    if session_data.get("url_parameters") == values:
+        return
+    session_data["url_parameters"] = values
+    repo.update(str(connection_id), {"session_data": session_data})
 
 
 def mcp_tool_description(config: dict) -> str:
@@ -1459,7 +2038,7 @@ def needs_mcp_discovery(conn, connection: dict) -> bool:
     an MCP preset whose tool was deleted, while the connection has no such tool.
     """
     definition = catalog.get_definition(catalog.connector_key_for_row(connection))
-    if connection_mcp_config(definition) is None:
+    if connection_mcp_config(definition, connection=connection) is None:
         return False
     have = {tool.get("name") for tool in ConnectorSessionsRepository(conn).list_tools(str(connection["id"]))}
     return "mcp_tool" not in have
@@ -1472,6 +2051,7 @@ def ensure_connection_tools(
     permissions: Optional[dict] = None,
     mcp_actions: Optional[list] = None,
     mcp_writes: bool = False,
+    created_by: Optional[str] = None,
 ) -> list[dict]:
     """Create the connector's tools once; later calls return the existing ones.
 
@@ -1489,6 +2069,8 @@ def ensure_connection_tools(
             created.
         mcp_writes: Point that tool at the endpoint that also offers writes;
             the caller checked that an admin allows them.
+        created_by: The person setting up a team's connection; its tools
+            are the team's and name them as who added them.
     """
     repo = ConnectorSessionsRepository(conn)
     existing = repo.list_tools(str(connection["id"]))
@@ -1497,7 +2079,7 @@ def ensure_connection_tools(
     if not definition or not definition.tool_templates:
         return existing
     have = {tool.get("name") for tool in existing}
-    mcp_config = connection_mcp_config(definition, writes=mcp_writes)
+    mcp_config = connection_mcp_config(definition, writes=mcp_writes, connection=connection)
     created = []
     for template in definition.tool_templates:
         if template in have:
@@ -1507,7 +2089,7 @@ def ensure_connection_tools(
             description = mcp_tool_description(mcp_config) if definition.publisher == "preset" else None
             created.append(create_tool_for_connection(
                 conn, user_id, connection, template=template, config=mcp_config,
-                actions=mcp_actions, permissions=permissions, description=description,
+                actions=mcp_actions, permissions=permissions, description=description, created_by=created_by,
             ))
             continue
         if template in ("mcp_tool", "api_tool"):
@@ -1515,7 +2097,9 @@ def ensure_connection_tools(
             # has the discovered actions; OpenAPI tools come from an imported spec.
             continue
         created.append(
-            create_tool_for_connection(conn, user_id, connection, template=template, permissions=permissions)
+            create_tool_for_connection(
+                conn, user_id, connection, template=template, permissions=permissions, created_by=created_by,
+            )
         )
     return existing + created
 
@@ -1559,7 +2143,7 @@ def remove_connection(conn, row: dict, *, sources: str = "keep", tools: str = "d
     _forget_mcp_clients(row)
     linked_sources = repo.list_sources(connection_id)
     try:
-        revoke_at_provider(row, read_secrets(row))
+        _revoke_unless_shared(conn, row, read_secrets(row))
     except CredentialDecryptionError:
         pass
     if tools == "delete":
@@ -1843,6 +2427,41 @@ def connector_is_enabled(policies: dict, connector_key: Optional[str]) -> bool:
     return definition is None or definition.configured
 
 
+def connector_is_enabled_for_row(policies: dict, row: dict) -> bool:
+    """Whether every connector switch that governs a connection row leaves it on.
+
+    A connection's identity follows its server: a custom MCP row whose origin
+    a preset now claims is reported as that preset
+    (:func:`catalog.connector_key_for_row`). Its *policy* must not follow so
+    freely. The row is still stored as ``custom_mcp``, and that is the
+    connector an admin turning "Allow custom MCP servers" off decided about;
+    a preset, needing no server settings, is on by default. Asking the
+    preset's switch alone would let a preset shipping for an origin someone
+    had already connected by hand silently re-enable a connection an admin
+    had switched off — no sign-in, no admin action. So both switches apply,
+    and the row is off while either is: shipping the preset decides nothing
+    on its own. An admin turning custom MCP back on makes it usable again
+    with no reconnect, as does re-establishing the connection under the
+    preset, after which its stored ``connector_key`` is the preset's and
+    only the preset's switch is left to ask.
+
+    Args:
+        policies: ``connector_key`` to policy row, from :func:`load_policies`.
+        row: A ``connector_sessions`` row.
+
+    Returns:
+        False when the connector the row is reported as, or the one it is
+        still stored as, is turned off.
+    """
+    key = catalog.connector_key_for_row(row)
+    if not connector_is_enabled(policies, key):
+        return False
+    stored = row.get("connector_key")
+    if stored == "custom_mcp" and key != "custom_mcp":
+        return connector_is_enabled(policies, "custom_mcp")
+    return True
+
+
 def load_policies(conn) -> dict[str, dict]:
     """Every connector's policy, with custom MCP and write switches folded in.
 
@@ -1889,7 +2508,7 @@ def connector_enabled(conn, row: dict) -> bool:
     Returns:
         False when the connector (or custom MCP servers) is turned off.
     """
-    return connector_is_enabled(load_policies(conn), catalog.connector_key_for_row(row))
+    return connector_is_enabled_for_row(load_policies(conn), row)
 
 
 def ensure_connector_allowed(conn, connector_key: Optional[str]) -> None:

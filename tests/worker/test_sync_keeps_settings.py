@@ -535,3 +535,181 @@ class TestUploadIndexForADeletedSource:
         assert response.json == {"status": "skipped", "reason": "gone"}
         assert SourcesRepository(pg_conn).get(sid, USER) is None
         storage.save_file.assert_not_called()
+
+
+# Who owns a source after it moves while a sync of it runs (an Admin moving it out of a team, say).
+NEW_OWNER = "lena"
+
+
+def _move(pg_conn, source_id: str) -> None:
+    from sqlalchemy import text
+
+    pg_conn.execute(
+        text("UPDATE sources SET user_id = :new WHERE id = CAST(:id AS uuid)"), {"new": NEW_OWNER, "id": source_id},
+    )
+
+
+@pytest.mark.unit
+class TestASyncOfASourceMovedMeanwhile:
+    """The sync was queued with the old owner; the source lives on under its new one and keeps its vectors."""
+
+    def test_the_upload_writes_the_moved_row(self, pg_conn):
+        src = SourcesRepository(pg_conn).create(
+            "Docs", user_id=USER, type="website", remote_data=SITE, directory_structure={"old.md": {"token_count": 1}},
+        )
+        _move(pg_conn, str(src["id"]))
+        form = {
+            "user": USER, "name": "Docs", "tokens": "5", "retriever": "classic", "id": str(src["id"]),
+            "type": "website", "remote_data": json.dumps(SITE), "sync_frequency": "weekly",
+            "directory_structure": json.dumps({"new.md": {"token_count": 5}}), "operation": "sync",
+        }
+
+        response = _post(pg_conn, form)
+
+        assert response.json == {"status": "ok"}
+        row = SourcesRepository(pg_conn).get(str(src["id"]), NEW_OWNER)
+        assert row["directory_structure"] == {"new.md": {"token_count": 5}}
+        assert SourcesRepository(pg_conn).get(str(src["id"]), USER) is None
+
+    def test_a_move_during_the_faiss_save_keeps_the_index(self, pg_conn):
+        saving = TestUploadIndexSavesFilesOutsideTheRowLock()
+        src = saving._seed(pg_conn)
+
+        response, events = saving._post_recording(
+            pg_conn, saving._form(src, operation="sync"), on_save=lambda: _move(pg_conn, str(src["id"])),
+        )
+
+        assert response.json == {"status": "ok"}
+        assert SourcesRepository(pg_conn).get(str(src["id"]), NEW_OWNER)["directory_structure"] == {
+            "new.md": {"token_count": 5}
+        }
+
+    def test_the_worker_keeps_the_vectors(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, monkeypatch,
+    ):
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        dropped = []
+        monkeypatch.setattr(worker, "_drop_refused_sync_vectors", lambda reason, sid: dropped.append(reason))
+
+        def upload(full_path, file_data):
+            # The move lands while the sync stores its upload.
+            _move(pg_conn, str(src["id"]))
+            return _post(pg_conn, {k: v for k, v in file_data.items() if v is not None}).json
+
+        monkeypatch.setattr(worker, "upload_index", upload)
+        result = worker.sync(
+            task_self, {}, "Docs", USER, "website", "never", "classic", str(src["id"]), directory=str(tmp_path),
+        )
+
+        assert result == {"status": "success"}
+        assert dropped == []
+
+
+@pytest.fixture
+def lock_redis(monkeypatch):
+    """An in-memory Redis behind the index lock and the finished-job record."""
+    from tests.vectorstore.test_index_lock import LockRedis
+
+    redis = LockRedis()
+    monkeypatch.setattr("docsgpt.vectorstore.index_lock.get_redis_instance", lambda: redis)
+    return redis
+
+
+@pytest.mark.unit
+class TestARedeliveredSyncDoesNotRunTwice:
+    """Celery redelivers a sync that outlives the visibility timeout, under the same task id."""
+
+    def _sync(self, task_self, src, tmp_path, **kwargs):
+        return worker.sync(task_self, {}, "Docs", USER, "website", "daily", "classic", str(src["id"]),
+                           directory=str(tmp_path), **kwargs)
+
+    def test_a_finished_sync_is_remembered_by_its_task_id(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, lock_redis,
+    ):
+        from docsgpt.vectorstore.index_lock import job_finished
+
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        task_self.request.id = "sync-1"
+
+        assert self._sync(task_self, src, tmp_path) == {"status": "success"}
+        assert job_finished("sync-1") is True
+
+    def test_a_copy_of_a_finished_sync_is_ignored(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, lock_redis, published,
+    ):
+        from celery.exceptions import Ignore
+
+        from docsgpt.vectorstore.index_lock import record_job_finished
+
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        task_self.request.id = "sync-1"
+        record_job_finished("sync-1")
+
+        with pytest.raises(Ignore):
+            self._sync(task_self, src, tmp_path)
+
+        assert remote_pipeline.uploads == [] and published == []
+
+    def test_a_copy_whose_first_delivery_finished_while_it_waited_is_ignored(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, held_lock, published, monkeypatch,
+    ):
+        from celery.exceptions import Ignore
+
+        finished = set()
+        monkeypatch.setattr(worker, "job_finished", lambda job_id: job_id in finished)
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        task_self.request.id = "sync-1"
+        held_lock.while_waiting.append(lambda: finished.add("sync-1"))
+
+        with pytest.raises(Ignore):
+            self._sync(task_self, src, tmp_path)
+
+        assert remote_pipeline.uploads == [] and published == []
+        assert held_lock[0] == str(src["id"])
+
+    def test_a_copy_of_a_running_sync_is_ignored_without_a_notice(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, published, monkeypatch,
+    ):
+        from celery.exceptions import Ignore
+
+        from docsgpt.vectorstore.index_lock import SameJobRunning
+
+        holders = []
+
+        @contextmanager
+        def _running(source_id, wait_seconds=None, holder=None, **kwargs):
+            holders.append(holder)
+            raise SameJobRunning("busy")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr(worker, "source_index_lock", _running)
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        task_self.request.id = "sync-1"
+
+        with pytest.raises(Ignore):
+            self._sync(task_self, src, tmp_path)
+
+        assert holders == ["sync-1"]
+        assert remote_pipeline.uploads == [] and published == []
+
+    def test_a_sync_that_failed_is_not_remembered(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, lock_redis, monkeypatch,
+    ):
+        # Celery's own retry of a failed attempt keeps the task id: it must run.
+        from docsgpt.vectorstore.index_lock import job_finished
+
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        task_self.request.id = "sync-1"
+        monkeypatch.setattr(worker, "remote_worker", MagicMock(side_effect=RuntimeError("crawler down")))
+
+        assert self._sync(task_self, src, tmp_path)["status"] == "error"
+        assert job_finished("sync-1") is False
+
+    def test_a_task_without_an_id_is_never_taken_for_a_copy(
+        self, pg_conn, patch_worker_db, task_self, tmp_path, remote_pipeline, lock_redis,
+    ):
+        src = SourcesRepository(pg_conn).create("Docs", user_id=USER, type="website", remote_data=SITE)
+        # ``task_self.request.id`` is a MagicMock: no task id to go by.
+        assert self._sync(task_self, src, tmp_path) == {"status": "success"}
+        assert self._sync(task_self, src, tmp_path) == {"status": "success"}
+        assert remote_pipeline.loader.load_data.call_count == 2

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,7 +29,7 @@ def _state(pending_ids):
 
 
 @pytest.fixture()
-def resume(monkeypatch):
+def resume(monkeypatch, pg_conn):
     """A processor whose resume runs against a mocked continuation service."""
     from docsgpt.agents import agent_creator as ac_mod
     from docsgpt.agents import tool_executor as te_mod
@@ -36,6 +37,9 @@ def resume(monkeypatch):
     from docsgpt.api.answer.services import stream_processor as sp_mod
     from docsgpt.llm import llm_creator as llm_creator_mod
     from docsgpt.llm.handlers import handler_creator as handler_mod
+
+    # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+    monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
     service = MagicMock()
     monkeypatch.setattr(cont_mod, "ContinuationService", lambda: service)

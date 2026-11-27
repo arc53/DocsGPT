@@ -5,6 +5,7 @@ import {
   CircleMinus,
   CircleX,
   Eye,
+  Folder as FolderIcon,
   MessageCircleWarning,
   MessageSquare,
   Pencil,
@@ -43,6 +44,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Combobox, type ComboboxGroup } from '@/components/ui/combobox';
 import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
 
 import {
   Select,
@@ -71,16 +73,32 @@ import type { Connection, ConnectorDefinition } from '../connectors/types';
 import AgentDetailsModal from '../modals/AgentDetailsModal';
 import { ActiveState, Prompt } from '../models/misc';
 import {
-  selectAgentFolders,
+  loadFolders,
+  selectFolderList,
+} from '../components/folders/foldersSlice';
+import {
+  pickedFolderLabel,
+  pickedFolders,
+  pickedFoldersHint,
+  stoppedFolderLines,
+  unlistedFolderRow,
+} from '../components/folders/pickedFolders';
+import { useSourceFolderTree } from '../components/folders/useKnowledgeFolderPicker';
+import {
+  holderFolderOf,
+  type ItemWorkspace,
+  usePickerScope,
+} from '../components/pickerScope';
+import {
   selectSelectedAgent,
   selectSourceDocs,
   selectToken,
   selectPrompts,
-  setAgentFolders,
   setSelectedAgent,
 } from '../preferences/preferenceSlice';
 import { canEditPrompt, PRESET_PROMPT_IDS } from '../prompts/promptAccess';
 import { PromptReviewActions } from '../prompts/PromptViewChrome';
+import type { AppDispatch } from '../store';
 
 import { usePickerKindFilter } from '../hooks/usePickerKindFilter';
 import { useLeaveGuard } from '../hooks/useLeaveGuard';
@@ -94,7 +112,14 @@ import {
 import { suggestionIconClass } from '../hero/SuggestionRows';
 import { DraftedField, DraftedSettingRow } from '../drafter/DraftedBadge';
 import { DrafterStepRow, FilledRow } from '../drafter/DrafterStepRow';
-import { DRAFTER_STARTERS } from '../drafter/starters';
+import {
+  DRAFTER_STARTERS,
+  type DrafterStarter,
+  FEATURED_STARTERS,
+  HAS_MORE_STARTERS,
+  starterQuestions,
+} from '../drafter/starters';
+import { TemplatePicker } from '../drafter/TemplatePicker';
 import { ProposalSummary } from '../drafter/ProposalSummary';
 import { useDraftedFields } from '../drafter/useDraftedFields';
 import { useDrafterConfig } from '../drafter/useDrafterConfig';
@@ -105,7 +130,8 @@ import {
 import { WandButton } from '../drafter/WandButton';
 import { UserToolType } from '../settings/types';
 import { joinList } from '../settings/insights/format';
-import { can } from '../utils/accessUtils';
+import { can, canPublish } from '../utils/accessUtils';
+import { formatCount } from '../utils/dateTimeUtils';
 import { isReader, personLabel, readerIdFromToken } from '../utils/personLabel';
 import {
   selectedSourceIdsFromAgent,
@@ -155,6 +181,7 @@ import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import {
   AGENT_BUILD_STEPS,
   AGENT_FIELD_LABEL_KEYS,
+  AGENT_LINKED_FIELDS,
   type AgentBuildStep,
   type AgentDraftField,
   type AgentDraftForm,
@@ -169,31 +196,47 @@ import {
   gapRequest,
   gapTitle,
   isAgentFormEmpty,
+  linkedFields,
   MAX_GAP_ROWS,
   improveSuggestions,
   type ImproveSuggestion,
   isSafetyUnset,
   topicName,
 } from './agentDraft';
+import { readDraftStart } from './draftStart';
 import { useAgentBuild } from './useAgentBuild';
 import { useAgentPromptView } from './useAgentPromptView';
+import {
+  type PickerPrompt,
+  PROMPT_KINDS,
+  promptOfKind,
+  promptPickerGroups,
+} from './promptPickerGroups';
 import { useAgentProposals } from './useAgentProposals';
 import { useAgentGaps } from './useAgentGaps';
 import { IMPROVE_PARAMS, readImproveHandoff } from './improveLink';
 import AgentGapCards from './AgentGapCards';
 
+import { customModelRefusedIds } from '../models/customModelErrors';
+import { groupModels } from '../models/modelGroups';
 import type { Model } from '../models/types';
+import { PERSONAL_WORKSPACE } from '../workspace/requestWorkspace';
+import {
+  selectCurrentOutsidePolicyOrNull,
+  selectCurrentWorkspace,
+  selectWorkspaceRoleOrNull,
+  type WorkspaceState,
+} from '../workspace/workspaceSlice';
 
-/** The Prompt picker's kinds (the Prompts page's sections) and their `type`. */
-const PROMPT_KIND_TYPES = {
-  included: 'public',
-  yours: 'private',
-  shared: 'team',
-} as const;
-const PROMPT_KINDS = ['all', 'included', 'yours', 'shared'] as const;
-type PromptKind = (typeof PROMPT_KINDS)[number];
-const promptOfKind = (kind: PromptKind, prompt: Prompt): boolean =>
-  kind === 'all' || prompt.type === PROMPT_KIND_TYPES[kind];
+/**
+ * The team's name when the app is in a team, else null (Personal, or a
+ * store without the workspace slice).
+ */
+const selectTeamName = (state: { workspace?: WorkspaceState }) =>
+  state.workspace && state.workspace.current !== PERSONAL_WORKSPACE
+    ? selectCurrentWorkspace(state as { workspace: WorkspaceState }).name
+    : null;
+
 const IMPROVE_ICONS: Record<ImproveSuggestion, LucideIcon> = {
   safety: ShieldCheck,
   knowledge: BookOpen,
@@ -259,6 +302,7 @@ function agentSavePayload(agent: Agent, jsonSchemaText: string) {
     starters: cleanStarters(agent.starters),
     source: agent.source ?? '',
     sources: agent.sources ?? [],
+    folders: agent.folders ?? [],
     chunks: agent.chunks ?? '',
     retriever: agent.retriever ?? '',
     prompt_id: agent.prompt_id ?? '',
@@ -291,7 +335,7 @@ const toolIdsOf = (tools: ToolSummary[]): string[] =>
 export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const dispatch = useDispatch();
+  const dispatch = useDispatch<AppDispatch>();
   const { agentId } = useParams();
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -303,7 +347,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const sourceDocs = useSelector(selectSourceDocs);
   const selectedAgent = useSelector(selectSelectedAgent);
   const prompts = useSelector(selectPrompts);
-  const agentFolders = useSelector(selectAgentFolders);
+  const agentFolders = useSelector(selectFolderList('agent'));
 
   const [validatedFolderId, setValidatedFolderId] = useState<string | null>(
     null,
@@ -353,6 +397,39 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(
     new Set(),
   );
+  // Whole knowledge folders on the agent, read live on every answer.
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([]);
+  const { tree: sourceFolderTree } = useSourceFolderTree();
+  // The pickers list the current workspace's items only; for an agent that
+  // lives in another workspace (before the page follows it there), none.
+  const pickerScope = usePickerScope(
+    (agent as { workspace?: ItemWorkspace }).workspace,
+  );
+  const teamName = useSelector(selectTeamName);
+  const workspaceRole = useSelector(selectWorkspaceRoleOrNull);
+  const outsidePolicy = useSelector(selectCurrentOutsidePolicyOrNull);
+  // The agent's folder (a new one's, from the address it was started in):
+  // the pickers list what is filed there first.
+  const holderFolder = pickerScope.holderElsewhere
+    ? null
+    : holderFolderOf(
+        t,
+        sourceFolderTree,
+        agent.folder_id ?? validatedFolderId,
+        'agent',
+      );
+  const pickerDocs = useMemo(
+    () => pickerScope.scope(sourceDocs),
+    [pickerScope, sourceDocs],
+  );
+  const pickerTools = useMemo(
+    () => pickerScope.scope(rawUserTools),
+    [pickerScope, rawUserTools],
+  );
+  const pickerPrompts = useMemo(
+    () => pickerScope.scope(prompts as PickerPrompt[]),
+    [pickerScope, prompts],
+  );
   const [selectedTools, setSelectedTools] = useState<ToolSummary[]>([]);
   // Tools on the agent when it loaded: the owner's private ones don't come
   // back in the caller's own tool list, so the picker adds a row for each.
@@ -373,6 +450,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const [draftLoading, setDraftLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // The custom models a refused save named: ones the agent's owner can't
+  // run (a person's on a team agent, a team's on another workspace's).
+  const [refusedModelIds, setRefusedModelIds] = useState<string[]>([]);
   const [jsonSchemaText, setJsonSchemaText] = useState('');
   const [jsonSchemaValid, setJsonSchemaValid] = useState(true);
   // Unsaved changes: what a save would send against what was loaded or last
@@ -437,6 +517,33 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     { label: t('agents.form.agentTypes.classic'), value: 'classic' },
     { label: t('agents.form.agentTypes.research'), value: 'research' },
   ];
+
+  // The refused models by name; one the list doesn't offer (a person's own
+  // in a team) is only counted.
+  const refusedModelsLine = (() => {
+    if (refusedModelIds.length === 0) return '';
+    const listed = refusedModelIds
+      .map((id) => availableModels.find((m) => m.id === id)?.display_name)
+      .filter((name): name is string => !!name);
+    const unlisted = refusedModelIds.length - listed.length;
+    const names = [
+      ...listed,
+      ...(unlisted > 0
+        ? [t('agents.form.refusedModels.unlisted', { count: unlisted })]
+        : []),
+    ].join(t('agents.form.refusedModels.separator'));
+    return t('agents.form.refusedModels.line', {
+      names,
+      interpolation: { escapeValue: false },
+    });
+  })();
+  const removeRefusedModels = () => {
+    const refused = new Set(refusedModelIds);
+    setSelectedModelIds(
+      (prev) => new Set(Array.from(prev).filter((id) => !refused.has(id))),
+    );
+    setRefusedModelIds([]);
+  };
 
   // The largest window of the agent's models: a limit past it is noted.
   const modelWindow = useMemo(
@@ -542,8 +649,11 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     ? addedByLabel('prompt', agent.prompt_id)
     : null;
 
+  // In a team its prompts are the team's, named by the team, not "Yours".
+  const teamLabel =
+    teamName === null ? null : teamName || t('workspace.pickers.thisTeam');
   // The prompt picker's kind filter, back on All each time it opens.
-  const promptKinds = usePickerKindFilter(prompts, isPromptPickerOpen, {
+  const promptKinds = usePickerKindFilter(pickerPrompts, isPromptPickerOpen, {
     kinds: PROMPT_KINDS,
     matches: promptOfKind,
     labelOf: (kind) =>
@@ -551,30 +661,54 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         ? t('settings.prompts.filters.all')
         : kind === 'shared'
           ? t('settings.prompts.kinds.shared')
-          : t(`settings.prompts.sections.${kind}`),
+          : kind === 'teamShared'
+            ? t('workspace.page.sharedFromTeams.title')
+            : kind === 'yours' && teamLabel !== null
+              ? teamLabel
+              : t(`settings.prompts.sections.${kind}`),
     ariaLabel: t('settings.prompts.kindFilterLabel'),
   });
+  // The prompt picker's search: while one is typed the folder groups give
+  // way to the kinds, each row naming its folder. Each open starts empty.
+  const [promptSearch, setPromptSearch] = useState('');
+  const [promptPickerWasOpen, setPromptPickerWasOpen] =
+    useState(isPromptPickerOpen);
+  if (promptPickerWasOpen !== isPromptPickerOpen) {
+    setPromptPickerWasOpen(isPromptPickerOpen);
+    if (isPromptPickerOpen) setPromptSearch('');
+  }
   // A row's line, as its Prompts page card says it: a preset's purpose, else
-  // the start of the prompt (the list names no sharer for a teammate's).
+  // the start of the prompt (the list names no sharer for a teammate's), led
+  // by the team another team's prompt comes from.
   const promptLine = (prompt: Prompt): string | undefined =>
     PRESET_PROMPT_IDS.includes(prompt.id) && prompt.type === 'public'
       ? t(`settings.prompts.presets.${prompt.id}`)
-      : prompt.preview || undefined;
-  // The prompt picker's groups, as the Prompts page has them.
-  const promptGroups: ComboboxGroup[] = PROMPT_KINDS.filter(
-    (kind) => kind !== 'all',
-  )
-    .map((kind) => ({
-      heading: t(`settings.prompts.sections.${kind}`),
-      options: promptKinds.items
-        .filter((prompt) => prompt.type === PROMPT_KIND_TYPES[kind])
-        .map((prompt) => ({
-          value: prompt.id,
-          label: prompt.name,
-          description: promptLine(prompt),
-        })),
-    }))
-    .filter((group) => group.options.length > 0);
+      : [
+          prompt.origin === 'team_shared' && prompt.shared_from?.name
+            ? t('workspace.page.sharedFromTeams.from', {
+                team: prompt.shared_from.name,
+                interpolation: { escapeValue: false },
+              })
+            : null,
+          prompt.preview,
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined;
+  // The prompt picker's groups: the agent's folder first, then other
+  // folders, then the kinds as the Prompts page has them.
+  const promptGroups: ComboboxGroup[] = promptPickerGroups({
+    prompts: promptKinds.items,
+    headingOf: (kind) =>
+      kind === 'yours' && teamLabel !== null
+        ? teamLabel
+        : kind === 'teamShared'
+          ? t('workspace.page.sharedFromTeams.title')
+          : t(`settings.prompts.sections.${kind}`),
+    lineOf: promptLine,
+    holderFolder,
+    otherFoldersHeading: t('workspace.pickers.otherFolders'),
+    searching: promptSearch.trim() !== '',
+  });
   // The picked prompt's name for the trigger, from the full list, so a kind
   // filter that hides it never shows another; else, for the prompt the agent
   // was loaded with, its name from the agent (a teammate's agent names the
@@ -609,14 +743,49 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         .filter(Boolean),
     [resolveSourceLabel, selectedSourceIds],
   );
+  // The picked folders, named and counted (a teammate's or a deleted one
+  // from the agent's folder_details).
+  const knowledgeFolders = useMemo(
+    () =>
+      pickedFolders(
+        sourceFolderTree,
+        sourceDocs ?? [],
+        selectedFolderIds,
+        agent.folder_details,
+      ),
+    [sourceFolderTree, sourceDocs, selectedFolderIds, agent.folder_details],
+  );
+  const folderNames = knowledgeFolders.map((folder) =>
+    pickedFolderLabel(t, folder),
+  );
+  // A folder counts once, like a source.
+  const knowledgeCount = selectedSourceIds.size + selectedFolderIds.length;
+  const loneFolder = selectedSourceIds.size === 0 && folderNames.length === 1;
   const sourceTriggerLabel =
-    selectedSourceIds.size === 0
+    knowledgeCount === 0
       ? t('agents.form.placeholders.selectSources')
-      : selectedSourceIds.size === 1
-        ? selectedSourceNames[0]
+      : knowledgeCount === 1
+        ? (selectedSourceNames[0] ?? folderNames[0])
         : t('conversation.sources.selectedCount', {
-            count: selectedSourceIds.size,
+            count: knowledgeCount,
           });
+  const knowledgeHint =
+    knowledgeCount === 0 ? (
+      t('agents.form.sourcePopup.noSourceHint')
+    ) : knowledgeFolders.length > 0 ? (
+      <>
+        {[
+          pickedFoldersHint(t, knowledgeFolders),
+          ...stoppedFolderLines(t, knowledgeFolders),
+        ]
+          .filter(Boolean)
+          .map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
+      </>
+    ) : undefined;
 
   // Select the source an upload started from this form created. The id comes
   // from the upload itself, so a source that appeared meanwhile for another
@@ -635,6 +804,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     );
     formData.append('source', source);
     formData.append('sources', JSON.stringify(sources));
+    formData.append('folders', JSON.stringify(selectedFolderIds));
   };
 
   const handleUpload = useCallback((files: File[]) => {
@@ -780,6 +950,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const drafterConfig = useDrafterConfig();
   const { isMobile } = useMediaQuery();
   const [drafterOpen, setDrafterOpen] = useState(false);
+  // Every template, opened from the drawer's Browse all templates.
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   // Bumped by the drawer's Turn on Insights: the form's Insights section
   // opens and comes into view.
   const [insightsOpenSignal, setInsightsOpenSignal] = useState(0);
@@ -797,6 +969,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       description: agent.description ?? '',
       agent_type: agent.agent_type ?? '',
       sources: Array.from(selectedSourceIds),
+      folders: selectedFolderIds,
       tools: selectedTools,
       starters: agent.starters ?? [],
       prompt: agent.prompt_id || 'default',
@@ -822,6 +995,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.config?.guardrails,
       agent.config?.analytics,
       selectedSourceIds,
+      selectedFolderIds,
       selectedTools,
     ],
   );
@@ -836,6 +1010,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       switch (field) {
         case 'sources':
           setSelectedSourceIds(new Set(value as string[]));
+          return;
+        case 'folders':
+          setSelectedFolderIds(value as string[]);
           return;
         case 'tools':
           setSelectedTools(value as ToolSummary[]);
@@ -867,6 +1044,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const drafted = useDraftedFields<AgentDraftField>(
     draftValues,
     writeDraftField,
+    AGENT_LINKED_FIELDS,
   );
 
   // Tools a draft can name: the caller's, and those already on the agent.
@@ -914,6 +1092,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     form: draftForm,
     values: draftValues,
     toolOptions: draftToolOptions,
+    foldersOffered: !pickerScope.holderElsewhere,
     drafted,
     writeField: writeDraftField,
     onApplied: (proposal, raw, changed) => {
@@ -965,6 +1144,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         buildRef.current.context(),
         promptView.draft,
         improveFocusRef.current,
+        !pickerScope.holderElsewhere,
       );
     },
     onProposal: proposals.apply,
@@ -1132,14 +1312,66 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     t,
   ]);
 
+  /**
+   * Begin the build from a starting point: its title as the user's message
+   * and its first questions at once, with no turn; the answer is the first
+   * turn, and carries the starting point's id to every step.
+   */
+  const startFrom = (starter: DrafterStarter) => {
+    build.start(starter);
+    promptView.setUsed(false);
+    drafterSession.ask(
+      t(`drafter.starters.${starter}.title`),
+      starterQuestions(starter, t),
+    );
+  };
+  const startFromRef = useRef(startFrom);
+  startFromRef.current = startFrom;
+
+  // Opened from the New agent modal with a description or a starting point:
+  // once the drafter's config is known, the drawer opens and the build
+  // starts from it. The router state that carried it is dropped either way,
+  // so a reload or Back doesn't start it again; with the drafter off (or a
+  // form that already has values) the form simply opens as it is.
+  const draftStartReadRef = useRef(false);
+  useEffect(() => {
+    if (draftStartReadRef.current || mode !== 'new') return;
+    const start = readDraftStart(location.state);
+    if (!start) return;
+    if (drafterConfig === null) return;
+    draftStartReadRef.current = true;
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: null,
+    });
+    if (!drafterEnabled || !formEmpty || buildRef.current.guided) return;
+    setDrafterOpen(true);
+    if (start.text) {
+      buildRef.current.start(start.starter);
+      drafterSessionRef.current.send(start.text);
+    } else if (start.starter) startFromRef.current(start.starter);
+  }, [
+    mode,
+    location.state,
+    location.pathname,
+    location.search,
+    navigate,
+    drafterConfig,
+    drafterEnabled,
+    formEmpty,
+    t,
+  ]);
+
   /** The step's Next: the saved prompt's turn end goes with the step. */
   const goNext = () => {
     promptView.setUsed(false);
     build.next();
   };
 
+  // A field linked with another (the knowledge picker's sources and
+  // folders) shows one mark for both, named by the field's own label.
   const draftedProps = (field: AgentDraftField) => ({
-    drafted: drafted.isDrafted(field),
+    drafted: linkedFields(field).some(drafted.isDrafted),
     onUndo: () => drafted.undo(field),
     fieldLabel: t(AGENT_FIELD_LABEL_KEYS[field]),
   });
@@ -1656,10 +1888,12 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       savingRef.current = true;
       setLoading(true);
       setSubmitError(null);
+      setRefusedModelIds([]);
       const result = await sendAgent(formData, failedText);
       if (result.status === 'cancelled') return;
       if (result.status === 'failed') {
         setSubmitError(result.message);
+        setRefusedModelIds(customModelRefusedIds(result.body));
         return;
       }
       const data = await result.response.json();
@@ -1823,34 +2057,25 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     getModels();
   }, [token, mode, markSaved]);
 
-  // Validate folder_id from URL against user's folders
+  // The folder_id from the URL files a new agent there. It is dropped only
+  // when the loaded tree shows the folder missing; while the tree loads, or
+  // when it can't be read, the id is sent as it is and the server checks it,
+  // so a save meanwhile doesn't land at the root.
   useEffect(() => {
-    const validateAndSetFolder = async () => {
-      if (!folderIdFromUrl) {
-        setValidatedFolderId(null);
-        return;
-      }
-
-      let folders = agentFolders;
-      if (!folders) {
-        try {
-          const response = await userService.getAgentFolders(token);
-          if (response.ok) {
-            const data = await response.json();
-            folders = data.folders || [];
-            dispatch(setAgentFolders(folders));
-          }
-        } catch {
-          setValidatedFolderId(null);
-          return;
-        }
-      }
-
-      const folderExists = folders?.some((f) => f.id === folderIdFromUrl);
-      setValidatedFolderId(folderExists ? folderIdFromUrl : null);
-    };
-
-    validateAndSetFolder();
+    if (!folderIdFromUrl) {
+      setValidatedFolderId(null);
+      return;
+    }
+    if (!agentFolders.loaded) {
+      if (!agentFolders.loading && !agentFolders.failed)
+        dispatch(loadFolders({ type: 'agent', token }));
+      setValidatedFolderId(folderIdFromUrl);
+      return;
+    }
+    const folderExists = agentFolders.items.some(
+      (f) => f.id === folderIdFromUrl,
+    );
+    setValidatedFolderId(folderExists ? folderIdFromUrl : null);
   }, [folderIdFromUrl, agentFolders, token, dispatch]);
 
   // A new agent starts from the guardrails an admin set for new agents
@@ -1906,6 +2131,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
 
         const agentSourceIds = selectedSourceIdsFromAgent(data);
         setSelectedSourceIds(new Set(agentSourceIds));
+        const agentFolderIds: string[] = Array.isArray(data.folders)
+          ? data.folders
+          : [];
+        setSelectedFolderIds(agentFolderIds);
 
         if (data.tool_details) {
           setSelectedTools(data.tool_details);
@@ -1936,6 +2165,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
             ? toolIdsOf(data.tool_details)
             : data.tools || [],
           ...serializeAgentSources(agentSourceIds, sourceDocs),
+          folders: agentFolderIds,
           models: agentModels,
           default_model_id: agentModels.includes(data.default_model_id || '')
             ? data.default_model_id
@@ -2005,6 +2235,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   }, [selectedSourceIds]);
 
   useEffect(() => {
+    setAgent((prev) => ({ ...prev, folders: selectedFolderIds }));
+  }, [selectedFolderIds]);
+
+  useEffect(() => {
     setAgent((prev) => ({ ...prev, tools: toolIdsOf(selectedTools) }));
   }, [selectedTools]);
 
@@ -2036,9 +2270,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   // What the caller's role allows on this agent (`allowed_actions` from the
   // API). A new agent carries no access fields, so it reads as the owner's.
   const canEditPolicy = can(agent, 'edit_policy');
+  // A new agent is the workspace's: in a team its outside policy says who
+  // publishes it.
+  const mayPublish = canPublish(agent, workspaceRole, outsidePolicy);
   // Save on a published agent is an edit; on a draft or a new agent the main
   // button publishes it.
-  const canSubmit = can(agent, effectiveMode === 'edit' ? 'edit' : 'publish');
+  const canSubmit = effectiveMode === 'edit' ? can(agent, 'edit') : mayPublish;
+  // Someone who may save but not publish (a team's Editor) gets Save draft as
+  // the main button instead, since the server would refuse Publish.
+  const draftIsMain =
+    !canSubmit && modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit');
   const agentDisplayName =
     agent.name?.trim() || t('agents.pageHeader.fallbackName');
 
@@ -2064,19 +2305,16 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       );
   const drafterSuggestions = (
     buildable
-      ? // Starting points: each sends its title and begins the build from
-        // its id, so every step gets that kind of agent's brief.
-        DRAFTER_STARTERS.map(({ key, Icon }) => {
+      ? // The featured templates: each sends its title and begins the build
+        // from its id, so every step gets that kind of agent's brief.
+        FEATURED_STARTERS.map(({ key, Icon }) => {
           const text = t(`drafter.starters.${key}.title`);
           return {
             key,
             Icon,
             text,
             description: t(`drafter.starters.${key}.description`),
-            onSelect: () => {
-              build.start(key);
-              panelSession.send(text);
-            },
+            onSelect: () => startFrom(key),
           };
         })
       : // What the agent lacks first, then what fits it; Finish setup is
@@ -2171,6 +2409,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     if (isMobile) setDrafterOpen(false);
     setInsightsOpenSignal((signal) => signal + 1);
   };
+  // Under the featured rows, while there are more templates than those.
+  const browseTemplates = HAS_MORE_STARTERS ? (
+    <Button
+      type="button"
+      variant="link"
+      size="inline"
+      className="self-start"
+      onClick={() => setTemplatesOpen(true)}
+    >
+      {t('drafter.templates.browse')}
+      <ArrowRight />
+    </Button>
+  ) : undefined;
   const drafterNotice =
     gapsReason === 'agent_off' ? (
       <Alert variant="info" role="note" data-slot="drafter-insights-note">
@@ -2220,7 +2471,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const agentMenu = useAgentMenu({
     agent,
     lead: [
-      ...(modeConfig[effectiveMode].showSaveDraft && can(agent, 'edit')
+      ...(modeConfig[effectiveMode].showSaveDraft &&
+      can(agent, 'edit') &&
+      !draftIsMain
         ? [
             {
               label: t('agents.form.buttons.saveDraft'),
@@ -2304,6 +2557,19 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           className="flex-1 @2xl:flex-none"
         >
           {modeConfig[effectiveMode].buttonText}
+        </Button>
+      )}
+      {draftIsMain && (
+        <Button
+          type="button"
+          size="field"
+          shape="pill"
+          disabled={isDraftBlocked || publishLoading}
+          loading={draftLoading}
+          onClick={() => void saveAgent('draft')}
+          className="flex-1 @2xl:flex-none"
+        >
+          {t('agents.form.buttons.saveDraft')}
         </Button>
       )}
     </div>
@@ -2423,22 +2689,29 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       id={sourcesPickerId}
                       labelSurface="background"
                       label={t('agents.form.labels.sources')}
-                      hint={
-                        selectedSourceIds.size === 0
-                          ? t('agents.form.sourcePopup.noSourceHint')
-                          : undefined
-                      }
+                      hint={knowledgeHint}
                     >
                       <KnowledgePicker
                         open={isSourcePopupOpen}
                         onOpenChange={setIsSourcePopupOpen}
-                        docs={sourceDocs ?? []}
-                        selectedIds={Array.from(selectedSourceIds)}
-                        onToggle={(id) => {
-                          const next = new Set(selectedSourceIds);
-                          if (next.has(id)) next.delete(id);
-                          else next.add(id);
-                          setSelectedSourceIds(next);
+                        docs={pickerDocs}
+                        holderFolder={holderFolder}
+                        foldersOffered={!pickerScope.holderElsewhere}
+                        pick={{
+                          sources: Array.from(selectedSourceIds),
+                          folders: selectedFolderIds,
+                        }}
+                        onPickChange={(next) => {
+                          setSelectedSourceIds(new Set(next.sources));
+                          setSelectedFolderIds(next.folders);
+                        }}
+                        unlistedFolder={(id) => {
+                          const folder = knowledgeFolders.find(
+                            (item) => item.id === id,
+                          );
+                          return folder
+                            ? unlistedFolderRow(t, folder)
+                            : { label: t('folders.picker.deletedFolder') };
                         }}
                         connections={toolContext.connections}
                         unlistedLabel={resolveSourceLabel}
@@ -2461,13 +2734,20 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                             id={sourcesPickerId}
                             ref={sourceAnchorButtonRef}
                             data-placeholder={
-                              selectedSourceIds.size > 0 ? undefined : ''
+                              knowledgeCount > 0 ? undefined : ''
                             }
                             className="w-full justify-start text-left"
                           >
+                            {/* A lone folder reads as the folder: its icon and name. */}
+                            {loneFolder && (
+                              <FolderIcon className="text-muted-foreground size-4" />
+                            )}
                             <span
                               className="truncate"
-                              title={selectedSourceNames.join(', ')}
+                              title={[
+                                ...folderNames,
+                                ...selectedSourceNames,
+                              ].join(', ')}
                             >
                               {sourceTriggerLabel}
                             </span>
@@ -2485,7 +2765,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                       <ToolsPicker
                         open={isToolsPopupOpen}
                         onOpenChange={setIsToolsPopupOpen}
-                        tools={rawUserTools}
+                        tools={pickerTools}
+                        holderFolder={holderFolder}
                         filter={isAgentPickerToolVisible}
                         // What was on the agent when it loaded or last saved: the
                         // owner's private tools don't come back in the caller's list.
@@ -2569,6 +2850,8 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                             title={t('agents.form.sections.prompt')}
                             mobileSheet
                             filters={promptKinds.filters}
+                            search={promptSearch}
+                            onSearchChange={setPromptSearch}
                             groups={promptGroups}
                             value={agent.prompt_id || 'default'}
                             valueOption={promptValueOption}
@@ -2676,33 +2959,56 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                     id={modelsPickerId}
                     labelSurface="background"
                     label={t('agents.form.sections.models')}
+                    error={
+                      refusedModelIds.length > 0 ? (
+                        <>
+                          {refusedModelsLine}{' '}
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="text"
+                            onClick={removeRefusedModels}
+                          >
+                            {t('agents.form.refusedModels.remove')}
+                          </Button>
+                        </>
+                      ) : undefined
+                    }
                   >
                     <MultiSelectPopover
                       open={isModelsPopupOpen}
                       onOpenChange={setIsModelsPopupOpen}
                       title={t('agents.form.modelsPopup.title')}
                       items={(() => {
-                        const builtinLabel = t(
-                          'settings.customModels.modelsGroup.builtin',
-                        );
-                        const userLabel = t(
-                          'settings.customModels.modelsGroup.user',
-                        );
-                        const builtin: MultiSelectPopoverItem[] = [];
-                        const user: MultiSelectPopoverItem[] = [];
-                        availableModels.forEach((model) => {
-                          const opt: MultiSelectPopoverItem = {
+                        const groups = groupModels(availableModels);
+                        const items = (models: Model[], group: string) =>
+                          models.map((model): MultiSelectPopoverItem => ({
                             id: model.id,
                             label: model.display_name,
-                            group:
-                              model.source === 'user'
-                                ? userLabel
-                                : builtinLabel,
-                          };
-                          if (model.source === 'user') user.push(opt);
-                          else builtin.push(opt);
-                        });
-                        return [...builtin, ...user];
+                            group,
+                          }));
+                        // Custom models are the workspace's (a person's own
+                        // or the team's): none for an agent that lives in
+                        // another workspace than the list.
+                        const custom = !pickerScope.holderElsewhere;
+                        return [
+                          ...items(
+                            groups.builtin,
+                            t('settings.customModels.modelsGroup.builtin'),
+                          ),
+                          ...(custom
+                            ? items(
+                                groups.team,
+                                t('settings.customModels.team.pickerGroup'),
+                              )
+                            : []),
+                          ...(custom
+                            ? items(
+                                groups.user,
+                                t('settings.customModels.modelsGroup.user'),
+                              )
+                            : []),
+                        ];
                       })()}
                       selectedIds={Array.from(selectedModelIds)}
                       onToggle={(id) => {
@@ -3171,7 +3477,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
                   title={t('agents.form.preview.publishTitle')}
                   description={t('agents.form.preview.publishDescription')}
                   action={
-                    can(agent, 'publish') ? (
+                    mayPublish ? (
                       <Button
                         type="button"
                         size="sm"
@@ -3220,7 +3526,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           }
           suggestions={doneOnly ? [] : drafterSuggestions}
           suggestionGroups={doneOnly ? undefined : drafterSuggestionGroups}
-          notice={doneOnly ? undefined : drafterNotice}
+          notice={
+            doneOnly ? undefined : buildable ? browseTemplates : drafterNotice
+          }
           reads={insightsShown ? 'insights' : undefined}
           insightsDays={agentGaps?.days || undefined}
           renderProposal={renderAgentProposal}
@@ -3228,6 +3536,26 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
           after={drawerAfter}
           onNavigate={leaveGuard.onNavigate()}
         />
+      )}
+      {HAS_MORE_STARTERS && (
+        <Modal
+          open={templatesOpen}
+          onOpenChange={setTemplatesOpen}
+          size="xl"
+          title={t('drafter.templates.title')}
+          description={t('drafter.templates.description', {
+            count: DRAFTER_STARTERS.length,
+            formatted: formatCount(DRAFTER_STARTERS.length),
+          })}
+        >
+          <TemplatePicker
+            asks
+            onPick={(starter) => {
+              setTemplatesOpen(false);
+              startFrom(starter);
+            }}
+          />
+        </Modal>
       )}
     </div>
   );

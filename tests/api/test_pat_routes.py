@@ -452,8 +452,8 @@ class TestBuildActions:
         actions = build_actions(BASE, "t", list(SCOPES), {})
         off = {name for name, action in actions.items() if not action["active"]}
         assert off == {
-            "delete_agent", "delete_agent_folder", "delete_schedule", "delete_source", "delete_chunk",
-            "delete_prompt", "delete_tool", "delete_workflow", "delete_conversation", "ask_agent",
+            "delete_agent", "delete_agent_folder", "delete_folder", "delete_schedule", "delete_source",
+            "delete_chunk", "delete_prompt", "delete_tool", "delete_workflow", "delete_conversation", "ask_agent",
         }
 
     def test_a_form_route_is_sent_as_a_form(self):
@@ -581,7 +581,7 @@ class TestCreateAgentTool:
         token, token_id = _new_token(client, scopes=["agents:write"])
         body = json.loads(_make_tool(client, token, token_id).data)
         assert {"create_agent", "update_agent", "share_agent", "delete_agent"} <= set(body["actions"])
-        assert body["inactive"] == ["delete_agent", "delete_agent_folder"]
+        assert body["inactive"] == ["delete_agent", "delete_agent_folder", "delete_folder"]
 
     @pytest.fixture
     def tools_db(self, db):

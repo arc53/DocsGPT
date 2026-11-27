@@ -210,14 +210,9 @@ function UploadRow({
         </ToastMessage>
       )}
 
-      {task.status === 'failed' &&
-        (task.tokenLimitReached || task.errorMessage) && (
-          <ToastMessage variant="destructive">
-            {task.tokenLimitReached
-              ? t('modals.uploadDoc.progress.tokenLimit')
-              : task.errorMessage}
-          </ToastMessage>
-        )}
+      {task.status === 'failed' && task.errorMessage && (
+        <ToastMessage variant="destructive">{task.errorMessage}</ToastMessage>
+      )}
     </>
   );
 }

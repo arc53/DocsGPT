@@ -75,7 +75,8 @@ class TestGetPromptsAccess:
         assert own["updated_at"]
         shared = self._list(app, pg_conn, "bob")[pid]
         assert shared["access"] == "viewer"
-        assert shared["allowed_actions"] == ["duplicate", "use"]
+        # A viewer files a shared prompt in their own folders.
+        assert shared["allowed_actions"] == ["duplicate", "move_folder", "use"]
         assert shared["type"] == "team" and shared["team_access"] == "viewer"
         assert shared["updated_at"]
 

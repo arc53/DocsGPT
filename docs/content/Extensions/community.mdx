@@ -1,10 +1,9 @@
 ---
 title: Community Integrations
+sidebarTitle: 🤝 Community Integrations
 description: Discord, Slack and Telegram bots and the docsgpt-cli terminal client - integrations that live in their own arc53 repositories and connect to DocsGPT with an agent API key.
-lastUpdated: 2026-09-30
+lastUpdated: 2026-11-18
 ---
-
-import { Callout } from 'nextra/components'
 
 # Community Integrations
 
@@ -21,7 +20,7 @@ These integrations are separate projects in the [arc53](https://github.com/arc53
 
 Each bot needs the API key of a published agent (see [Agent API keys](/API/agent-keys)) in its `API_KEY` setting. The bots call DocsGPT Cloud (`https://gptcloud.arc53.com`) unless you set `API_BASE` to your own instance's address, for example `API_BASE=https://docsgpt.example.com`. Each repository's README has the full list of settings and the Docker commands to run it.
 
-A bot answers as the agent, with the agent's prompt, sources and tools, and its usage counts against the agent's owner. Like any API key caller, it can't approve tool actions, so write actions on the owner's connected accounts run only if the owner allows them; see [Agent API keys](/API/agent-keys).
+A bot answers as the agent, with the agent's prompt, sources and tools, and its usage counts against whoever pays for the agent's outside access: its owner, or on a team agent the Admin who turned that access on (see [Who pays](/Using/team-workspaces#who-pays)). Like any API key caller, it can't approve tool actions, so write actions on the owner's connected accounts run only if the owner allows them; see [Agent API keys](/API/agent-keys).
 
 <Callout type="info">
   The Chrome extension that this section used to list is no longer available.

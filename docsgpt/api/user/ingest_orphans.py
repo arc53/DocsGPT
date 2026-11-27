@@ -29,7 +29,8 @@ def _purge_vectors(source_id: str) -> int:
     """Delete a source's vectors through the store; return how many, when the store says.
 
     FAISS writes an index to storage only with the source itself, so an
-    orphan has none there.
+    orphan has none there. A store that stages full rebuilds also loses what
+    one left under the source's staging id.
 
     Args:
         source_id: The orphaned source id.
@@ -39,17 +40,21 @@ def _purge_vectors(source_id: str) -> int:
     """
     if settings.VECTOR_STORE == "faiss":
         return 0
+    from docsgpt.vectorstore.staged_rebuild import staged_index_id
     from docsgpt.vectorstore.vector_creator import VectorCreator
 
-    store = VectorCreator.create_vectorstore(
-        settings.VECTOR_STORE, source_id=source_id, embeddings_key=settings.EMBEDDINGS_KEY,
-    )
-    try:
-        return int(store.purge_index(batch_size=PURGE_BATCH_SIZE) or 0)
-    finally:
-        close = getattr(store, "close", None)
-        if callable(close):
-            close()
+    deleted = 0
+    for index_id in filter(None, (source_id, staged_index_id(source_id))):
+        store = VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE, source_id=index_id, embeddings_key=settings.EMBEDDINGS_KEY,
+        )
+        try:
+            deleted += int(store.purge_index(batch_size=PURGE_BATCH_SIZE) or 0)
+        finally:
+            close = getattr(store, "close", None)
+            if callable(close):
+                close()
+    return deleted
 
 
 def sweep_orphaned_ingests(limit: int = ORPHAN_SWEEP_LIMIT) -> Dict[str, Any]:
@@ -138,7 +143,8 @@ def orphan_report(conn: Connection) -> List[Dict[str, Any]]:
 
     On pgvector, every source id in the vectors table that no source owns,
     with its chunk count: those without a progress row are never swept and
-    need deleting by hand. On other stores, counting is not cheap, so only
+    need deleting by hand. A staged rebuild (``<source id>:staging``) counts
+    as its source's. On other stores, counting is not cheap, so only
     the progress rows without a source are listed, with no count.
 
     Args:
@@ -153,15 +159,18 @@ def orphan_report(conn: Connection) -> List[Dict[str, Any]]:
         return [_report_row(str(row["source_id"]), None, row) for row in repo.without_source(ttl)]
 
     from docsgpt.vectorstore import pgvector
+    from docsgpt.vectorstore.staged_rebuild import owner_of
 
     counts = pgvector.chunk_counts_by_source()
-    known = _known_source_ids(conn, list(counts))
-    orphans = [source_id for source_id in counts if source_id not in known]
+    # A staged rebuild's vectors belong to the source it rebuilds, and are swept with it.
+    owners = {index_id: owner_of(index_id) for index_id in counts}
+    known = _known_source_ids(conn, sorted(set(owners.values())))
+    orphans = [index_id for index_id in counts if owners[index_id] not in known]
     progress = {
         str(row["source_id"]): row
-        for row in repo.without_source(ttl, [i for i in orphans if looks_like_uuid(i)])
+        for row in repo.without_source(ttl, sorted({owners[i] for i in orphans if looks_like_uuid(owners[i])}))
     }
-    return [_report_row(source_id, counts[source_id], progress.get(source_id)) for source_id in orphans]
+    return [_report_row(index_id, counts[index_id], progress.get(owners[index_id])) for index_id in orphans]
 
 
 def orphan_report_now() -> List[Dict[str, Any]]:

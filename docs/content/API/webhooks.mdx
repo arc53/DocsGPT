@@ -1,10 +1,9 @@
 ---
 title: Triggering Agents with Webhooks
+sidebarTitle: 🪝 Agent Webhooks
 description: "Trigger DocsGPT agents from other systems through a webhook URL: send a POST or GET, prevent duplicate runs with an Idempotency-Key, then poll for the result."
-lastUpdated: 2026-10-31
+lastUpdated: 2026-11-18
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # Triggering Agents with Webhooks
 
@@ -41,15 +40,15 @@ Send an HTTP `POST` request to the agent's unique webhook URL with the required 
 The whole JSON body becomes the agent's input, serialized as JSON text; no field has a special meaning to the agent. (The agent's sources are searched with the body's text fields; see [How a webhook run behaves](#how-a-webhook-run-behaves).) The request `{"question": "Summarize order 4567"}` reaches the agent as the message `{"question": "Summarize order 4567"}`, so write the agent's prompt to expect the payload your system sends. Non-ASCII text reaches it as written (`{"question": "Résumé"}`), not as `\u00e9` escapes; the agent's `input` [guardrails](/Agents/guardrails) scan the payload as that message.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     curl -X POST \
       http://localhost:7091/api/webhooks/agents/your_webhook_token \
       -H "Content-Type: application/json" \
       -d '{"question": "Your message to agent"}'
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
 
@@ -64,8 +63,8 @@ The whole JSON body becomes the agent's input, serialized as JSON text; no field
     except requests.exceptions.RequestException as e:
         print(f"Error triggering webhook: {e}")
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const webhookUrl = 'http://localhost:7091/api/webhooks/agents/your_webhook_token';
     const payload = { question: 'Your message to agent' };
@@ -88,7 +87,7 @@ The whole JSON body becomes the agent's input, serialized as JSON text; no field
     
     triggerWebhook();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ### Triggering with GET (query parameters)
@@ -137,7 +136,7 @@ A successful run nests the agent's output under `result.result`:
 }
 ```
 
-When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the agent does not run, but the task still ends with `SUCCESS`: check `result.status`.
+When the agent's own limit is reached, the agent does not run, but the task still ends with `SUCCESS`: check `result.status`. A run that reaches the limit part way stops before its next model call and returns the same status, with what it did so far under `result`.
 
 ```json
 {
@@ -145,6 +144,8 @@ When the agent owner's [usage quota](/Deploying/Usage-Quotas) is exhausted, the 
   "result": {"status": "quota_exceeded", "error": "..."}
 }
 ```
+
+While outside access is paused, the task ends the same way with `"status": "agent_paused"`: the [usage quota](/Deploying/Usage-Quotas) of the person who pays for the agent's outside access is used up (before the run or part way, with what it did so far under `result`), the payer's account is deactivated or, on a team agent, the payer is no longer an Admin there. The error says only that the agent is paused, never whose quota or how much is used. A team agent with nobody to pay for its outside access ends with `"status": "no_payer"`. See [Who pays](/Using/team-workspaces#who-pays).
 
 A run that takes longer than `WEBHOOK_RUN_TIMEOUT` (default 600 seconds) is stopped, and the task also ends with `SUCCESS`, with `"status": "timeout"`. Anything the agent did before it was stopped, such as a tool action, has already taken effect. On a self-hosted instance, raise the setting if your agent legitimately needs longer.
 
@@ -165,13 +166,13 @@ Two more cases to handle:
 - **A crashed run is not retried.** If the run raises an error (for example the model provider is unreachable), the task ends `FAILURE` and the agent does not run again on its own: a retry would repeat any tool actions that already took effect. To try again, send the webhook again, with a new `Idempotency-Key` if you set one. If the worker process itself dies mid-run (a restart or a deploy), the task is delivered again and the agent runs from the start.
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     # Replace the task_id with the one you received
     curl http://localhost:7091/api/task_status?task_id=YOUR_TASK_ID
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
     import time
@@ -198,8 +199,8 @@ Two more cases to handle:
         
         time.sleep(2)
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const statusUrl = 'http://localhost:7091/api/task_status';
     const taskId = 'YOUR_TASK_ID';
@@ -232,7 +233,7 @@ Two more cases to handle:
 
     pollForResult();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ## How a webhook run behaves
@@ -244,7 +245,7 @@ A webhook run happens in the background, with nobody watching it. While it runs,
 - **Wikis are read-only unless their owner allows outside edits.** Anyone with the URL decides the run's input, so the agent edits a [wiki source](/Sources/Wiki-sources#edits-from-the-api-widget-and-public-links) only when the wiki's owner turned on **Let API and widget users edit this wiki**. It can always read the wiki.
 - **Sources are searched with the payload's text, not the whole payload.** An agent that searches its sources before it answers (a classic agent does) searches them with the payload's human-written fields: the values of `question`, `query`, `prompt`, `title`, `subject`, `summary`, `name`, `description`, `body`, `text`, `message` and `content`, from the top three levels of the payload (and the first five items of each list). Each distinct value is used once, and the search is cut at 2,000 characters. A payload without any of those fields is searched with its JSON, cut the same way. Searching with the raw JSON would match on keys, ids and URLs rather than on what the event is about. The agent still receives the whole payload.
 - **Chat-only tools are unavailable.** The `scheduler` tool is not offered to the agent during a webhook run.
-- **Usage counts against the owner's quota.** When it is exhausted, the run is skipped (see the `quota_exceeded` result above).
+- **Usage counts against the quota of whoever pays for the agent's outside access.** On a personal agent that is its owner; on a team agent, the Admin who turned outside access on or took it over. When it is used up, the run is skipped (see the `agent_paused` result above).
 
 ### Keep the URL secret
 

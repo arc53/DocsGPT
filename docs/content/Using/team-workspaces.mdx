@@ -1,0 +1,447 @@
+---
+title: Team Workspaces
+sidebarTitle: 🏢 Team Workspaces
+description: How team workspaces work in DocsGPT, including the workspace switcher, Personal and team items, the four team roles, shared folders, accounts connected for the team, the team's custom models, moving work into a team and back, what stays personal, who pays for runs, the team Usage tab and chat export.
+lastUpdated: 2026-11-15
+---
+
+# Team Workspaces
+
+Every team has a workspace: a place for the team's agents, knowledge, tools and prompts. The team owns what is in it, and everyone in the team can use it, according to their team role. **Personal** is your own workspace. It holds what you own, plus what people share with you.
+
+Each item lives in exactly one workspace. Where it lives decides who owns it and who can reach it.
+
+To create a team and add members, see [Teams and sharing](/Using/teams-and-sharing). For the team API and the audit events, see [Access Control & Teams](/Deploying/Access-Control#teams).
+
+## Personal and team workspaces
+
+| | Personal | A team workspace |
+| --- | --- | --- |
+| Who owns an item | You | The team. You stay listed as the person who added it |
+| Who can reach it | You, plus the people and teams you share it with, item by item | Everyone in the team, by their team role |
+| Folders | Your own | The team's, the same for everyone in it |
+| What its agents can use | Your items, and items shared with you | The team's items, and items other teams share with it |
+| When someone leaves the team | Their items leave with them | Team items stay with the team |
+
+A team agent uses only the team's knowledge, tools and prompts, and those another team shares with it. Its tools sign in with an [account connected for the team](#team-connections), or with each person's own account; one member's personal account never sits behind a team agent. Its model is one the instance offers, or one of the [team's custom models](#team-custom-models), never a member's own.
+
+## Switch workspace
+
+The name at the top of the sidebar is the workspace switcher. It lists **Personal** ("Only you"), then your **Teams**, each with its member count and your role, then **Manage teams** and **Create team**.
+
+The workspace you pick is the scope of the app:
+
+- the **Agents**, **Knowledge**, **Tools** and **Prompts** pages, and their folders,
+- the chats in the sidebar, and chat search,
+- [Activity](/Using/activity) and your pinned agents,
+- the pickers in the chat composer and the agent builder.
+
+Under its intro, each of these pages names the workspace and who can reach it, for example "Operations · Everyone in the team can use what's here · 12 people", or "Personal · Only you, unless you share an item".
+
+When you switch, a list page stays open and shows the other workspace's items. An item page, such as an agent or a chat, goes back to its list. **General** and **Access tokens** in Settings are yours, whatever the workspace.
+
+DocsGPT remembers your workspace in this browser. Each browser tab keeps its own: switching in one tab doesn't change the others.
+
+A link to a team item or a team chat switches to its workspace, and DocsGPT says so ("Switched to Operations"). If you're no longer in the team, DocsGPT switches to Personal and tells you.
+
+In a team workspace, the sidebar has a **Team** entry that opens the team's page: its **Members**, **Personal items shared**, and, for Admins, [**Usage**](#usage) and **Settings**.
+
+## Team roles
+
+Your role is the same on everything in the workspace. A team item's tile names who added it rather than your access.
+
+| Role | Can |
+| --- | --- |
+| **Viewer** | Chat with the team's agents and pin them. Use the team's knowledge, tools and prompts, browse its sources, and duplicate its prompts. See the team's connected accounts and who connected each, and the team's custom models and who added each. |
+| **Editor** | Everything a Viewer can, plus create, import, edit and export items, see an agent's logs and manage its schedules (and [take one over](#take-over)), create folders and file items in them, move their own items in from Personal, sync the team's sources by hand, and add tools each person signs in to with their own account. A new agent from an Editor is a draft until an Admin publishes it. When the team lets **Editors too** take items outside, Editors also publish agents, manage their outside access and share items with other teams. |
+| **Admin** | Everything an Editor can, plus publish agents, manage outside access (API key and widget, public link, webhook) and take it over, and share the team's items with other teams, as far as the team's [setting for taking items outside](#taking-items-outside-the-team) allows. Also delete items, move items out to their own Personal, add and remove members and change their roles, see the team's [Usage](#usage), [export its chats](#export-the-teams-chats) when the instance allows it, lock the team, and edit the team's name and description. Connect accounts for the team and manage them; see [Team connections](#team-connections). Add custom models for the team and manage them; see [Team custom models](#team-custom-models). |
+| **Owner** | The person who created the team, or was given it. An Admin who can also transfer ownership, unlock the team, and delete the team. |
+
+Taking items outside the team, to another team or through an agent's API key, widget, public link or webhook, follows the team's own setting; see [Taking items outside the team](#taking-items-outside-the-team). Viewers never can.
+
+New members join as Viewers. A team always keeps at least one Admin, and the Owner can't be demoted or removed: to step down, transfer ownership first, under the team's **Settings**.
+
+<Callout type="info">
+  After upgrading to this release, a team's former members are Viewers and its admins are Admins. Give Editor to the people who should create and change the team's items.
+</Callout>
+
+## What each page shows
+
+The **Agents**, **Knowledge**, **Tools** and **Prompts** pages follow the same order:
+
+1. **Folders**: the workspace's folders that hold this kind of item, plus empty folders.
+2. The items in no folder.
+3. In Personal only, **Shared with you**: items other people shared with you, each with its owner and your access, **Viewer** or **Editor**.
+4. In a team only, **Shared with this team**: items other teams shared with this one, each naming the team it comes from. See [Share an item with another team](#share-an-item-with-another-team).
+
+In a team, **New**, **Add**, **Import** and **New folder** appear only for Editors and up. On the Agents page, templates are there in both workspaces: an Editor's copy of a template lands in the team as a draft. **Discovered** is in Personal only.
+
+**Connectors** in a team lists the team's own accounts; see [Team connections](#team-connections). **Custom models** in a team lists the team's own models; see [Team custom models](#team-custom-models).
+
+## Folders
+
+A workspace has one folder tree, and a folder can hold agents, knowledge, tools and prompts together. Each page shows its own part of the folder. A tile reads, for example, "6 prompts · also 2 agents, 3 tools", and an open folder has **Also in this folder**, with links to the same folder on the other pages.
+
+- Folders nest up to three levels deep.
+- Team folders are the same for everyone in the team. Editors and up create, rename, move and delete folders and file items in them; Viewers browse them.
+- Deleting a folder never deletes what it holds: its items and folders move up to its parent.
+- In Personal, you can file your own items and items shared with you. A team's items can't go in a personal folder; pin a team agent instead.
+- When you pick tools or knowledge for an agent or a workflow that sits in a folder, the picker lists that folder's items first ("In Support, this agent's folder").
+- A Knowledge folder on a team agent is the team's folder, so every member sees the same folder and the same sources in it.
+
+For the folder pages themselves, see [Organize knowledge in folders](/Sources/adding-knowledge#organize-knowledge-in-folders) and [Organize agents in folders](/Using/web-app#organize-agents-in-folders).
+
+## Team connections
+
+A team Admin can connect an account for the team: a Google Drive, a GitHub account, a Telegram bot, an MCP server they sign in to. The account then belongs to the team, not to the Admin. The team's sources sync from it and the team's tools run on it, for every member. The Admin who connected it is named on it ("Connected by Lena"), pays for its scheduled syncs, and is the only one who picks what it syncs.
+
+In a team, **Settings > Connectors** lists the team's accounts, under "These accounts belong to the team. Your own accounts are in Personal." Each one shows its service, who connected it (even after they left), its status or why it is paused, and how many sources and tools use it.
+
+### Who can do what
+
+| Role | With the team's accounts |
+| --- | --- |
+| **Viewer** | See them, as above. Viewers and Editors see only the services the team has connected, not the list of services to connect. |
+| **Editor** | Everything a Viewer can, plus **Sync now** on a source synced from one (they pay for that sync), and [tools each person signs in to](#tools-each-person-signs-in-to). |
+| **Admin** | Everything an Editor can, plus **Connect for the team**, and manage the team's accounts: rename, set up tools and what each action may do, change how often a source syncs, **Reconnect**, **Disconnect** and remove. |
+| **Whoever connected it** | Browse the account and choose what it syncs: add the team's sources from it, and change what a source syncs. Only them, and only while they're an Admin. Other Admins never see its files. |
+
+To add a team source from a connected service, choose **Add knowledge** in the team. It offers the services you connected for the team, and Admins also get **Connect for the team**. A personal account never feeds a team source: in a team, the pickers only ever use the team's accounts. The new source is the team's, filed in the team's Knowledge.
+
+An instance admin gets no access to a team's accounts from being an admin.
+
+### Who pays for syncs
+
+As with [any run](#who-pays), whoever starts a sync pays for the model use it causes, such as building a knowledge graph. The person who adds a source pays for its first sync, and an Editor who chooses **Sync now** pays for that sync. A scheduled sync is paid by whoever connected the account, and its notifications go to them.
+
+### Pauses and Reconnect
+
+A team's account pauses when the person who connected it can no longer stand behind it. Nothing is deleted while it is paused: its sign-in is kept, unused, and it works again once the reason clears.
+
+| Reason | What pauses | Clears when |
+| --- | --- | --- |
+| They left the team, or are no longer an Admin | The whole account: no syncs, no picking, no tool calls | They're added back as an Admin, or another Admin reconnects it |
+| Their DocsGPT account is deactivated | The whole account | The account is reactivated, or another Admin reconnects it |
+| They're out of allowance | Scheduled syncs only. **Sync now** still runs, paid by whoever chooses it | The allowance resets or is raised, or another Admin reconnects it |
+
+The account, its sources and the team's [Usage](#usage) tab say why it is paused, for example "Paused: Lena left the team." A tool on a paused account doesn't run, and the agents that use it show it as stopped. Removing someone, or demoting them below Admin, says how many connections will pause, and the team's Owner and Admins get the same notice as for [schedules](#when-someone-leaves-a-team). When a service rejects a team account's sign-in, the account shows **Reconnect needed**, and the team's Owner and Admins are notified.
+
+To bring an account back, an Admin opens it on **Connectors** and chooses **Reconnect**:
+
+- **Whoever connected it** signs in again, as with a personal account.
+- **Another Admin** is asked **Reconnect with your account?**: the team uses their account from then on, and they pay for its syncs. The dialog lists the sources that sync from it. After they sign in, the account reads "Connected by" them, and its sources and tools keep working on it. If the new sign-in is a different account, DocsGPT revokes the previous person's sign-in at the service, unless another connection in DocsGPT still uses that account, such as their own Google Drive in Personal.
+
+<Callout type="warning">
+  Reconnecting with another account changes what the team can read. Files the new account can't open drop out of the sources at their next sync; the person who now holds the account can pick them again from the source. For Google Drive, see [Team accounts on Google Drive](/Sources/Connectors/google-drive#team-accounts).
+</Callout>
+
+If the team already has the new account connected, Reconnect is refused: use that connection instead. **Disconnect** forgets the account's sign-in; its sources keep their content and stop syncing, and its tools can't run until an Admin reconnects it.
+
+### Tools each person signs in to
+
+A team tool can also run on each person's own account instead of one the team holds. An Editor or above chooses **Add tool** in the team, picks the service and chooses **Each person signs in with their own account**. Nobody's account is shared: each person who uses the tool signs in to the service in Personal, and a chat asks them to connect the first time. Admins are also pointed to the team's own account for the service on **Connectors**.
+
+For a service whose tools come from an MCP server, such as GitHub or Notion, and for a custom MCP server, the person adding the tool needs their own sign-in to it in Personal first; otherwise DocsGPT asks them to switch to Personal and connect it there. If an instance admin set a service to always use one shared account, it can't be added this way. A team agent's API key, widget and webhook have no signed-in person, so these tools don't run there.
+
+### What can't leave the team
+
+A tool on an account connected for the team works only for the team's members, in the app. While a team agent uses one, the agent can't get an API key, widget, public link or webhook, and can't be shared with another team; nor can the tool itself. DocsGPT refuses and names the tools. A caller from outside never runs such a tool: it is left out of their run.
+
+Sources synced from a team account are ordinary team knowledge: they can be shared and published under the team's [setting for taking items outside](#taking-items-outside-the-team). Tools each person signs in to can be shared with other teams too.
+
+A connection never moves. A source or tool on a team account can't [move out](#move-to-team-and-back) of the team, and one on your personal account can't move in. While the team holds a connection, it can't be deleted: remove its connections first.
+
+## Team custom models
+
+A team Admin can add a [custom model](/Models/custom-models) for the team: an OpenAI-compatible endpoint with the team's own provider key. The model then belongs to the team, not to the Admin. Every member can use it in the team's chats, and the team's agents and workflows can run on it. The card names who added it ("Added by Lena"), even after they left.
+
+In a team, **Settings > Custom Models** lists the team's models, under "These models belong to the team. Your own models are in Personal."
+
+### Who can do what
+
+| Role | With the team's models |
+| --- | --- |
+| **Viewer** | See them: name, description, model ID, capabilities, whether each is enabled, and who added it. Pick one in a team chat. |
+| **Editor** | Everything a Viewer can, plus set one on the team's agents and workflow nodes, as for any model. |
+| **Admin** and **Owner** | Everything an Editor can, plus **Add model** for the team, and edit, test, replace the key, enable or disable, and delete the team's models. Only they see a model's base URL. |
+
+The API key never comes back to anyone, Admins included. An instance admin gets no access to a team's models from being an admin.
+
+### Where a team model can run
+
+- **A team chat without an agent** offers the instance's models and, under **Team models**, the team's enabled models. Your own custom models aren't offered there, and DocsGPT refuses one sent over the API: "Your own custom models can't be used in a team chat." To use one in the team, an Admin [copies it to the team](/Models/custom-models#copy-a-model-to-a-team).
+- **An agent or a workflow names only its own workspace's custom models.** A team's agents and workflows can use the team's models, not a member's own; a personal agent can use your own models, not a team's. A team's model never runs on another team's items. A save that breaks this is refused and names the models; the agent builder lists them under **Models** with **Remove from the agent**.
+- **The [task model](/Using/web-app#task-model)** in **Settings > General** is yours, so it never offers a team's model.
+
+A team agent that runs on a team model runs on it for everyone who reaches the agent: its members, another team it is shared with, and its outside callers.
+
+### Who pays for a team model
+
+As with [any run](#who-pays), whoever starts it pays from their own allowance; the model's tokens count toward it as for any custom model. The provider bills the team's key: every member's use reaches the account the key belongs to. The Admin who added the model doesn't pay for anyone else's runs.
+
+### When someone who added a model leaves
+
+Nothing pauses. The model keeps running on the key they entered, also after they leave the team or stop being an Admin. Removing them says how many models they added: "Lena added 2 custom models to the team. Their keys stay in use. Replace a key on the team's Custom models page if it was Lena's own." If demoting an Admin asks you to confirm, the dialog says the same. To replace a key, an Admin edits the model and enters a new **API key**.
+
+### Bring a model into a team
+
+- **Copy to a team.** On one of your own models in Personal, **Copy to a team** gives a team you're an Admin of its own copy, with the same key. Your model stays as it is. See [Copy a model to a team](/Models/custom-models#copy-a-model-to-a-team).
+- **Move.** When an agent [moves into the team](#move-to-team-and-back), your custom model on it switches to the team's matching model, if the team has one; see [What can't move](#what-cant-move).
+- **Import.** An agent imported into a team uses the team's model with the same base URL and model ID. Without one, an Admin enters the API key and the import adds the model to the team; for an Editor, the model is left off: "not the team's model yet, will be left off". A model named only by its id is used only if the team owns it.
+
+### Deleting a team model
+
+Deleting a team model asks you to confirm and names the team's agents and workflows that use it. An agent set to it runs on the instance's default model instead. A workflow node set to it stops with *Model '…' is not available* until someone picks another model for the node; see [Where the model appears](/Models/custom-models#where-the-model-appears).
+
+While the team has a custom model, the team can't be deleted: a team Admin removes them on the team's **Custom models** page first. The team's **Settings** names them and offers **Open Custom models**.
+
+### Outside the team
+
+A team model is the team's stored secret, like a tool's saved API key. A team agent that runs on one can be published and shared with another team under the team's [setting for taking items outside](#taking-items-outside-the-team): its outside callers and the other team's members spend the team's key, and the person who pays for the run pays as usual. Sharing such an agent with another team, the dialog says so: "Members of Dev will run this agent on Operations' model Ops Mistral." The other team can't pick the model for its own agents: a custom model is never shared on its own.
+
+## Move to team and back
+
+Moving is how existing work gets into a team. Choose **Move to team…** in the **⋯** menu of an agent, a source, a tool, a prompt or a folder. In a team, an Admin's menu has **Move to Personal…** to take an item out. A move changes the owner in place: ids, API keys, links and history stay the same.
+
+| Move | Who can |
+| --- | --- |
+| Into a team | The item's owner, if they are an Editor or above in that team |
+| Into a team, an agent with outside access (API key, public link or webhook) | The item's owner, if the team's [setting for taking items outside](#taking-items-outside-the-team) lets them: an Admin, or an Editor when the team allows **Editors too**. Otherwise they turn its outside access off first, or ask an Admin. Nobody moves one into a locked team |
+| Out of a team, into your own Personal | An Admin of the team, unless the team is locked |
+
+### The plan
+
+Before anything moves, the dialog shows the whole plan. Pick the team and, if you like, a folder there; then check:
+
+- **Who gains or loses access.** Everyone in the team gets access by their role. People you shared the item with outside the team lose access, by name, because a team item has no per-item shares.
+- **Who owns it.** "Operations will own it. It stays with the team if you leave. You stay listed as the person who added it."
+- **Moves along.** What the item brings with it, and why: used by the agent, in the folder, or on the same workflow.
+- **Can't move.** What stays behind, and why.
+- **Renamed to avoid a clash.** A folder or an agent's address that already exists in the team gets a new name.
+- **Nothing changes about who pays.** Schedules and outside access keep their payer.
+- **Chats.** How many of your chats with a moving agent move along.
+
+If something changed while the dialog was open, the plan reloads with "Something changed; check again". Choose **Move to Operations** to apply it, all at once or not at all.
+
+### What moves along
+
+- **An agent** brings what it uses that you own: its sources, tools and prompt, the Knowledge folders it reads, and its workflow, with every other agent of yours on that workflow. From a Knowledge folder, only the sources and sub-folders come; agents, tools and prompts filed in it stay in Personal, unfiled.
+- **A folder** brings its sub-folders and everything you filed in it.
+- **Your chats** with a moving agent follow it into the team. Other people's chats with it stay in their Personal workspace, where only they can read them, so a move never puts someone's private chat in a team export. They can't continue those chats there; a new chat with the agent in the team works.
+- **Chats through the agent's API key, widget or webhook** go with it too, so callers can carry on with them.
+- **Items another team shares with the target team** stay on a moving agent: in the team, it uses them through that share. The plan lists them under **Kept through another team's share**.
+- Per-item shares and access settings on a moved item are removed, and saved secrets are sealed again for the team.
+
+### What can't move
+
+A team item can't depend on one person's account, device or permission, so these stay personal:
+
+| Item | Why | What happens |
+| --- | --- | --- |
+| A tool signed in with your account (a connected service, or an MCP server you sign in to) | Your connection is personal. An Admin can [connect an account for the team](#team-connections) instead | Taken off the moving agent |
+| A source synced from your connected service | The sync runs on your connection | Taken off the moving agent |
+| A personal custom model the team has no match for | The team runs only its own custom models. An Admin can [copy yours to the team](/Models/custom-models#copy-a-model-to-a-team) first | Taken off the moving agent |
+| A tool that runs on a paired device | It runs on your machine | Taken off the moving agent |
+| Someone else's item, such as a source shared with you | It isn't yours to move | Taken off the moving agent; it stays with its owner. An item another team shares with the target team stays on the agent |
+| A tool whose saved secret can't be read any more | It can't be sealed for the team | Enter the secret again, then move |
+
+A tool where each person signs in with their own account moves: in the team it keeps running on each person's own account. Moving out, a source or tool on an [account connected for the team](#team-connections) stays with the team.
+
+A custom model never moves, because yours may serve other agents. Moving in, the agent switches from your model to the [team's model](#team-custom-models) with the same base URL and model ID, whatever either is named; the plan lists it under **Switches to a matching custom model**. Without a match, the plan shows "A personal custom model the team doesn't have." with "To keep it, add it to the team on Custom models first." Moving out, a team model on the agent switches the same way to one of your own, or is taken off: "A team's custom model you don't have."
+
+### When a move is refused
+
+- **An agent people outside the team can reach would use what moves.** An API key, public link or webhook must not serve a team's item. Move that agent too, turn its outside access off, or take the items off it first. A personal agent of yours without outside access can keep using what moved, but can't be published while it does.
+- **Moving out, a team agent that stays still uses what moves.** A team agent can't use a personal item. Move that agent too, or take the items off it first.
+
+- **The team is locked.** Nothing moves out of a locked team, and an agent with outside access can't move into one.
+
+Moving out, only your own chats with the agent go back to Personal. Other members can still read their old chats with it, but can't continue them. Moving an item out also ends its shares with other teams, and whatever uses it there stops; the plan lists them under **Sharing with other teams ends**. A moving agent stops using the items other teams share with the team.
+
+## Sharing and where access comes from
+
+Menus say **Share**. What the dialog shows depends on where the item lives.
+
+**A team item** has no per-item people: access follows team membership. The dialog says "It belongs to Operations. Access follows team membership", with one row for everyone in the team and its member count, and your own role ("Admin in Operations · From the team"). Admins get **Manage members**. For an agent, **Outside the team** lists its public link, API key and widget, and webhook, each **Off**, or **On** with who pays for it. Those are changed on the agent's own page, by whoever the team's [setting for taking items outside](#taking-items-outside-the-team) allows. Under **Shared with other teams**, the dialog lists the teams the item is shared with and lets those who may take items outside share it with another team, or stop sharing; see [Share an item with another team](#share-an-item-with-another-team).
+
+**An item another team shares with yours** shows who shares it ("Operations shares it with everyone in Dev"). You can use it, but you can't change it or share it with anyone else.
+
+**A personal item** keeps per-item sharing with teams and people (see [Teams and sharing](/Using/teams-and-sharing#share-with-a-team-or-a-teammate)). Each row says where the access comes from: **Added by you**, **via Operations**, or **Shared, not owned by the team**. For each team you're an Editor or above in, the dialog asks **Should Operations own this?** and offers **Move to team…**.
+
+A team's page lists, under **Personal items shared**, the personal items members share with it. They belong to the people who shared them, not to the team, so they would leave with them. Ask the owner to move the ones the team depends on.
+
+## Taking items outside the team
+
+Outside means another team, or anyone who reaches a team agent without being in the team: through its API key and widget, public link, webhook, `/v1` or MCP. A team's shared chat links count as outside too. Viewers never take items outside, and tools on an account connected for the team never go outside at all; see [What can't leave the team](#what-cant-leave-the-team).
+
+### Who can take items outside
+
+On the team's **Settings** tab, **Who can take this team's items outside** has three options:
+
+| Option | Who can share the team's items with other teams, turn on an agent's API key, widget, public link or webhook, take over paying for it, and share a team chat as a link |
+| --- | --- |
+| **Admins and Owner** (the default) | Admins and the Owner |
+| **Editors too** | Editors, Admins and the Owner. Editors can then also publish the team's agents |
+| **No one (locked)** | Nobody, the Owner included |
+
+Admins and the Owner change the setting. Once the team is locked, only its Owner can unlock it; an instance admin can't, but can [transfer the team's ownership](/Deploying/Access-Control#managing-a-team). Each change asks you to confirm, says what pauses or comes back, and is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.outside_policy_changed`.
+
+Going back from **Editors too** to **Admins and Owner**, outside access an Editor pays for pauses until an Admin [takes it over](#take-over). Shares Editors made with other teams stay.
+
+### While a team is locked
+
+Locking pauses what is already outside. Nothing is deleted, and unlocking brings it all back as it was.
+
+- **Shares with other teams pause.** What uses a shared item in the other team runs without it, and a shared agent stops answering that team's members.
+- **The team's agents stop answering outside.** API key, widget, public link, webhook, `/v1` and MCP callers are told the agent is paused, and so are signed-in visitors on a public link. Members still chat with the agents in the app.
+- **The team's shared chat links stop opening**, and nobody can make new ones. The same goes for chat links other teams made with the team's agents.
+- **Nothing moves out.** Nobody can move items or folders out of the team, or export its agents. An agent with outside access can't move in.
+
+Admins can still publish a draft agent for the team's members; it gets no API key.
+
+<Callout type="warning">
+  Locking keeps a team's items from leaving through DocsGPT's own ways out. It isn't data-loss prevention: members still read what their role shows them, and can copy it.
+</Callout>
+
+### Share an item with another team
+
+An agent, a source, a tool or a prompt the team owns can be shared with another team you're also in, if the team's setting lets you take items outside. Open **Share** on the item, pick the team under **Shared with other teams**, and choose **Share**. The picker lists only your other teams, and before you share, the dialog says what the other team gets.
+
+The whole receiving team gets use, never more:
+
+| Item | Members of the receiving team can |
+| --- | --- |
+| Agent | Chat with it and pin it |
+| Source | Read every file in it, test it, and use it in their agents |
+| Tool | Use it in their agents and chats |
+| Prompt | Read it and use it in their agents |
+
+Their Editors can also use a shared source, tool or prompt in the receiving team's own agents and workflows. Nobody in the receiving team can change the item, file it in a folder, move it, export it or share it further. An agent that uses it can't get an API key, public link or webhook, and can't be shared with a third team.
+
+- **A shared tool runs on the owning team's stored account.** What the receiving team's members do with it is done as the owning team.
+- **A shared agent runs with the owning team's knowledge, tools and [custom models](#outside-the-team).** As with any agent, the owning team's Editors and up see each run in its **Logs** and **Insights**, the receiving members' questions included. The share dialog says so.
+- **A receiving member's chat lives in their own team.** They chat with a shared agent in the receiving team's workspace, not in Personal. Like any chat, it is private to them. It counts in the receiving team's [Usage](#usage), where the agent shows "From Operations", and they pay for it from their own allowance. The owning team's Usage doesn't show these chats, but the agent's own limit counts them. They can pin the agent, but not file it in a folder or schedule it.
+
+In the receiving team, the **Agents**, **Knowledge**, **Tools** and **Prompts** pages list shared items under **Shared with this team**, each naming the team it comes from, and the pickers name it too. A share belongs to the team: it stays if the person who made it leaves. Each one is recorded in the audit log as `team.item_shared_with_team`.
+
+### See and stop sharing
+
+On a team's page, the **Personal items shared** tab also has two lists:
+
+- **Shared outside the team**, which every member sees: the team's items shared with other teams, each with the team, who shared it and when, and whether it is paused while the team is locked. Under **Reachable from outside** are the team's agents with an API key, widget, public link or webhook; Editors and up can open each one.
+- **Shared from other teams**: other teams' items this team can use.
+
+To stop a share:
+
+- **In the owning team**, choose **Stop sharing** on the list or in the item's share dialog. Whoever may take the team's items outside can, and its Admins and Owner always can, even while it is locked. The confirm says what stops, for example "3 agents in Dev use it and will run without it."
+- **In the receiving team**, its Admins and Owner choose **Remove from this team**. The confirm names the agents that stop using it. Only the owning team can share it again.
+
+When a share stops, the receiving team's agents run without the item and show it as stopped, and a shared agent stops answering that team's members; their past chats stay readable. Sharing it again brings it back where it was used. A member who leaves the receiving team loses it at once. Each stop is recorded as `team.item_unshared_from_team`, with the side that stopped it.
+
+## When someone leaves a team
+
+- **Team items stay.** Items they added belong to the team and keep working. They lose access to them. If they're added again, they get it back.
+- **Their chats in the team** can no longer be opened by them, and nobody else can open them either. If they're added again, the chats come back.
+- **Their personal items stay theirs.** What they shared with the team pauses: nobody in the team reaches it while they're out. If they're added again, those shares work again. Before removing someone, the dialog lists the personal items they share with the team, so you can ask them to move the ones the team depends on first.
+- **Accounts they connected for the team pause**: their sources stop syncing and their tools stop running, until they're added back as an Admin or another Admin [reconnects](#pauses-and-reconnect) each one.
+- **Custom models they added for the team keep running** on the key they entered. If the key was their own, an Admin replaces it; see [When someone who added a model leaves](#when-someone-who-added-a-model-leaves).
+- **What they paid for on team agents pauses.** The schedules they set pause, and so does outside access they pay for. Nothing is deleted: it runs again if they're added back with the role, or once someone [takes it over](#take-over). See [What pauses, and when it resumes](#what-pauses-and-when-it-resumes).
+
+The same pause follows a role change: schedules a member set pause when they drop to Viewer, accounts they connected for the team pause when they drop below Admin, and outside access they pay for pauses when they drop below the role the team's [setting for taking items outside](#who-can-take-items-outside) asks for, Admin by default. When a removal or a demotion pauses anything, the team's Owner and Admins get one notification that names it, for example "Dana left Operations: 2 schedules and outside access on 1 agent are paused until someone takes over." Whoever made the change isn't notified, and the person who left isn't either. Its link opens the team's [Usage](#usage) tab, which lists everything paused.
+
+A team that still owns items, connections or custom models can't be deleted. Move its items to Personal or delete them, and remove its connections and custom models, first; the team's **Settings** names what is left.
+
+## What stays personal
+
+- **Your connections.** Accounts you connect in Personal, and the tools and synced sources on them, stay yours. A team uses the accounts an Admin [connects for the team](#team-connections), or each person's own.
+- **Your custom models.** Models you add in Personal stay yours: a team chat, agent or workflow never runs on them. A team uses the instance's models and the models an Admin [adds for the team](#team-custom-models).
+- **Paired devices.** A remote device runs on one person's machine.
+- **Access tokens.** A token acts as you; see [Over the API](#over-the-api).
+- **Your chats.** A chat belongs to the workspace you started it in and can use only that workspace's items. In a team, the composer says "Operations · Only you can see this chat". Other members, Admins included, can't open your chats. If the instance allows it, the team's Owner and Admins can [export the team's chats](#export-the-teams-chats) to a file, and the composer then names only the team. As with any agent, a team agent's **Logs** and **Insights**, which Editors and up see, record each run, the question included.
+
+A team chat can be shared only as a read-only link, and only by those the team's [setting for taking items outside](#who-can-take-items-outside) allows: Admins, or Editors too. While the team is locked, nobody can, and its existing chat links stop opening. **Delete all chats** in **Settings → General** deletes your chats in the current workspace only.
+
+## Who pays
+
+Whoever starts a run pays for it, from their own allowance: the [usage quota](/Deploying/Usage-Quotas) an instance admin sets for each person. A team has no budget of its own, and where an agent lives or who owns it never decides who pays. Moving an agent doesn't change it either.
+
+| Run | Who pays |
+| --- | --- |
+| A chat, with or without an agent, in Personal or in a team, including a signed-in visitor chatting through an agent's public link | The person chatting |
+| A schedule's runs | The person who set the schedule |
+| An agent's API key and widget, webhook, `/v1` and MCP traffic, and public-link visitors who aren't signed in | On a team agent, the person who turned its outside access on, or who took it over. On a personal agent, its owner |
+| A background continuation, a retry, a chat's title, a workflow step | Whoever pays for the run it belongs to |
+
+An agent's own limit (tokens or requests per 24 hours) applies on top, whoever pays. One run has one payer, fixed when it starts, and the limits are checked again before each of its model calls; see [Usage Quotas](/Deploying/Usage-Quotas#windows-and-enforcement).
+
+A chat never names its payer, because it is always the person chatting. A schedule says who pays for it: "Paid by Dana", or "Paid by you". On a team agent, the share dialog and the agent's Access Details name who pays for its outside access to the team's Owner and Admins; other members see only what is on.
+
+### What pauses, and when it resumes
+
+A schedule, or a team agent's outside access, pauses when its payer can't pay. Nothing is deleted and nothing needs to be switched back on: it runs again by itself once the reason clears. The item shows why it is paused, for example "Dana is out of allowance until 1 Dec."
+
+| Reason | Clears when |
+| --- | --- |
+| The payer is out of allowance | The allowance resets, an instance admin raises it, or someone takes it over |
+| The team is locked (outside access only) | The team's Owner unlocks it |
+| The payer left the team, or lost the role it needs: Editor for a schedule; for outside access, the role the team's setting asks for (Admin by default) | They're added back with that role, the setting changes, or someone takes it over |
+| Nobody pays for it | Someone takes it over |
+| The account it runs on is deactivated | The account is reactivated. On a team agent, someone can also take it over |
+
+While outside access is paused, the agent's API key, widget, public link, webhook, `/v1` and MCP callers are told only "This agent is paused, so it can't answer right now.", never whose account it is or why. Members still chat with the agent in the app, each on their own allowance. When the pause is only the payer's allowance, signed-in visitors on the public link keep chatting too, on their own allowance; for the other reasons the link pauses for them as well. A paused schedule skips its runs; see [Paid by and paused schedules](/Agents/schedules#paid-by-and-paused-schedules).
+
+A team source's scheduled sync runs for the person who added the source while they are an Editor or above in the team. Otherwise its scheduled syncs are skipped and the source shows its sync as paused. A paused sync can't be taken over; an Editor can still sync the source by hand. A source synced from an account connected for the team follows that account instead: see [Pauses and Reconnect](#pauses-and-reconnect).
+
+### Take over
+
+**Take over** makes you the payer of a schedule or of an agent's outside access, by your own click. Nobody becomes a payer any other way.
+
+| What | Who can take it over |
+| --- | --- |
+| A schedule on a team agent | Editors and up |
+| A team agent's outside access | Whoever the team's [setting](#who-can-take-items-outside) lets take items outside: Admins and the Owner, or Editors too. Nobody while the team is locked |
+| Anything on a personal agent | Nobody: its owner pays for its outside access, and a schedule stays with the person it is stored under |
+
+Take over is offered on any running or paused schedule and on any agent with outside access on, not only on paused ones, unless you already pay for it. It asks you to confirm once:
+
+- You pay for it from then on. What it used so far stays with the earlier payer, and a run already going finishes on their allowance.
+- The agent's own limit still applies.
+- A schedule you take over starts its failure count again, and is no longer linked to the chat it was set from: that chat stays private to the person who had it.
+
+Take over isn't available with a [personal access token](/API/personal-access-tokens); sign in to the app. Each one is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.schedule_taken_over` or `team.outside_access_taken_over`, with who paid before and who pays now.
+
+## Usage
+
+The team's Owner and Admins have a **Usage** tab on the team's page. It reports what was used in the team workspace:
+
+- **This period or the previous one.** A period is the instance's quota window ([`QUOTA_PERIOD`](/Deploying/Settings-Reference#quotas): a day, a week or a month, in UTC).
+- **Chats and runs without a person.** Chats count what members ran themselves, plain chats without an agent included. Runs without a person are schedules, an agent's outside traffic and other background work.
+- **By person**, with each person's role. People who have left the team stay listed with what they used.
+- **By agent**, with its requests, how many people used it, whether its own limit is on, and who pays for its outside access. An agent moved out of the team since shows as "Moved out", with what it used here and nothing about where it is now.
+- **What is paused**: every schedule, outside access and scheduled source sync in the team that is paused for its payer, and every paused [team account](#pauses-and-reconnect), with the reason and who paid. Each schedule or outside access links to the agent's page, where the right role can [take it over](#take-over); a team account opens on **Connectors**.
+
+Amounts are in dollars where the models have a price, and in tokens otherwise. Only use in this workspace counts: a member's Personal use never shows here, and an agent's use stays in the report after it is moved out. Use recorded before this release isn't in it.
+
+The Usage tab is a report, not a limit. Nothing in it can be capped or edited: each person's allowance stays their own, set by an instance admin under [Usage Quotas](/Deploying/Usage-Quotas).
+
+## Export the team's chats
+
+Team chats are private to the person who started them. An operator can let a team's Owner and Admins export them all, by setting `TEAM_CHAT_EXPORT_ENABLED=true` (off by default). There is no screen for browsing other people's chats: only one file.
+
+With the setting on:
+
+- The team's **Settings** tab has an export row for its Owner and Admins. It downloads one NDJSON file, `docsgpt-<team>-chats-<date>.ndjson`, with every chat started in that team workspace, including chats of people who have since left and chats through the team's agents from outside (API key, widget, public link).
+- Each chat keeps its name, who started it, its agent, and each message's prompt and answer, time, model, source titles, tool names, attachment file names and feedback.
+- The file never holds personal chats, other teams' chats, tool arguments or results, reasoning, or attachment contents.
+- The line under the composer names only the team, without "Only you can see this chat".
+- Each export is recorded in the [audit log](/Deploying/Access-Control#audit-log) as `team.chats_exported`, with how many chats and people it covered.
+
+## Over the API
+
+Requests work in Personal unless they name a team. Send the `X-DocsGPT-Workspace` header with a team id, or `personal`. Where a client can't set headers, send the `workspace` query parameter instead. Only lists, creates and new chats read it; a request about one item goes by that item's own workspace. `GET /api/workspaces` lists your workspaces and your role in each. See [Work in a team workspace](/API#work-in-a-team-workspace).
+
+## Related
+
+- [Teams and sharing](/Using/teams-and-sharing): create a team, add members, and share personal items.
+- [Access Control & Teams](/Deploying/Access-Control#teams): the team API, sharing rules and audit events.
+- [Personal access tokens](/API/personal-access-tokens): tokens and team workspaces.

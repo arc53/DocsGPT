@@ -201,7 +201,11 @@
         "empty_output": "no produjo nada",
         "internal": "un error interno",
         "missed": "se perdió su hora",
+        "no_payer": "en pausa: nadie lo paga",
         "overlap": "la ejecución anterior seguía en curso",
+        "owner_inactive": "en pausa: la cuenta del propietario está desactivada",
+        "payer_left": "en pausa: quien lo paga dejó el equipo o perdió el rol",
+        "payer_out_of_allowance": "quien lo paga había agotado su asignación",
         "stream_error": "se cortó la respuesta",
         "timeout": "se agotó el tiempo",
         "tool_not_allowed": "una herramienta no estaba permitida"
@@ -320,31 +324,11 @@
     "exportAgentFailed": "No se pudo exportar el agente",
     "filters": {
       "all": "Todos",
-      "byDocsGPT": "Por DocsGPT",
       "byMe": "Por mí",
-      "shared": "Compartidos conmigo",
-      "team": "Equipo"
+      "shared": "Compartidos conmigo"
     },
     "folders": {
-      "backToRoot": "Volver",
-      "createFolder": "Crear carpeta",
-      "currentFolder": "Esta carpeta",
-      "delete": "Eliminar",
-      "deleteConfirm": "¿Eliminar \"{{name}}\"?",
-      "deleteConsequence": "Los agentes que contiene salen de la carpeta; no se eliminan.",
-      "empty": "Esta carpeta está vacía",
-      "folderName": "Nombre de la carpeta",
-      "menuAriaLabel": "Acciones para {{folderName}}",
-      "move": "Mover",
-      "moveTitle": "Mover «{{name}}» a",
-      "moveTo": "Mover",
-      "moveToFolder": "Mover a carpeta",
-      "newFolder": "Nueva carpeta",
-      "noFolder": "Sin carpeta (raíz)",
-      "noFolders": "No hay carpetas todavía",
-      "noSubfolders": "Sin subcarpetas",
-      "openFolder": "Abrir carpeta",
-      "rename": "Renombrar"
+      "emptyHint": "Crea un agente aquí o mueve uno desde su menú ⋯."
     },
     "form": {
       "advanced": {
@@ -489,7 +473,8 @@
       "errors": {
         "publishFailed": "No se pudo publicar el agente. Inténtalo de nuevo.",
         "saveDraftFailed": "No se pudo guardar el borrador. Inténtalo de nuevo.",
-        "staleWrite": "Otra persona guardó este agente después de que lo abrieras. Tus cambios siguen aquí: copia lo que necesites, recarga la página y vuelve a aplicarlos."
+        "staleWrite": "Otra persona guardó este agente después de que lo abrieras. Tus cambios siguen aquí: copia lo que necesites, recarga la página y vuelve a aplicarlos.",
+        "teamConnectionAdded": "No se puede añadir {{tools}}: este agente llega a personas fuera del equipo (una clave de API, un enlace público, un webhook u otro equipo), y las herramientas en una cuenta conectada para el equipo solo funcionan para sus miembros, en la app."
       },
       "externalKb": "KB Externa",
       "guardrails": {
@@ -593,6 +578,14 @@
         "savedVersion": "versión guardada",
         "unsavedChanges": "Tienes cambios sin guardar. La vista previa usa la versión guardada hasta que guardes."
       },
+      "refusedModels": {
+        "line": "Este agente no puede usar {{names}}.",
+        "remove": "Quitar del agente",
+        "separator": ", ",
+        "unlisted_many": "{{count}} modelos que no se ofrecen aquí",
+        "unlisted_one": "{{count}} modelo que no se ofrece aquí",
+        "unlisted_other": "{{count}} modelos que no se ofrecen aquí"
+      },
       "resourceStates": {
         "ask": {
           "admin": "Pide a un administrador que lo vuelva a activar.",
@@ -608,6 +601,8 @@
         "reason": {
           "connectionNeedsReconnect": "{{name}} necesita que su cuenta de {{service}} vuelva a iniciar sesión.",
           "connectionNeedsReconnectNoService": "{{name}} necesita volver a iniciar sesión.",
+          "connectionPaused": "{{name}} usa la cuenta de {{service}} del equipo, que está en pausa. Un administrador del equipo puede reconectarla en la página Conectores.",
+          "connectionPausedNoService": "{{name}} usa una cuenta del equipo que está en pausa. Un administrador del equipo puede reconectarla en la página Conectores.",
           "connectionRemoved": "Se eliminó la cuenta de {{service}} que usaba {{name}}.",
           "connectionRemovedNoService": "Se eliminó la cuenta que usaba {{name}}.",
           "connectorDisabled": "Un administrador desactivó {{service}}, así que {{name}} no puede ejecutarse.",
@@ -620,6 +615,8 @@
           "sponsorCannotEditItem": "{{name}} se ejecutaba con el acceso de {{person}}, que ya no puede editarlo.",
           "sponsorCannotEditItemOther": "{{name}} se ejecutaba con el acceso de otra persona, que ya no puede editarlo.",
           "sponsorCannotEditItemYou": "{{name}} se ejecutaba con tu acceso, y ya no puedes editarlo.",
+          "teamLocked": "{{name}} pertenece a otro equipo, que está bloqueado, así que no se puede usar aquí hasta que ese equipo lo desbloquee.",
+          "teamShareEnded": "{{name}} pertenece a otro equipo, que ya no lo comparte aquí. Pide a ese equipo que lo vuelva a compartir.",
           "unknown": "{{name}} no se está ejecutando."
         },
         "reconnectLabel": "Reconectar {{name}}",
@@ -663,6 +660,9 @@
         "description_many": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
         "description_one": "El propietario del agente no puede usarlo. Si lo añades, se ejecuta con tu acceso para todos los que usen este agente.",
         "description_other": "El propietario del agente no puede usarlos. Si los añades, se ejecutan con tu acceso para todos los que usen este agente.",
+        "folderLive_many": "Las fuentes que guardes más adelante en estas carpetas también se ejecutan con tu acceso.",
+        "folderLive_one": "Las fuentes que guardes más adelante en esta carpeta también se ejecutan con tu acceso.",
+        "folderLive_other": "Las fuentes que guardes más adelante en estas carpetas también se ejecutan con tu acceso.",
         "stopNote_many": "Dejan de ejecutarse si pierdes el acceso de edición.",
         "stopNote_one": "Deja de ejecutarse si pierdes el acceso de edición.",
         "stopNote_other": "Dejan de ejecutarse si pierdes el acceso de edición.",
@@ -672,6 +672,7 @@
         "takeOverDescription_other": "El propietario del agente no puede usarlos. Se ejecutarán con tu acceso para todos los que usen este agente.",
         "title": "¿Ejecutar con tu acceso?",
         "types": {
+          "folder": "Carpeta",
           "prompt": "Prompt",
           "source": "Fuente",
           "tool": "Herramienta"
@@ -740,7 +741,7 @@
       "noUsageHistory": "Sin historial de uso",
       "title": "Registros del Agente"
     },
-    "newAgent": "Nuevo Agente",
+    "newAgent": "Nuevo agente",
     "noSearchResults": "No se encontraron agentes",
     "pageHeader": {
       "crumbs": {
@@ -900,6 +901,7 @@
         "openConversation": "Abrir conversación",
         "output": "Salida",
         "scheduledFor": "Programada para",
+        "skippedWithType": "Omitida ({{type}})",
         "started": "Iniciada",
         "status": "Estado",
         "title": "Detalles de la ejecución",
@@ -913,6 +915,7 @@
         "duration": "Duración",
         "empty": "Aún no hay ejecuciones registradas para esta programación.",
         "loadFailed": "No se pudieron cargar las ejecuciones.",
+        "pausedStreak": "Las ejecuciones posteriores se omitieron por el mismo motivo, hasta la siguiente fila.",
         "when": "Cuándo"
       },
       "runNow": "Ejecutar ahora",
@@ -964,15 +967,18 @@
         "emptyState": "No se encontraron agentes compartidos.",
         "title": "Compartidos conmigo"
       },
-      "team": {
-        "description": "Agentes que tus compañeros de equipo compartieron contigo",
-        "emptyState": "Aún no se han compartido agentes con tu equipo.",
-        "title": "Equipo"
+      "sharedWithYou": {
+        "description": "Agentes que otras personas compartieron contigo",
+        "emptyState": "Nadie ha compartido aún un agente contigo."
       },
-      "template": {
-        "description": "Agentes proporcionados por DocsGPT",
-        "emptyState": "No se encontraron agentes de plantilla.",
-        "title": "Por DocsGPT"
+      "team": {
+        "description": "Agentes del equipo. Todos sus miembros pueden usarlos.",
+        "emptyState": "Este equipo aún no tiene agentes.",
+        "title": "Agentes"
+      },
+      "teamShared": {
+        "description": "Agentes que otros equipos compartieron con este equipo. Todos sus miembros pueden chatear con ellos.",
+        "emptyState": "Ningún otro equipo ha compartido aún un agente con este equipo."
       },
       "user": {
         "description": "Agentes creados o publicados por ti",
@@ -980,7 +986,7 @@
         "title": "Por mí"
       }
     },
-    "shareWithTeam": "Compartir con el equipo",
+    "shareWithTeam": "Compartir",
     "shared": {
       "connectedTools": "Herramientas conectadas",
       "loadError": "No se pudo cargar este agente.",
@@ -996,9 +1002,16 @@
     "title": "Agentes",
     "tryDifferentSearch": "Prueba con un término de búsqueda diferente",
     "typeModal": {
+      "blankAgent": "Agente en blanco",
+      "blankWorkflow": "Flujo en blanco",
       "classicDescription": "Crea un agente de IA estándar con un solo modelo, herramientas y fuentes de conocimiento",
       "classicTitle": "Agente clásico",
+      "describeLabel": "Describe el agente",
+      "describePlaceholder": "Un agente en nuestro sitio web que responde preguntas sobre envíos",
       "description": "Elige el tipo de agente que quieres crear",
+      "draftDescription": "Di para qué es y DocsGPT lo construye contigo, paso a paso.",
+      "newTitle": "Nuevo agente",
+      "templatesLabel": "O empieza con una plantilla",
       "title": "Crear un agente nuevo",
       "workflowDescription": "Diseña flujos de trabajo complejos de varios pasos con distintos modelos, lógica condicional y gestión de estado",
       "workflowTitle": "Agente de flujo de trabajo"
@@ -1352,6 +1365,7 @@
         "monitor": "El monitor detectó un cambio",
         "monitor_expired": "Monitor caducado",
         "monitor_paused": "Monitor en pausa",
+        "payer_left": "En pausa hasta que alguien lo asuma",
         "schedule": "Tarea programada terminada",
         "schedule_failed": "Tarea programada fallida",
         "schedule_paused": "Tarea programada en pausa",
@@ -1452,6 +1466,10 @@
     "share": "Compartir"
   },
   "conversation": {
+    "agentLimit": {
+      "requests": "Este agente ha alcanzado su límite: {{used}} de {{limit}} solicitudes en las últimas {{hours}} horas. Inténtalo de nuevo más tarde.",
+      "tokens": "Este agente ha alcanzado su límite: {{used}} de {{limit}} tokens en las últimas {{hours}} horas. Inténtalo de nuevo más tarde."
+    },
     "answer": "Respuesta",
     "artifacts": {
       "backToList": "Volver a los archivos",
@@ -1572,6 +1590,7 @@
     },
     "quotaExceeded": {
       "cost": "Has usado {{used}} de tu presupuesto de uso de {{limit}}. Se restablece el {{resetsAt}}.",
+      "reached": "Has alcanzado tu asignación de uso, así que esta respuesta se detuvo.",
       "tokens": "Has usado {{used}} de tu cuota de {{limit}} tokens. Se restablece el {{resetsAt}}."
     },
     "reasoning": "Razonamiento",
@@ -1689,6 +1708,7 @@
     },
     "toolApproval": {
       "approve": "Aprobar",
+      "approveAll": "Aprobar todo ({{formatted}})",
       "approveAlways": "Aprobar y no volver a preguntar",
       "connect": "Conectar {{name}}",
       "connectTitle": "Esta herramienta necesita tu cuenta de {{name}}.",
@@ -1707,9 +1727,13 @@
       "skip": "Omitir",
       "state": {
         "approval": "Requiere aprobación",
+        "approved": "Aprobado",
+        "denied": "Denegado",
         "notConnected": "No conectado"
       },
-      "title": "{{name}} · {{action}}"
+      "title": "{{name}} · {{action}}",
+      "undo": "Deshacer",
+      "waitingForOthers": "Se enviará cuando se decidan las demás solicitudes de esta respuesta."
     },
     "toolChip": {
       "accessingMemory": "Memoria consultada",
@@ -1829,7 +1853,7 @@
         "finish": "Terminar",
         "folded": "{{step}}: {{result}}",
         "goTo": "Ir a {{field}}",
-        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige un punto de partida o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
+        "intro": "Construyamos este agente juntos, parte por parte: lo básico, el conocimiento, el prompt y las preguntas de inicio, y después los límites y la seguridad.\n\nElige una plantilla o cuéntame qué debe hacer y quién lo usará. Cuanto más me digas, menos preguntas te haré.",
         "missing": {
           "agentType": "un tipo de agente",
           "contextLimit": "un límite de contexto válido",
@@ -1884,6 +1908,7 @@
         "other_step": "un cambio para otro paso"
       },
       "fields": {
+        "folders": "Carpetas de conocimiento",
         "limits": "Límite de uso"
       },
       "formEdited": "Cambiaste {{fields}} en el formulario.",
@@ -1960,6 +1985,9 @@
       "agents_many": "{{count}} agentes",
       "agents_one": "{{count}} agente",
       "agents_other": "{{count}} agentes",
+      "folders_many": "{{count}} carpetas",
+      "folders_one": "{{count}} carpeta",
+      "folders_other": "{{count}} carpetas",
       "models_many": "{{count}} modelos",
       "models_one": "{{count}} modelo",
       "models_other": "{{count}} modelos",
@@ -2132,15 +2160,54 @@
     "startOver": "Empezar de nuevo",
     "starters": {
       "helpdesk": {
+        "ask": {
+          "areas": {
+            "options": {
+              "hr": "Recursos humanos",
+              "it": "TI",
+              "office": "Oficina e instalaciones",
+              "policies": "Políticas de la empresa"
+            },
+            "text": "¿Qué áreas cubre?"
+          }
+        },
         "description": "Preguntas de RR. HH., TI y políticas de tu equipo",
+        "short": "Mesa de ayuda interna",
         "title": "Mesa de ayuda interna"
       },
       "research": {
+        "ask": {
+          "documents": {
+            "options": {
+              "cases": "Expedientes",
+              "contracts": "Contratos",
+              "papers": "Artículos",
+              "reports": "Informes"
+            },
+            "text": "¿Qué documentos son?"
+          },
+          "users": {
+            "options": {
+              "clients": "Clientes",
+              "me": "Solo yo",
+              "team": "Mi equipo"
+            },
+            "text": "¿Quién lo usa?"
+          }
+        },
         "description": "Busca en tus documentos y los cita",
+        "short": "Asistente de investigación",
         "title": "Asistente de investigación"
       },
       "website": {
+        "ask": {
+          "company": {
+            "placeholder": "Acme Freight",
+            "text": "¿Cómo se llama la empresa o el producto?"
+          }
+        },
         "description": "Responde a visitantes y deriva si no está seguro",
+        "short": "Chat web",
         "title": "Chat web para clientes"
       }
     },
@@ -2154,6 +2221,24 @@
     "stop": "Detener",
     "stoppedDescription": "Detuviste este turno. El formulario no ha cambiado.",
     "suggestionsLabel": "Formas de empezar",
+    "templates": {
+      "browse": "Ver todas las plantillas",
+      "categories": {
+        "all": "Todas",
+        "customerSupport": "Atención al cliente",
+        "internal": "Interno",
+        "research": "Investigación"
+      },
+      "categoriesLabel": "Categorías de plantillas",
+      "description_many": "{{formatted}} de plantillas. Elige una y DocsGPT la construye contigo.",
+      "description_one": "{{formatted}} plantilla. Elige una y DocsGPT la construye contigo.",
+      "description_other": "{{formatted}} plantillas. Elige una y DocsGPT la construye contigo.",
+      "empty": "Ninguna plantilla coincide",
+      "search": "Buscar plantillas",
+      "showAll": "Todas las plantillas",
+      "showMore": "Mostrar más",
+      "title": "Plantillas"
+    },
     "title": "Redactar con DocsGPT",
     "topics": {
       "add_many": "Añadir {{formatted}} temas",
@@ -2234,6 +2319,110 @@
     "spaces": "Espacios",
     "updated": "Actualizado el {{date}}"
   },
+  "folders": {
+    "and": "{{first}} y {{second}}",
+    "counts": {
+      "agent_many": "{{formatted}} agentes",
+      "agent_one": "{{formatted}} agente",
+      "agent_other": "{{formatted}} agentes",
+      "also": "además {{list}}",
+      "empty": "Vacía",
+      "folder_many": "{{formatted}} carpetas",
+      "folder_one": "{{formatted}} carpeta",
+      "folder_other": "{{formatted}} carpetas",
+      "prompt_many": "{{formatted}} prompts",
+      "prompt_one": "{{formatted}} prompt",
+      "prompt_other": "{{formatted}} prompts",
+      "source_many": "{{formatted}} fuentes",
+      "source_one": "{{formatted}} fuente",
+      "source_other": "{{formatted}} fuentes",
+      "tool_many": "{{formatted}} herramientas",
+      "tool_one": "{{formatted}} herramienta",
+      "tool_other": "{{formatted}} herramientas"
+    },
+    "create": "Crear",
+    "current": "Actual",
+    "delete": "Eliminar",
+    "deleteConfirm": "¿Eliminar \"{{name}}\"?",
+    "deleteEmpty": "La carpeta está vacía. No se elimina nada más.",
+    "deleteFolder": "Eliminar carpeta",
+    "deleteMoves_many": "Su contenido ({{what}}) pasa a {{parent}}. No se elimina nada.",
+    "deleteMoves_one": "Su contenido ({{what}}) pasa a {{parent}}. No se elimina nada.",
+    "deleteMoves_other": "Su contenido ({{what}}) pasa a {{parent}}. No se elimina nada.",
+    "deletedRenamed_many": "Carpeta eliminada. Se cambió el nombre de {{formatted}} carpetas para que los nombres no se repitan: {{list}}.",
+    "deletedRenamed_one": "Carpeta eliminada. Se cambió el nombre de {{formatted}} carpeta para que los nombres no se repitan: {{list}}.",
+    "deletedRenamed_other": "Carpeta eliminada. Se cambió el nombre de {{formatted}} carpetas para que los nombres no se repitan: {{list}}.",
+    "depthLimit": "Las carpetas admiten hasta 3 niveles",
+    "emptyTitle": "Esta carpeta está vacía",
+    "errors": {
+      "cantFile": "No puedes archivar este elemento.",
+      "cycle": "Una carpeta no puede moverse dentro de sí misma ni de una de sus subcarpetas.",
+      "deleteFailed": "No se pudo eliminar la carpeta. Inténtalo de nuevo.",
+      "invalidName": "Usa entre 1 y 80 caracteres, sin saltos de línea.",
+      "itemNotInTeam": "Las carpetas de un equipo solo contienen elementos del equipo. Mueve primero el elemento al equipo.",
+      "loadFailed": "No se pudieron cargar tus carpetas.",
+      "moveFailed": "No se pudo mover. Inténtalo de nuevo.",
+      "nameTaken": "Ya existe una carpeta con este nombre.",
+      "notFound": "Esta carpeta ya no existe.",
+      "openFailed": "Esa carpeta ya no existe.",
+      "saveFailed": "No se pudo guardar la carpeta. Inténtalo de nuevo.",
+      "teamItemNotFileable": "Los elementos de un equipo no pueden ir en una carpeta personal.",
+      "tooDeep": "Las carpetas admiten hasta 3 niveles."
+    },
+    "inParent": "En {{name}}",
+    "listSeparator": ", ",
+    "menuLabel": "Acciones para {{name}}",
+    "move": "Mover",
+    "moveTitle": "Mover \"{{name}}\"",
+    "moveToFolder": "Mover a carpeta",
+    "name": "Nombre de la carpeta",
+    "newFolder": "Nueva carpeta",
+    "noFolder": "sin carpeta",
+    "noMatches": "Ninguna carpeta coincide",
+    "noSubfolders": "No hay carpetas dentro",
+    "openFolder": "Abrir {{name}}",
+    "picker": {
+      "allOf": "Todo {{name}}",
+      "back": "Atrás",
+      "deletedFolder": "Carpeta eliminada",
+      "deletedLine": "Ya no existe. Quítala.",
+      "deleted_many": "Se eliminaron {{formatted}} carpetas seleccionadas. Quítalas de la lista.",
+      "deleted_one": "Se eliminó una carpeta seleccionada. Quítala de la lista.",
+      "deleted_other": "Se eliminaron {{formatted}} carpetas seleccionadas. Quítalas de la lista.",
+      "hintMany_many": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintMany_one": "{{names}} son carpetas: hoy {{formatted}} fuente, y las que se añadan después.",
+      "hintMany_other": "{{names}} son carpetas: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintOne_many": "{{name}} es una carpeta: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "hintOne_one": "{{name}} es una carpeta: hoy {{formatted}} fuente, y las que se añadan después.",
+      "hintOne_other": "{{name}} es una carpeta: hoy {{formatted}} fuentes, y las que se añadan después.",
+      "inFolder": "En esta carpeta",
+      "includedWith": "Incluida con {{name}}",
+      "live": "{{what}} · incluye fuentes nuevas",
+      "ownersFolder": "Carpeta de {{person}}",
+      "partial": "{{picked}} de {{total}} elegidas",
+      "stopped": "{{name}} se detuvo: es la carpeta de {{person}}, que ya no puede editar este agente.",
+      "stoppedOther": "{{name}} se detuvo: su propietario ya no puede editar este agente.",
+      "stoppedShort": "Detenida"
+    },
+    "rename": "Renombrar",
+    "renameTitle": "Renombrar carpeta",
+    "root": {
+      "agent": "Mis agentes",
+      "prompt": "Prompts",
+      "source": "Conocimiento",
+      "teamAgent": "Agentes",
+      "tool": "Herramientas"
+    },
+    "searchFolders": "Buscar carpetas…",
+    "searchIn": "Buscar en {{name}}…",
+    "tooDeep": "Demasiado profunda",
+    "usedByWarningNoNames_many": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes.",
+    "usedByWarningNoNames_one": "{{formatted}} agente usa esta carpeta y perderá sus fuentes.",
+    "usedByWarningNoNames_other": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes.",
+    "usedByWarning_many": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes: {{names}}.",
+    "usedByWarning_one": "{{formatted}} agente usa esta carpeta y perderá sus fuentes: {{names}}.",
+    "usedByWarning_other": "{{formatted}} agentes usan esta carpeta y perderán sus fuentes: {{names}}."
+  },
   "help": "Asistencia",
   "hero": {
     "suggestions": {
@@ -2305,6 +2494,8 @@
       "resetKey": "Restablecer clave",
       "resetKeyConfirm": "¿Restablecer la clave de API de \"{{name}}\"?",
       "resetKeyConsequence": "La clave actual deja de funcionar de inmediato, así que todo lo que la use debe actualizarse. No se puede deshacer.",
+      "teamLocked": "{{team}} está bloqueado, así que este agente no puede tener enlace público, clave de API ni webhook. Solo el propietario del equipo puede desbloquearlo.",
+      "teamLockedNoTeam": "Este equipo está bloqueado, así que este agente no puede tener enlace público, clave de API ni webhook. Solo el propietario del equipo puede desbloquearlo.",
       "test": "Probar",
       "title": "Detalles de acceso",
       "webhookUrl": "URL del webhook"
@@ -2334,16 +2525,9 @@
       "type": "Tipo"
     },
     "createAPIKey": {
-      "apiKeyName": "Nombre de la Clave de API",
-      "chunks": "Fragmentos procesados por consulta",
-      "create": "Crear",
-      "label": "Crear Nueva Clave de API",
-      "prompt": "Selecciona el prompt activo",
       "sourceDoc": "Documento Fuente"
     },
     "deleteConv": {
-      "confirm": "¿Eliminar todas las conversaciones?",
-      "consequence": "Se eliminan todas las conversaciones de tu cuenta, con sus mensajes. No se puede deshacer.",
       "delete": "Eliminar"
     },
     "importAgent": {
@@ -2352,15 +2536,21 @@
       "continueToAgent": "Continuar al agente",
       "description": "Sube un archivo YAML de agente. Las fuentes y herramientas se asocian con tu cuenta; lo que falte se puede asignar o crear en el siguiente paso. Un agente nuevo se importa como borrador; al volver a importarlo se actualiza el agente correspondiente y se mantiene su estado actual.",
       "dropzoneText": "Haz clic para subir o arrastra y suelta un archivo .yaml",
+      "folderFor": "Carpeta que usar para {{name}}",
+      "folderMatched": "{{name}}: se usa tu carpeta",
+      "folderMissing": "{{name}}: no tienes ninguna carpeta con este nombre",
       "import": "Importar",
       "importError": "No se pudo importar",
       "invalidFileType": "Solo se admiten archivos .yaml o .yml",
       "leaveUnattached": "Dejar sin vincular",
       "modelCustom": "{{name}}: modelo personalizado",
+      "modelLeftOff": "{{name}}: aún no es un modelo del equipo, se omitirá",
       "models": "Modelos",
+      "planWarningsTitle": "Revisa antes de importar:",
       "readError": "No se pudo leer este archivo de agente",
       "review": "Revisar",
       "secretPlaceholder": "{{field}} (déjalo en blanco para omitir esta herramienta)",
+      "sourceFor": "Fuente que usar para {{name}}",
       "sourceMatched": "{{name}}: se usa tu fuente existente",
       "sourceMissing": "{{name}}: no se encontró",
       "sources": "Fuentes",
@@ -2432,12 +2622,8 @@
       "viewDescription": "Los prompts integrados no se pueden editar. Duplícalo para crear tu propia copia editable."
     },
     "saveKey": {
-      "apiKeyLabel": "Clave de API",
-      "confirm": "He guardado la Clave",
       "copied": "Copiado",
-      "copy": "Copiar",
-      "disclaimer": "Esta es la única vez que se mostrará tu clave.",
-      "note": "Por favor, guarda tu Clave"
+      "copy": "Copiar"
     },
     "searchConversations": {
       "noResults": "No se encontraron resultados",
@@ -2450,7 +2636,6 @@
       "option": "Permitir a los usuarios realizar más consultas"
     },
     "uploadDoc": {
-      "cancel": "Cancelar",
       "choose": "Seleccionar Archivos",
       "connectors": {
         "auth": {
@@ -2515,9 +2700,7 @@
         }
       },
       "label": "Añadir conocimiento",
-      "link": "Enlace",
       "name": "Nombre",
-      "noFilesSelected": "No hay archivos seleccionados",
       "progress": {
         "clear": "Limpiar",
         "collapseDetails": "Contraer detalles de subida",
@@ -2528,11 +2711,10 @@
         "failed": "Error al subir",
         "ingestionFailed": "La ingesta falló.",
         "parsing": "Analizando archivos...",
-        "partialDownload_many": "No se pudieron descargar {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
-        "partialDownload_one": "No se pudo descargar {{count}} elemento, así que se omitió. Sincroniza la fuente para volver a intentarlo.",
-        "partialDownload_other": "No se pudieron descargar {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_many": "No se pudieron leer {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_one": "No se pudo leer {{count}} elemento, así que se omitió. Sincroniza la fuente para volver a intentarlo.",
+        "partialDownload_other": "No se pudieron leer {{count}} elementos, así que se omitieron. Sincroniza la fuente para volver a intentarlo.",
         "preparing": "Preparando subida",
-        "tokenLimit": "Excede el límite de tokens, considere cargar un documento más pequeño",
         "tooManyFiles": "Esta fuente tiene más de {{limit}} archivos, el máximo que admite una fuente. Elige una carpeta, ruta o selección más pequeña.",
         "tooManyTokens": "Esta fuente tiene más de {{limit}} tokens de texto, el máximo que admite una fuente. Divídela en fuentes más pequeñas.",
         "training": "Subida en progreso",
@@ -2540,18 +2722,13 @@
         "uploadProgress": "Progreso de subida {{progress}}%",
         "wait": "Esto puede tardar varios minutos"
       },
-      "remote": "Recoger desde un sitio web",
       "removeFile": "Quitar {{name}}",
       "repoUrl": "URL del Repositorio",
       "select": "Elige cómo cargar tu documento en DocsGPT",
       "selectFolder": "O elige una carpeta entera",
       "selectSource": "Añadir conocimiento",
       "selectedFiles": "Archivos Seleccionados",
-      "start": "Comenzar a chatear",
       "train": "Añadir al conocimiento",
-      "uploadedFiles": "Archivos Subidos",
-      "urlLink": "Enlace URL",
-      "wait": "Por favor espera ...",
       "website": {
         "addAnotherPage": "Añadir otra página",
         "discovery": {
@@ -2735,6 +2912,207 @@
     "previousPage": "Página anterior",
     "range": "{{from}}–{{to}} de {{total}}"
   },
+  "payer": {
+    "access": {
+      "notice": "El acceso externo está en pausa. {{reason}}",
+      "noticeUnknown": "El acceso externo está en pausa.",
+      "paused": "En pausa",
+      "pausedBecause": "En pausa · {{reason}}",
+      "takenOver": "Ahora pagas el uso externo de este agente."
+    },
+    "common": {
+      "access": {
+        "apiKey": "clave de API",
+        "publicLink": "enlace público",
+        "webhook": "webhook"
+      },
+      "errors": {
+        "maxSchedules": "Ya tienes tantas programaciones como puedes tener. Elimina una y vuelve a intentarlo.",
+        "noOutsideAccess": "Este agente no tiene ningún acceso externo activado, así que no hay nada que asumir.",
+        "notAvailableToTokens": "No se puede asumir el pago con un token de acceso. Inicia sesión en la app para hacerlo.",
+        "notFound": "Ya no existe o ya no puedes abrirlo.",
+        "roleRequired": "Tu rol en este equipo no te permite asumir esto.",
+        "teamLocked": "Este equipo está bloqueado, así que nada de él es accesible desde fuera.",
+        "teamOnly": "Solo se puede asumir algo que pertenece a un equipo."
+      },
+      "paidBy": "Pagado por {{name}}",
+      "paidByYou": "Pagado por ti",
+      "pause": {
+        "noPayer": "Nadie lo paga.",
+        "outOfAllowance": "{{name}} ha agotado su asignación hasta el {{date}}.",
+        "outOfAllowanceUndated": "Quien lo paga ha agotado su asignación.",
+        "outOfAllowanceUnnamed": "Quien lo paga ha agotado su asignación hasta el {{date}}.",
+        "outOfAllowanceYou": "Has agotado tu asignación hasta el {{date}}.",
+        "ownerInactive": "La cuenta con la que se ejecuta está desactivada.",
+        "payerLeft": "{{name}} dejó {{team}} o perdió el rol con el que lo paga.",
+        "payerLeftNoTeam": "{{name}} dejó el equipo o perdió el rol con el que lo paga.",
+        "payerLeftTeam": "{{name}} dejó {{team}}.",
+        "payerLeftTeamNoTeam": "{{name}} dejó el equipo.",
+        "payerLeftTeamUnnamed": "Quien lo paga dejó el equipo.",
+        "payerLeftUnnamed": "Quien lo paga dejó el equipo o perdió el rol con el que lo paga.",
+        "payerLostRole": "{{name}} ya no tiene en {{team}} el rol con el que lo paga.",
+        "payerLostRoleNoTeam": "{{name}} ya no tiene el rol con el que lo paga.",
+        "payerLostRoleUnnamed": "Quien lo paga ya no tiene el rol necesario.",
+        "teamLocked": "{{team}} está bloqueado, así que nada de él es accesible desde fuera.",
+        "teamLockedNoTeam": "El equipo está bloqueado, así que nada de él es accesible desde fuera.",
+        "withSince": "{{reason}} En pausa desde el {{date}}."
+      },
+      "takeOver": {
+        "access": {
+          "youPay": "A partir de ahora pagas su uso externo",
+          "youPayDetail": "Las solicitudes por su clave de API y su webhook, y las de quienes usan su enlace público sin haber iniciado sesión, cuentan contra tu asignación, no la de {{name}}. Quienes usan el enlace con la sesión iniciada pagan sus propios chats. Lo usado hasta ahora queda con {{name}}.",
+          "youPayUnnamed": "Las solicitudes por su clave de API y su webhook, y las de quienes usan su enlace público sin haber iniciado sesión, cuentan contra tu asignación. Quienes usan el enlace con la sesión iniciada pagan sus propios chats."
+        },
+        "failed": "No se pudo asumir. Inténtalo de nuevo.",
+        "limitApplies": "El límite del agente sigue aplicándose",
+        "limitDetail": "Pague quien pague, el agente se detiene en su propio límite.",
+        "schedule": {
+          "youPay": "A partir de ahora pagas sus ejecuciones",
+          "youPayDetail": "Cuentan contra tu asignación, no la de {{name}}. Las ejecuciones anteriores quedan con {{name}}.",
+          "youPayUnnamed": "Cuentan contra tu asignación."
+        },
+        "submit": "Asumir",
+        "title": "¿Asumir \"{{name}}\"?"
+      }
+    },
+    "notice": {
+      "chat": {
+        "agentPaused": "Este agente está en pausa, así que ahora no puede responder.",
+        "noPayer": "Ahora nadie paga el uso de este agente, así que no puede responder."
+      },
+      "near": {
+        "day": "Has usado el {{percent}} % de tu asignación de hoy. Se restablece a las {{time}}.",
+        "month": "Has usado el {{percent}} % de tu asignación de {{month}}. Se restablece el {{date}}.",
+        "week": "Has usado el {{percent}} % de tu asignación de esta semana. Se restablece el {{date}}."
+      },
+      "reached": {
+        "body": "{{covers}} {{resets}}",
+        "covers": {
+          "agent": "Cubre tus chats con agentes, las programaciones que creaste y los agentes que publicaste.",
+          "all": "Cubre tus chats en todos los espacios de trabajo, las programaciones que creaste y los agentes que publicaste.",
+          "direct": "Cubre tus chats sin agente, en todos los espacios de trabajo."
+        },
+        "publicLinkSignedOut": "enlace público (para quienes no han iniciado sesión)",
+        "published": "{{name}} ha dejado de responder por su {{access}}.",
+        "schedules_many": "{{count}} programaciones que creaste están en pausa.",
+        "schedules_one": "{{count}} programación que creaste está en pausa.",
+        "schedules_other": "{{count}} programaciones que creaste están en pausa.",
+        "seeUsage": "Ver tu uso",
+        "title": {
+          "day": "Has alcanzado tu asignación de hoy",
+          "month": "Has alcanzado tu asignación de {{month}}",
+          "week": "Has alcanzado tu asignación de esta semana"
+        }
+      },
+      "resets": {
+        "date": "Se restablece el {{date}}.",
+        "time": "Se restablece a las {{time}}."
+      }
+    },
+    "schedules": {
+      "takenOver": "Ahora pagas las ejecuciones de esta programación."
+    },
+    "team": {
+      "byAgent": {
+        "deleted": "Agente eliminado",
+        "empty": "No se usó ningún agente en este periodo.",
+        "limitOn": "Límite del agente activado",
+        "movedOut": "Sacado del equipo",
+        "noLimit": "Sin límite del agente",
+        "outsideNoPayer": "acceso externo sin nadie que lo pague",
+        "outsidePaidBy": "acceso externo pagado por {{name}}",
+        "outsidePaidByYou": "acceso externo pagado por ti",
+        "people_many": "{{formatted}} personas",
+        "people_one": "{{formatted}} persona",
+        "people_other": "{{formatted}} personas",
+        "requests_many": "{{formatted}} solicitudes",
+        "requests_one": "{{formatted}} solicitud",
+        "requests_other": "{{formatted}} solicitudes",
+        "title": "Por agente",
+        "totalsOnly": "Los chats sin agente, y los agentes eliminados desde entonces, solo cuentan en los totales."
+      },
+      "byPerson": {
+        "left": "Dejó el equipo",
+        "title": "Por persona",
+        "you": "tú"
+      },
+      "demote": {
+        "description": "Con el nuevo rol, {{name}} ya no puede pagar esto en {{team}}.",
+        "submit": "Cambiar rol",
+        "title": "¿Cambiar a \"{{name}}\" a {{role}}?"
+      },
+      "empty": "Nadie usó nada aquí en este periodo.",
+      "export": {
+        "action": "Exportar",
+        "description": "Un archivo con todos los chats de este espacio de trabajo: quién, cuándo, qué agente. Los chats personales nunca se incluyen. Cada exportación queda en el registro de auditoría.",
+        "failed": "No se pudieron exportar los chats. Inténtalo de nuevo.",
+        "title": "Exportar chats"
+      },
+      "loadError": "No se pudo cargar el informe de uso.",
+      "notALimit": "Lo que una persona usa aquí cuenta contra su propia asignación, junto con su trabajo en otros lugares. Nada en esta página es un límite.",
+      "paused": {
+        "access": "Acceso externo a través de su {{access}}",
+        "accessAll": "Acceso externo",
+        "description": "Siguen en pausa hasta que alguien los asuma o hasta que se renueve la asignación de quien paga.",
+        "openConnection": "Abrir",
+        "openConnectionLabel": "Abrir \"{{name}}\" en la página Conectores",
+        "schedule": "Programación de {{agent}}",
+        "scheduleNoAgent": "Programación",
+        "sync": "Sincronización programada",
+        "syncNoPayer": "Nadie en el equipo puede pagarla.",
+        "takeOverLabel": "Asumir \"{{name}}\"",
+        "title": "En pausa",
+        "unnamed": "Sin título"
+      },
+      "period": {
+        "current": {
+          "day": "Hoy",
+          "month": "Este mes",
+          "week": "Esta semana"
+        },
+        "label": "Periodo",
+        "previous": {
+          "day": "Ayer",
+          "month": "Mes pasado",
+          "week": "Semana pasada"
+        },
+        "range": "{{start}} – {{end}}"
+      },
+      "remove": {
+        "accessDetail": "{{name}} lo paga. Un administrador puede asumirlo en la página del agente.",
+        "access_many": "Se pausa el acceso externo de {{count}} agentes",
+        "access_one": "Se pausa el acceso externo de {{count}} agente",
+        "access_other": "Se pausa el acceso externo de {{count}} agentes",
+        "connectionsDetail": "El equipo no puede usarlas, ni para sincronizar ni para herramientas, hasta que otro administrador del equipo las reconecte con su propia cuenta en la página Conectores.",
+        "connections_many": "Se pausan {{count}} cuentas del equipo que conectó {{name}}",
+        "connections_one": "Se pausa {{count}} cuenta del equipo que conectó {{name}}",
+        "connections_other": "Se pausan {{count}} cuentas del equipo que conectó {{name}}",
+        "customModelsDetail": "Sus claves siguen en uso. Sustituye una clave en la página Modelos personalizados del equipo si era de {{name}}.",
+        "customModels_many": "{{name}} añadió {{count}} modelos personalizados al equipo",
+        "customModels_one": "{{name}} añadió {{count}} modelo personalizado al equipo",
+        "customModels_other": "{{name}} añadió {{count}} modelos personalizados al equipo",
+        "schedulesDetail": "{{name}} las paga. Un editor o administrador puede asumirlas en la página de programaciones del agente.",
+        "schedules_many": "Se pausan {{count}} programaciones que {{name}} creó en agentes del equipo",
+        "schedules_one": "Se pausa {{count}} programación que {{name}} creó en agentes del equipo",
+        "schedules_other": "Se pausan {{count}} programaciones que {{name}} creó en agentes del equipo"
+      },
+      "showAll": "Ver todos ({{formatted}})",
+      "showFewer": "Ver menos",
+      "stats": {
+        "chats": "Chats",
+        "chatsDetail": "Pagados por las personas que chatean",
+        "people_many": "Por {{formatted}} personas",
+        "people_one": "Por {{formatted}} persona",
+        "people_other": "Por {{formatted}} personas",
+        "runs": "Ejecuciones sin una persona",
+        "runsDetail": "Programaciones, claves de API, el widget y webhooks, pagados por quien los configuró",
+        "used": "Usado en {{team}}"
+      },
+      "tokens_many": "{{formatted}} tokens",
+      "tokens_one": "{{formatted}} token",
+      "tokens_other": "{{formatted}} tokens"
+    }
+  },
   "prompts": {
     "checks": {
       "boundariesMissing": "No tiene la sección Boundaries, así que el agente podría seguir instrucciones ocultas en documentos o en resultados de herramientas",
@@ -2892,7 +3270,6 @@
     "analytics": {
       "completed": "Completadas",
       "failed": "Fallidas",
-      "filterByChatbot": "Filtrar por chatbot",
       "filterOptions": {
         "hour": "Hora",
         "last15Days": "15 días",
@@ -3129,18 +3506,30 @@
       "positiveFeedback": "Retroalimentación positiva",
       "promptTokens": "Tokens de prompt",
       "quota": {
-        "cost": "Coste",
-        "resets": "Se restablece el {{resetsAt}}",
-        "scope": {
-          "agent": "A través de agentes",
-          "direct": "Chat sin agente"
+        "allowance": "Tu asignación",
+        "parts": {
+          "chat": "Tus chats",
+          "chatDetail": "En Personal y en tus equipos",
+          "other": "Otros",
+          "otherDetail": "Creación de conocimiento y uso de antes de que se separara por partes",
+          "published": "Agentes que publicaste",
+          "publishedDetail": "Sus claves de API, enlaces públicos y webhooks",
+          "schedule": "Programaciones que creaste",
+          "scheduleDetail": "Sus ejecuciones y los monitores que creaste"
         },
-        "title": "Tu cuota de uso",
-        "tokens": "Tokens",
+        "resetsAt": "Se restablece a las {{time}}",
+        "resetsOn": "Se restablece el {{date}}",
+        "scope": {
+          "agent": "Tus chats con agentes, tus programaciones y los agentes que publicaste",
+          "all": "Todo lo que pagas",
+          "direct": "Tus chats sin agente"
+        },
+        "titleDay": "Tu uso de hoy",
+        "titleMonth": "Tu uso, {{month}}",
+        "titleWeek": "Tu uso de esta semana",
         "usedOf": "{{used}} de {{limit}}"
       },
       "scheduledRuns": "Ejecuciones programadas",
-      "selectChatbot": "Seleccionar chatbot",
       "skipped": "Omitidas",
       "stats": {
         "feedback": "Retroalimentación",
@@ -3185,6 +3574,7 @@
       "connectionStatus": {
         "connected": "Conectado",
         "disconnected": "Desconectado",
+        "paused": "En pausa",
         "pending": "Esperando el inicio de sesión"
       },
       "createFailed": "No se pudo añadir el conector. Inténtalo de nuevo.",
@@ -3217,6 +3607,7 @@
         "mcp_resend": "Envía correos electrónicos y gestiona contactos, audiencias y dominios.",
         "mcp_sentry": "Consulta incidencias, eventos y versiones de Sentry.",
         "mcp_stripe": "Consulta clientes, pagos y suscripciones en Stripe.",
+        "mcp_supabase": "Lista tablas, ejecuta SQL, lee registros y administra proyectos de Supabase.",
         "mcp_trello": "Busca tableros y tarjetas de Trello, y crea y actualiza tarjetas.",
         "mcp_twelvedata": "Consulta cotizaciones, historial de precios, indicadores técnicos y datos fundamentales de acciones, divisas, criptomonedas y ETF.",
         "mcp_zapier": "Usa las acciones habilitadas en tu cuenta de Zapier MCP para leer o actualizar aplicaciones conectadas.",
@@ -3290,6 +3681,8 @@
       },
       "fieldHints": {
         "github_access_token": "Detallado, con acceso de lectura a Contents y Metadata. Para que los agentes hagan cambios, también lectura y escritura en Issues y Pull requests. <link>Crear un token en GitHub</link>",
+        "mcp_supabase_project_ref": "Cópialo desde Project Settings > General en tu panel de Supabase. La conexión solo accede a este proyecto.",
+        "ntfy_server_url": "Si se indica, todos los mensajes y el token de acceso van a este servidor. Si está vacío, el token va solo a ntfy.sh.",
         "telegram_chat_id": "Los mensajes van solo a este chat. Añade el bot, envíale un mensaje y busca el ID del chat con <link>getUpdates</link>."
       },
       "fields": {
@@ -3301,6 +3694,8 @@
         "client_secret": "Secreto de cliente",
         "endpoint_url": "URL de endpoint personalizada",
         "github_access_token": "Token de acceso personal",
+        "mcp_supabase_project_ref": "ID del proyecto",
+        "ntfy_server_url": "URL del servidor",
         "ntfy_token": "Token de acceso",
         "number_posts": "Número de publicaciones",
         "postgres_token": "Cadena de conexión",
@@ -3449,6 +3844,7 @@
         "custom": "Personalizado",
         "disabledByAdmin": "Desactivado por el administrador",
         "needsAdminSetup": "Requiere configuración del administrador",
+        "paused": "En pausa",
         "reconnect": "Reconectar"
       },
       "statusFilterLabel": "Filtrar por estado",
@@ -3460,6 +3856,45 @@
       },
       "subtitle": "Conecta DocsGPT a los servicios que usa tu equipo. Una conexión puede sincronizar contenido en Conocimiento y dar herramientas a los agentes.",
       "syncContent": "Sincronizar contenido",
+      "team": {
+        "adminOnly": "Solo los administradores del equipo pueden conectar o cambiar las cuentas del equipo.",
+        "connectForTeam": "Conectar para el equipo",
+        "connectedBy": "Conectada por {{name}}",
+        "connectedByYou": "Conectada por ti",
+        "emptyAdmin": "Aún no hay cuentas conectadas para el equipo. Conecta una y todo el equipo podrá usarla.",
+        "emptyMember": "Aún no hay cuentas conectadas para el equipo. Un administrador del equipo puede conectar una.",
+        "errors": {
+          "accountAlreadyConnected": "El equipo ya tiene esta cuenta conectada. Usa esa conexión.",
+          "adminRequired": "Solo los administradores del equipo pueden hacer esto con las cuentas del equipo.",
+          "connectPersonalFirst": "Primero conecta tu propia cuenta de este servicio en Personal. Luego cada persona inicia sesión con la suya.",
+          "invalidOwner": "No se pudo saber si esta cuenta es tuya o del equipo. Recarga la página e inténtalo de nuevo.",
+          "memberModeNotAllowed": "Un administrador configuró este servicio para usar una sola cuenta compartida, así que cada persona no puede iniciar sesión con la suya.",
+          "notFound": "Esta conexión ya no existe o no puedes verla.",
+          "paused": "Esta cuenta del equipo está en pausa. Un administrador del equipo puede reconectarla.",
+          "personalOnly": "Una fuente del equipo solo puede leer a través de una cuenta conectada para el equipo. Un administrador del equipo puede conectar una en Conectores.",
+          "pickerOwnerOnly": "Solo quien conectó esta cuenta puede elegir qué sincronizar desde ella.",
+          "teamConnectionOutside": "Usa una herramienta en una cuenta conectada para el equipo. Esas herramientas solo funcionan para los miembros del equipo, en la app.",
+          "teamConnectionOutsideNamed": "Usa {{tools}}, en una cuenta conectada para el equipo. Esas herramientas solo funcionan para los miembros del equipo, en la app.",
+          "teamWorkspaceRequired": "Cambia al equipo para conectar una cuenta para él."
+        },
+        "notice": "Estas cuentas son del equipo. Tus propias cuentas están en Personal.",
+        "paused": "En pausa: {{reason}}",
+        "pausedHintAdmin": "Reconéctala con tu cuenta o desconéctala.",
+        "pausedHintMember": "Un administrador del equipo puede reconectarla.",
+        "pausedUnknown": "En pausa",
+        "pickerOwnerOnly": "Solo {{name}}, que conectó esta cuenta, puede elegir qué sincronizar desde ella.",
+        "reconnect": {
+          "body": "{{name}} conectó esta cuenta. Si la reconectas, el equipo usará tu cuenta a partir de ahora y tú pagarás sus sincronizaciones.",
+          "bodyUnnamed": "Si la reconectas, el equipo usará tu cuenta a partir de ahora y tú pagarás sus sincronizaciones.",
+          "confirm": "Reconectar con mi cuenta",
+          "dropNote": "Los archivos que tu cuenta no pueda abrir se quitarán en la próxima sincronización. Puedes volver a elegirlos desde la fuente.",
+          "sources_many": "{{formatted}} fuentes se sincronizan desde ella:",
+          "sources_one": "{{formatted}} fuente se sincroniza desde ella:",
+          "sources_other": "{{formatted}} fuentes se sincronizan desde ella:",
+          "title": "¿Reconectar con tu cuenta?"
+        },
+        "teamAccount": "Cuenta del equipo"
+      },
       "unverified": "DocsGPT no ha revisado este servidor. Conecta solo servidores de confianza.",
       "wizard": {
         "account": "Cuenta",
@@ -3512,6 +3947,7 @@
         "toolsHeading": "Herramientas ({{formatted}})",
         "toolsUnavailable": "No se pudo acceder a las herramientas de {{name}}. Inténtalo de nuevo o desactívalas para continuar.",
         "tryInChat": "Probar en el chat",
+        "urlParameterInvalid": "Revisa este valor: no tiene el formato esperado.",
         "waiting": "Termina de iniciar sesión en {{name}} en la ventana que se abrió."
       }
     },
@@ -3552,6 +3988,7 @@
       "editTitle": "Editar modelo personalizado",
       "empty": "No se encontraron modelos",
       "errors": {
+        "apiKeyNewHost": "Introduce la clave API del nuevo host. La clave guardada solo se envía al host para el que se guardó.",
         "apiKeyRequired": "La clave API es obligatoria",
         "baseUrlInvalid": "Introduce una URL válida",
         "baseUrlRequired": "La URL base es obligatoria",
@@ -3570,7 +4007,8 @@
         "modelId": "ID del modelo"
       },
       "hints": {
-        "apiKeyEdit": "Déjalo en blanco para mantener la clave actual."
+        "apiKeyEdit": "Déjalo en blanco para mantener la clave guardada mientras la dirección siga en el mismo host.",
+        "apiKeyNewHost": "La dirección está en un host nuevo: introduce su clave API. La clave guardada solo se envía al host para el que se guardó."
       },
       "label": "Modelos personalizados",
       "loadError": "No se pudieron cargar tus modelos.",
@@ -3594,6 +4032,48 @@
       "save": "Guardar",
       "searchPlaceholder": "Buscar modelos...",
       "subtitle": "Trae tu propio modelo compatible con OpenAI.",
+      "team": {
+        "actions": {
+          "disable": "Deshabilitar",
+          "enable": "Habilitar"
+        },
+        "addedBy": "Añadido por {{name}}",
+        "addedByYou": "Añadido por ti",
+        "copy": {
+          "action": "Copiar a un equipo",
+          "body": "El equipo recibe su propia copia de {{name}} con tu clave de API. Tu modelo queda como está.",
+          "bodyTo": "{{team}} recibe su propia copia de {{name}} con tu clave de API. Tu modelo queda como está.",
+          "confirm": "Copiar",
+          "done": "{{name}} se copió a {{team}}.",
+          "team": "Equipo",
+          "title": "Copiar a un equipo"
+        },
+        "delete": {
+          "fellBack": "Revisa el modelo en: {{names}}",
+          "mayBeUsed": "Los agentes del equipo que lo usan funcionarán con el modelo predeterminado, y los pasos de flujo de trabajo configurados con él se detendrán hasta que alguien elija otro modelo. Esto no se puede deshacer.",
+          "usedBy": "Lo usan {{names}}. Los agentes funcionarán con el modelo predeterminado; los pasos de flujo de trabajo configurados con él se detendrán hasta que alguien elija otro modelo. Esto no se puede deshacer."
+        },
+        "emptyAdmin": "Aún no hay modelos añadidos para el equipo. Añade uno y todo el equipo podrá usarlo.",
+        "emptyMember": "Aún no hay modelos añadidos para el equipo. Un administrador del equipo puede añadir uno.",
+        "errors": {
+          "adminRequired": "Solo un administrador del equipo puede añadir un modelo personalizado al equipo. Pídele a uno que lo añada y vuelve a importar.",
+          "alreadyInTeam": "El equipo ya tiene este modelo.",
+          "chatPersonalOnly": "Tus propios modelos personalizados no se pueden usar en un chat del equipo. Elige uno de los modelos del equipo o un modelo que ofrezca toda la instancia.",
+          "credentialsUnreadable": "No se puede leer la clave de API de este modelo. Reemplaza la clave y luego copia el modelo.",
+          "modelAdminRequired": "Solo los administradores del equipo pueden cambiar los modelos del equipo.",
+          "notAvailableToTokens": "Los modelos personalizados de un equipo solo se pueden cambiar en la app, no con un token de acceso.",
+          "notFound": "Este modelo ya no existe o no puedes verlo.",
+          "personalOnly": "Los agentes y flujos de trabajo de un equipo solo pueden usar los modelos personalizados del equipo. Elige uno de los modelos del equipo o un modelo que ofrezca toda la instancia.",
+          "roleRequired": "Solo los administradores del equipo pueden añadirle modelos.",
+          "teamIdRequired": "Elige el equipo al que copiar el modelo.",
+          "teamNotFound": "Ese equipo ya no existe o no formas parte de él.",
+          "teamOnly": "El modelo personalizado de un equipo solo lo pueden usar los agentes y flujos de trabajo de ese equipo. Elige uno de tus propios modelos o un modelo que ofrezca toda la instancia.",
+          "teamWorkspaceRequired": "Cambia al equipo para añadirle un modelo."
+        },
+        "notice": "Estos modelos son del equipo. Tus propios modelos están en Personal.",
+        "pickerGroup": "Modelos del equipo",
+        "teamModel": "Modelo del equipo"
+      },
       "testConnection": "Probar conexión",
       "testHintNew": "Completa URL base, ID de modelo y clave API para habilitar las pruebas de conexión.",
       "testSuccess": "Conexión correcta."
@@ -3637,6 +4117,7 @@
         "cancel": "Cancelar",
         "descriptionLabel": "Descripción (opcional)",
         "descriptionPlaceholder": "Visible para el agente para que pueda elegir el dispositivo correcto.",
+        "expired": "Este código ha caducado. Genera uno nuevo para emparejar el dispositivo.",
         "formSubtitle": "Define un nombre, una descripción y un modo de aprobación para el nuevo dispositivo.",
         "fullAccessWarning": "Acceso completo: los agentes pueden ejecutar cualquier comando en esta máquina sin preguntar. La lista de denegación de seguridad sigue aplicándose.",
         "installLink": "¿No tienes docsgpt-cli? Instálalo",
@@ -3656,21 +4137,13 @@
       "subtitle": "Empareja máquinas remotas que los agentes pueden controlar mediante comandos de shell."
     },
     "general": {
-      "addNew": "Añadir Nuevo",
-      "chunks": "Fragmentos procesados por consulta",
-      "convHistory": "Historial de conversaciones",
       "dark": "Oscuro",
-      "default": "Predeterminado",
-      "deleteAllDescription": "Elimina de forma permanente todas las conversaciones de tu cuenta. No se puede deshacer.",
+      "deleteAllInWorkspace": "Elimina de forma permanente todos los chats que iniciaste en {{name}}. No se puede deshacer.",
       "deleteAllLabel": "Eliminar todas las conversaciones",
-      "high": "Alto",
       "label": "General",
       "language": "Idioma",
       "languageDescription": "Idioma de los menús y las etiquetas.",
       "light": "Claro",
-      "low": "Bajo",
-      "medium": "Medio",
-      "none": "Ninguno",
       "sections": {
         "appearance": "Apariencia",
         "dangerZone": "Zona de peligro",
@@ -3681,15 +4154,12 @@
       "taskModelDescription": "Redacta formularios, crea grafos de conocimiento y revisa monitores. Los chats usan el modelo del agente.",
       "taskModelFailed": "{{model}} no pudo ejecutar tu última tarea: su proveedor rechazó la clave de API. Elige otro modelo o pide a un administrador que revise la clave.",
       "taskModelFailedItem": "· clave rechazada",
-      "taskModelInstanceDefault": "Usar el valor predeterminado de la instancia ({{model}})",
-      "taskModelInstanceDefaultUnnamed": "Usar el valor predeterminado de la instancia",
       "taskModelLoadError": "No se pudo cargar el modelo de tareas.",
       "taskModelSaveFailed": "No se pudo guardar el modelo de tareas. Inténtalo de nuevo.",
       "taskModelUnavailable": "Tu modelo de tareas ya no puede ejecutarse (se desactivó o se eliminó), así que se usa el valor predeterminado de la instancia. Si el modelo vuelve, se usará de nuevo; elige una opción aquí para reemplazarlo.",
       "taskModelUnavailableValue": "Modelo no disponible",
       "theme": "Tema",
-      "themeDescription": "Interfaz clara u oscura.",
-      "unlimited": "Ilimitado"
+      "themeDescription": "Interfaz clara u oscura."
     },
     "insights": {
       "label": "Información"
@@ -3726,7 +4196,6 @@
         "dislike": "No me gusta",
         "like": "Me gusta"
       },
-      "filterByChatbot": "Filtrar por chatbot",
       "label": "Registros",
       "labels": {
         "asksHuman": "Pidió una persona",
@@ -3764,7 +4233,6 @@
       "retriedStep_other": "{{node}}: {{count}} intentos",
       "running": "en curso",
       "searchPlaceholder": "Buscar registros...",
-      "selectChatbot": "Seleccionar chatbot",
       "subtitle": "Visualiza y monitorea las llamadas a la API y los registros de conversaciones",
       "trace": {
         "chips": {
@@ -3919,6 +4387,9 @@
       "filters": {
         "all": "Todos"
       },
+      "folders": {
+        "emptyHint": "Añade un prompt aquí o mueve uno desde su menú ⋯."
+      },
       "kindFilterLabel": "Filtrar por tipo",
       "kinds": {
         "shared": "Compartidos"
@@ -3945,12 +4416,14 @@
       "saveFailed": "No se pudo guardar este prompt.",
       "searchPlaceholder": "Buscar prompts…",
       "sections": {
+        "folders": "Carpetas",
         "included": "Incluidos",
-        "shared": "Compartidos con el equipo",
+        "shared": "Compartido contigo",
+        "team": "Prompts",
         "yours": "Tuyos"
       },
       "select": "Selecciona un prompt",
-      "shareWithTeam": "Compartir con el equipo",
+      "shareWithTeam": "Compartir",
       "subtitle": "Los prompts del sistema indican al modelo cómo responder. El que elijas se usa en los chats sin agente; los agentes eligen el suyo.",
       "unsavedChanges": "Tienes cambios sin guardar que se perderán si sales sin guardar.",
       "useInChats": "Usar {{name}} en los chats",
@@ -4013,7 +4486,6 @@
       "deleteWarning": "¿Eliminar \"{{name}}\"?",
       "deleting": "Eliminando…",
       "deletingTitle": "Eliminando...",
-      "editAlt": "Editar",
       "editChunk": "Editar fragmento",
       "editChunkDescription": "{{file}} · fragmento {{n}} · {{tokens}} tokens",
       "editChunkDescriptionUnplaced": "{{file}} · fragmento editado · {{tokens}} tokens",
@@ -4034,15 +4506,21 @@
         "sync": "No se pudo sincronizar la fuente.",
         "syncFrequency": "No se pudo cambiar la frecuencia de sincronización."
       },
-      "fileAlt": "Archivo",
       "fileName": "Nombre",
       "files": "Archivos",
       "filesByline_many": "{{files}} archivos · {{tokens}} tokens",
       "filesByline_one": "{{files}} archivo · {{tokens}} tokens",
       "filesByline_other": "{{files}} archivos · {{tokens}} tokens",
+      "filesFailed_many": "No se pudo indexar la última versión de {{count}} archivos en la última sincronización. Los que ya estaban indexados pueden seguir mostrando su contenido anterior en las búsquedas.",
+      "filesFailed_one": "No se pudo indexar la última versión de {{count}} archivo en la última sincronización. Si ya estaba indexado, las búsquedas pueden seguir mostrando su contenido anterior.",
+      "filesFailed_other": "No se pudo indexar la última versión de {{count}} archivos en la última sincronización. Los que ya estaban indexados pueden seguir mostrando su contenido anterior en las búsquedas.",
       "filesLoadError": "No se pudieron cargar los archivos",
       "filterFiles": "Filtrar archivos",
-      "folderAlt": "Carpeta",
+      "folders": {
+        "emptyHint": "Añade conocimiento aquí o mueve fuentes desde su menú ⋯.",
+        "noMatchIn": "Nada en {{name}} coincide con «{{query}}».",
+        "searchAll": "Buscar en todo el conocimiento"
+      },
       "goToSources": "Ir a Conocimiento",
       "graphrag": {
         "badge": "GraphRAG",
@@ -4156,7 +4634,6 @@
       "kinds": {
         "all": "Todas",
         "files": "Archivos",
-        "shared": "Compartidas",
         "synced": "Sincronizadas",
         "websites": "Sitios web",
         "wikis": "Wikis"
@@ -4168,18 +4645,14 @@
       "needsAttention": "Requiere atención",
       "nextChunk": "Fragmento siguiente",
       "noChunks": "No se encontraron fragmentos",
-      "noChunksAlt": "No se encontraron fragmentos",
       "noData": "Aún no hay conocimiento",
       "noKnowledgeFound": "No se encontró conocimiento",
       "noResults": "No se encontraron resultados",
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} fuentes",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} fuente",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} fuentes",
-      "parentFolderAlt": "Carpeta padre",
       "paused": "Sincronización en pausa. Reconecta {{name}} para reanudarla.",
-      "preLoaded": "Precargado",
       "previousChunk": "Fragmento anterior",
-      "private": "Privado",
       "queued": "En cola: {{count}}",
       "reingest": "Reindexar",
       "retrievalOptions": {
@@ -4288,10 +4761,14 @@
         },
         "title": "Configuración avanzada"
       },
-      "searchAlt": "Buscar",
+      "retryFailedFiles": "Reintentar ahora",
       "searchChunks": "Buscar fragmentos",
       "searchPlaceholder": "Buscar conocimiento…",
-      "shareWithTeam": "Compartir con el equipo",
+      "sections": {
+        "folders": "Carpetas",
+        "sources": "Fuentes"
+      },
+      "shareWithTeam": "Compartir",
       "size": "Tamaño",
       "subtitle": "Contenido que DocsGPT puede buscar y citar: archivos subidos, sitios web, wikis y contenido sincronizado desde tus conexiones.",
       "syncConfirmation": "¿Sincronizar \"{{sourceName}}\"?",
@@ -4304,6 +4781,14 @@
         "weekly": "Semanal"
       },
       "syncNow": "Sincronizar ahora",
+      "syncPaused": {
+        "account": "Sincronización en pausa: {{reason}}",
+        "noPayer": "Sincronización programada en pausa: nadie del equipo puede pagarla.",
+        "noPayerSince": "Sincronización programada en pausa desde el {{date}}: nadie del equipo puede pagarla.",
+        "other": "Sincronización programada en pausa.",
+        "otherSince": "Sincronización programada en pausa desde el {{date}}.",
+        "scheduled": "Sincronización programada en pausa: {{reason}}"
+      },
       "syncStarted": "Sincronizando {{name}}…",
       "syncing": "Sincronizando...",
       "testRetrieval": {
@@ -4658,6 +5143,11 @@
       "deleteTeamError": "No se pudo eliminar el equipo.",
       "descriptionLabel": "Descripción",
       "descriptionPlaceholder": "¿Para qué es este equipo? (opcional)",
+      "detail": {
+        "backToTeams": "Volver a los equipos",
+        "meta": "{{role}} · {{members}}",
+        "notFound": "Este equipo no existe o no formas parte de él."
+      },
       "drawer": {
         "accessIn": "Acceso en {{team}}",
         "capabilitiesHint": "Según los ajustes de acceso del propietario. Solo lectura aquí.",
@@ -4667,6 +5157,7 @@
         "open": "Abrir {{type}}",
         "otherTeamsHint": "¿También compartido con otros equipos? Esos accesos se gestionan en «Gestionar uso compartido».",
         "owner": "Propietario",
+        "paused": "El uso compartido está en pausa mientras {{name}} no esté en el equipo. Se reanuda si se le vuelve a añadir.",
         "removeGrant": "Quitar acceso",
         "shared": "Compartido",
         "sharedOnBy": "{{date}} por {{name}}",
@@ -4681,7 +5172,6 @@
           "viewer": "Lector"
         }
       },
-      "editTeam": "Editar",
       "editorHint": {
         "agent": "Los editores pueden cambiarlo, incluidos los registros, las programaciones y los datos de acceso.",
         "agentNoAccessDetails": "Los editores pueden cambiarlo, incluidos los registros y las programaciones, pero no los datos de acceso.",
@@ -4696,7 +5186,31 @@
         "tool": "Los editores pueden cambiar acciones y sustituir credenciales, pero no pueden leer secretos.",
         "toolNoCredentials": "Los editores pueden cambiar acciones, pero no las credenciales."
       },
+      "errors": {
+        "borrowedResource": "Este agente usa fuentes, herramientas o prompts que no le pertenecen, así que no se puede compartir con otro equipo ni usar desde fuera. Quítalos del agente primero.",
+        "invalidPolicy": "Elige quién puede sacar los elementos de este equipo fuera de él.",
+        "lastAdmin": "Un equipo necesita al menos un administrador. Haz administrador a otra persona primero.",
+        "ownerMustTransfer": "Eres el propietario de este equipo. Transfiérelo primero a otro miembro.",
+        "ownerProtected": "El propietario del equipo no puede perder su rol ni ser quitado.",
+        "policyOwnerOnly": "Solo el propietario del equipo puede desbloquearlo.",
+        "roleRequired": "Tu rol en este equipo no lo permite.",
+        "shareNotMember": "Solo puedes compartir con un equipo del que formas parte.",
+        "shareSameTeam": "Esto ya pertenece a ese equipo.",
+        "shareViewerOnly": "Otro equipo puede usar un elemento del equipo, pero no editarlo.",
+        "shareWholeTeamOnly": "Un elemento del equipo se comparte con todo un equipo, no con una sola persona.",
+        "teamItemSharedOutside": "Este agente está compartido con personas que no pueden usar ese elemento del equipo. Úsalo en un agente que no esté compartido fuera del equipo, o deja de compartirlo primero.",
+        "teamLocked": "Este equipo está bloqueado, así que nada de él puede salir fuera. Solo su propietario puede desbloquearlo.",
+        "teamNotEmpty": "El equipo todavía posee elementos. Muévelos o elimínalos primero.",
+        "usesTeamItems": "Este agente usa elementos de un equipo, así que solo se puede compartir con personas que puedan usarlos."
+      },
       "label": "Equipos",
+      "leave": {
+        "action": "Salir del equipo",
+        "description": "Pierdes el acceso a los agentes, el conocimiento, las herramientas, los prompts y los chats de {{team}}. Las programaciones que configuraste en sus agentes y el acceso externo que pagas se pausan hasta que alguien los asuma, y los elementos personales que compartiste con el equipo dejan de compartirse. Un administrador puede volver a añadirte.",
+        "done": "Has salido de {{team}}.",
+        "error": "No se pudo salir del equipo.",
+        "title": "¿Salir de {{team}}?"
+      },
       "loadError": "No se pudieron cargar los equipos.",
       "memberCount_many": "{{formatted}} miembros",
       "memberCount_one": "{{formatted}} miembro",
@@ -4713,14 +5227,152 @@
       "newTeam": "Nuevo equipo",
       "noMembers": "Aún no hay miembros. Usa “Añadir miembro” para invitar a alguien por correo.",
       "noTeams": "Aún no hay equipos.",
-      "nothingShared": "Aún no se ha compartido nada. Comparte un agente, fuente, prompt o herramienta desde su menú.",
+      "notEmpty": {
+        "connectionsHint": "Las conexiones no se pueden mover. Un administrador del equipo las quita en la página Conectores del equipo.",
+        "counts": {
+          "agent_many": "{{count}} agentes",
+          "agent_one": "{{count}} agente",
+          "agent_other": "{{count}} agentes",
+          "connection_many": "{{count}} conexiones",
+          "connection_one": "{{count}} conexión",
+          "connection_other": "{{count}} conexiones",
+          "custom_model_many": "{{count}} modelos personalizados",
+          "custom_model_one": "{{count}} modelo personalizado",
+          "custom_model_other": "{{count}} modelos personalizados",
+          "folder_many": "{{count}} carpetas",
+          "folder_one": "{{count}} carpeta",
+          "folder_other": "{{count}} carpetas",
+          "other_many": "{{count}} registros más",
+          "other_one": "{{count}} registro más",
+          "other_other": "{{count}} registros más",
+          "prompt_many": "{{count}} prompts",
+          "prompt_one": "{{count}} prompt",
+          "prompt_other": "{{count}} prompts",
+          "source_many": "{{count}} fuentes",
+          "source_one": "{{count}} fuente",
+          "source_other": "{{count}} fuentes",
+          "tool_many": "{{count}} herramientas",
+          "tool_one": "{{count}} herramienta",
+          "tool_other": "{{count}} herramientas",
+          "workflow_many": "{{count}} flujos de trabajo",
+          "workflow_one": "{{count}} flujo de trabajo",
+          "workflow_other": "{{count}} flujos de trabajo"
+        },
+        "customModelsHint": "Los modelos personalizados no se pueden mover. Un administrador del equipo los quita en la página Modelos personalizados del equipo.",
+        "hint": "Muévelos a Personal o elimínalos y después elimina el equipo.",
+        "open": "Abrir {{name}}",
+        "openConnectors": "Abrir Conectores",
+        "openCustomModels": "Abrir Modelos personalizados",
+        "title": "{{name}} todavía posee elementos"
+      },
       "openTeamError": "No se pudieron cargar los detalles del equipo.",
+      "outside": {
+        "confirm": {
+          "changeTitle": "¿Cambiar quién puede sacar elementos fuera?",
+          "kept": "No se borra nada: al desbloquearlo, todo vuelve.",
+          "lockIntro": "Mientras esté bloqueado:",
+          "lockStops": "Nadie puede compartir sus elementos con otros equipos, publicar sus agentes fuera, sacar elementos del equipo ni exportar sus agentes.",
+          "lockTitle": "¿Bloquear {{team}}?",
+          "ownerUnlocks": "Solo el propietario podrá desbloquearlo de nuevo.",
+          "pauses": {
+            "chatLinks": "Los enlaces de chat compartidos del equipo dejan de abrirse",
+            "publishedAny": "Los agentes dejan de responder a través de su clave de API, widget, enlace público o webhook",
+            "published_many": "{{formatted}} agentes dejan de responder a través de su clave de API, widget, enlace público o webhook",
+            "published_one": "{{formatted}} agente deja de responder a través de su clave de API, widget, enlace público o webhook",
+            "published_other": "{{formatted}} agentes dejan de responder a través de su clave de API, widget, enlace público o webhook",
+            "sharesAny": "Los elementos compartidos con otros equipos quedan en pausa",
+            "shares_many": "{{formatted}} elementos compartidos con otros equipos quedan en pausa",
+            "shares_one": "{{formatted}} elemento compartido con otro equipo queda en pausa",
+            "shares_other": "{{formatted}} elementos compartidos con otros equipos quedan en pausa"
+          },
+          "returns": {
+            "chatLinks": "Los enlaces de chat compartidos del equipo vuelven a abrirse",
+            "publishedAny": "Los agentes vuelven a responder a través de su clave de API, widget, enlace público o webhook",
+            "published_many": "{{formatted}} agentes vuelven a responder a través de su clave de API, widget, enlace público o webhook",
+            "published_one": "{{formatted}} agente vuelve a responder a través de su clave de API, widget, enlace público o webhook",
+            "published_other": "{{formatted}} agentes vuelven a responder a través de su clave de API, widget, enlace público o webhook",
+            "sharesAny": "Los elementos compartidos con otros equipos vuelven a funcionar",
+            "shares_many": "{{formatted}} elementos compartidos con otros equipos vuelven a funcionar",
+            "shares_one": "{{formatted}} elemento compartido con otro equipo vuelve a funcionar",
+            "shares_other": "{{formatted}} elementos compartidos con otros equipos vuelven a funcionar"
+          },
+          "submit": {
+            "change": "Cambiar",
+            "lock": "Bloquear",
+            "unlock": "Desbloquear"
+          },
+          "toAdmins": "Los editores ya no podrán sacar elementos fuera. El acceso externo que paga un editor se pausa hasta que un administrador lo asuma. Lo que compartieron los editores se mantiene.",
+          "toEditors": "Los editores podrán compartir los elementos de este equipo con otros equipos y activar la clave de API, el widget, el enlace público o el webhook de un agente.",
+          "unlockIntro": "Esto vuelve tal como estaba:",
+          "unlockTitle": "¿Desbloquear {{team}}?"
+        },
+        "description": "Fuera significa otro equipo, o la clave de API, el widget, el enlace público o el webhook de un agente.",
+        "fromAnotherTeam": "De otro equipo",
+        "fromTeams": {
+          "intro": "Elementos de otros equipos que este equipo puede usar. Siguen siendo suyos: nadie aquí puede cambiarlos ni compartirlos con otros.",
+          "remove": "Quitar de este equipo",
+          "removeAgain": "Solo {{from}} puede volver a compartirlo.",
+          "removeError": "No se pudo quitar de este equipo.",
+          "removeLabel": "Quitar {{name}} de este equipo",
+          "removeTitle": "¿Quitar {{name}} de {{team}}?",
+          "title": "Compartido por otros equipos"
+        },
+        "hint": {
+          "admins": "Los administradores y el propietario pueden compartir los elementos de este equipo con otros equipos y activar la clave de API, el widget, el enlace público o el webhook de un agente.",
+          "editors": "Los editores también pueden. Los lectores, nunca.",
+          "locked": "Nadie puede. Lo que ya está fuera se pausa, y los elementos no se pueden sacar del equipo ni exportar, hasta que el propietario desbloquee el equipo."
+        },
+        "label": "Quién puede sacar los elementos de este equipo fuera de él",
+        "ownerOnly": "Solo el propietario del equipo puede desbloquearlo.",
+        "paused": "En pausa mientras {{team}} esté bloqueado",
+        "policy": {
+          "admins": "Administradores y propietario",
+          "editors": "También los editores",
+          "locked": "Nadie (bloqueado)"
+        },
+        "policyError": "No se pudo cambiar quién puede sacar elementos fuera.",
+        "published": {
+          "open": "Abrir",
+          "openLabel": "Abrir {{name}}",
+          "title": "Accesible desde fuera"
+        },
+        "shares": {
+          "by": "Compartido por {{name}}",
+          "empty": "Nada de este equipo se comparte fuera de él.",
+          "intro": "Elementos de este equipo que otros equipos pueden usar, y sus agentes accesibles desde fuera.",
+          "loadError": "No se pudo cargar lo que este equipo comparte fuera.",
+          "locked": "{{team}} está bloqueado: esto queda en pausa hasta que su propietario lo desbloquee.",
+          "policy": "Quién puede sacar elementos fuera: {{policy}}",
+          "revoke": "Dejar de compartir",
+          "revokeError": "No se pudo dejar de compartir.",
+          "revokeLabel": "Dejar de compartir {{name}} con {{team}}",
+          "revokeTitle": "¿Dejar de compartir {{name}} con {{team}}?",
+          "title": "Compartido fuera del equipo",
+          "with": "Compartido con {{team}}"
+        },
+        "stops": {
+          "agent": "Los miembros de {{team}} ya no podrán chatear con él. Sus chats siguen siendo legibles.",
+          "agents": "Estos agentes de {{team}} funcionarán sin él: {{names}}.",
+          "none": "Nada en {{team}} lo usa todavía.",
+          "unknown": "Lo que lo use en {{team}} dejará de usarlo.",
+          "usedBy_many": "{{formatted}} agentes de {{team}} lo usan y funcionarán sin él.",
+          "usedBy_one": "{{formatted}} agente de {{team}} lo usa y funcionará sin él.",
+          "usedBy_other": "{{formatted}} agentes de {{team}} lo usan y funcionarán sin él."
+        },
+        "title": "Fuera del equipo"
+      },
       "pageRange_many": "{{from}}–{{to}} de {{formatted}} equipos",
       "pageRange_one": "{{from}}–{{to}} de {{formatted}} equipo",
       "pageRange_other": "{{from}}–{{to}} de {{formatted}} equipos",
       "remove": "Quitar",
+      "removeMember": {
+        "personalItemsPaused": "Dejan de compartirse con {{team}} mientras {{name}} no esté en el equipo y vuelven si se le añade de nuevo. Para conservar los que necesita el equipo, pide antes a {{name}} que los mueva al equipo.",
+        "personalItems_many": "{{count}} elementos personales que {{name}} comparte con {{team}}",
+        "personalItems_one": "{{count}} elemento personal que {{name}} comparte con {{team}}",
+        "personalItems_other": "{{count}} elementos personales que {{name}} comparte con {{team}}",
+        "teamItemsStay": "Los elementos del equipo que añadió {{name}} se quedan en {{team}}. {{name}} pierde el acceso a ellos; puedes volver a añadirle cuando quieras."
+      },
       "removeMemberConfirmation": "¿Quitar a \"{{name}}\" de {{team}}?",
-      "removeMemberConsequence": "Pierde el acceso a todo lo que se compartió con {{team}}. Puedes volver a añadir a esta persona en cualquier momento.",
       "removeMemberError": "No se pudo quitar al miembro.",
       "resourceType": {
         "agent": "Agente",
@@ -4730,11 +5382,20 @@
       },
       "roleAdmin": "administrador",
       "roleChangeError": "No se pudo cambiar el rol (el último admin está protegido).",
+      "roleHints": {
+        "admin": "Además elimina elementos, gestiona miembros y roles, y activa el acceso desde fuera.",
+        "editor": "Además añade, edita, mueve y archiva elementos, y ve los registros.",
+        "viewer": "Usa los agentes, el conocimiento, las herramientas y los prompts del equipo."
+      },
       "roleMember": "miembro",
       "save": "Guardar",
       "searchMembers": "Buscar miembros…",
       "selectTeamHint": "Selecciona un equipo para gestionar sus miembros y recursos compartidos.",
       "selectTeamTitle": "Ningún equipo seleccionado",
+      "settingsTab": {
+        "deleteHint": "Solo se puede eliminar un equipo vacío. Mueve o elimina primero sus agentes, conocimiento, herramientas, prompts y carpetas.",
+        "details": "Detalles"
+      },
       "share": {
         "access": "Acceso",
         "accessLevel": {
@@ -4742,6 +5403,7 @@
           "viewer": "Lector"
         },
         "addPlaceholder": "Añadir personas o equipos…",
+        "addedByYou": "Añadido por ti",
         "allSummary": "{{name}} · Equipos: {{teams}} · Personas: {{people}}",
         "andMore_many": "y {{formatted}} más",
         "andMore_one": "y {{formatted}} más",
@@ -4757,6 +5419,9 @@
         "loadError": "No se pudieron cargar los accesos actuales.",
         "noMatches": "No se encontraron personas ni equipos.",
         "noTeams": "Aún no eres miembro de ningún equipo. Crea uno en Configuración → Equipos.",
+        "notOwnedByTeam": "Compartido, no es propiedad del equipo",
+        "ownOfferBody": "Se quedaría en el equipo si te vas.",
+        "ownOfferTitle": "¿Debería {{team}} ser su propietario?",
         "owner": "Propietario",
         "peopleGroup": "Personas",
         "peopleWithAccess": "Personas con acceso",
@@ -4769,7 +5434,6 @@
         "shareError": "No se pudo compartir con el equipo.",
         "showAll": "Ver los {{formatted}}",
         "subtitle": "Los miembros del equipo pueden usarlo; los editores también pueden modificarlo. Tú sigues siendo el propietario.",
-        "teamLabel": "Equipo",
         "teamsGroup": "Equipos",
         "titleGeneric": "Compartir {{type}}",
         "titleNamed": "Compartir \"{{name}}\"",
@@ -4789,6 +5453,8 @@
           "reasonShort": {
             "connectionNeedsReconnect": "Sesión de {{service}} cerrada",
             "connectionNeedsReconnectNoService": "Sesión cerrada",
+            "connectionPaused": "Cuenta de {{service}} del equipo en pausa",
+            "connectionPausedNoService": "Cuenta del equipo en pausa",
             "connectionRemoved": "Cuenta de {{service}} eliminada",
             "connectionRemovedNoService": "Cuenta eliminada",
             "connectorDisabled": "{{service}} desactivado por un administrador",
@@ -4801,6 +5467,8 @@
             "sponsorCannotEditItem": "{{person}} ya no puede editarlo",
             "sponsorCannotEditItemOther": "Quien lo añadió ya no puede editarlo",
             "sponsorCannotEditItemYou": "Ya no puedes editarlo",
+            "teamLocked": "Su equipo está bloqueado",
+            "teamShareEnded": "Su equipo ya no lo comparte",
             "unknown": "No se está ejecutando"
           },
           "stopped": "Detenido",
@@ -4816,6 +5484,11 @@
       "sharedCount_many": "{{formatted}} compartidos",
       "sharedCount_one": "{{formatted}} compartido",
       "sharedCount_other": "{{formatted}} compartidos",
+      "sharedItems": {
+        "empty": "Nadie ha compartido un elemento personal con este equipo.",
+        "intro": "Pertenecen a quienes los compartieron, no al equipo. Pide al propietario que mueva los que necesita el equipo.",
+        "title": "Elementos personales compartidos con el equipo"
+      },
       "sharedList": {
         "badgeWithEditors_many": "{{level}} · +{{formatted}} editores",
         "badgeWithEditors_one": "{{level}} · +{{formatted}} editor",
@@ -4833,18 +5506,36 @@
         "pageRange_many": "{{from}}–{{to}} de {{formatted}} recursos",
         "pageRange_one": "{{from}}–{{to}} de {{formatted}} recurso",
         "pageRange_other": "{{from}}–{{to}} de {{formatted}} recursos",
+        "paused": "En pausa: {{name}} dejó el equipo",
         "search": "Buscar compartidos…"
       },
-      "sharedResources": "Recursos compartidos",
       "sharedWithTeam": "Compartido con este equipo ({{count}})",
       "sourceManual": "Añadido manualmente",
       "sourceScim": "vía SCIM",
       "sourceSso": "vía SSO",
       "subtitle": "Gestiona tus equipos, miembros y recursos compartidos.",
-      "teamActions": "Acciones del equipo",
+      "tabs": {
+        "label": "Páginas del equipo",
+        "members": "Miembros",
+        "settings": "Configuración",
+        "shared": "Elementos personales compartidos",
+        "usage": "Uso"
+      },
       "teamNamePlaceholder": "Nombre del equipo",
       "teamSubtitle": "Gestiona los miembros y los recursos compartidos con este equipo.",
       "teamsHeading": "Tus equipos",
+      "transfer": {
+        "action": "Transferir",
+        "confirm": "¿Transferir {{team}} a {{name}}?",
+        "consequence": "Pasa a ser propietario y administrador. Solo el nuevo propietario puede devolverlo.",
+        "description": "Solo el propietario puede eliminar el equipo o transferirlo.",
+        "error": "No se pudo transferir el equipo.",
+        "memberLabel": "Nuevo propietario",
+        "noMatches": "Ningún otro miembro coincide.",
+        "placeholder": "Elige un miembro",
+        "submit": "Transferir",
+        "title": "Transferir la propiedad"
+      },
       "unshare": "Dejar de compartir",
       "unshareError": "No se pudo dejar de compartir el recurso.",
       "updateFailed": "Error al actualizar"
@@ -4893,9 +5584,13 @@
       "fieldDescription": "Descripción del campo",
       "fieldName": "Nombre del campo",
       "fieldType": "Tipo de campo",
+      "fileFailed": "La herramienta se añadió, pero no se pudo poner en esta carpeta.",
       "filledBy": "Completado por",
       "filters": {
         "all": "Todas"
+      },
+      "folders": {
+        "emptyHint": "Añade una herramienta aquí o mueve una desde su menú ⋯."
       },
       "groupAdded": "Añadidas",
       "groupBuiltIn": "Integradas",
@@ -4969,6 +5664,15 @@
         "sharedByEditor": "Compartido por {{owner}} · eres editor",
         "sharedCredentialsNotice": "Las credenciales guardadas permanecen ocultas. Lo que introduzcas las reemplaza para todos los que usan esta herramienta.",
         "sharedOAuthOwnerOnly": "Solo el propietario puede cambiar la conexión de este servidor o volver a conectar su inicio de sesión. Aún puedes cambiarle el nombre y editar sus acciones.",
+        "team": {
+          "eachPerson": "Cada persona inicia sesión con su propia cuenta",
+          "eachPersonHint": "Quien use este servidor inicia sesión en él con su propia cuenta. Primero necesitas tu propio inicio de sesión en él en Personal.",
+          "oauthNewServerOnly": "Para usar en un equipo un servidor con inicio de sesión (OAuth), añádelo como servidor nuevo.",
+          "signInInPersonal": "Iniciar sesión en Personal",
+          "teamOnce": "El equipo inicia sesión una vez, con tu cuenta",
+          "teamOnceHint": "Todo el equipo usa la cuenta con la que inicias sesión. Pasa a ser la conexión del equipo, conectada por ti.",
+          "whoSignsIn": "Quién inicia sesión"
+        },
         "testBeforeSave": "Prueba la conexión antes de guardar.",
         "testConnection": "Probar conexión",
         "timeout": "Tiempo de espera (segundos)",
@@ -4993,12 +5697,28 @@
       "savedSecretPlaceholder": "Guardado · introduce un valor nuevo para reemplazarlo",
       "searchActions": "Buscar acciones...",
       "searchPlaceholder": "Buscar herramientas…",
+      "sections": {
+        "folders": "Carpetas"
+      },
       "selectToolSetup": "Añadir una herramienta",
       "settingsIconAlt": "Icono de configuración",
-      "shareWithTeam": "Compartir con el equipo",
+      "shareWithTeam": "Compartir",
       "sharedBy": "Compartido por {{team}}",
       "statusUpdateFailed": "No se pudo cambiar si esta herramienta está en tus chats.",
       "subtitle": "Acciones que pueden realizar tus agentes. Las herramientas incluidas vienen con DocsGPT. Las herramientas de un servicio conectado se agrupan bajo ese servicio.",
+      "team": {
+        "addFailed": "No se pudo añadir la herramienta. Inténtalo de nuevo.",
+        "connectForTeam": "Conectar una cuenta para el equipo",
+        "connectForTeamHint": "Conecta una cuenta de {{name}} para todo el equipo en la página Conectores. Sus herramientas funcionarán con esa cuenta para todo el equipo.",
+        "connectInPersonal": "Conectar tu propia cuenta en Personal",
+        "eachPerson": "Cada persona inicia sesión con su propia cuenta",
+        "eachPersonHint": "Quien use esta herramienta inicia sesión en {{name}} con su propia cuenta. No se comparte ninguna cuenta.",
+        "eachPersonMeta": "La cuenta propia de cada persona",
+        "serviceDescription": "Elige con qué cuenta de {{name}} funciona la herramienta del equipo.",
+        "serviceTitle": "Añadir {{name}} al equipo",
+        "teamAccount": "Usar la cuenta del equipo",
+        "teamAccountHint": "La cuenta de {{name}} del equipo y sus herramientas se gestionan en la página Conectores. Funcionan con esa cuenta para todo el equipo."
+      },
       "toolActions": "Acciones de la herramienta",
       "toolIconTitle": "Icono de {{name}}",
       "triggerLabel_many": "Herramientas, {{formatted}} seleccionadas",
@@ -5052,14 +5772,303 @@
   },
   "teams": {
     "switcher": {
-      "ariaLabel": "Cambiar de equipo",
+      "ariaLabel": "Cambiar de espacio de trabajo",
       "createTeam": "Crear equipo",
       "logoAlt": "Logotipo de DocsGPT",
-      "manageTeams": "Gestionar equipos",
-      "personal": "Cuenta personal",
-      "personalSubtitle": "Espacio de trabajo personal",
-      "roleAdmin": "Administrador",
-      "roleMember": "Miembro"
+      "manageTeams": "Gestionar equipos"
+    }
+  },
+  "workspace": {
+    "chat": {
+      "deleteAll": {
+        "confirm": "¿Eliminar todos tus chats en {{name}}?",
+        "consequence": "Se eliminan todos los chats que iniciaste en {{name}}, con sus mensajes. Los chats de tus otros espacios de trabajo se conservan. No se puede deshacer."
+      },
+      "mismatch": "Este agente pertenece a otro espacio de trabajo que este chat.",
+      "notFound": "Ya no estás en este equipo, así que el chat no puede continuar aquí.",
+      "switchTo": "Cambiar a {{name}}",
+      "thisTeam": "este equipo"
+    },
+    "common": {
+      "personal": "Personal",
+      "roles": {
+        "admin": "Administrador",
+        "editor": "Editor",
+        "owner": "Propietario",
+        "viewer": "Lector"
+      },
+      "you": "Tú"
+    },
+    "folders": {
+      "alsoInFolder": "También en esta carpeta"
+    },
+    "menu": {
+      "moveToPersonal": "Mover a Personal…",
+      "moveToTeam": "Mover a un equipo…"
+    },
+    "move": {
+      "access": {
+        "gainsDetail": "Los editores y administradores de {{team}} pueden cambiarlo. Los lectores pueden usarlo.",
+        "gainsNone": "Nadie más obtiene acceso",
+        "gains_many": "{{count}} personas obtienen acceso",
+        "gains_one": "{{count}} persona obtiene acceso",
+        "gains_other": "{{count}} personas obtienen acceso",
+        "loseTeamNone": "Nadie más pierde el acceso",
+        "loseTeam_many": "{{count}} personas de {{team}} pierden el acceso",
+        "loseTeam_one": "{{count}} persona de {{team}} pierde el acceso",
+        "loseTeam_other": "{{count}} personas de {{team}} pierden el acceso",
+        "losesShared_many": "{{count}} personas con las que lo compartiste fuera de {{team}} perderán el acceso: {{names}}.",
+        "losesShared_one": "{{count}} persona con la que lo compartiste fuera de {{team}} perderá el acceso: {{names}}.",
+        "losesShared_other": "{{count}} personas con las que lo compartiste fuera de {{team}} perderán el acceso: {{names}}.",
+        "onlyYou": "Solo tú lo tendrás, hasta que lo compartas."
+      },
+      "anotherTeam": "otro equipo",
+      "borrow": {
+        "in_many": "{{names}} son accesibles desde fuera del equipo y usan lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelos también, desactiva su acceso externo o quítales antes esos elementos.",
+        "in_one": "{{names}} es accesible desde fuera del equipo y usa lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelo también, desactiva su acceso externo o quítale antes esos elementos.",
+        "in_other": "{{names}} son accesibles desde fuera del equipo y usan lo que este movimiento trae al equipo, algo que el acceso externo no debe servir. Muévelos también, desactiva su acceso externo o quítales antes esos elementos.",
+        "keeps_many": "Tus agentes {{names}} usan lo que se mueve. Pueden seguir usándolo desde el equipo, pero no se pueden publicar mientras lo hagan.",
+        "keeps_one": "Tu agente {{names}} usa lo que se mueve. Puede seguir usándolo desde el equipo, pero no se puede publicar mientras lo haga.",
+        "keeps_other": "Tus agentes {{names}} usan lo que se mueve. Pueden seguir usándolo desde el equipo, pero no se pueden publicar mientras lo hagan.",
+        "out_many": "{{names}} se quedan en {{team}} y usan lo que este movimiento saca. Muévelos también o quítales antes esos elementos.",
+        "out_one": "{{names}} se queda en {{team}} y usa lo que este movimiento saca. Muévelo también o quítale antes esos elementos.",
+        "out_other": "{{names}} se quedan en {{team}} y usan lo que este movimiento saca. Muévelos también o quítales antes esos elementos."
+      },
+      "cannotTitle": "No se puede mover",
+      "chats": {
+        "in_many": "{{count}} de tus chats con él pasan a {{team}}.",
+        "in_one": "{{count}} de tus chats con él pasa a {{team}}.",
+        "in_other": "{{count}} de tus chats con él pasan a {{team}}.",
+        "out_many": "{{count}} de tus chats con él pasan a Personal.",
+        "out_one": "{{count}} de tus chats con él pasa a Personal.",
+        "out_other": "{{count}} de tus chats con él pasan a Personal."
+      },
+      "comesAlong": "Se mueve también",
+      "comesWith": "Se mueve con \"{{name}}\"",
+      "customModelHint": "Para conservarlo, añádelo antes al equipo en Modelos personalizados.",
+      "done": {
+        "personal": "\"{{name}}\" ya está en tu espacio Personal.",
+        "team": "\"{{name}}\" ahora pertenece a {{team}}."
+      },
+      "doneButton": "Listo",
+      "droppedShares": {
+        "description": "Lo que los use en esos equipos dejará de funcionar.",
+        "title": "Se deja de compartir con otros equipos",
+        "with": "Compartido con {{team}}"
+      },
+      "effects": {
+        "removed_from_holder": "Se quitará de lo que lo usa.",
+        "stays": "Se queda donde está."
+      },
+      "errors": {
+        "already_in_workspace": "Ya está ahí.",
+        "credentials_unavailable": "Ahora mismo no se puede mover una clave guardada. Inténtalo más tarde.",
+        "credentials_unreadable_many": "Los secretos guardados de {{names}} no se pueden leer, así que no se pueden mover. Vuelve a introducirlos primero.",
+        "credentials_unreadable_one": "El secreto guardado de {{names}} no se puede leer, así que no se puede mover. Vuelve a introducirlo primero.",
+        "credentials_unreadable_other": "Los secretos guardados de {{names}} no se pueden leer, así que no se pueden mover. Vuelve a introducirlos primero.",
+        "fingerprint_required": "Revisa el plan de nuevo y luego muévelo.",
+        "folder_not_found": "Esa carpeta ya no está ahí.",
+        "folder_too_deep": "Esa carpeta es demasiado profunda para esta: las carpetas se anidan como máximo 3 niveles.",
+        "invalid_request": "No se puede hacer este movimiento.",
+        "move_failed": "No se pudo mover; no ha cambiado nada.",
+        "move_needs_admin": "Solo un administrador del equipo puede traer un agente accesible desde fuera del equipo.",
+        "move_plan_changed": "Algo ha cambiado; vuelve a revisarlo",
+        "move_would_borrow": "Un agente accesible desde fuera del equipo usa lo que este movimiento se lleva.",
+        "not_a_person": "Solo una persona puede mover elementos.",
+        "not_found": "Ya no está ahí.",
+        "nothing_to_move": "Ninguno de estos elementos se puede mover.",
+        "team_locked": "{{team}} está bloqueado, así que nada sale de él. Solo su propietario puede desbloquearlo.",
+        "workspace_not_found": "Ese equipo ya no está disponible.",
+        "workspace_role_required": "Tu rol allí no permite este movimiento."
+      },
+      "folderLabel": "Carpeta",
+      "foldersFailed": "No se pudieron cargar las carpetas de allí, así que irá al nivel superior.",
+      "kinds": {
+        "agent": "Agente",
+        "folder": "Carpeta",
+        "model": "Modelo",
+        "prompt": "Prompt",
+        "source": "Fuente",
+        "tool": "Herramienta"
+      },
+      "listSeparator": ", ",
+      "modelRemaps": {
+        "in": "\"{{from}}\" → \"{{to}}\" del equipo",
+        "out": "\"{{from}}\" → tu \"{{to}}\"",
+        "title": "Cambia a un modelo personalizado equivalente"
+      },
+      "needsAdmin_many": "{{names}} son accesibles desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traerlos. Desactiva primero su acceso externo o pídeselo a un administrador.",
+      "needsAdmin_one": "{{names}} es accesible desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traer eso. Desactiva primero su acceso externo o pídeselo a un administrador.",
+      "needsAdmin_other": "{{names}} son accesibles desde fuera del equipo (una clave, un enlace público o un webhook), y solo un administrador de {{team}} puede traerlos. Desactiva primero su acceso externo o pídeselo a un administrador.",
+      "noFolder": "Sin carpeta",
+      "openIn": "Abrir {{name}}",
+      "othersYouCantOpen_many": "{{count}} agentes que no puedes abrir",
+      "othersYouCantOpen_one": "{{count}} agente que no puedes abrir",
+      "othersYouCantOpen_other": "{{count}} agentes que no puedes abrir",
+      "outside": {
+        "apiKey": "clave de API y widget",
+        "publicLink": "enlace público",
+        "webhook": "webhook"
+      },
+      "owner": {
+        "team": "{{team}} será el propietario",
+        "teamDetail": "Se queda en el equipo si te vas. Sigues figurando como la persona que lo añadió.",
+        "you": "Serás el propietario",
+        "youDetail": "Sale de {{team}} y pasa a tu espacio Personal."
+      },
+      "payerYou": "ti",
+      "pays": {
+        "chats": "Cada persona paga sus propios chats.",
+        "outside": "El acceso externo ({{list}}) sigue funcionando, pagado por {{name}}.",
+        "schedules_many": "{{count}} programaciones siguen en marcha, pagadas por {{names}}.",
+        "schedules_one": "{{count}} programación sigue en marcha, pagada por {{names}}.",
+        "schedules_other": "{{count}} programaciones siguen en marcha, pagadas por {{names}}.",
+        "title": "No cambia quién paga"
+      },
+      "planChanged": "Algo ha cambiado; vuelve a revisarlo",
+      "quoted": "\"{{name}}\"",
+      "reasons": {
+        "connection_account": "Conectado con una cuenta que se queda en este espacio de trabajo.",
+        "connector_synced": "Sincronizado desde una cuenta que se queda en este espacio de trabajo.",
+        "credentials_unreadable": "Su secreto guardado ya no se puede leer.",
+        "custom_model": "Un modelo personalizado personal que el equipo no tiene.",
+        "custom_model_out": "Un modelo personalizado del equipo que tú no tienes.",
+        "in_knowledge_folder": "Archivado en una carpeta que lee el agente; solo vienen sus fuentes.",
+        "not_yours": "Es de otra persona, así que no puedes moverlo.",
+        "remote_device": "Se ejecuta en un dispositivo vinculado."
+      },
+      "renames": {
+        "folder": "La carpeta \"{{from}}\" pasa a ser \"{{to}}\"",
+        "other": "\"{{from}}\" pasa a ser \"{{to}}\"",
+        "slug": "La dirección del agente \"{{from}}\" pasa a ser \"{{to}}\"",
+        "title": "Renombrado para evitar un conflicto"
+      },
+      "sharedRefs": {
+        "from": "Se usa porque {{team}} lo comparte",
+        "title": "Se mantiene gracias a lo que comparte otro equipo"
+      },
+      "someone": "alguien",
+      "submit": "Mover a {{name}}",
+      "teamLabel": "Equipo",
+      "teamLocked_many": "{{names}} son accesibles desde fuera del equipo (clave, enlace público o webhook) y {{team}} está bloqueado, así que no pueden entrar. Desactiva primero su acceso externo.",
+      "teamLocked_one": "{{names}} es accesible desde fuera del equipo (clave, enlace público o webhook) y {{team}} está bloqueado, así que no puede entrar. Desactiva primero su acceso externo.",
+      "teamLocked_other": "{{names}} son accesibles desde fuera del equipo (clave, enlace público o webhook) y {{team}} está bloqueado, así que no pueden entrar. Desactiva primero su acceso externo.",
+      "titleToPersonal": "Mover \"{{name}}\" a Personal",
+      "titleToTeam": "Mover \"{{name}}\" a un equipo",
+      "unnamed": "Un elemento que no puedes abrir",
+      "withReasons": {
+        "in_folder": "En la carpeta",
+        "same_workflow": "En el mismo flujo de trabajo",
+        "used_by_agent": "Lo usa el agente"
+      }
+    },
+    "notices": {
+      "lost": "Ya no estás en {{name}}; has pasado a Personal",
+      "lostUnnamed": "Ya no estás en ese equipo; has pasado a Personal",
+      "ownerInactive": "El acceso externo está en pausa: la cuenta de su propietario está desactivada.",
+      "ownerInactiveShort": "Acceso externo en pausa",
+      "roleChanged": "Tu rol en {{name}} ha cambiado. La página muestra ahora lo que puedes hacer.",
+      "switched": "Has pasado a {{name}}"
+    },
+    "page": {
+      "sharedFromTeams": {
+        "from": "De {{team}}",
+        "title": "Compartido con este equipo"
+      },
+      "sharedWithYou": "Compartido contigo"
+    },
+    "pickers": {
+      "inAgentFolder": "En {{folder}}, la carpeta de este agente",
+      "inWorkflowFolder": "En {{folder}}, la carpeta de este flujo de trabajo",
+      "otherFolders": "En otras carpetas",
+      "thisTeam": "Este equipo"
+    },
+    "share": {
+      "access": "Acceso",
+      "adminsOnly": "Solo los administradores cambian esto, en la página del agente.",
+      "apiKey": "Clave de API y widget",
+      "belongsTo": "Pertenece a {{team}}. El acceso sigue la pertenencia al equipo.",
+      "everyoneInTeam": "Todos en {{team}}",
+      "fromTeam": "Desde el equipo",
+      "manageMembers": "Gestionar miembros",
+      "members_many": "{{count}} personas, según su rol en el equipo",
+      "members_one": "{{count}} persona, según su rol en el equipo",
+      "members_other": "{{count}} personas, según su rol en el equipo",
+      "off": "Desactivado",
+      "on": "Activado",
+      "onPaidBy": "Activado · pagado por {{name}}",
+      "outside": {
+        "again": "Puedes volver a compartirlo en cualquier momento.",
+        "locked": "{{team}} está bloqueado, así que nada de él se puede compartir con otro equipo. Solo su propietario puede desbloquearlo.",
+        "noMatches": "No se encontraron equipos.",
+        "noTargets": "No estás en otro equipo con el que compartirlo.",
+        "pausedLocked": "En pausa mientras {{owner}} esté bloqueado",
+        "picker": "Equipo con el que compartir",
+        "pickerPlaceholder": "Elige un equipo…",
+        "pickerSearch": "Buscar equipos…",
+        "received": {
+          "body": "{{owner}} lo comparte con todos en {{team}}.",
+          "bodyNoOwner": "Otro equipo lo comparte con todos en {{team}}.",
+          "note": "Puedes usarlo, pero no cambiarlo ni compartirlo con nadie más."
+        },
+        "revoke": "Dejar de compartir",
+        "revokeAgent": "Los miembros de {{team}} ya no podrán chatear con él. Sus chats anteriores seguirán siendo legibles.",
+        "revokeConfirm": "¿Dejar de compartir con {{team}}?",
+        "revokeUnused": "Los miembros de {{team}} ya no podrán usarlo.",
+        "revokeUsed_many": "{{formatted}} agentes de {{team}} lo usan y funcionarán sin él.",
+        "revokeUsed_one": "{{formatted}} agente de {{team}} lo usa y funcionará sin él.",
+        "revokeUsed_other": "{{formatted}} agentes de {{team}} lo usan y funcionarán sin él.",
+        "share": "Compartir",
+        "shareError": "No se pudo compartir con ese equipo.",
+        "sharedBy": "Compartido por {{name}}",
+        "sharedByYou": "Compartido por ti",
+        "teamsTitle": "Compartido con otros equipos",
+        "title": "Fuera del equipo",
+        "unknownTeam": "Un equipo en el que no estás",
+        "unshareError": "No se pudo dejar de compartir.",
+        "usedBy_many": "Lo usan {{formatted}} agentes",
+        "usedBy_one": "Lo usa {{formatted}} agente",
+        "usedBy_other": "Lo usan {{formatted}} agentes",
+        "uses": {
+          "fromTeam": "De {{team}}: {{items}}.",
+          "hidden_many": "{{count}} elementos que no puedes ver",
+          "hidden_one": "{{count}} elemento que no puedes ver",
+          "hidden_other": "{{count}} elementos que no puedes ver",
+          "moveTo": "Mover a {{team}}",
+          "note": "Este agente usa elementos de un equipo, así que solo se sugieren personas que pueden usarlos.",
+          "remove": "Quítalos del agente para compartirlo con otros.",
+          "someTeam": "otro equipo"
+        },
+        "warning": {
+          "agent": "Los miembros de {{team}} pueden chatear con él. Funciona con el conocimiento y las herramientas de {{owner}}. Quienes en {{owner}} ven sus registros e información ven sus preguntas.",
+          "always": "No pueden cambiarlo, volver a compartirlo ni publicar agentes que lo usen. Deja de compartirlo cuando quieras; todo lo que lo usa en {{team}} se detiene.",
+          "prompt": "Los miembros de {{team}} pueden leerlo y usarlo en sus agentes.",
+          "source": "Los miembros de {{team}} pueden leer todos los archivos que contiene y usar la fuente en sus agentes.",
+          "teamModels_many": "Los miembros de {{team}} usarán este agente con los modelos {{names}} de {{owner}}.",
+          "teamModels_one": "Los miembros de {{team}} usarán este agente con el modelo {{names}} de {{owner}}.",
+          "teamModels_other": "Los miembros de {{team}} usarán este agente con los modelos {{names}} de {{owner}}.",
+          "toolMember": "Cada miembro usa su propia cuenta.",
+          "toolStored": "Los miembros de {{team}} usarán esta herramienta con la cuenta guardada de {{owner}}. Lo que hagan con ella se hace en nombre de {{owner}}."
+        }
+      },
+      "payerYou": "ti",
+      "publicLink": "Enlace público",
+      "teamTitle": "Quién puede usar \"{{name}}\"",
+      "teamTitleGeneric": "Quién puede usar este elemento ({{type}})",
+      "webhook": "Webhook",
+      "yourRole": "{{role}} en {{team}}"
+    },
+    "switcher": {
+      "onlyYou": "Solo tú",
+      "personal": "Personal",
+      "teamMeta_many": "{{count}} personas · {{role}}",
+      "teamMeta_one": "{{count}} persona · {{role}}",
+      "teamMeta_other": "{{count}} personas · {{role}}",
+      "teamRole": "Equipo · {{role}}",
+      "teams": "Equipos"
+    },
+    "team": {
+      "navEntry": "Equipo"
     }
   }
 }

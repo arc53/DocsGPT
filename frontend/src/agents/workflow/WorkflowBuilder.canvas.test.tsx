@@ -2,10 +2,16 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
+// The caller's role in the current workspace (null reads as Personal).
+const mockWorkspace: { role: string | null } = { role: null };
 vi.mock('react-redux', () => ({
   useDispatch: () => vi.fn(),
   useSelector: (selector: { name?: string }) =>
-    selector.name === 'selectToken' ? 'token' : [],
+    selector.name === 'selectToken'
+      ? 'token'
+      : selector.name === 'selectWorkspaceRoleOrNull'
+        ? mockWorkspace.role
+        : [],
 }));
 
 const mockT = (key: string) => key;
@@ -193,7 +199,6 @@ const api = vi.hoisted(() => ({
   getWorkflow: vi.fn(),
   createAgent: vi.fn(),
   updateAgent: vi.fn(),
-  updateWorkflow: vi.fn(),
 }));
 vi.mock('../../api/services/userService', () => ({
   default: {
@@ -205,7 +210,6 @@ vi.mock('../../api/services/userService', () => ({
       }),
     createAgent: (...a: unknown[]) => api.createAgent(...a),
     updateAgent: (...a: unknown[]) => api.updateAgent(...a),
-    updateWorkflow: (...a: unknown[]) => api.updateWorkflow(...a),
     getUserTools: () => ok({ tools: api.tools }),
     getWorkflow: (...a: unknown[]) => api.getWorkflow(...a),
   },
@@ -250,9 +254,6 @@ describe('WorkflowBuilder canvas', () => {
       .mockImplementation(() => ok({ success: true, data: api.workflow }));
     api.createAgent.mockReset();
     api.updateAgent.mockReset().mockImplementation(() => ok({ id: 'a1' }));
-    api.updateWorkflow
-      .mockReset()
-      .mockImplementation(() => ok({ success: true }));
     panel.props = null;
     sheet.props = null;
     dialogs.props = [];
@@ -742,7 +743,6 @@ describe('WorkflowBuilder canvas', () => {
       await act(async () => button('agents.form.buttons.saveDraft')!.click());
       await act(async () => undefined);
       expect(api.createAgent).toHaveBeenCalledTimes(1);
-      expect(api.updateWorkflow).not.toHaveBeenCalled();
       expect(sent[0]).toMatchObject({
         name: 'New Workflow',
         description: '',
@@ -760,6 +760,29 @@ describe('WorkflowBuilder canvas', () => {
       expect(unsaved()).toBe(false);
       expect(container.textContent).toContain('agents.card.draft');
       expect(button('agents.form.buttons.publish')).toBeDefined();
+    });
+
+    it("makes Save draft the main button for a team's Editor, who can't publish", async () => {
+      mockWorkspace.role = 'editor';
+      try {
+        await render(NEW);
+        expect(button('agents.form.buttons.publish')).toBeUndefined();
+        expect(button('agents.form.buttons.saveDraft')?.dataset.variant).toBe(
+          'default',
+        );
+      } finally {
+        mockWorkspace.role = null;
+      }
+    });
+
+    it("keeps Publish for a team's Admin", async () => {
+      mockWorkspace.role = 'admin';
+      try {
+        await render(NEW);
+        expect(button('agents.form.buttons.publish')).toBeDefined();
+      } finally {
+        mockWorkspace.role = null;
+      }
     });
 
     it('asks before a new workflow runs something with the caller access, then creates it', async () => {
@@ -814,7 +837,6 @@ describe('WorkflowBuilder canvas', () => {
         'agent',
         'end',
       ]);
-      expect(api.updateWorkflow).not.toHaveBeenCalled();
       expect(container.textContent).toContain('agents.form.status.published');
       expect(button('agents.form.buttons.saveDraft')).toBeUndefined();
       expect(button('agents.form.buttons.save')!.disabled).toBe(true);

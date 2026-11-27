@@ -473,21 +473,36 @@ class TestPauseAndResume:
         agent = ClassicAgent(**agent_base_params, context_window_limit=LIMIT)
         assert agent.paused_turn_state()["context_window_limit"] == LIMIT
 
-    def test_the_resumed_agent_gets_it_back(self, monkeypatch):
+    def test_a_paused_turn_saves_its_history_bound(
+        self, agent_base_params, mock_llm_creator, mock_llm_handler_creator
+    ):
+        from docsgpt.agents.classic_agent import ClassicAgent
+
+        agent = ClassicAgent(**agent_base_params)
+        assert agent.paused_turn_state()["history_bound"] is None
+        agent.history_bound = 4
+        assert agent.paused_turn_state()["history_bound"] == 4
+
+    def test_the_resumed_agent_gets_it_back(self, monkeypatch, pg_conn):
+        from contextlib import nullcontext
         from unittest.mock import MagicMock
 
         from docsgpt.agents import agent_creator as ac_mod
         from docsgpt.agents import tool_executor as te_mod
         from docsgpt.api.answer.services import continuation_service as cont_mod
+        from docsgpt.api.answer.services import stream_processor as sp_mod
         from docsgpt.llm import llm_creator as llm_creator_mod
         from docsgpt.llm.handlers import handler_creator as handler_mod
+
+        # The resume looks up the chat's team; the throwaway database has no such chat, so it is Personal.
+        monkeypatch.setattr(sp_mod, "db_readonly", lambda: nullcontext(pg_conn))
 
         cont_service = MagicMock()
         cont_service.claim_state.return_value = {
             "messages": [], "pending_tool_calls": [], "tools_dict": {}, "tool_schemas": [], "client_tools": None,
             "agent_config": {
                 "model_id": "m1", "llm_name": "openai", "api_key": "k", "agent_type": "ClassicAgent",
-                "context_window_limit": LIMIT,
+                "context_window_limit": LIMIT, "history_bound": 3,
             },
         }
         monkeypatch.setattr(cont_mod, "ContinuationService", lambda: cont_service)
@@ -495,14 +510,17 @@ class TestPauseAndResume:
         monkeypatch.setattr(handler_mod.LLMHandlerCreator, "create_handler", lambda *a, **kw: MagicMock())
         monkeypatch.setattr(te_mod, "ToolExecutor", lambda **kw: MagicMock(client_tools=None))
         created = {}
+        resumed = MagicMock()
         monkeypatch.setattr(
-            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: created.update(kw) or MagicMock(),
+            ac_mod.AgentCreator, "create_agent", lambda *a, **kw: created.update(kw) or resumed,
         )
         sp = _processor(agent_config={}, conversation_id="00000000-0000-0000-0000-000000000001")
 
         sp.resume_from_tool_actions(tool_actions=[], conversation_id="00000000-0000-0000-0000-000000000001")
 
         assert created["context_window_limit"] == LIMIT
+        # The bound the turn began with, not one from the conversation now.
+        assert resumed.history_bound == 3
 
 
 @pytest.mark.unit

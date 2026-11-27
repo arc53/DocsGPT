@@ -1,14 +1,51 @@
-import { Cloud, HardDrive, Network, RefreshCw, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Cloud,
+  Folder as FolderIcon,
+  FolderOpen,
+  HardDrive,
+  Network,
+  RefreshCw,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
+import type { TFunction } from 'i18next';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import FilterSelect from '../components/FilterSelect';
+import { folderCountLine } from '../components/folders/folderCopy';
+import FolderCrumbRow from '../components/folders/FolderCrumbRow';
+import FolderNameModal from '../components/folders/FolderNameModal';
+import { selectFolderList } from '../components/folders/foldersSlice';
+import FolderTile from '../components/folders/FolderTile';
+import {
+  canCreateIn,
+  childFolders,
+  folderPath,
+  folderShowsOn,
+  matchingFolders,
+  subtreeIds,
+} from '../components/folders/folderTree';
+import NewFolderButton from '../components/folders/NewFolderButton';
+import type { Folder } from '../components/folders/types';
+import { useFolderActions } from '../components/folders/useFolderActions';
+import { useFolderMenu } from '../components/folders/useFolderMenu';
+import { useFolderParam } from '../components/folders/useFolderParam';
+// Safe on a store without the workspace slice (read as Personal): Personal,
+// or Editor and up in a team, may create; whether the workspace is a team.
+import {
+  selectCanEditFolders as selectCanCreate,
+  selectFoldersInTeam as selectInTeam,
+} from '../components/folders/folderWorkspace';
+import type { Crumb } from '../components/tree/PathHeader';
+import { SourceFolderTrail } from '../components/tree/folderTrail';
 import PageToolbar from '../components/PageToolbar';
-import RoleMeta from '../components/RoleMeta';
+import RoleMeta, { showsRole } from '../components/RoleMeta';
 import SearchInput from '../components/SearchInput';
 import SkeletonLoader from '../components/SkeletonLoader';
+import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import {
@@ -38,26 +75,38 @@ import {
   Doc,
   DocumentsProps,
   type KnowledgeDoc,
+  type SourceListScope,
   type UsageFilter,
 } from '../models/misc';
 import type { SSEEvent } from '../notifications/notificationsSlice';
-import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import {
+  getDocsWithPagination,
+  type PaginatedDocs,
+} from '../preferences/preferenceApi';
 import {
   selectSourceDocs,
   selectToken,
   setPaginatedDocuments,
   setSourceDocs,
 } from '../preferences/preferenceSlice';
+import { reloadSourceDocs } from '../preferences/reloadSourceDocs';
+import type { SourceSyncPaused } from '../payer/types';
 import Upload from '../upload/Upload';
 import {
   KNOWLEDGE_LINK_PARAMS,
   type KnowledgeLink,
   readKnowledgeLink,
 } from './knowledgeLink';
+import userService from '../api/services/userService';
+import { followItemWorkspace } from '../conversation/followWorkspace';
 import { cn } from '../lib/utils';
-import { can, isOwner } from '../utils/accessUtils';
+import { can } from '../utils/accessUtils';
 import { formatRelative } from '../utils/dateTimeUtils';
 import { agentUseCount } from '../utils/resourceUsage';
+import CreatorMeta, { showsCreator } from '../workspace/CreatorMeta';
+import SharedFromMeta, { showsSharedFrom } from '../workspace/SharedFromMeta';
+import { captureWorkspace } from '../workspace/requestWorkspace';
+import type { ItemWorkspace } from '../workspace/useFollowItemWorkspace';
 import FileTree from '../components/FileTree';
 import ConnectorTree from '../components/ConnectorTree';
 import WebsiteTree from '../components/WebsiteTree';
@@ -66,9 +115,9 @@ import { useSignInAgain } from '../connectors/SignInAgainNotice';
 import {
   connectionNeedsSignIn,
   loadConnectors,
-  selectConnections,
   selectConnectorsLoaded,
   selectStartedSyncs,
+  selectWorkspaceConnections,
   syncForgotten,
 } from '../connectors/connectorsSlice';
 import {
@@ -78,7 +127,20 @@ import {
   startedSyncAge,
   syncIdsKey,
 } from '../connectors/startedSyncs';
+import {
+  connectionCan,
+  connectionPauseText,
+  isConnectionPaused,
+  isTeamConnection,
+} from '../connectors/teamConnections';
+import type { Connection } from '../connectors/types';
 import type { AppDispatch } from '../store';
+import { readerIdFromToken } from '../utils/personLabel';
+import {
+  sourceSyncPausedText,
+  useCurrentTeamName,
+  useTeamConnections,
+} from './sourceSyncPause';
 import Chunks from '../components/Chunks';
 import WikiViewer from '../components/WikiViewer';
 import GraphSourceView from '../components/graph/GraphSourceView';
@@ -126,6 +188,76 @@ function asListedDoc(doc: KnowledgeDoc): Doc {
   };
 }
 
+/**
+ * Why a team source doesn't sync ("Scheduled sync paused: nobody in the
+ * team can pay for it.", "Syncing paused: Lena left Operations."); empty
+ * while it runs. See `sourceSyncPausedText`.
+ *
+ * Args:
+ *   t: The translate function.
+ *   doc: The source, with the server's `sync_paused`.
+ *   options.teamConnections: The current team's connections, to name
+ *     whoever connected the one it syncs through.
+ *   options.teamName: The current team's name.
+ *   options.me: The reader's user id.
+ *   options.language: The UI language, for dates.
+ */
+function syncPausedText(
+  t: TFunction,
+  doc: Doc,
+  {
+    teamConnections,
+    ...options
+  }: {
+    teamConnections: Connection[];
+    teamName: string | null;
+    me: string | null;
+    language?: string;
+  },
+): string {
+  const paused = (doc as Doc & { sync_paused?: SourceSyncPaused | null })
+    .sync_paused;
+  const connectionId = paused?.connection_id ?? doc.connectionId;
+  return sourceSyncPausedText(t, paused, {
+    ...options,
+    connection: connectionId
+      ? teamConnections.find((c) => c.id === connectionId)
+      : null,
+  });
+}
+
+/**
+ * What a source's card shows of the account it syncs through. The reader's
+ * own account needs a sign-in when it expired or fails, and they sign in
+ * again. A team's account says so too, but while it is paused it shows its
+ * pause instead; only whoever may manage it (a team Admin) gets Reconnect,
+ * which reconnects it as the team's.
+ *
+ * Args:
+ *   connection: The account, when listed in the current workspace.
+ *
+ * Returns:
+ *   `signIn`: it needs signing in again; `paused`: a team's account is
+ *   paused; `canReconnect`: the reader may reconnect it from the card.
+ */
+function connectionAttention(connection: Connection | undefined): {
+  signIn: boolean;
+  paused: boolean;
+  canReconnect: boolean;
+} {
+  if (!isTeamConnection(connection)) {
+    const signIn = connectionNeedsSignIn(connection);
+    return { signIn, paused: false, canReconnect: signIn };
+  }
+  const paused = isConnectionPaused(connection);
+  const signIn = !paused && connectionNeedsSignIn(connection);
+  return {
+    signIn,
+    paused,
+    canReconnect: (signIn || paused) && connectionCan(connection, 'manage'),
+  };
+}
+
 // A sync with no word on its first ingest (live events off, or the stream
 // resumed past the event) is looked for on the lists instead: from 2 minutes
 // after it started, every 30 s, until STARTED_SYNC_GIVE_UP_MS.
@@ -145,6 +277,41 @@ const USAGE_LABELS: Record<UsageFilter, string> = {
   unused: 'settings.usage.filters.unused',
 };
 
+/** Adds two count records key by key (the own and the shared listing's). */
+function sumCounts<K extends string>(
+  own: Record<K, number> | null,
+  shared: Record<K, number> | null | undefined,
+): Record<K, number> | null {
+  if (!own || !shared) return own;
+  const sum = { ...own };
+  (Object.keys(own) as K[]).forEach((key) => {
+    sum[key] = (own[key] ?? 0) + (shared[key] ?? 0);
+  });
+  return sum;
+}
+
+/** The sources shared with the caller, listed apart under the own ones. */
+type SharedList = {
+  docs: Doc[];
+  total: number;
+  page: number;
+  /** What it was asked with, for its next page. */
+  query: ListQuery;
+  kindCounts: PaginatedDocs['kindCounts'];
+  usageCounts: PaginatedDocs['usageCounts'];
+};
+
+/** What a page of sources is asked with, less its page number. */
+type ListQuery = {
+  sort: 'date' | 'tokens';
+  order: 'asc' | 'desc';
+  rows: number;
+  term: string;
+  kind: SourceKindFilter;
+  usage: UsageFilter;
+  scope?: SourceListScope;
+};
+
 /** Multiples of 12, so a full page fills the 1-, 2-, 3- or 4-column grid. */
 const SOURCE_PAGE_SIZES = [12, 24, 48];
 
@@ -159,11 +326,24 @@ export default function Sources({
   paginatedDocuments,
   handleDeleteDocument,
 }: DocumentsProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
-  const connections = useSelector(selectConnections);
+  const canCreate = useSelector(selectCanCreate);
+  const inTeam = useSelector(selectInTeam);
+  // The accounts sources sync through: the team's in a team (a team source
+  // never reads through a personal one), else the reader's own.
+  const connections = useSelector(selectWorkspaceConnections);
+  // A team source's pause names whoever connected the team's account.
+  const teamConnections = useTeamConnections();
+  const teamName = useCurrentTeamName();
+  const pauseOptions = {
+    teamConnections,
+    teamName,
+    me: readerIdFromToken(token) ?? null,
+    language: i18n?.language,
+  };
   // Signing in again reloads the connections, which lifts the pause.
   const { reconnect, modals: signInModals } = useSignInAgain();
   const connectorsLoaded = useSelector(selectConnectorsLoaded);
@@ -172,8 +352,51 @@ export default function Sources({
     if (!connectorsLoaded) dispatch(loadConnectors({ token }));
   }, [connectorsLoaded, dispatch, token]);
 
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const debouncedSearchTerm = useDebouncedValue(searchTerm, 500);
+  // The open folder (`?folder=`), its trail and the caller's folder tree.
+  const folderList = useSelector(selectFolderList('source'));
+  const { folderId, folder, trail, tree, openFolder } =
+    useFolderParam('source');
+  const folderActions = useFolderActions('source');
+  useEffect(() => {
+    if (!folderList.loaded && !folderList.loading) void folderActions.reload();
+  }, []);
+  // This page lists the folders that hold sources, or nothing yet.
+  const hasFolders = folderList.items.some((item) =>
+    folderShowsOn(tree, item, 'source'),
+  );
+  const inFolder = folderId !== null;
+
+  // A search belongs to the folder it was typed in: opening another folder
+  // starts with none, at once (no debounce), so the folder's list is read
+  // once. "Search all knowledge" carries it to the root.
+  const [search, setSearch] = useState<{
+    folderId: string | null;
+    term: string;
+  }>({ folderId: null, term: '' });
+  // A search carried to the root by "Search all knowledge" (see below).
+  const carriedSearch = useRef<string | null>(null);
+  // Leaving a folder drops its search, so coming back starts with none. The
+  // search keeps the folder it was typed in, so a carried one still reads.
+  const [searchFolderId, setSearchFolderId] = useState(folderId);
+  if (searchFolderId !== folderId) {
+    setSearchFolderId(folderId);
+    if (search.term) setSearch({ ...search, term: '' });
+  }
+  const searchTerm =
+    search.folderId === folderId
+      ? search.term
+      : folderId === null
+        ? (carriedSearch.current ?? '')
+        : '';
+  const setSearchTerm = (term: string) => setSearch({ folderId, term });
+  useEffect(() => {
+    if (folderId !== null || carriedSearch.current === null) return;
+    setSearch({ folderId: null, term: carriedSearch.current });
+    carriedSearch.current = null;
+  }, [folderId]);
+  const debouncedTerm = useDebouncedValue(searchTerm, 500);
+  // Clearing the search applies at once; typing waits for the pause.
+  const debouncedSearchTerm = searchTerm.trim() ? debouncedTerm : '';
   const [modalState, setModalState] = useState<ActiveState>('INACTIVE');
   const [loading, setLoading] = useLoaderState(false);
   // The last page load failed: an error with Retry, not "no sources".
@@ -208,6 +431,11 @@ export default function Sources({
     UsageFilter,
     number
   > | null>(null);
+  // Personal's root lists the caller's own sources; the ones people shared
+  // with them come in a listing of their own, read only when the own one
+  // counts any, and show as Shared with you.
+  const [shared, setShared] = useState<SharedList | null>(null);
+  const latestShared = useRef(0);
 
   const [actionMenuDocId, setActionMenuDocId] = useState<string | null>(null);
 
@@ -256,6 +484,31 @@ export default function Sources({
       },
       { replace: true },
     );
+  // The linked source this page asked the workspace of, once per link, and
+  // whether the answer (and the follow) is still out.
+  const linkLookup = useRef<{ id: string; pending: boolean } | null>(null);
+  /**
+   * Takes the app to the workspace a linked source lives in (a pasted,
+   * bookmarked or new-tab link), so it opens from that workspace's lists.
+   * A source out of reach, or a workspace the app can't go to, drops the
+   * link quietly.
+   */
+  const followLinkedSource = (id: string) => {
+    linkLookup.current = { id, pending: true };
+    const settle = (switched: boolean) => {
+      if (linkLookup.current?.id !== id) return;
+      linkLookup.current = { id, pending: false };
+      if (!switched) dropLink();
+    };
+    userService
+      .getSourceWorkspace(id, token)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body: { workspace?: ItemWorkspace | null } | null) =>
+        body?.workspace ? dispatch(followItemWorkspace(body.workspace)) : false,
+      )
+      .then(settle)
+      .catch(() => settle(false));
+  };
   useEffect(() => {
     const link = readKnowledgeLink(searchParams);
     if (!link) return;
@@ -272,6 +525,12 @@ export default function Sources({
       waitedFor.current = link.sourceId;
       return;
     }
+    if (!listed && linkLookup.current?.id !== link.sourceId) {
+      // Not in this workspace's lists: it may live in another.
+      followLinkedSource(link.sourceId);
+      return;
+    }
+    if (!listed && linkLookup.current?.pending) return;
     dropLink();
     const waited = waitedFor.current === link.sourceId;
     waitedFor.current = null;
@@ -330,9 +589,87 @@ export default function Sources({
     setStartedSync(null);
     setBusyViewId(null);
   };
+  // A source opened inside a folder reads `Knowledge › Carriers › source`:
+  // the Knowledge crumb leaves for the root, a folder crumb for that folder.
+  const leaveToRoot = () => {
+    closeDocument();
+    if (folderId) openFolder(null);
+  };
+  const folderCrumbs: Crumb[] = trail.map((step) => ({
+    label: step.name,
+    onSelect: () => {
+      closeDocument();
+      if (step.id !== folderId) openFolder(step.id);
+    },
+  }));
   // Graph-build progress is SSE-driven (graphBuildSlice), so the "building"
   // badge survives closing the modal and reflects the real backend state.
   const graphBuilds = useSelector(selectGraphBuilds);
+
+  // A search or a filter lists flat: every folder at the root, the open
+  // folder's whole subtree inside one. Otherwise the root lists the sources
+  // in no folder and a folder its own; the counts cover the subtree.
+  const searching = debouncedSearchTerm.trim() !== '';
+  const filtered = kind !== 'all' || usage !== 'all';
+  const flat = searching || filtered;
+  const listScope: SourceListScope | undefined = folderId
+    ? { folder: folderId, direct: !flat }
+    : flat
+      ? undefined
+      : { folder: 'root', direct: true };
+  // The root asks for the workspace's own sources (shared ones are a section
+  // of their own); a folder lists everything filed in it, shared included.
+  const listOrigin = folderId ? undefined : ('own' as const);
+
+  /**
+   * Reads one page of the sources shared with the caller, or forgets them.
+   *
+   * Args:
+   *   query: The own listing's search, filters and sort; null to clear.
+   *   page: The page of shared sources to read.
+   */
+  const loadShared = useCallback(
+    (query: ListQuery | null, page = 1) => {
+      const request = ++latestShared.current;
+      if (!query) {
+        setShared(null);
+        return;
+      }
+      const workspace = captureWorkspace();
+      getDocsWithPagination(
+        query.sort,
+        query.order,
+        page,
+        query.rows,
+        query.term,
+        token,
+        {
+          kind: query.kind,
+          usage: query.usage,
+          origin: 'shared',
+          ...(query.scope ? { scope: query.scope } : {}),
+        },
+      )
+        .then((data) => {
+          if (request !== latestShared.current || !workspace.isCurrent())
+            return;
+          setShared(
+            data
+              ? {
+                  docs: data.docs,
+                  total: data.totalDocuments,
+                  page: data.currentPage,
+                  query,
+                  kindCounts: data.kindCounts,
+                  usageCounts: data.usageCounts,
+                }
+              : null,
+          );
+        })
+        .catch((error) => console.error(error));
+    },
+    [token],
+  );
 
   // Each page request's number: only the latest one's answer is shown, so a
   // filter, search or page clicked while one loads isn't overwritten by it.
@@ -360,7 +697,10 @@ export default function Sources({
       }
 
       const request = ++latestRequest.current;
-      const isLatest = () => request === latestRequest.current;
+      // An answer from before a workspace switch belongs to another list.
+      const workspace = captureWorkspace();
+      const isLatest = () =>
+        request === latestRequest.current && workspace.isCurrent();
       setLoading(true);
       getDocsWithPagination(
         newSortField,
@@ -369,11 +709,34 @@ export default function Sources({
         rowsPerPg,
         debouncedSearchTerm,
         token,
-        { kind, usage },
+        {
+          kind,
+          usage,
+          ...(listScope ? { scope: listScope } : {}),
+          ...(listOrigin ? { origin: listOrigin } : {}),
+        },
       )
         .then((data) => {
           if (!isLatest()) return;
           setLoadFailed(data === null);
+          // The root lists what is shared in apart: with the caller in
+          // Personal (Shared with you), by other teams in a team (Shared
+          // with this team).
+          const sharedHere =
+            !!data && !folderId && (data.originCounts?.shared ?? 0) > 0;
+          loadShared(
+            sharedHere
+              ? {
+                  sort: newSortField,
+                  order: newSortOrder,
+                  rows: rowsPerPg,
+                  term: debouncedSearchTerm,
+                  kind,
+                  usage,
+                  scope: listScope,
+                }
+              : null,
+          );
           if (data === null) return;
           dispatch(setPaginatedDocuments(data.docs));
           setTotalDocuments(data.totalDocuments);
@@ -396,6 +759,12 @@ export default function Sources({
       debouncedSearchTerm,
       kind,
       usage,
+      listScope?.folder,
+      listScope?.direct,
+      listOrigin,
+      inTeam,
+      folderId,
+      loadShared,
       setCurrentPage,
     ],
   );
@@ -426,6 +795,8 @@ export default function Sources({
     onDeleted: (doc) => {
       if (documentToView?.id === doc.id) closeDocument();
       refreshDocs();
+      // A filed source counted in its folder.
+      if (doc.folder_id) void folderActions.reload();
     },
     // An open source (one opened from a citation may be off this page)
     // follows its own reingest, wiki conversion or graph enable. The
@@ -443,6 +814,24 @@ export default function Sources({
       // The open view reads what it keeps of the settings again.
       if (id === documentToView?.id) setSettingsVersion((v) => v + 1);
     },
+    // Filed elsewhere: the card leaves this list (or names its new folder).
+    onMoved: (doc, target) => {
+      if (!doc.id) return;
+      patchDoc(doc.id, {
+        folder_id: target,
+        folder_path: folderPath(tree, target).map(({ id, name }) => ({
+          id,
+          name,
+        })),
+      });
+      refreshDocs();
+    },
+    // Another workspace's now: it leaves this list (the Move dialog reads
+    // the app's knowledge list again).
+    onMovedToWorkspace: (doc) => {
+      if (documentToView?.id === doc.id) closeDocument();
+      refreshDocs();
+    },
     onSyncStarted: (doc, sync) =>
       doc.id && setStartedSync({ ...sync, sourceId: doc.id }),
     syncingId:
@@ -450,21 +839,29 @@ export default function Sources({
       (busyViewId && busyViewId === documentToView?.id ? busyViewId : null),
   });
 
+  // The folder ⋯ (on its tile and its crumb row). A deleted folder's sources
+  // moved up a level, and a folder moved to another workspace took its
+  // sources along, so the list is read again.
+  const folderMenu = useFolderMenu('source', () => refreshDocs(), {
+    onMovedToWorkspace: () => refreshDocs(),
+  });
+  const [newFolderOpen, setNewFolderOpen] = useState(false);
+
   /**
-   * Reads the app's knowledge list again into the store.
+   * Reads the app's knowledge list again into the store. A list that answers
+   * after a workspace switch belongs to the workspace left: it is dropped.
    *
-   * @returns The list, or null when it couldn't be read.
+   * @returns The list, or null when it couldn't be read or came too late.
    */
-  const reloadKnowledge = () =>
-    getDocs(token)
-      .then((docs) => {
-        if (docs) dispatch(setSourceDocs(docs));
-        return docs;
-      })
+  const reloadKnowledge = () => {
+    const workspace = captureWorkspace();
+    return dispatch(reloadSourceDocs(token))
+      .then((docs) => (workspace.isCurrent() ? docs : null))
       .catch((error) => {
         console.error(error);
         return null;
       });
+  };
 
   /**
    * Reads the open source again after its pages changed (added, refreshed,
@@ -486,12 +883,13 @@ export default function Sources({
 
   // The first load opens on the URL's page; a new search or filter starts
   // on page 1.
-  const listQuery = `${debouncedSearchTerm}\n${kind}\n${usage}`;
+  const listQuery = `${debouncedSearchTerm}\n${kind}\n${usage}\n${folderId}`;
   const queried = useRef(listQuery);
   useEffect(() => {
     const newQuery = queried.current !== listQuery;
     queried.current = listQuery;
-    if (newQuery) setCurrentPage(1);
+    // Only when it moves: a page write would race a folder change.
+    if (newQuery && currentPage !== 1) setCurrentPage(1);
     refreshDocs(undefined, newQuery ? 1 : currentPage, rowsPerPage);
   }, [listQuery]);
 
@@ -612,10 +1010,24 @@ export default function Sources({
   // Not a source yet, so a sync's kind is Synced and nothing uses it.
   const pendingFits =
     (kind === 'all' || kind === 'synced') && usage !== 'in_use';
+  // A sync added inside a folder files its source there: it waits in that
+  // folder (its subtree, for a search inside a parent), or anywhere when the
+  // root lists flat.
+  const subtree = useMemo(
+    () => (folderId ? subtreeIds(tree, folderId) : null),
+    [tree, folderId],
+  );
+  const pendingInScope = (sync: { folderId?: string }) =>
+    subtree
+      ? flat
+        ? !!sync.folderId && subtree.has(sync.folderId)
+        : sync.folderId === folderId
+      : flat || !sync.folderId || !tree.byId.has(sync.folderId);
   const pendingSyncs =
     currentPage === 1 && pendingFits
       ? [...unlistedSyncs]
           .reverse()
+          .filter(pendingInScope)
           .filter(
             (sync) =>
               !pendingTerm || sync.name.toLowerCase().includes(pendingTerm),
@@ -623,16 +1035,18 @@ export default function Sources({
       : [];
 
   // Needs attention: with no search or filter, the sources the reader can
-  // fix: a failed ingest they may reingest (`edit`), then a source on their
-  // own connection that needs a sign-in (only theirs are loaded). They come
-  // from the app's knowledge list so a source on any page counts. Indexing
+  // fix: a failed ingest they may reingest (`edit`), then a source on an
+  // account they may reconnect (their own, or a team's for an Admin). They
+  // come from the app's knowledge list so a source on any page counts. Indexing
   // needs no one, so it stays in the list. Page 1 leads with them and drops
   // them from its grid; later pages, with no such section, keep their own
   // cards. A card on this page is the fresher copy of its source.
-  const unfiltered = !pendingTerm && kind === 'all' && usage === 'all';
+  const unfiltered = !inFolder && !pendingTerm && !filtered;
   const attentionRank = (doc: Doc): number | null => {
     if (ingestState(doc) === 'failed' && can(doc, 'edit')) return 0;
-    return connectionNeedsSignIn(connectionOf(doc, connections)) ? 1 : null;
+    return connectionAttention(connectionOf(doc, connections)).canReconnect
+      ? 1
+      : null;
   };
   const attentionDocs =
     unfiltered && currentPage === 1
@@ -654,13 +1068,77 @@ export default function Sources({
     (doc) => !attentionIds.has(doc.id),
   );
   const showAttention = attentionDocs.length > 0;
+  // Only the root's unfiled ones are part of its listed totals: the own
+  // ones of Sources, the shared ones of Shared with you.
+  const unfiledAttention = attentionDocs.filter(
+    (doc) => !doc.folder_id || !tree.byId.has(doc.folder_id),
+  );
+  const attentionListed = unfiledAttention.filter(
+    (doc) => doc.origin !== 'shared' && doc.origin !== 'team_shared',
+  ).length;
+  // Shared with you follows the own list's page 1, as the folders do.
+  const sharedDocs =
+    shared && !inFolder && currentPage === 1
+      ? shared.docs.filter((doc) => !attentionIds.has(doc.id))
+      : [];
+  const sharedCount = shared
+    ? Math.max(0, shared.total - (unfiledAttention.length - attentionListed))
+    : 0;
+  // The kinds and usage count both listings.
+  const shownKindCounts = sumCounts(kindCounts, shared?.kindCounts);
+  const shownUsageCounts = sumCounts(usageCounts, shared?.usageCounts);
+
+  // The folders on page 1: the level's own, or for a search the matching
+  // ones from every level below (a filter alone lists sources only); only
+  // those holding sources, or nothing yet.
+  const shownFolders: Folder[] = (
+    currentPage !== 1
+      ? []
+      : searching
+        ? matchingFolders(
+            tree,
+            debouncedSearchTerm,
+            subtree
+              ? new Set([...subtree].filter((id) => id !== folderId))
+              : undefined,
+          )
+        : filtered
+          ? []
+          : childFolders(tree, folderId)
+  ).filter((shown) => folderShowsOn(tree, shown, 'source'));
+  /** Where a folder found by a search sits, when not right here. */
+  const parentNameOf = (found: Folder): string | undefined => {
+    if (!searching) return undefined;
+    const parentId = tree.parentOf.get(found.id) ?? null;
+    if (parentId === null || parentId === folderId) return undefined;
+    return tree.byId.get(parentId)?.name;
+  };
+  /**
+   * The folder trail a source is filed under, where the list mixes levels
+   * (a search, a filter, Needs attention): from the root, or from the open
+   * folder; none for a source in no folder or right in the open one.
+   */
+  const folderLabelOf = (doc: Doc): string | null => {
+    if (!doc.folder_id) return null;
+    const path: { id: string; name: string }[] = tree.byId.has(doc.folder_id)
+      ? folderPath(tree, doc.folder_id)
+      : (doc.folder_path ?? []);
+    const from = folderId
+      ? path.findIndex((step) => step.id === folderId) + 1
+      : 0;
+    const label = path
+      .slice(from)
+      .map((step) => step.name)
+      .join(' › ');
+    return label || null;
+  };
 
   // What every source view takes, and what a tree view adds.
   const viewProps = {
     docId: documentToView?.id || '',
     canEdit: viewCanEdit,
     sourceName: documentToView?.name ?? '',
-    onBackToDocuments: closeDocument,
+    onBackToDocuments: leaveToRoot,
     headerAction: testRetrievalAction,
     headerMenu: viewMenu,
     linkedChunk: link?.chunk,
@@ -748,13 +1226,27 @@ export default function Sources({
     );
   };
 
-  const renderSourceCard = (document: Doc) => {
+  /** A source's tile; `showFolder` names its folder trail (a mixed list). */
+  const renderSourceCard = (document: Doc, showFolder = false) => {
     const docId = document.id ? document.id.toString() : '';
+    const folderLabel = showFolder ? folderLabelOf(document) : null;
     const connection = connectionOf(document, connections);
-    // Sync stops until the reader signs in again (the shared rule).
-    const paused = connectionNeedsSignIn(connection);
+    // Sync stops until someone signs in again (the shared rule), or while a
+    // team's account is paused.
+    const { signIn, paused, canReconnect } = connectionAttention(connection);
     const ingest = ingestState(document);
     const line = sourceCardLine(t, document, connection);
+    // A team source's sync that is paused, as the server words it, else
+    // the pause of the team's account it syncs through.
+    const syncPaused =
+      syncPausedText(t, document, pauseOptions) ||
+      (paused
+        ? connectionPauseText(t, connection, {
+            teamName,
+            me: pauseOptions.me,
+            language: pauseOptions.language,
+          })
+        : '');
     const tokens = Number(document.tokens) || 0;
     const graph = document.config?.kind === 'graphrag';
     const build = graph && document.id ? graphBuilds[document.id] : undefined;
@@ -806,10 +1298,22 @@ export default function Sources({
             {line}
           </CardDescription>
         ) : null}
+        {syncPaused ? (
+          <p
+            data-sync-paused
+            className="text-warning flex items-start gap-1.5 text-xs"
+          >
+            <TriangleAlert
+              className="mt-0.5 size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            {syncPaused}
+          </p>
+        ) : null}
         {/* Pills are states only: the sign-in, the ingest, a graph build. */}
-        {(connection && paused) || ingest || building ? (
+        {signIn || ingest || building ? (
           <div className="flex flex-wrap gap-1">
-            {connection && paused ? (
+            {signIn ? (
               <Badge variant="warning">
                 {t('settings.connectors.status.reconnect')}
               </Badge>
@@ -844,17 +1348,27 @@ export default function Sources({
                 {t('settings.sources.graphrag.badge')}
               </MetaItem>
             ) : null}
-            {isOwner(document) ? null : <RoleMeta item={document} />}
+            {folderLabel ? (
+              <MetaItem icon={<FolderIcon />} title={folderLabel} data-folder>
+                {folderLabel}
+              </MetaItem>
+            ) : null}
             {agentUseCount(document.used_by) > 0 ? (
               // A sibling above the stretched button, so its popover opens.
               <span className="relative z-10">
                 <UsedByAgents usage={document.used_by} />
               </span>
             ) : null}
+            {/* Who added a team source, or owns one shared with the reader,
+                then the reader's role on a shared one. */}
+            {showsCreator(document) ? <CreatorMeta item={document} /> : null}
+            {showsSharedFrom(document) ? (
+              <SharedFromMeta item={document} />
+            ) : null}
+            {showsRole(document) ? <RoleMeta item={document} /> : null}
           </MetaLine>
-          {/* The reader's own connection (only theirs are loaded): sign in
-              again right here, without opening the source. */}
-          {connection && paused ? (
+          {/* Sign in again right here, without opening the source. */}
+          {connection && canReconnect ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -883,106 +1397,217 @@ export default function Sources({
 
   const GRID =
     'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
-  const filtered = kind !== 'all' || usage !== 'all';
-  const toolbarAction = (
-    <Button
-      type="button"
-      size="field"
-      shape="pill"
-      onClick={() => setModalState('ACTIVE')}
-    >
+  // Add knowledge, wherever it shows: Personal, or Editor and up in a team.
+  const addButton = canCreate ? (
+    <Button type="button" shape="pill" onClick={() => setModalState('ACTIVE')}>
       {t('settings.sources.addSource')}
     </Button>
+  ) : undefined;
+  // New folder and Add knowledge, here or inside the open folder; on a
+  // phone the two share the row. Neither is drawn below Editor in a team.
+  const toolbarAction = canCreate ? (
+    <div className="flex w-full items-center gap-2 *:flex-1 sm:w-auto sm:*:flex-none">
+      <NewFolderButton
+        atDepthLimit={!canCreateIn(tree, folderId)}
+        onClick={() => setNewFolderOpen(true)}
+      />
+      <Button
+        type="button"
+        size="field"
+        shape="pill"
+        onClick={() => setModalState('ACTIVE')}
+      >
+        {t('settings.sources.addSource')}
+      </Button>
+    </div>
+  ) : undefined;
+  const folderMenuButton = folder ? folderMenu.crumbMenu(folder) : null;
+  // The open folder before its folder list has loaded: wait for it (or say
+  // it failed) rather than draw a folder with no name.
+  const folderPending = inFolder && !folder;
+
+  const sourcesTitle =
+    inFolder || hasFolders
+      ? t('settings.sources.sections.sources')
+      : t('settings.sources.allKnowledge');
+  const sourcesCount =
+    Math.max(0, totalDocuments - attentionListed) + pendingSyncs.length;
+  const foldersFailed = folderList.failed && !folderList.loaded;
+  const foldersError = (
+    <EmptyState
+      size="sm"
+      illustration="none"
+      tone="destructive"
+      title={t('folders.errors.loadFailed')}
+      onRetry={() => void folderActions.reload()}
+    />
   );
+  // The root with no folders keeps one unheaded grid, as before folders;
+  // with folders (or inside one) every group has its heading. A failed folder
+  // load sections it too: the root lists only unfiled sources, so it must
+  // say the folders (and what is filed in them) couldn't be shown.
+  const rootFoldersFailed =
+    foldersFailed && !inFolder && !flat && currentPage === 1;
+  const sectioned =
+    showAttention ||
+    inFolder ||
+    hasFolders ||
+    rootFoldersFailed ||
+    shownFolders.length > 0 ||
+    sharedDocs.length > 0;
+  const nothingListed =
+    !currentDocuments.length &&
+    !showAttention &&
+    pendingSyncs.length === 0 &&
+    shownFolders.length === 0 &&
+    sharedDocs.length === 0;
+
+  const viewSyncPaused = documentToView
+    ? syncPausedText(t, documentToView, pauseOptions)
+    : '';
 
   return documentToView ? (
-    <div className="flex flex-col">
-      {isWikiSource(documentToView) ? (
-        <WikiViewer
-          docId={documentToView.id || ''}
-          sourceName={documentToView.name}
-          canEdit={viewCanEdit}
-          onBackToDocuments={closeDocument}
-          headerAction={testRetrievalAction}
-          headerMenu={viewMenu}
-          initialPath={link?.wikiPage}
-        />
-      ) : isGraphSource(documentToView) ? (
-        <GraphSourceView
-          // One view per source: another source's waits and state never
-          // carry over.
-          key={documentToView.id}
-          {...viewProps}
-          {...websiteProps}
-          sourceType={documentToView.type}
-          synced={viewSynced}
-          canSync={canSyncSource(documentToView)}
-          isNested={!!documentToView.isNested}
-          website={documentToView.website}
-        />
-      ) : documentToView.isNested ? (
-        documentToView.website ? (
-          <WebsiteTree
+    <SourceFolderTrail.Provider value={folderCrumbs}>
+      <div className="flex flex-col">
+        {viewSyncPaused ? (
+          <Alert variant="warning" role="note" className="mb-4">
+            <AlertDescription>
+              <p>{viewSyncPaused}</p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {documentToView.filesFailed ? (
+          <Alert variant="warning" role="note" className="mb-4">
+            <AlertDescription>
+              <p>
+                {t('settings.sources.filesFailed', {
+                  count: documentToView.filesFailed,
+                })}{' '}
+                {viewCanEdit && canSyncSource(documentToView) ? (
+                  <AlertAction
+                    onClick={() => void actions.syncNow(documentToView)}
+                  >
+                    {t('settings.sources.retryFailedFiles')}
+                  </AlertAction>
+                ) : null}
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        {isWikiSource(documentToView) ? (
+          <WikiViewer
+            docId={documentToView.id || ''}
+            sourceName={documentToView.name}
+            canEdit={viewCanEdit}
+            onBackToDocuments={leaveToRoot}
+            headerAction={testRetrievalAction}
+            headerMenu={viewMenu}
+            initialPath={link?.wikiPage}
+          />
+        ) : isGraphSource(documentToView) ? (
+          <GraphSourceView
+            // One view per source: another source's waits and state never
+            // carry over.
             key={documentToView.id}
-            {...treeProps}
+            {...viewProps}
             {...websiteProps}
-            hosts={documentToView.website.hosts}
-          />
-        ) : viewSynced ? (
-          // Synced from a connection or on a schedule, whatever its stored
-          // type (an S3 or GitHub source is typed by its loader): Sync now,
-          // no Add file, since a sync replaces the files.
-          <ConnectorTree
-            {...treeProps}
             sourceType={documentToView.type}
-            connection={viewConnection}
+            synced={viewSynced}
             canSync={canSyncSource(documentToView)}
-            syncFrequency={documentToView.syncFrequency}
-            syncedAt={documentToView.date}
+            isNested={!!documentToView.isNested}
+            website={documentToView.website}
           />
+        ) : documentToView.isNested ? (
+          documentToView.website ? (
+            <WebsiteTree
+              key={documentToView.id}
+              {...treeProps}
+              {...websiteProps}
+              hosts={documentToView.website.hosts}
+            />
+          ) : viewSynced ? (
+            // Synced from a connection or on a schedule, whatever its stored
+            // type (an S3 or GitHub source is typed by its loader): Sync now,
+            // no Add file, since a sync replaces the files.
+            <ConnectorTree
+              {...treeProps}
+              sourceType={documentToView.type}
+              connection={viewConnection}
+              canSync={canSyncSource(documentToView)}
+              syncFrequency={documentToView.syncFrequency}
+              syncedAt={documentToView.date}
+            />
+          ) : (
+            <FileTree {...treeProps} />
+          )
         ) : (
-          <FileTree {...treeProps} />
-        )
-      ) : (
-        <Chunks
-          documentId={documentToView.id || ''}
-          documentName={documentToView.name}
-          canEdit={viewCanEdit}
-          handleGoBack={closeDocument}
-          headerAction={
-            <>
-              {testRetrievalAction}
-              {/* A flat synced source has no tree to sync from: the
+          <Chunks
+            documentId={documentToView.id || ''}
+            documentName={documentToView.name}
+            canEdit={viewCanEdit}
+            handleGoBack={leaveToRoot}
+            headerAction={
+              <>
+                {testRetrievalAction}
+                {/* A flat synced source has no tree to sync from: the
                   button starts the sync and toasts. */}
-              {viewCanEdit &&
-              syncNowIsPrimary(documentToView) &&
-              canSyncSource(documentToView) ? (
-                <Button
-                  type="button"
-                  shape="pill"
-                  size="field"
-                  onClick={() => void actions.syncNow(documentToView)}
-                >
-                  {t('settings.sources.syncNow')}
-                </Button>
-              ) : null}
-            </>
-          }
-          headerMenu={viewMenu}
-          linkedChunk={link?.chunk}
-        />
-      )}
-      {actions.modals}
-    </div>
+                {viewCanEdit &&
+                syncNowIsPrimary(documentToView) &&
+                canSyncSource(documentToView) ? (
+                  <Button
+                    type="button"
+                    shape="pill"
+                    size="field"
+                    onClick={() => void actions.syncNow(documentToView)}
+                  >
+                    {t('settings.sources.syncNow')}
+                  </Button>
+                ) : null}
+              </>
+            }
+            headerMenu={viewMenu}
+            linkedChunk={link?.chunk}
+          />
+        )}
+        {actions.modals}
+      </div>
+    </SourceFolderTrail.Provider>
   ) : (
     <div className="flex w-full max-w-full flex-col">
       <div className="relative flex grow flex-col">
+        {/* Inside a folder its crumb row stands where the intro was: the
+            trail, its count line, and the folder's ⋯ last. */}
+        {folder ? (
+          <div className="mb-5">
+            <FolderCrumbRow
+              kind="source"
+              trail={trail}
+              onNavigate={openFolder}
+              meta={folderCountLine(t, folder, 'source')}
+              menu={folderMenuButton}
+            />
+          </div>
+        ) : null}
+        {/* At the root the intro, then whose sources these are. */}
+        {inFolder ? null : (
+          <div className="mb-5">
+            <p className="text-muted-foreground text-sm leading-6">
+              {t('settings.sources.subtitle')}
+            </p>
+          </div>
+        )}
         <PageToolbar
-          intro={t('settings.sources.subtitle')}
           search={
             <SearchInput
               maxLength={256}
-              label={t('settings.sources.searchPlaceholder')}
+              label={
+                folder
+                  ? t('folders.searchIn', {
+                      name: folder.name,
+                      interpolation: { escapeValue: false },
+                    })
+                  : t('settings.sources.searchPlaceholder')
+              }
               name="Document-search-input"
               id="document-search-input"
               value={searchTerm}
@@ -994,21 +1619,21 @@ export default function Sources({
         >
           {/* One recipe per page: the kind is the pill track, usage the
               FilterSelect beside it. */}
-          {!loadFailed && (kindCounts || usageCounts) ? (
+          {!loadFailed && (shownKindCounts || shownUsageCounts) ? (
             <div className="mb-6 flex flex-wrap items-center gap-3 empty:hidden">
-              {kindCounts && (
+              {shownKindCounts && (
                 <SourceKindToggle
                   value={kind}
                   onValueChange={setKind}
-                  counts={kindCounts}
+                  counts={shownKindCounts}
                 />
               )}
-              {usageCounts && (
+              {shownUsageCounts && (
                 <FilterSelect
                   value={usage}
                   onValueChange={setUsage}
                   values={USAGE_FILTERS}
-                  counts={usageCounts}
+                  counts={shownUsageCounts}
                   labelOf={(value) => t(USAGE_LABELS[value])}
                   ariaLabel={t('settings.usage.filterLabel')}
                 />
@@ -1017,7 +1642,9 @@ export default function Sources({
           ) : null}
         </PageToolbar>
         <div className="relative w-full">
-          {loading ? (
+          {folderPending && foldersFailed ? (
+            foldersError
+          ) : loading || folderPending ? (
             <div className={GRID}>
               <SkeletonLoader component="sourceCards" count={rowsPerPage} />
             </div>
@@ -1028,10 +1655,51 @@ export default function Sources({
               title={t('settings.sources.loadError')}
               onRetry={() => refreshDocs()}
             />
-          ) : !currentDocuments.length &&
-            !showAttention &&
-            pendingSyncs.length === 0 ? (
-            searchTerm || filtered ? (
+          ) : nothingListed ? (
+            folder && flat ? (
+              // Nothing in the folder matches: the same search at the root.
+              <EmptyState
+                size="xs"
+                illustration="none"
+                title={t('settings.sources.noResults')}
+                description={
+                  searching
+                    ? t('settings.sources.folders.noMatchIn', {
+                        name: folder.name,
+                        query: debouncedSearchTerm.trim(),
+                        interpolation: { escapeValue: false },
+                      })
+                    : undefined
+                }
+                action={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    shape="pill"
+                    onClick={() => {
+                      carriedSearch.current = searchTerm;
+                      openFolder(null);
+                    }}
+                  >
+                    {t('settings.sources.folders.searchAll')}
+                  </Button>
+                }
+              />
+            ) : folder ? (
+              <EmptyState
+                size="sm"
+                icon={FolderOpen}
+                title={t('folders.emptyTitle')}
+                description={
+                  canCreate
+                    ? t('settings.sources.folders.emptyHint')
+                    : undefined
+                }
+                action={addButton}
+              />
+            ) : foldersFailed && !flat && currentPage === 1 ? (
+              foldersError
+            ) : searchTerm || filtered ? (
               <EmptyState
                 size="xs"
                 illustration="none"
@@ -1042,51 +1710,97 @@ export default function Sources({
               // section connects a service too.
               <EmptyState
                 title={t('settings.sources.noData')}
-                description={t('settings.sources.emptyHint')}
-                action={
-                  <Button
-                    type="button"
-                    shape="pill"
-                    onClick={() => setModalState('ACTIVE')}
-                  >
-                    {t('settings.sources.addSource')}
-                  </Button>
+                description={
+                  canCreate ? t('settings.sources.emptyHint') : undefined
                 }
+                action={addButton}
               />
             )
-          ) : showAttention ? (
+          ) : sectioned ? (
             <div className="flex flex-col gap-8">
-              <section className="flex flex-col gap-3">
-                <SectionHeader
-                  size="sm"
-                  title={t('settings.sources.needsAttention')}
-                  count={attentionDocs.length}
-                />
-                <div className={GRID}>
-                  {attentionDocs.map(renderSourceCard)}
-                </div>
-              </section>
-              {gridDocuments.length + pendingSyncs.length > 0 && (
+              {showAttention ? (
                 <section className="flex flex-col gap-3">
                   <SectionHeader
                     size="sm"
-                    title={t('settings.sources.allKnowledge')}
-                    count={
-                      Math.max(0, totalDocuments - attentionDocs.length) +
-                      pendingSyncs.length
-                    }
+                    title={t('settings.sources.needsAttention')}
+                    count={attentionDocs.length}
+                  />
+                  <div className={GRID}>
+                    {attentionDocs.map((doc) => renderSourceCard(doc, true))}
+                  </div>
+                </section>
+              ) : null}
+              {shownFolders.length > 0 ? (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    size="sm"
+                    title={t('settings.sources.sections.folders')}
+                    count={shownFolders.length}
+                  />
+                  <div className={GRID}>
+                    {shownFolders.map((shown) => (
+                      <FolderTile
+                        key={shown.id}
+                        folder={shown}
+                        kind="source"
+                        onOpen={(opened) => openFolder(opened.id)}
+                        menuOptions={folderMenu.menuOptions(shown)}
+                        parentName={parentNameOf(shown)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ) : rootFoldersFailed ? (
+                foldersError
+              ) : null}
+              {gridDocuments.length + pendingSyncs.length > 0 ? (
+                <section className="flex flex-col gap-3">
+                  <SectionHeader
+                    size="sm"
+                    title={sourcesTitle}
+                    count={sourcesCount}
                   />
                   <div className={GRID}>
                     {pendingSyncs.map(renderPendingSync)}
-                    {gridDocuments.map(renderSourceCard)}
+                    {gridDocuments.map((doc) => renderSourceCard(doc, flat))}
                   </div>
                 </section>
-              )}
+              ) : null}
+              {sharedDocs.length > 0 && shared ? (
+                <section
+                  className="flex flex-col gap-3"
+                  data-section="shared-with-you"
+                >
+                  <SectionHeader
+                    size="sm"
+                    title={
+                      inTeam
+                        ? t('workspace.page.sharedFromTeams.title')
+                        : t('workspace.page.sharedWithYou')
+                    }
+                    count={sharedCount}
+                  />
+                  <div className={GRID}>
+                    {sharedDocs.map((doc) => renderSourceCard(doc, flat))}
+                  </div>
+                  {shared.total > shared.query.rows ? (
+                    <Pagination
+                      page={shared.page}
+                      pageSize={shared.query.rows}
+                      total={shared.total}
+                      rangeLabel={(range) =>
+                        t('settings.sources.pageRange', pageRangeParams(range))
+                      }
+                      onPageChange={(next) => loadShared(shared.query, next)}
+                    />
+                  ) : null}
+                </section>
+              ) : null}
             </div>
           ) : (
             <div className={GRID}>
               {pendingSyncs.map(renderPendingSync)}
-              {gridDocuments.map(renderSourceCard)}
+              {gridDocuments.map((doc) => renderSourceCard(doc, flat))}
             </div>
           )}
         </div>
@@ -1122,7 +1836,12 @@ export default function Sources({
           isOnboarding={false}
           renderTab={null}
           close={() => setModalState('INACTIVE')}
-          onSuccessfulUpload={() => refreshDocs()}
+          folderId={folderId}
+          onSuccessfulUpload={() => {
+            refreshDocs();
+            // The folder it was added to counts it.
+            if (folderId) void folderActions.reload();
+          }}
           onBrowseConnectors={() =>
             navigate('/settings/connectors?capability=sync')
           }
@@ -1132,6 +1851,14 @@ export default function Sources({
       {signInModals}
 
       {actions.modals}
+      {folderMenu.dialogs}
+      <FolderNameModal
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        kind="source"
+        mode="create"
+        parentId={folderId}
+      />
     </div>
   );
 }

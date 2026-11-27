@@ -7,9 +7,16 @@ import { Alert, AlertAction, AlertDescription } from '../components/ui/alert';
 import { selectConnectorCatalog } from './connectorsSlice';
 import { reconnectsInPlace } from './launchRules';
 import { type LeaveTo, leaveNow } from '../hooks/useLeaveGuard';
+import type { ConnectionOwner } from './types';
 import useConnectorLauncher from './useConnectorLauncher';
 
-type ConnectionRef = { id: string; connector_key: string; name: string };
+type ConnectionRef = {
+  id: string;
+  connector_key: string;
+  name: string;
+  /** `team` for a team's account: it reconnects as the team's. */
+  owner?: ConnectionOwner;
+};
 
 /**
  * Reconnects a connection from wherever it shows up broken: in place when the
@@ -42,6 +49,9 @@ export function useSignInAgain({
           connectionId: connection.id,
           // An MCP preset re-signs its existing tool rather than adding one.
           mcpServer: mcpToolId ? { id: mcpToolId } : undefined,
+          // A team's account is reconnected as the team's (and another
+          // Admin is told it becomes theirs).
+          ...(connection.owner === 'team' && { owner: 'team' as const }),
         });
         return;
       }

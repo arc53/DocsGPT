@@ -42,17 +42,24 @@ function Harness({
   connectorKey,
   mcpToolId,
   onNavigate,
+  owner,
 }: {
   connectorKey: string;
   mcpToolId?: string;
   onNavigate?: (path: string) => void;
+  owner?: 'team';
 }) {
   const { reconnect, modals } = useSignInAgain({ onNavigate });
   return (
     <>
       <SignInAgainNotice
         connections={[
-          { id: 'conn-2', connector_key: connectorKey, name: 'Linear' },
+          {
+            id: 'conn-2',
+            connector_key: connectorKey,
+            name: 'Linear',
+            ...(owner && { owner }),
+          },
         ]}
         onReconnect={(connection) => reconnect(connection, mcpToolId)}
       />
@@ -81,13 +88,13 @@ describe('SignInAgainNotice', () => {
     connectorKey: string,
     mcpToolId?: string,
     onNavigate?: (path: string) => void,
+    owner?: 'team',
   ) => {
     const store = configureStore({
       reducer: { connectors: connectorsReducer },
       preloadedState: {
         connectors: {
           enabled: true,
-          loading: false,
           loaded: true,
           failed: false,
           catalog: [LINEAR, CUSTOM],
@@ -107,6 +114,7 @@ describe('SignInAgainNotice', () => {
                     connectorKey={connectorKey}
                     mcpToolId={mcpToolId}
                     onNavigate={onNavigate}
+                    owner={owner}
                   />
                 }
               />
@@ -137,6 +145,17 @@ describe('SignInAgainNotice', () => {
       mode: 'reconnect',
       connectionId: 'conn-2',
       mcpServer: { id: 'tool-lin' },
+    });
+  });
+
+  it("reconnects a team's account as the team's", async () => {
+    await render('mcp:linear', 'tool-lin', undefined, 'team');
+    await act(async () => reconnectButton().click());
+    expect(launch).toHaveBeenCalledWith(LINEAR, {
+      mode: 'reconnect',
+      connectionId: 'conn-2',
+      mcpServer: { id: 'tool-lin' },
+      owner: 'team',
     });
   });
 

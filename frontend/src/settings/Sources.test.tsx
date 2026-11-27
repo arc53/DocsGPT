@@ -4,6 +4,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 
 const {
   dispatch,
+  follow,
   service,
   view,
   connectors,
@@ -13,7 +14,14 @@ const {
   configModal,
   viewProps,
   changeModals,
+  folderState,
 } = vi.hoisted(() => ({
+  // The workspace's folder tree (`folders.tree`); undefined is unloaded.
+  folderState: {
+    items: undefined as unknown[] | undefined,
+    // The last load failed, with none before it.
+    failed: false,
+  },
   // The callbacks Convert to wiki and Enable GraphRAG were given.
   changeModals: {
     onConverted: null as null | (() => void),
@@ -82,7 +90,11 @@ const {
         </div>
       );
     },
-  dispatch: vi.fn(),
+  // Runs thunks, as the real store does; actions are only recorded.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- any action
+  dispatch: vi.fn(function run(action: any): any {
+    return typeof action === 'function' ? action(run, () => ({})) : action;
+  }),
   service: {
     getConfig: vi.fn(),
     manageSync: vi.fn(),
@@ -90,7 +102,17 @@ const {
     syncConnector: vi.fn(),
     reingestSource: vi.fn(),
     getDirectoryStructure: vi.fn(),
+    // Where a linked source lives; none found by default.
+    getSourceWorkspace: vi.fn(async () => ({ ok: false, status: 404 })),
   },
+  // The follow into a linked source's workspace; resolves to whether the
+  // app switched.
+  follow: vi.fn(async (_workspace: unknown) => false),
+}));
+
+vi.mock('../conversation/followWorkspace', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../conversation/followWorkspace')>()),
+  followItemWorkspace: (workspace: unknown) => () => follow(workspace),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -110,6 +132,28 @@ vi.mock('react-redux', () => ({
         startedSyncs: connectors.startedSyncs,
       },
       notifications: { recentEvents: connectors.events },
+      // Personal: the page's workspace line and create buttons read it.
+      workspace: {
+        current: 'personal',
+        workspaces: [{ id: 'personal', kind: 'personal', name: 'Personal' }],
+        loaded: true,
+        loading: false,
+        epoch: 0,
+        lastReason: null,
+        latestRequestId: null,
+      },
+      folders: folderState.items
+        ? {
+            tree: {
+              items: folderState.items,
+              loaded: !folderState.failed,
+              loading: false,
+              failed: folderState.failed,
+              latestRequestId: null,
+              removedParents: {},
+            },
+          }
+        : undefined,
     }),
 }));
 
@@ -135,7 +179,30 @@ vi.mock('../preferences/preferenceApi', () => ({
   })),
 }));
 
-vi.mock('../components/Chunks', () => ({ default: view('chunks') }));
+// The chunk view also shows the folder crumbs it was handed (see
+// SourceFolderTrail), each a button that runs its crumb.
+vi.mock('../components/Chunks', async () => {
+  const { useSourceFolderTrail } =
+    await import('../components/tree/folderTrail');
+  const Base = view('chunks');
+  return {
+    default: (props: Parameters<typeof Base>[0]) => {
+      const trail = useSourceFolderTrail();
+      return (
+        <>
+          {Base(props)}
+          <nav data-testid="folder-trail">
+            {trail.map((crumb) => (
+              <button key={crumb.label} type="button" onClick={crumb.onSelect}>
+                {crumb.label}
+              </button>
+            ))}
+          </nav>
+        </>
+      );
+    },
+  };
+});
 vi.mock('../components/FileTree', () => ({ default: view('file-tree') }));
 vi.mock('../components/ConnectorTree', () => ({
   default: view('connector-tree'),
@@ -185,6 +252,7 @@ vi.mock('../upload/Upload', () => ({
 import { syncForgotten } from '../connectors/connectorsSlice';
 import type { Doc } from '../models/misc';
 import { getDocs, getDocsWithPagination } from '../preferences/preferenceApi';
+import { setRequestWorkspace } from '../workspace/requestWorkspace';
 import Sources from './Sources';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -232,6 +300,20 @@ const mount = (
       </MemoryRouter>,
     );
   });
+
+/**
+ * Makes the mocked store apply the knowledge list read back, as the real
+ * slice does, and run thunks.
+ */
+const applyKnowledge = () => {
+  const apply = (action: unknown): unknown => {
+    if (typeof action === 'function') return action(apply, () => ({}));
+    const { type, payload } = action as { type?: string; payload?: unknown };
+    if (type === 'preference/setSourceDocs') knowledge.docs = payload;
+    return action;
+  };
+  dispatch.mockImplementation(apply);
+};
 
 /** Opens the menu behind a trigger; returns its item labels. */
 const openMenu = async (testId: string) => {
@@ -409,8 +491,13 @@ describe('Sources access', () => {
       [VIEW, TEST],
       null,
     ],
-    // No access fields: the caller's own.
-    ['no access fields', {}, FULL, false],
+    // No access fields: the caller's own, filed like any.
+    [
+      'no access fields',
+      {},
+      [VIEW, EDIT_CONFIG, TEST, CONVERT, SHARE, 'folders.moveToFolder', DELETE],
+      false,
+    ],
   ])('the card menu of %s', async (_, fields, expected, eye) => {
     await render(doc(fields));
     expect(await menuItems()).toEqual(expected);
@@ -1036,6 +1123,41 @@ describe('Sources access', () => {
     ]);
   });
 
+  it('an opened source says how many files its last sync could not read, and retries them', async () => {
+    service.syncConnector.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+    await openView(
+      doc({
+        type: 'connector:file',
+        syncFrequency: 'weekly',
+        filesFailed: 3,
+        access: 'owner',
+        allowed_actions: [...OWNER, 'use', 'view_config'],
+      }),
+    );
+    const note = Array.from(container.querySelectorAll('[role="note"]')).find(
+      (el) => el.textContent?.includes('settings.sources.filesFailed'),
+    );
+    expect(note).toBeTruthy();
+    const retry = Array.from(note!.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.retryFailedFiles',
+    )!;
+    await act(async () => {
+      retry.click();
+    });
+    expect(service.syncConnector).toHaveBeenCalledWith('src-1', null);
+  });
+
+  it('a source whose files were all read shows no such note', async () => {
+    await openView(
+      doc({ type: 'connector:file', syncFrequency: 'weekly', filesFailed: 0 }),
+    );
+    expect(container.textContent).not.toContain('settings.sources.filesFailed');
+  });
+
   it('Delete from the opened source returns to the list', async () => {
     const handleDeleteDocument = vi.fn(async () => undefined);
     const listed = doc({
@@ -1342,6 +1464,76 @@ describe('Sources citation link', () => {
     expect(viewOf('chunks')).toBeNull();
   });
 
+  // A pasted or bookmarked link to a source of another workspace goes there
+  // first; the source then opens from that workspace's lists.
+  describe('a source not in this workspace', () => {
+    beforeEach(() => {
+      service.getSourceWorkspace.mockClear();
+      follow.mockClear();
+    });
+    // Back to the defaults: no source found, no follow.
+    afterEach(() => {
+      service.getSourceWorkspace.mockImplementation(async () => ({
+        ok: false,
+        status: 404,
+      }));
+      follow.mockImplementation(async () => false);
+    });
+    const team = { kind: 'team', team_id: 't1' };
+
+    it("follows it into the source's workspace and keeps the link", async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(true);
+      await render('/settings/knowledge?source=src-t&chunk=c1&q=x');
+      expect(service.getSourceWorkspace).toHaveBeenCalledWith('src-t', null);
+      expect(follow).toHaveBeenCalledWith(team);
+      expect(where()).toBe('?source=src-t&chunk=c1&q=x');
+    });
+
+    it('drops the link quietly when the caller cannot see it', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: false,
+        status: 404,
+      } as never);
+      await render('/settings/knowledge?source=gone');
+      expect(follow).not.toHaveBeenCalled();
+      expect(where()).toBe('');
+      expect(viewOf('chunks')).toBeNull();
+    });
+
+    it('drops the link quietly when the app cannot go there', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(false);
+      await render('/settings/knowledge?source=src-t');
+      expect(follow).toHaveBeenCalledWith(team);
+      expect(where()).toBe('');
+    });
+
+    it('asks once, so a source still missing after the follow drops the link', async () => {
+      service.getSourceWorkspace.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, workspace: team }),
+      } as never);
+      follow.mockResolvedValue(true);
+      await render('/settings/knowledge?source=src-t');
+      expect(where()).toBe('?source=src-t');
+      // The team's lists come back without it.
+      knowledge.docs = [doc({ id: 'other' })];
+      await render('/settings/knowledge?source=src-t');
+      expect(service.getSourceWorkspace).toHaveBeenCalledTimes(1);
+      expect(where()).toBe('');
+    });
+  });
+
   it('shows the list for a source the caller cannot see', async () => {
     await render('/settings/knowledge?source=gone&chunk=c1&q=x');
     expect(viewOf('chunks')).toBeNull();
@@ -1376,13 +1568,7 @@ describe('Sources citation link', () => {
     });
 
     it('keeps the link while it indexes, then opens the source once listed', async () => {
-      // The store applies the list read back, as the real slice does.
-      dispatch.mockImplementation(
-        (action: { type?: string; payload?: unknown }) => {
-          if (action?.type === 'preference/setSourceDocs')
-            knowledge.docs = action.payload;
-        },
-      );
+      applyKnowledge();
       await render('/settings/knowledge?source=src-new');
       // Not listed yet: the list shows and the link waits.
       expect(viewOf('file-tree')).toBeNull();
@@ -1400,6 +1586,26 @@ describe('Sources citation link', () => {
       expect(getDocs).toHaveBeenCalledTimes(1);
       expect(viewOf('file-tree')).not.toBeNull();
       expect(where()).toBe('');
+    });
+
+    it('applies no list read for a workspace the app has left', async () => {
+      applyKnowledge();
+      let answer: ((docs: Doc[]) => void) | null = null;
+      vi.mocked(getDocs).mockReturnValue(
+        new Promise<Doc[]>((resolve) => (answer = resolve)),
+      );
+      knowledge.docs = [];
+      connectors.events = [ingest('source.ingest.completed')];
+      try {
+        await render('/settings/knowledge?source=src-new');
+        await vi.waitFor(() => expect(answer).not.toBeNull());
+        // The user switches workspace while the list is out.
+        setRequestWorkspace('t1', 1);
+        await act(async () => answer!([doc({ id: 'src-new' })]));
+        expect(knowledge.docs).toEqual([]);
+      } finally {
+        setRequestWorkspace('personal', 0);
+      }
     });
 
     it('drops the link when the first sync fails', async () => {
@@ -1454,13 +1660,7 @@ describe('Sources citation link', () => {
       });
       vi.setSystemTime(new Date(START));
       dispatch.mockReset();
-      // The store applies the list read back, as the real slice does.
-      dispatch.mockImplementation(
-        (action: { type?: string; payload?: unknown }) => {
-          if (action?.type === 'preference/setSourceDocs')
-            knowledge.docs = action.payload;
-        },
-      );
+      applyKnowledge();
       vi.mocked(getDocs).mockReset();
       vi.mocked(getDocs).mockResolvedValue([]);
       withConnection('connected', { id: 'conn-drive' });
@@ -1712,6 +1912,7 @@ describe('Sources filters and usage', () => {
     expect(fetchPage.mock.calls[0][6]).toEqual({
       kind: 'websites',
       usage: 'in_use',
+      origin: 'own',
     });
   });
 
@@ -1728,7 +1929,6 @@ describe('Sources filters and usage', () => {
       ['settings.sources.kinds.files', '4'],
       ['settings.sources.kinds.websites', '2'],
       ['settings.sources.kinds.wikis', '1'],
-      ['settings.sources.kinds.shared', '1'],
     ]);
     // The page toolbar's size.
     expect(
@@ -1749,6 +1949,7 @@ describe('Sources filters and usage', () => {
     expect(fetchPage.mock.calls[0][6]).toEqual({
       kind: 'websites',
       usage: 'all',
+      origin: 'own',
     });
   });
 
@@ -2064,17 +2265,390 @@ describe('Sources toolbar', () => {
     document.body.innerHTML = '';
   });
 
-  it('offers Add knowledge alone: no Select mode, the card keeps its menu', async () => {
+  it('offers New folder and Add knowledge: no Select mode, the card keeps its menu', async () => {
     await mount(root, [owned]);
     const labels = Array.from(
       container.querySelectorAll<HTMLButtonElement>(
         '[data-slot="page-toolbar"] button',
       ),
     ).map((button) => button.textContent);
-    expect(labels).toEqual(['settings.sources.addSource']);
+    expect(labels).toEqual(['folders.newFolder', 'settings.sources.addSource']);
     expect(container.querySelector('[role="checkbox"]')).toBeNull();
     expect(
       container.querySelector('[data-testid="menu-button-a"]'),
     ).not.toBeNull();
+  });
+});
+
+describe('Sources folders', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  const fetchPage = vi.mocked(getDocsWithPagination);
+
+  const FOLDERS = [
+    {
+      id: 'f-car',
+      name: 'Carriers',
+      parent_id: null,
+      item_count: 3,
+      folder_count: 1,
+    },
+    { id: 'f-rate', name: 'Rate archive', parent_id: 'f-car', item_count: 4 },
+    { id: 'f-cus', name: 'Customs', parent_id: null, item_count: 0 },
+  ];
+  const CAR = { id: 'f-car', name: 'Carriers' };
+  const RATE = { id: 'f-rate', name: 'Rate archive' };
+  const tenders = doc({
+    id: 't',
+    name: 'Tenders',
+    folder_id: 'f-car',
+    folder_path: [CAR],
+  });
+  const sheet = doc({
+    id: 's',
+    name: 'Rate sheet',
+    folder_id: 'f-rate',
+    folder_path: [CAR, RATE],
+  });
+  const loose = doc({ id: 'l', name: 'Loose', folder_id: null });
+
+  const answer = (docs: Doc[], total = docs.length) =>
+    fetchPage.mockResolvedValue({
+      docs,
+      totalDocuments: total,
+      totalPages: 1,
+      currentPage: 1,
+      nextCursor: '',
+    });
+
+  beforeEach(() => {
+    localStorage.clear();
+    dispatch.mockReset();
+    fetchPage.mockReset();
+    uploadProps.mockReset();
+    answer([loose]);
+    service.getConfig.mockResolvedValue({ json: async () => ({}) });
+    folderState.items = FOLDERS;
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+    document.body.innerHTML = '';
+    folderState.items = undefined;
+    folderState.failed = false;
+    knowledge.docs = undefined;
+    connectors.startedSyncs = [];
+  });
+
+  const where = () =>
+    container.querySelector('[data-testid="where"]')!.textContent;
+  const headings = () =>
+    Array.from(container.querySelectorAll('section h2')).map(
+      (h) => h.textContent,
+    );
+  const folderTiles = () =>
+    Array.from(container.querySelectorAll('[data-folder-tile]')).map(
+      (tile) => tile.querySelector('button')!.textContent,
+    );
+  /** The folder meta item on a source's card, by the source's name. */
+  const folderMetaOf = (name: string) => {
+    const card = container
+      .querySelector(`[aria-label="${name}"]`)!
+      .closest('[data-slot="card"]')!;
+    return (
+      card.querySelector('[data-slot="meta-item"][data-folder]')?.textContent ??
+      null
+    );
+  };
+  const button = (label: string) =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      (b) => b.textContent === label,
+    );
+  const searchLabel = () =>
+    container.querySelector('label[for="document-search-input"]')?.textContent;
+
+  it('lists the folders, then the sources in none, at the root', async () => {
+    await mount(root, [loose]);
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'root', direct: true },
+      origin: 'own',
+    });
+    // Top-level folders only, by name; the loose sources under Sources.
+    expect(folderTiles()).toEqual(['Carriers', 'Customs']);
+    expect(headings()).toEqual([
+      'settings.sources.sections.folders2',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(folderMetaOf('Loose')).toBeNull();
+  });
+
+  it('keeps one unheaded grid with no folders', async () => {
+    folderState.items = [];
+    await mount(root, [loose]);
+    expect(folderTiles()).toEqual([]);
+    expect(headings()).toEqual([]);
+  });
+
+  it('says the folders failed to load, with Retry, above the unfiled sources', async () => {
+    folderState.items = [];
+    folderState.failed = true;
+    await mount(root, [loose]);
+    // The root lists only sources in no folder: without the error the
+    // filed ones would vanish without a word.
+    expect(container.textContent).toContain('folders.errors.loadFailed');
+    expect(button('retry')).toBeDefined();
+    expect(container.textContent).toContain('Loose');
+  });
+
+  it('shows folders on page 1 only', async () => {
+    fetchPage.mockResolvedValue({
+      docs: [loose],
+      totalDocuments: 40,
+      totalPages: 2,
+      currentPage: 2,
+      nextCursor: '',
+    });
+    await mount(root, [loose], { entry: '/settings/knowledge?page=2' });
+    expect(folderTiles()).toEqual([]);
+  });
+
+  it('opens a folder as a place: crumbs, a scoped toolbar and its contents', async () => {
+    knowledge.docs = [doc({ id: 'x', name: 'Broken', ingestStatus: 'failed' })];
+    answer([tenders]);
+    await mount(root, [tenders]);
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-folder-tile="f-car"] button')!
+        .click(),
+    );
+    expect(where()).toBe('?folder=f-car');
+    expect(fetchPage.mock.lastCall![6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'f-car', direct: true },
+    });
+    const crumbs = container.querySelector('[data-slot="folder-crumb-row"]')!;
+    expect(crumbs.textContent).toContain('folders.root.source');
+    expect(crumbs.textContent).toContain('Carriers');
+    expect(
+      crumbs.querySelector('button[aria-label="folders.menuLabel"]'),
+    ).not.toBeNull();
+    expect(searchLabel()).toBe('folders.searchIn');
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>(
+          '[data-slot="page-toolbar"] button',
+        ),
+      ).map((b) => b.textContent),
+    ).toEqual(['folders.newFolder', 'settings.sources.addSource']);
+    // Its own folders and sources; nothing from outside it.
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(headings()).toEqual([
+      'settings.sources.sections.folders1',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(container.textContent).not.toContain(
+      'settings.sources.needsAttention',
+    );
+    expect(folderMetaOf('Tenders')).toBeNull();
+  });
+
+  it('searches a folder and its subfolders, paths relative to it', async () => {
+    answer([tenders, sheet]);
+    await mount(root, [tenders, sheet], {
+      entry: '/settings/knowledge?folder=f-car',
+    });
+    await typeSearch('rate');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('rate');
+    expect(options).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'f-car', direct: false },
+    });
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(folderMetaOf('Rate sheet')).toBe('Rate archive');
+    expect(folderMetaOf('Tenders')).toBeNull();
+  });
+
+  it('offers Add knowledge in an empty folder, filing into it', async () => {
+    answer([], 0);
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-cus' });
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('folders.emptyTitle');
+    expect(empty.textContent).toContain('settings.sources.folders.emptyHint');
+    const add = Array.from(empty.querySelectorAll('button')).find(
+      (b) => b.textContent === 'settings.sources.addSource',
+    )!;
+    await act(async () => add.click());
+    expect(uploadProps.mock.lastCall![0]).toMatchObject({ folderId: 'f-cus' });
+  });
+
+  it('offers to search all knowledge when nothing in the folder matches', async () => {
+    answer([], 0);
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-car' });
+    await typeSearch('tariff');
+    const empty = container.querySelector('[data-slot="empty-state"]')!;
+    expect(empty.textContent).toContain('settings.sources.noResults');
+    await act(async () =>
+      Array.from(empty.querySelectorAll('button'))
+        .find((b) => b.textContent === 'settings.sources.folders.searchAll')!
+        .click(),
+    );
+    expect(where()).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('#document-search-input')!
+        .value,
+    ).toBe('tariff');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('tariff');
+    expect(options).toEqual({ kind: 'all', usage: 'all', origin: 'own' });
+  });
+
+  it('searches every folder from the root: matching folders first, each source with its folder', async () => {
+    answer([sheet, loose]);
+    await mount(root, [sheet, loose]);
+    await typeSearch('rate');
+    expect(fetchPage.mock.lastCall![6]).toEqual({
+      kind: 'all',
+      usage: 'all',
+      origin: 'own',
+    });
+    expect(folderTiles()).toEqual(['Rate archive']);
+    expect(
+      container.querySelector('[data-folder-tile="f-rate"]')!.textContent,
+    ).toContain('folders.inParent');
+    expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
+    expect(folderMetaOf('Loose')).toBeNull();
+  });
+
+  it('comes back to the root without the search it left there', async () => {
+    answer([sheet, loose]);
+    await mount(root, [sheet, loose]);
+    await typeSearch('rate');
+    await act(async () =>
+      container
+        .querySelector<HTMLButtonElement>('[data-folder-tile="f-rate"] button')!
+        .click(),
+    );
+    expect(where()).toBe('?folder=f-rate');
+    const crumbs = container.querySelector('[data-slot="folder-crumb-row"]')!;
+    await act(async () =>
+      Array.from(crumbs.querySelectorAll<HTMLButtonElement>('button'))
+        .find((b) => b.textContent === 'folders.root.source')!
+        .click(),
+    );
+    expect(where()).toBe('');
+    expect(
+      container.querySelector<HTMLInputElement>('#document-search-input')!
+        .value,
+    ).toBe('');
+    const [, , , , search, , options] = fetchPage.mock.lastCall!;
+    expect(search).toBe('');
+    expect(options).toEqual({
+      kind: 'all',
+      usage: 'all',
+      scope: { folder: 'root', direct: true },
+      origin: 'own',
+    });
+  });
+
+  it('goes flat under a filter at the root, with no folder tiles', async () => {
+    await mount(root, [sheet], { entry: '/settings/knowledge?kind=files' });
+    expect(fetchPage.mock.calls[0][6]).toEqual({
+      kind: 'files',
+      usage: 'all',
+      origin: 'own',
+    });
+    expect(folderTiles()).toEqual([]);
+    expect(folderMetaOf('Rate sheet')).toBe('Carriers › Rate archive');
+  });
+
+  it('names the folder of a filed source that needs attention', async () => {
+    const failed = doc({
+      id: 'f',
+      name: 'Failed',
+      ingestStatus: 'failed',
+      allowed_actions: ['edit'],
+      folder_id: 'f-car',
+      folder_path: [CAR],
+    });
+    knowledge.docs = [failed, loose];
+    answer([loose], 1);
+    await mount(root, [loose]);
+    // The failed source isn't one of the root's own: Sources stays at 1.
+    expect(headings()).toEqual([
+      'settings.sources.needsAttention1',
+      'settings.sources.sections.folders2',
+      'settings.sources.sections.sources1',
+    ]);
+    expect(folderMetaOf('Failed')).toBe('Carriers');
+  });
+
+  it('keeps the folder in a source opened inside it, and returns to it', async () => {
+    answer([tenders]);
+    await mount(root, [tenders], { entry: '/settings/knowledge?folder=f-car' });
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Tenders"]')!.click(),
+    );
+    const trail = container.querySelector('[data-testid="folder-trail"]')!;
+    expect(trail.textContent).toBe('Carriers');
+    await act(async () => trail.querySelector('button')!.click());
+    expect(container.querySelector('[data-testid="chunks"]')).toBeNull();
+    expect(where()).toBe('?folder=f-car');
+    // The Knowledge crumb leaves the folder for the root.
+    await act(async () =>
+      container.querySelector<HTMLElement>('[aria-label="Tenders"]')!.click(),
+    );
+    await act(async () => button('VIEW BACK')!.click());
+    expect(where()).toBe('');
+  });
+
+  it('shows a sync started in a folder there, not at the root', async () => {
+    connectors.startedSyncs = [
+      {
+        id: 'sync-1',
+        name: 'Drive sync',
+        connectionId: 'conn-1',
+        startedAt: new Date().toISOString(),
+        folderId: 'f-car',
+      },
+    ];
+    knowledge.docs = [];
+    await mount(root, [], { entry: '/settings/knowledge?folder=f-car' });
+    expect(container.textContent).toContain('Drive sync');
+    await act(async () => button('folders.root.source')!.click());
+    expect(where()).toBe('');
+    expect(container.textContent).not.toContain('Drive sync');
+  });
+
+  it('offers Move to folder after Share with team, before Delete', async () => {
+    const owned = doc({
+      access: 'owner',
+      allowed_actions: [...OWNER, 'use', 'move_folder'],
+    });
+    answer([owned]);
+    await mount(root, [owned]);
+    const items = await openMenu('menu-button-src-1');
+    expect(items.slice(-3)).toEqual([
+      'settings.sources.shareWithTeam',
+      'folders.moveToFolder',
+      'settings.sources.delete',
+    ]);
+  });
+
+  it('leaves Move to folder out without move_folder', async () => {
+    const viewer = doc({ access: 'viewer', allowed_actions: VIEWER });
+    answer([viewer]);
+    await mount(root, [viewer]);
+    expect(await openMenu('menu-button-src-1')).not.toContain(
+      'folders.moveToFolder',
+    );
   });
 });

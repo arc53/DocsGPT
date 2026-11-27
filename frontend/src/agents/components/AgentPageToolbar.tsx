@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import PageToolbar from '../../components/PageToolbar';
 import { formatDateTime } from '../../utils/dateTimeUtils';
+import OwnerInactiveNotice from '../OwnerInactiveNotice';
 
 type AgentPageToolbarProps = {
   /** The agent's name, first in the byline. */
@@ -91,6 +92,8 @@ export default function AgentPageToolbar({
       stack={Boolean(actions)}
       divider
     >
+      {/* About the opened agent, on each of its pages. */}
+      <OwnerInactiveNotice className="mb-6" />
       {children}
     </PageToolbar>
   );

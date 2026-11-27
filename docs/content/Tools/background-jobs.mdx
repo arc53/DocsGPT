@@ -1,10 +1,9 @@
 ---
 title: Background Jobs and Auto-Resume
+sidebarTitle: ⏳ Background Jobs
 description: How DocsGPT hands slow tool calls off to background jobs, resumes the conversation with their results, notifies the user (toasts, unread marks, Web Push), and how check_job and watch work.
-lastUpdated: 2026-10-20
+lastUpdated: 2026-11-18
 ---
-
-import { Callout } from 'nextra/components';
 
 # Background Jobs and Auto-Resume
 
@@ -106,10 +105,11 @@ tells open tabs once it is done.
 `source` `monitor`, `trigger` or `approval`, or `monitor_paused` and `monitor_expired` when a monitor reports on
 itself.
 
-Continuations are billed to the conversation's owner like any turn, and only run in conversations the owner
-holds outright. Conversations through the OpenAI-compatible `/v1` API, an agent API key or the widget, a
-shared agent's public link, or an agent someone else owns get **poll-only** jobs: the running result says so,
-and the result waits for `check_job` or the next message.
+Continuations are billed to the person chatting, like any turn of their chat, and only run in their own chats:
+on their own agents, on an agent shared with them while they can still use it, and in a team workspace on the
+team's agent while they are still in the team. Conversations through the OpenAI-compatible `/v1` API, an agent
+API key or the widget, a shared agent's public link, and team chats without an agent get **poll-only** jobs:
+the running result says so, and the result waits for `check_job` or the next message.
 
 ## check_job
 

@@ -6,7 +6,8 @@ Covers every write operation the legacy Mongo code performs on ``agents_collecti
 - find by key (API key lookup)
 - find by webhook token
 - list for user, list templates
-- folder assignment
+
+Folder filing is per user and lives in ``folder_items`` (``repositories/folders.py``).
 
 The ``creative`` and ``strict`` prompt presets have no ``prompts`` row, so
 ``prompt_id`` (a foreign key) can't hold them: they are stored in
@@ -24,6 +25,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from docsgpt.storage.db.base_repository import looks_like_uuid, row_to_dict
 from docsgpt.storage.db.models import agents_table
+from docsgpt.workspaces.principal import PRINCIPAL_PREFIX
 
 #: The prompt presets an agent stores in ``prompt_preset``. ``default`` is
 #: stored as NULL in both prompt columns.
@@ -32,12 +34,12 @@ STORED_PROMPT_PRESETS = ("creative", "strict")
 #: Columns a write may change without moving ``updated_at``. The builders send
 #: ``updated_at`` back as their stale-write token, so it tracks content only:
 #: an owner's chat (``last_used_at``), a regenerated key, the webhook token,
-#: the share link, the slug an export assigns and the owner's folder don't make
-#: a builder's open copy stale. The ``agents_set_updated_at`` trigger
-#: (migration 0060) skips the same columns.
+#: the share link and the slug an export assigns don't make a builder's open
+#: copy stale. The ``agents_set_updated_at`` trigger (migrations 0060, 0064)
+#: skips the same columns. Folder filing is not on the agent row at all.
 BOOKKEEPING_COLUMNS = frozenset({
     "last_used_at", "key", "incoming_webhook_token", "shared", "shared_token", "shared_metadata",
-    "slug", "folder_id",
+    "slug", "access_payer_id",
 })
 
 
@@ -120,14 +122,14 @@ class AgentsRepository:
         _ALLOWED = {
             "description", "agent_type", "key", "slug", "retriever",
             "default_model_id", "incoming_webhook_token",
-            "source_id", "prompt_id", "folder_id", "workflow_id",
-            "extra_source_ids", "image",
+            "source_id", "prompt_id", "workflow_id",
+            "extra_source_ids", "knowledge_folder_ids", "image",
             "chunks", "token_limit", "request_limit",
             "limited_token_mode", "limited_request_mode",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
             "tools", "json_schema", "models", "config", "resource_sponsors", "starters", "legacy_mongo_id",
-            "created_at", "updated_at", "last_used_at",
+            "created_at", "updated_at", "last_used_at", "created_by", "access_payer_id",
         }
 
         for col, val in kwargs.items():
@@ -153,9 +155,9 @@ class AgentsRepository:
                 "shared", "allow_system_prompt_override",
             ):
                 values[col] = bool(val)
-            elif col in ("source_id", "folder_id", "workflow_id"):
+            elif col in ("source_id", "workflow_id"):
                 values[col] = str(val)
-            elif col == "extra_source_ids":
+            elif col in ("extra_source_ids", "knowledge_folder_ids"):
                 # ARRAY(UUID) — pass list of strings; psycopg adapts it.
                 values[col] = [str(x) for x in val] if val else []
             else:
@@ -263,6 +265,19 @@ class AgentsRepository:
         )
         return int(result.scalar() or 0)
 
+    def count_by_prompt(self, prompt_id: str, *, exclude_agent_id: Optional[str] = None) -> int:
+        """Number of agents, anyone's, that use the stored prompt ``prompt_id``, leaving out ``exclude_agent_id``."""
+        if not looks_like_uuid(prompt_id):
+            return 0
+        result = self._conn.execute(
+            text(
+                "SELECT COUNT(*) FROM agents WHERE prompt_id = CAST(:prompt AS uuid) "
+                "AND (CAST(:exclude AS uuid) IS NULL OR id <> CAST(:exclude AS uuid))"
+            ),
+            {"prompt": prompt_id, "exclude": exclude_agent_id},
+        )
+        return int(result.scalar() or 0)
+
     def touch_for_workflow(self, workflow_id: str) -> None:
         """Move ``updated_at`` on every agent linked to ``workflow_id``.
 
@@ -314,14 +329,27 @@ class AgentsRepository:
         row = result.fetchone()
         return agent_row_to_dict(row)
 
-    def list_by_ids(self, agent_ids) -> list[dict]:
-        """Fetch agents whose id is in ``agent_ids`` (team-shared listing path)."""
+    def list_by_ids(self, agent_ids, *, personal_only: bool = False) -> list[dict]:
+        """Fetch agents whose id is in ``agent_ids`` (team-shared listing path).
+
+        Args:
+            agent_ids: Agent ids; non-UUIDs are skipped.
+            personal_only: Leave out agents a team workspace owns. A Personal
+                list asks for this, so a stale or forced grant row can never
+                bring a team's agent into it.
+
+        Returns:
+            list[dict]: The rows, newest first.
+        """
         ids = [str(a) for a in agent_ids if looks_like_uuid(str(a))]
         if not ids:
             return []
+        sql = "SELECT * FROM agents WHERE id = ANY(CAST(:ids AS uuid[]))"
+        if personal_only:
+            sql += " AND left(user_id, 8) <> :prefix"
         result = self._conn.execute(
-            text("SELECT * FROM agents WHERE id = ANY(CAST(:ids AS uuid[])) ORDER BY created_at DESC"),
-            {"ids": ids},
+            text(sql + " ORDER BY created_at DESC"),
+            {"ids": ids, "prefix": PRINCIPAL_PREFIX},
         )
         return [agent_row_to_dict(r) for r in result.fetchall()]
 
@@ -341,13 +369,13 @@ class AgentsRepository:
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "config", "resource_sponsors", "starters",
-            "default_model_id", "folder_id", "workflow_id",
-            "extra_source_ids", "image",
+            "default_model_id", "workflow_id",
+            "extra_source_ids", "knowledge_folder_ids", "image",
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "incoming_webhook_token", "last_used_at",
+            "incoming_webhook_token", "last_used_at", "access_payer_id",
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
@@ -358,9 +386,9 @@ class AgentsRepository:
                 values[col] = val
             elif col == "prompt_id":
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
-            elif col in ("source_id", "folder_id", "workflow_id"):
+            elif col in ("source_id", "workflow_id"):
                 values[col] = str(val) if val else None
-            elif col == "extra_source_ids":
+            elif col in ("extra_source_ids", "knowledge_folder_ids"):
                 values[col] = [str(x) for x in val] if val else []
             elif col in (
                 "limited_token_mode", "limited_request_mode",
@@ -419,13 +447,13 @@ class AgentsRepository:
             "name", "description", "agent_type", "status", "key", "slug", "source_id",
             "chunks", "retriever", "prompt_id", "tools", "json_schema", "models",
             "config", "resource_sponsors", "starters",
-            "default_model_id", "folder_id", "workflow_id",
-            "extra_source_ids", "image",
+            "default_model_id", "workflow_id",
+            "extra_source_ids", "knowledge_folder_ids", "image",
             "limited_token_mode", "token_limit",
             "limited_request_mode", "request_limit",
             "allow_system_prompt_override",
             "shared", "shared_token", "shared_metadata",
-            "incoming_webhook_token", "last_used_at",
+            "incoming_webhook_token", "last_used_at", "access_payer_id",
         }
         filtered = {k: v for k, v in fields.items() if k in allowed}
         if not filtered:
@@ -439,9 +467,9 @@ class AgentsRepository:
                 values[col] = val
             elif col == "prompt_id":
                 values["prompt_id"], values["prompt_preset"] = split_prompt_ref(val)
-            elif col in ("source_id", "folder_id", "workflow_id"):
+            elif col in ("source_id", "workflow_id"):
                 values[col] = str(val) if val else None
-            elif col == "extra_source_ids":
+            elif col in ("extra_source_ids", "knowledge_folder_ids"):
                 values[col] = [str(x) for x in val] if val else []
             elif col in (
                 "limited_token_mode", "limited_request_mode",
@@ -490,24 +518,3 @@ class AgentsRepository:
             {"legacy_id": legacy_mongo_id, "user_id": user_id},
         )
         return result.rowcount > 0
-
-    def set_folder(self, agent_id: str, user_id: str, folder_id: Optional[str]) -> None:
-        self._conn.execute(
-            text(
-                """
-                UPDATE agents SET folder_id = CAST(:folder_id AS uuid)
-                WHERE id = CAST(:id AS uuid) AND user_id = :user_id
-                """
-            ),
-            {"id": agent_id, "user_id": user_id, "folder_id": folder_id},
-        )
-
-    def clear_folder_for_all(self, folder_id: str, user_id: str) -> None:
-        """Remove folder assignment from all agents in a folder (used on folder delete)."""
-        self._conn.execute(
-            text(
-                "UPDATE agents SET folder_id = NULL "
-                "WHERE folder_id = CAST(:folder_id AS uuid) AND user_id = :user_id"
-            ),
-            {"folder_id": folder_id, "user_id": user_id},
-        )

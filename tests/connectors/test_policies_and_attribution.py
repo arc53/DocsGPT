@@ -51,13 +51,15 @@ def _db(conn):
 
 
 def _connection(conn, user="alice", provider="telegram", status="connected", auth_kind="api_key",
-                server_url=None, secrets=None) -> str:
+                server_url=None, secrets=None, connector_key=None) -> str:
+    """A connection row; ``connector_key`` defaults to ``provider`` as an API-key row stores it."""
     return str(conn.execute(
         text(
             "INSERT INTO connector_sessions (user_id, provider, connector_key, auth_kind, status, account_label, "
-            "server_url, encrypted_credentials) VALUES (:u, :p, :p, :a, :s, :l, :url, :e) RETURNING id"
+            "server_url, encrypted_credentials) VALUES (:u, :p, :k, :a, :s, :l, :url, :e) RETURNING id"
         ),
-        {"u": user, "p": provider, "a": auth_kind, "s": status, "l": f"{user}@example.com", "url": server_url,
+        {"u": user, "p": provider, "k": connector_key or provider, "a": auth_kind, "s": status,
+         "l": f"{user}@example.com", "url": server_url,
          "e": encrypt_json(secrets or {"credentials": {"token": "tok"}}, user)},
     ).scalar())
 
@@ -83,6 +85,69 @@ class TestPresets:
         row = {"provider": "mcp:https://mcp.linear.app", "server_url": "https://mcp.linear.app",
                "connector_key": "custom_mcp"}
         assert catalog.connector_key_for_row(row) == "mcp:linear"
+
+    def test_a_new_preset_does_not_revive_a_disabled_custom_connection(
+        self, app, pg_conn, tmp_path, monkeypatch,
+    ):
+        """Shipping a preset must not re-enable a custom server an admin turned off.
+
+        A custom MCP connection is stored as ``custom_mcp``. Once a preset
+        claims its origin the row is *reported* as that preset, and a preset
+        needs no server settings, so it is on by default. Policy must not
+        follow that far: the admin switched off the connector this row is
+        stored under, and nobody signed in again, so the connection stays
+        unavailable while custom MCP is off. What lifts that is the admin
+        turning custom MCP back on, or the connection being re-established
+        under the preset — never the preset merely shipping, which is what
+        this test pins.
+        """
+        from docsgpt.api.admin.connectors import AdminConnectorsResource
+        from docsgpt.connectors.resolve import resolve_connection
+        from docsgpt.storage.db.repositories.connector_sessions import ConnectorSessionsRepository
+
+        connection_id = _connection(
+            pg_conn, provider="mcp:https://mcp.example.com", auth_kind="mcp_oauth",
+            server_url="https://mcp.example.com", connector_key="custom_mcp",
+            secrets={"tokens": {"access_token": "tok"}},
+        )
+        resource = {"connection_id": connection_id, "user_id": "alice"}
+
+        with _db(pg_conn):
+            # Turned off the way an admin does it, through the admin endpoint.
+            resp = _call(app, AdminConnectorsResource, "put", "/api/admin/connectors",
+                         roles=["admin"], body={"allow_custom_mcp": False})
+            assert resp.status_code == 200
+            before = resolve_connection(resource, "alice")
+        assert before.connector_key == "custom_mcp"
+        assert before.enabled is False
+        assert before.available is False
+
+        (tmp_path / "example.yaml").write_text(
+            "key: mcp:example\n"
+            "name: Example\n"
+            "description: Example records.\n"
+            "icon: example\n"
+            "category: knowledge\n"
+            "mcp_url: https://mcp.example.com/mcp\n"
+            "auth_kind: mcp_oauth\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(catalog, "_PRESETS_DIR", tmp_path)
+        catalog.reset_registry_for_tests()
+        try:
+            with _db(pg_conn):
+                after = resolve_connection(resource, "alice")
+            # Identity still follows the server: the row is the preset's now.
+            assert after.connector_key == "mcp:example"
+            # ...but the admin's decision survives the preset shipping.
+            assert after.enabled is False
+            assert after.available is False
+            # The gate the worker and background access checks use agrees,
+            # so a sync or a scheduled run cannot reach it either.
+            row = ConnectorSessionsRepository(pg_conn).get(connection_id)
+            assert service.connector_enabled(pg_conn, row) is False
+        finally:
+            catalog.reset_registry_for_tests()
 
 
 class TestAdminPolicies:
@@ -554,6 +619,48 @@ class TestAttribution:
         assert sent == [{"text": "x", "connector_name": "Google Drive"}, "not-a-dict"]
         # The caller's chunks still carry the name for the prompt.
         assert docs[0]["source_name"] == "test-1"
+
+    def test_client_sources_use_matched_text_for_the_snippet(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "PARENT CHILD", "matched_text": "CHILD", "filename": "a.pdf"}]
+
+        sent = client_sources(docs)
+
+        assert sent == [{"text": "CHILD", "filename": "a.pdf"}]
+        assert docs[0]["text"] == "PARENT CHILD"
+        assert docs[0]["matched_text"] == "CHILD"
+
+    @pytest.mark.parametrize("matched", [None, ""])
+    def test_client_sources_ignore_empty_matched_text(self, matched):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "PARENT", "matched_text": matched, "filename": "a.pdf"}]
+
+        assert client_sources(docs) == [{"text": "PARENT", "filename": "a.pdf"}]
+
+    def test_client_sources_are_idempotent(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "PARENT CHILD", "matched_text": "CHILD", "filename": "a.pdf"}]
+
+        once = client_sources(docs)
+
+        assert client_sources(once) == once
+
+    def test_client_sources_ignore_matched_text_not_in_current_text(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "Guardrail-screened parent", "matched_text": "raw child", "filename": "a.pdf"}]
+
+        assert client_sources(docs) == [{"text": "Guardrail-screened parent", "filename": "a.pdf"}]
+
+    def test_client_sources_without_matched_text_are_unchanged(self):
+        from docsgpt.connectors.attribution import client_sources
+
+        docs = [{"text": "standalone chunk", "filename": "a.pdf"}]
+
+        assert client_sources(docs) == docs
 
     @pytest.mark.parametrize("docs", [None, [], "oops"])
     def test_client_sources_pass_non_lists_through(self, docs):

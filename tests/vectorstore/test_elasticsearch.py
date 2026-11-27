@@ -290,3 +290,34 @@ class TestElasticsearchStoreConnectToElasticsearch:
                 api_key="my-api-key",
             )
             assert result is mock_es
+
+
+@pytest.mark.unit
+def test_clear_parent_text_uses_source_scoped_metadata_update():
+    store, mock_es, _ = _make_es_store(source_id="source-1")
+    mock_es.update_by_query.return_value = {"timed_out": False, "failures": []}
+
+    updated = store.clear_parent_text(["chunk-1", "chunk-2"])
+
+    assert updated == [("chunk-1", "chunk-1"), ("chunk-2", "chunk-2")]
+    kwargs = mock_es.update_by_query.call_args.kwargs
+    assert kwargs["index"] == "test_index"
+    assert kwargs["query"] == {
+        "bool": {
+            "filter": [
+                {"term": {"metadata.source_id.keyword": "source-1"}},
+                {"ids": {"values": ["chunk-1", "chunk-2"]}},
+            ]
+        }
+    }
+    assert kwargs["script"]["source"] == "ctx._source.metadata.remove('parent_text')"
+    assert kwargs["refresh"] is True
+
+
+@pytest.mark.unit
+def test_clear_parent_text_raises_when_elasticsearch_reports_partial_updates():
+    store, mock_es, _ = _make_es_store(source_id="source-1")
+    mock_es.update_by_query.return_value = {"timed_out": False, "failures": [{"cause": "conflict"}]}
+
+    with pytest.raises(RuntimeError, match="incomplete"):
+        store.clear_parent_text(["chunk-1"])

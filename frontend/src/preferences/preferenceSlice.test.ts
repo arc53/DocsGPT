@@ -1,7 +1,12 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import foldersReducer, {
+  loadFolders,
+} from '../components/folders/foldersSlice';
 import type { Doc } from '../models/misc';
+import type { Model } from '../models/types';
+import { getStoredRecentFolders } from './preferenceApi';
 import type { RootState } from '../store';
 import reducer, {
   appendConversations,
@@ -16,17 +21,24 @@ import reducer, {
   selectAnalyticsEnabled,
   selectAnalyticsMaxOverlapping,
   selectAnalyticsMaxTopics,
+  selectAvailableModels,
   selectIsAdmin,
   selectRoles,
   selectRolesResolved,
+  selectSelectedFolders,
+  selectSelectedModel,
   selectTtsAvailable,
   setAnalyticsAvailability,
   setAuthRequired,
+  setAvailableModels,
   setRoles,
+  setSelectedFolders,
+  setSelectedModel,
   setSourceDocs,
   setSpeechAvailability,
   setToken,
 } from './preferenceSlice';
+import { switchWorkspace } from '../workspace/workspaceSlice';
 
 const baseState = () => reducer(undefined, { type: '@@INIT' });
 
@@ -281,5 +293,125 @@ describe('insights availability', () => {
     expect(selectAnalyticsEnabled(state)).toBe(true);
     expect(selectAnalyticsMaxTopics(state)).toBe(8);
     expect(selectAnalyticsMaxOverlapping(state)).toBe(0);
+  });
+});
+
+describe('composer folder pick', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const loaded = (folders: { id: string; name: string }[], type = 'source') =>
+    loadFolders.fulfilled(
+      folders.map((folder) => ({ ...folder, parent_id: null })),
+      'req',
+      { type: type as 'source', token: null },
+    );
+
+  it('keeps the picked folders across visits', () => {
+    const store = storeWithListener();
+    store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
+    expect(getStoredRecentFolders()).toEqual([{ id: 'c', name: 'Carriers' }]);
+    store.dispatch(setSelectedFolders([]));
+    expect(localStorage.getItem('DocsGPTRecentFolders')).toBeNull();
+  });
+
+  it('follows a rename and drops a deleted folder when the folders load', () => {
+    const store = storeWithListener();
+    store.dispatch(
+      setSelectedFolders([
+        { id: 'c', name: 'Carriers' },
+        { id: 'gone', name: 'Old' },
+      ]),
+    );
+    store.dispatch(loaded([{ id: 'c', name: 'Carrier docs' }]));
+    expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+  });
+
+  it('follows the one tree whichever page loaded it', () => {
+    const store = storeWithListener();
+    store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
+    store.dispatch(loaded([{ id: 'c', name: 'Carrier docs' }], 'agent'));
+    expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+  });
+
+  it('follows the newer of two overlapping loads, whichever answers last', () => {
+    const store = configureStore({
+      reducer: { preference: reducer, folders: foldersReducer },
+      middleware: (getDefault) =>
+        getDefault().prepend(prefListenerMiddleware.middleware),
+    });
+    store.dispatch(setSelectedFolders([{ id: 'c', name: 'Carriers' }]));
+    const arg = { token: null };
+    store.dispatch(loadFolders.pending('older', arg));
+    store.dispatch(loadFolders.pending('newer', arg));
+    store.dispatch(
+      loadFolders.fulfilled(
+        [{ id: 'c', name: 'Carrier docs', parent_id: null }],
+        'newer',
+        arg,
+      ),
+    );
+    // The older load, from before the folder existed, answers last.
+    store.dispatch(loadFolders.fulfilled([], 'older', arg));
+    expect(selectSelectedFolders(store.getState() as RootState)).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+    expect(getStoredRecentFolders()).toEqual([
+      { id: 'c', name: 'Carrier docs' },
+    ]);
+  });
+
+  it('reads malformed storage as no folders', () => {
+    localStorage.setItem('DocsGPTRecentFolders', '{"id":1}');
+    expect(getStoredRecentFolders()).toEqual([]);
+    localStorage.setItem('DocsGPTRecentFolders', 'nope');
+    expect(getStoredRecentFolders()).toEqual([]);
+  });
+});
+
+describe('model pick across a workspace switch', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  const model = (id: string, source: Model['source']): Model => ({
+    id,
+    value: id,
+    provider: 'openai',
+    display_name: id,
+    context_window: 128000,
+    supported_attachment_types: [],
+    supports_tools: true,
+    supports_structured_output: true,
+    supports_streaming: true,
+    source,
+  });
+
+  it("drops a custom model the new workspace can't use, here and in storage", () => {
+    for (const source of ['user', 'team'] as const) {
+      const store = storeWithListener();
+      store.dispatch(setAvailableModels([model('m1', source)]));
+      store.dispatch(setSelectedModel(model('m1', source)));
+      store.dispatch(switchWorkspace('team-b'));
+      const state = store.getState() as RootState;
+      expect(selectSelectedModel(state)).toBeNull();
+      expect(selectAvailableModels(state)).toEqual([]);
+      expect(localStorage.getItem('DocsGPTSelectedModel')).toBeNull();
+    }
+  });
+
+  it('keeps a built-in model, which every workspace offers', () => {
+    const store = storeWithListener();
+    store.dispatch(setSelectedModel(model('gpt', 'builtin')));
+    store.dispatch(switchWorkspace('team-b'));
+    expect(selectSelectedModel(store.getState() as RootState)?.id).toBe('gpt');
+    expect(
+      JSON.parse(localStorage.getItem('DocsGPTSelectedModel') ?? 'null')?.id,
+    ).toBe('gpt');
   });
 });
