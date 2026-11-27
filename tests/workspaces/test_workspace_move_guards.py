@@ -18,7 +18,9 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import text
 
-from docsgpt.security.encryption import CredentialDecryptionError, decrypt_credentials, encrypt_credentials
+from docsgpt.security.encryption import (
+    CredentialDecryptionError, decrypt_json, encrypt_credentials,
+)
 from docsgpt.storage.db.repositories.folders import FolderItemsRepository
 from docsgpt.workspaces.move import MoveError, apply_move, parse_move_request
 from tests.workspaces.move_support import (
@@ -274,5 +276,6 @@ class TestCredentials:
         with patch("docsgpt.workspaces.move.plan_move", side_effect=plan_then_edit):
             apply_move(pg_conn, "eddie", parse_move_request({**request, "fingerprint": fp}))
         config = pg_conn.execute(text("SELECT config FROM user_tools WHERE id = CAST(:i AS uuid)"), {"i": tl}).scalar()
-        assert decrypt_credentials(config["encrypted_credentials"], principal) == {"k": "new"}
+        assert config["encrypted_credentials"].startswith("v2:")
+        assert decrypt_json(config["encrypted_credentials"], principal) == {"k": "new"}
 

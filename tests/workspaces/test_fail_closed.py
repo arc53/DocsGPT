@@ -34,7 +34,6 @@ from starlette.requests import Request
 
 from docsgpt.security.encryption import (
     CredentialDecryptionError,
-    decrypt_credentials,
     decrypt_json,
     encrypt_credentials,
     encrypt_json,
@@ -324,7 +323,7 @@ class TestMove:
                 {"a": v1, "b": v2},
             ).mappings()
         }
-        assert decrypt_credentials(configs[v1]["encrypted_credentials"], principal) == {"k": "v1"}
+        assert decrypt_json(configs[v1]["encrypted_credentials"], principal) == {"k": "v1"}
         assert decrypt_json(configs[v2]["encrypted_credentials"], principal) == {"k": "v2"}
         with pytest.raises(CredentialDecryptionError):
             decrypt_json(configs[v2]["encrypted_credentials"], "eddie")

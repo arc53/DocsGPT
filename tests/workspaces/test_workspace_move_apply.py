@@ -80,7 +80,7 @@ class TestMoveIn:
         apply(pg_conn, "eddie", body(tid, [("agent", ag)]))
         assert _grants(pg_conn, ag) == 0 and _switches(pg_conn, ag) == 0
 
-    def test_credentials_are_resealed_and_decrypt_under_the_team(self, pg_conn):
+    def test_credentials_are_resealed_to_v2_and_decrypt_under_the_team(self, pg_conn):
         tid, principal = team(pg_conn)
         v1 = tool(pg_conn, "eddie", "brave", config={"encrypted_credentials": encrypt_credentials({"k": "v1"}, "eddie")})
         v2 = tool(pg_conn, "eddie", "brave", config={"encrypted_credentials": encrypt_json({"k": "v2"}, "eddie")})
@@ -91,17 +91,19 @@ class TestMoveIn:
         })
         apply(pg_conn, "eddie", body(tid, [("tool", v1), ("tool", v2), ("tool", api)]))
         cfg = _row(pg_conn, "user_tools", v1)["config"]
-        assert decrypt_credentials(cfg["encrypted_credentials"], principal) == {"k": "v1"}
+        assert cfg["encrypted_credentials"].startswith("v2:")
+        assert decrypt_json(cfg["encrypted_credentials"], principal) == {"k": "v1"}
         cfg = _row(pg_conn, "user_tools", v2)["config"]
         assert decrypt_json(cfg["encrypted_credentials"], principal) == {"k": "v2"}
         with pytest.raises(CredentialDecryptionError):
             decrypt_json(cfg["encrypted_credentials"], "eddie")
         cfg = _row(pg_conn, "user_tools", api)["config"]
-        assert decrypt_credentials(cfg[API_TOOL_SECRETS_KEY], principal) == {
+        assert cfg[API_TOOL_SECRETS_KEY].startswith("v2:")
+        assert decrypt_json(cfg[API_TOOL_SECRETS_KEY], principal) == {
             "get": {"headers": {"Authorization": "Bearer s"}}
         }
 
-    def test_a_key_based_mcp_server_carries_its_secret_without_a_connection(self, pg_conn):
+    def test_a_key_based_mcp_server_carries_a_v2_secret_without_a_connection(self, pg_conn):
         tid, principal = team(pg_conn)
         conn_row = ConnectorSessionsRepository(pg_conn).create(
             "eddie", "custom_mcp", connector_key="custom_mcp", auth_kind="api_key",
@@ -114,7 +116,8 @@ class TestMoveIn:
         apply(pg_conn, "eddie", body(tid, [("tool", mcp)]))
         row = _row(pg_conn, "user_tools", mcp)
         assert row["connection_id"] is None
-        assert decrypt_credentials(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
+        assert row["config"]["encrypted_credentials"].startswith("v2:")
+        assert decrypt_json(row["config"]["encrypted_credentials"], principal) == {"bearer_token": "tok"}
 
     def test_the_movers_chat_switch_becomes_their_preference(self, pg_conn):
         tid, _ = team(pg_conn)
@@ -397,7 +400,8 @@ class TestMoveOut:
         assert row["access_payer_id"] is None
         tool_row = _row(pg_conn, "user_tools", tl)
         assert tool_row["status"] is True
-        assert decrypt_credentials(tool_row["config"]["encrypted_credentials"], "adam") == {"k": "v"}
+        assert tool_row["config"]["encrypted_credentials"].startswith("v2:")
+        assert decrypt_json(tool_row["config"]["encrypted_credentials"], "adam") == {"k": "v"}
         assert convs.team_id_of(str(adams["id"])) is None
         assert convs.team_id_of(str(veras["id"])) == tid
         assert ag in [e["metadata"]["resource_id"] for e in _events(pg_conn, "team.item_moved_out")]
