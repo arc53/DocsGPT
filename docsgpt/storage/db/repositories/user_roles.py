@@ -15,8 +15,6 @@ from sqlalchemy import Connection, text
 from docsgpt.storage.db.base_repository import row_to_dict
 from docsgpt.workspaces.principal import is_principal_id
 
-VALID_SOURCES = ("manual", "oidc_group")
-
 
 class UserRolesRepository:
     """Persisted role grants keyed by the auth ``sub`` (``user_id``)."""

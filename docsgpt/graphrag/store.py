@@ -385,6 +385,16 @@ class GraphStore:
                 );
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS graph_pending_chunk_remaps (
+                    source_id UUID NOT NULL,
+                    old_chunk_id TEXT NOT NULL,
+                    new_chunk_id TEXT NOT NULL,
+                    PRIMARY KEY (source_id, old_chunk_id)
+                );
+                """
+            )
             # What a ``done`` chunk was extracted from and with: a sync re-embeds
             # every chunk under a new id and carries the graph over by content
             # (``sync_graph_to_chunks``). Rows written before these existed
@@ -1904,6 +1914,77 @@ class GraphStore:
         """
         self.remap_chunks(source_id, {old_chunk_id: new_chunk_id})
 
+    def record_pending_chunk_remaps(self, source_id: str, mapping: Dict[str, str]) -> None:
+        """Persist vector ID changes so a failed graph remap can be retried.
+
+        The journal is committed before graph links are changed. Applying a
+        journal entry and clearing it are separate transactions; remapping is
+        idempotent, so a failure between those transactions is safe to retry.
+        """
+        pairs = [(str(old), str(new)) for old, new in mapping.items() if str(old) != str(new)]
+        if not pairs:
+            return
+        self._ensure_tables_once()
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                _lock_source(cursor, source_id)
+                cursor.executemany(
+                    """
+                    INSERT INTO graph_pending_chunk_remaps (source_id, old_chunk_id, new_chunk_id)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (source_id, old_chunk_id) DO UPDATE
+                    SET new_chunk_id = EXCLUDED.new_chunk_id;
+                    """,
+                    [(source_id, old, new) for old, new in pairs],
+                )
+                conn.commit()
+            except Exception:
+                _safe_rollback(conn)
+                raise
+            finally:
+                cursor.close()
+
+        self._write_with_reconnect(_write)
+
+    def apply_pending_chunk_remaps(self, source_id: str) -> Dict[str, str]:
+        """Apply and clear the source's durable chunk ID remap journal.
+
+        Returns:
+            The completed old-to-new IDs, useful for resolving a retried API
+            request that still carries the old chunk ID.
+        """
+        self._ensure_tables_once()
+
+        def _write(conn):
+            cursor = conn.cursor()
+            try:
+                _lock_source(cursor, source_id)
+                cursor.execute(
+                    """
+                    SELECT old_chunk_id, new_chunk_id FROM graph_pending_chunk_remaps
+                    WHERE source_id = %s FOR UPDATE;
+                    """,
+                    (source_id,),
+                )
+                mapping = {str(old): str(new) for old, new in cursor.fetchall()}
+                if mapping:
+                    self._remap_chunks_with_cursor(cursor, source_id, mapping)
+                    cursor.execute(
+                        "DELETE FROM graph_pending_chunk_remaps WHERE source_id = %s;",
+                        (source_id,),
+                    )
+                conn.commit()
+                return mapping
+            except Exception:
+                _safe_rollback(conn)
+                raise
+            finally:
+                cursor.close()
+
+        return self._write_with_reconnect(_write)
+
     def remap_chunks(self, source_id: str, mapping: Dict[str, str]) -> None:
         """Point every graph reference to each old chunk id at its new id, in one transaction.
 
@@ -1923,56 +2004,12 @@ class GraphStore:
         if not pairs:
             return
         self._ensure_tables_once()
-        old_ids = [old for old, _new in pairs]
-        new_ids = [new for _old, new in pairs]
 
         def _write(conn):
             cursor = conn.cursor()
             try:
                 _lock_source(cursor, source_id)
-                cursor.execute(
-                    """
-                    UPDATE graph_node_chunks c SET chunk_id = m.new_id
-                    FROM unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
-                    WHERE c.source_id = %s AND c.chunk_id = m.old_id;
-                    """,
-                    (old_ids, new_ids, source_id),
-                )
-                # Rewrite the matching elements in place, keeping array order.
-                cursor.execute(
-                    """
-                    UPDATE graph_edges e
-                    SET source_chunk_ids = (
-                        SELECT jsonb_agg(COALESCE(to_jsonb(m.new_id), t.v) ORDER BY t.ord)
-                        FROM jsonb_array_elements(e.source_chunk_ids) WITH ORDINALITY AS t(v, ord)
-                        LEFT JOIN unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
-                          ON m.old_id = t.v #>> '{}'
-                    )
-                    WHERE e.source_id = %s
-                      AND jsonb_typeof(e.source_chunk_ids) = 'array'
-                      AND EXISTS (
-                          SELECT 1 FROM jsonb_array_elements(e.source_chunk_ids) AS s(v)
-                          WHERE s.v #>> '{}' = ANY(%s)
-                      );
-                    """,
-                    (old_ids, new_ids, source_id, old_ids),
-                )
-                cursor.execute(
-                    """
-                    DELETE FROM graph_ingest_progress
-                    WHERE source_id = %s AND chunk_id = ANY(%s)
-                      AND status IS DISTINCT FROM 'done';
-                    """,
-                    (source_id, new_ids),
-                )
-                cursor.execute(
-                    """
-                    UPDATE graph_ingest_progress p SET chunk_id = m.new_id
-                    FROM unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
-                    WHERE p.source_id = %s AND p.chunk_id = m.old_id;
-                    """,
-                    (old_ids, new_ids, source_id),
-                )
+                self._remap_chunks_with_cursor(cursor, source_id, dict(pairs))
                 conn.commit()
             except Exception as e:
                 _safe_rollback(conn)
@@ -1982,6 +2019,57 @@ class GraphStore:
                 cursor.close()
 
         return self._write_with_reconnect(_write)
+
+    @staticmethod
+    def _remap_chunks_with_cursor(cursor, source_id: str, mapping: Dict[str, str]) -> None:
+        """Move graph node, edge, and checkpoint references using an open transaction."""
+        pairs = [(old, new) for old, new in mapping.items() if old != new]
+        if not pairs:
+            return
+        old_ids = [old for old, _new in pairs]
+        new_ids = [new for _old, new in pairs]
+        cursor.execute(
+            """
+            UPDATE graph_node_chunks c SET chunk_id = m.new_id
+            FROM unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
+            WHERE c.source_id = %s AND c.chunk_id = m.old_id;
+            """,
+            (old_ids, new_ids, source_id),
+        )
+        cursor.execute(
+            """
+            UPDATE graph_edges e
+            SET source_chunk_ids = (
+                SELECT jsonb_agg(COALESCE(to_jsonb(m.new_id), t.v) ORDER BY t.ord)
+                FROM jsonb_array_elements(e.source_chunk_ids) WITH ORDINALITY AS t(v, ord)
+                LEFT JOIN unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
+                  ON m.old_id = t.v #>> '{}'
+            )
+            WHERE e.source_id = %s
+              AND jsonb_typeof(e.source_chunk_ids) = 'array'
+              AND EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(e.source_chunk_ids) AS s(v)
+                  WHERE s.v #>> '{}' = ANY(%s)
+              );
+            """,
+            (old_ids, new_ids, source_id, old_ids),
+        )
+        cursor.execute(
+            """
+            DELETE FROM graph_ingest_progress
+            WHERE source_id = %s AND chunk_id = ANY(%s)
+              AND status IS DISTINCT FROM 'done';
+            """,
+            (source_id, new_ids),
+        )
+        cursor.execute(
+            """
+            UPDATE graph_ingest_progress p SET chunk_id = m.new_id
+            FROM unnest(%s::text[], %s::text[]) AS m(old_id, new_id)
+            WHERE p.source_id = %s AND p.chunk_id = m.old_id;
+            """,
+            (old_ids, new_ids, source_id),
+        )
 
     def delete_chunks(self, source_id: str, chunk_ids: List[str]) -> Dict[str, int]:
         """Take deleted chunks' contributions out of a source's graph, with no LLM call.
@@ -2211,6 +2299,7 @@ class GraphStore:
                 ("graph_node_chunks", every_row),
                 ("graph_edges", every_row),
                 ("graph_nodes", every_row),
+                ("graph_pending_chunk_remaps", every_row),
                 (
                     "graph_ingest_progress",
                     "DELETE FROM {} WHERE source_id = %s AND status IS DISTINCT FROM 'deleted';",

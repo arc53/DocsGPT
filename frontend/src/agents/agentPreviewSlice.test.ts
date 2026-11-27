@@ -68,7 +68,6 @@ describe('agent preview questions', () => {
           token: 'tok',
           selectedDocs: [],
           prompt: { id: 'default' },
-          chunks: '2',
           selectedAgent: { id: 'agent-1' },
           selectedModel: null,
         }),
@@ -87,7 +86,7 @@ describe('agent preview questions', () => {
       questions: [{ id: 'q1', text: 'Which quarter?', options: [] }],
     };
     vi.mocked(handleFetchAnswerSteaming).mockImplementation(
-      async (_q, _signal, _token, _docs, _conv, _prompt, _chunks, onEvent) => {
+      async (_q, _signal, _token, _docs, _conv, _prompt, onEvent) => {
         onEvent(event({ type: 'tool_call', data: paused }));
         onEvent(event({ type: 'tool_calls_pending' }));
         onEvent(event({ type: 'id', id: 'conv-9' }));
@@ -132,7 +131,7 @@ describe('agent preview questions', () => {
 
   async function pausedStore() {
     vi.mocked(handleFetchAnswerSteaming).mockImplementation(
-      async (_q, _signal, _token, _docs, _conv, _prompt, _chunks, onEvent) => {
+      async (_q, _signal, _token, _docs, _conv, _prompt, onEvent) => {
         onEvent(event({ type: 'tool_call', data: paused }));
         onEvent(event({ type: 'tool_calls_pending' }));
         onEvent(event({ type: 'id', id: 'conv-9' }));

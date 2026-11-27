@@ -15,7 +15,6 @@ const doc = (id: string): Doc =>
 const base = (): RetrievalPayload => ({
   question: 'q',
   conversation_id: null,
-  chunks: '2',
   isNoneDoc: false,
 });
 
@@ -51,7 +50,6 @@ describe('handleFetchAnswer with folders', () => {
       [],
       null,
       null,
-      '2',
       undefined,
       undefined,
       true,

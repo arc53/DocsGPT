@@ -1,10 +1,9 @@
 ---
 title: Interacting with Agents via API
+sidebarTitle: 🔌 Agent API
 description: Learn how to programmatically interact with DocsGPT Agents using the streaming and non-streaming API endpoints.
-lastUpdated: 2026-11-01
+lastUpdated: 2026-11-26
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # Interacting with Agents via API
 
@@ -119,14 +118,14 @@ An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with 
 ### Examples
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     curl -X POST http://localhost:7091/api/answer \
     -H "Content-Type: application/json" \
     -d '{"question":"your question here","api_key":"your_agent_api_key"}'
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
 
@@ -145,8 +144,8 @@ An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with 
         print(f"Error: {response.status_code}")
         print(response.text)
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const apiUrl = 'http://localhost:7091/api/answer';
     const apiKey = 'your_agent_api_key';
@@ -175,7 +174,7 @@ An error during the run returns HTTP `400` with `{"error": "..."}`. A chat with 
 
     getAnswer();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ---
@@ -221,15 +220,15 @@ If the connection drops, the answer keeps generating on the server. Reopen it wi
 ### Examples
 
 <Tabs items={['cURL', 'Python', 'JavaScript']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     curl -X POST http://localhost:7091/stream \
     -H "Content-Type: application/json" \
     -H "Accept: text/event-stream" \
     -d '{"question":"your question here","api_key":"your_agent_api_key"}'
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
     import json
@@ -251,8 +250,8 @@ If the connection drops, the answer keeps generating on the server. Reopen it wi
                     except json.JSONDecodeError:
                         pass
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```javascript
     const apiUrl = 'http://localhost:7091/stream';
     const apiKey = 'your_agent_api_key';
@@ -304,7 +303,7 @@ If the connection drops, the answer keeps generating on the server. Reopen it wi
 
     getStream();
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ---
@@ -644,7 +643,7 @@ On an update the file is authoritative: fields it sets are written even when tha
 | `target` | `action`: `create`, or `update` with the `agent_id` it matched and `matched_by` (`id` or `slug`) |
 | `sources` | `matched` (one of your sources has that name; the oldest wins when several do) or `missing` (left unattached). A Knowledge folder the agent uses is an entry with `"type": "folder"` and a `key` (`folder-0`, `folder-1`, ...), matched to one of your own folders by its path, then by its name. The path is exported only for the exporter's own folder: someone else's folder, such as the owner's folder when an editor exports, or a teammate's folder on your agent, carries its name alone |
 | `tools` | `builtin`, `reuse` (one of your tools matches its type and name), `create` (a new tool is created; `requires_secrets` lists what you must supply) or `unavailable` |
-| `prompt` | `reuse`, `create` or `default` |
+| `prompt` | `reuse`, `update` (the agent's own prompt takes the file's text), `create` or `default` |
 | `models` | `matched` or `unavailable` for built-in models; `reuse` or `create` for custom models (a new custom model needs an `api_key`). Into a team, a custom model is reused only from the team's own, matched by base URL and model ID; one the team doesn't have is created only by a team Admin, and is otherwise `unavailable` with `reason` `custom_model_admin_required` (`not_available_to_tokens` for a token) and left off |
 | `workflow` | For a workflow agent: `create` or `update` with node and edge counts, `delete` when the import would remove the workflow, or `null` |
 
@@ -672,7 +671,7 @@ Each tool in the plan has a `key` (`tool-0`, `tool-1`, ... in file order) that t
 - `models` supplies the API key for a custom model that has to be created, keyed by its display name.
 - `folders` maps a Knowledge folder name in the file to one of your Knowledge folder ids. A folder that matches none of yours is left unattached with a warning.
 
-Ids you pass must belong to you; any other id is ignored with a warning. Prompts are not resolvable: the file's prompt is reused when you already have one with the same name and content, and created otherwise.
+Ids you pass must belong to you; any other id is ignored with a warning. Prompts are not resolvable: the file's prompt is reused when you already have one with the same name and content. Otherwise, when the file updates an agent whose prompt has the same name and no other agent uses it, that prompt is edited to the file's text, as an edit in the web app would be; anywhere else it is selected, such as your chat settings, follows. In every other case a new prompt is created.
 
 ### Workflow agents
 

@@ -181,6 +181,7 @@ import { Agent, ResourceSponsor, ResourceState, ToolSummary } from './types';
 import {
   AGENT_BUILD_STEPS,
   AGENT_FIELD_LABEL_KEYS,
+  AGENT_LINKED_FIELDS,
   type AgentBuildStep,
   type AgentDraftField,
   type AgentDraftForm,
@@ -195,6 +196,7 @@ import {
   gapRequest,
   gapTitle,
   isAgentFormEmpty,
+  linkedFields,
   MAX_GAP_ROWS,
   improveSuggestions,
   type ImproveSuggestion,
@@ -967,6 +969,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       description: agent.description ?? '',
       agent_type: agent.agent_type ?? '',
       sources: Array.from(selectedSourceIds),
+      folders: selectedFolderIds,
       tools: selectedTools,
       starters: agent.starters ?? [],
       prompt: agent.prompt_id || 'default',
@@ -992,6 +995,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       agent.config?.guardrails,
       agent.config?.analytics,
       selectedSourceIds,
+      selectedFolderIds,
       selectedTools,
     ],
   );
@@ -1006,6 +1010,9 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
       switch (field) {
         case 'sources':
           setSelectedSourceIds(new Set(value as string[]));
+          return;
+        case 'folders':
+          setSelectedFolderIds(value as string[]);
           return;
         case 'tools':
           setSelectedTools(value as ToolSummary[]);
@@ -1037,6 +1044,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
   const drafted = useDraftedFields<AgentDraftField>(
     draftValues,
     writeDraftField,
+    AGENT_LINKED_FIELDS,
   );
 
   // Tools a draft can name: the caller's, and those already on the agent.
@@ -1084,6 +1092,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     form: draftForm,
     values: draftValues,
     toolOptions: draftToolOptions,
+    foldersOffered: !pickerScope.holderElsewhere,
     drafted,
     writeField: writeDraftField,
     onApplied: (proposal, raw, changed) => {
@@ -1135,6 +1144,7 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
         buildRef.current.context(),
         promptView.draft,
         improveFocusRef.current,
+        !pickerScope.holderElsewhere,
       );
     },
     onProposal: proposals.apply,
@@ -1358,8 +1368,10 @@ export default function NewAgent({ mode }: { mode: 'new' | 'edit' | 'draft' }) {
     build.next();
   };
 
+  // A field linked with another (the knowledge picker's sources and
+  // folders) shows one mark for both, named by the field's own label.
   const draftedProps = (field: AgentDraftField) => ({
-    drafted: drafted.isDrafted(field),
+    drafted: linkedFields(field).some(drafted.isDrafted),
     onUndo: () => drafted.undo(field),
     fieldLabel: t(AGENT_FIELD_LABEL_KEYS[field]),
   });

@@ -166,8 +166,8 @@ class ChunkingConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     strategy: str = "classic_chunk"  # ChunkerCreator key
-    max_tokens: int = 1250  # matches docsgpt/worker.py MAX_TOKENS
-    min_tokens: int = 150  # matches docsgpt/worker.py MIN_TOKENS
+    max_tokens: int = 1250
+    min_tokens: int = 150
     chunk_overlap: int = 0  # Token overlap across adjacent chunks
     duplicate_headers: bool = False
 

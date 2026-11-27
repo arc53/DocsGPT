@@ -23,8 +23,6 @@ from docsgpt.workspaces.roles import to_stored_role
 ROLE_TEAM_ADMIN = "team_admin"
 ROLE_TEAM_EDITOR = "team_editor"
 ROLE_TEAM_VIEWER = "team_viewer"
-#: The pre-workspace name of a non-admin member: still accepted on writes, stored as a viewer.
-ROLE_TEAM_MEMBER = "team_member"
 
 #: Stored roles, strongest first (``role_for`` answers the first one a member holds).
 _STRENGTH_SQL = """

@@ -101,7 +101,6 @@ describe('FilePicker', () => {
           enabled: true,
           catalog: [],
           connections,
-          loading: false,
           loaded: true,
           failed: false,
         },
@@ -331,14 +330,12 @@ describe('FilePicker', () => {
             enabled: true,
             catalog: [],
             connections: personal,
-            loading: false,
             loaded: true,
             failed: false,
             teams: {
               t1: {
                 catalog: [],
                 connections: team,
-                loading: false,
                 loaded: true,
                 failed: false,
                 latestRequestId: null,

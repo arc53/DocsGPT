@@ -63,13 +63,6 @@ def team_access_for(
     return TeamScopeRepository(conn).effective_access(user_id, resource_type, resource_id)
 
 
-def visible_ids_via_teams(
-    conn: Connection, user_id: str, resource_type: str
-) -> set[str]:
-    """The id set of ``resource_type`` shared to any team ``user_id`` belongs to."""
-    return TeamScopeRepository(conn).visible_resource_ids(user_id, resource_type)
-
-
 def visible_with_access(
     conn: Connection, user_id: str, resource_type: str
 ) -> dict[str, str]:

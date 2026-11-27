@@ -230,6 +230,19 @@
     "docs_url": "https://docs.stripe.com/mcp"
   },
   {
+    "key": "mcp:supabase",
+    "name": "Supabase",
+    "description": "List tables, run SQL, read logs and manage Supabase projects.",
+    "category": "database",
+    "sign_in": "oauth",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "mcp_url": "https://mcp.supabase.com/mcp",
+    "docs_url": "https://supabase.com/docs/guides/getting-started/mcp"
+  },
+  {
     "key": "mcp:trello",
     "name": "Trello",
     "description": "Find Trello boards and cards, and create and update cards.",

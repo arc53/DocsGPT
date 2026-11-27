@@ -1,14 +1,14 @@
 import logging
 import math
 import re
-from typing import Iterable, List, Optional, Any, Dict
+from typing import Iterable, List, Optional, Any, Dict, Tuple
 
 from psycopg.types.json import Jsonb
 
 from docsgpt.core.settings import settings
 from docsgpt.utils import strip_null_bytes
 from docsgpt.vectorstore import pgconn
-from docsgpt.vectorstore.base import BaseVectorStore
+from docsgpt.vectorstore.base import BaseVectorStore, StagedIndexIncomplete
 from docsgpt.vectorstore.document_class import Document
 
 # table name -> IVFFlat ``lists`` (None when the table has no such index)
@@ -581,6 +581,10 @@ class PGVectorStore(BaseVectorStore):
 
         texts = [strip_null_bytes(text) for text in texts]
         embeddings = self._embedding.embed_documents(texts)
+        if len(embeddings) != len(texts):
+            # A short answer from the embeddings service: write nothing, rather
+            # than commit fewer rows than the caller believes it added.
+            raise ValueError(f"Got {len(embeddings)} embeddings for {len(texts)} texts")
         metadatas = [strip_null_bytes(metadata or {}) for metadata in (metadatas or [{}] * len(texts))]
 
         self._ensure_schema_once()
@@ -650,6 +654,58 @@ class PGVectorStore(BaseVectorStore):
             total += deleted
             if deleted < size:
                 return total
+
+    def promote_staged(self, staging_id: str, expected: Optional[int] = None) -> int:
+        """Replace this source's chunks with the ones embedded under ``staging_id``, in one transaction.
+
+        The staged rows keep their ids, text, vectors and metadata (written
+        with this source's id already); only their ``source_id`` column moves.
+        A reader sees the old chunks or the new ones, never neither.
+
+        Args:
+            staging_id: The id the rebuild embedded under.
+            expected: How many chunks the rebuild embedded; a staging id
+                holding another number changes nothing.
+
+        Returns:
+            The number of chunks moved in.
+
+        Raises:
+            StagedIndexIncomplete: The staging id holds another number of chunks than ``expected``.
+            ValueError: ``staging_id`` is this source's own id.
+        """
+        staging_id = str(staging_id)
+        if staging_id == self._source_id:
+            raise ValueError("A staged index needs an id of its own")
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            if expected is not None:
+                cursor.execute(
+                    f"SELECT count(*) FROM {self._table_name} WHERE source_id = %s;", (staging_id,),
+                )
+                staged = int(cursor.fetchone()[0])
+                if staged != int(expected):
+                    raise StagedIndexIncomplete(
+                        f"staged index {staging_id} holds {staged} of {expected} chunks; the live one is kept"
+                    )
+            cursor.execute(f"DELETE FROM {self._table_name} WHERE source_id = %s;", (self._source_id,))
+            cursor.execute(
+                f"UPDATE {self._table_name} SET source_id = %s WHERE source_id = %s;",
+                (self._source_id, staging_id),
+            )
+            moved = cursor.rowcount
+            conn.commit()
+            return moved
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                # Connection already gone; nothing left to roll back.
+                pass
+            raise
+        finally:
+            cursor.close()
 
     def save_local(self, *args, **kwargs):
         """No-op for PostgreSQL - data is already persisted"""
@@ -831,6 +887,54 @@ class PGVectorStore(BaseVectorStore):
         except Exception as e:
             conn.rollback()
             logging.error(f"Error updating chunk: {e}")
+            raise
+        finally:
+            cursor.close()
+
+    def clear_parent_text(self, chunk_ids: Iterable[str]) -> List[Tuple[str, str]]:
+        """Clear parent metadata for this source's chunk IDs in one SQL update."""
+        ids = list(dict.fromkeys(int(chunk_id) for chunk_id in chunk_ids))
+        if not ids:
+            return []
+        self._run_statement(
+            f"UPDATE {self._table_name} "
+            f"SET {self._metadata_column} = {self._metadata_column} - 'parent_text' "
+            f"WHERE id = ANY(%s) AND source_id = %s;",
+            (ids, self._source_id),
+        )
+        return [(str(chunk_id), str(chunk_id)) for chunk_id in ids]
+
+    def update_chunks_metadata(self, updates: Dict[str, Dict[str, Any]]) -> int:
+        """Replace several chunks' metadata in one transaction, without embedding their text again.
+
+        Args:
+            updates: ``{chunk id: complete new metadata}``; ``source_id`` is
+                stamped on each as :meth:`add_chunk` does.
+
+        Returns:
+            How many rows of this source were updated.
+        """
+        rows = [
+            (Jsonb({**strip_null_bytes(dict(metadata or {})), "source_id": self._source_id}), int(chunk_id))
+            for chunk_id, metadata in updates.items()
+            if str(chunk_id).isdigit()
+        ]
+        if not rows:
+            return 0
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        # Only internal names are interpolated; every value is a bound parameter.
+        statement = (
+            f"UPDATE {self._table_name} SET {self._metadata_column} = %s "  # nosec B608
+            "WHERE id = %s AND source_id = %s;"
+        )
+        try:
+            cursor.executemany(statement, [(metadata, chunk_id, self._source_id) for metadata, chunk_id in rows])
+            updated = max(0, cursor.rowcount or 0)
+            conn.commit()
+            return updated
+        except Exception:
+            conn.rollback()
             raise
         finally:
             cursor.close()

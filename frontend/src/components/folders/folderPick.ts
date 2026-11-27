@@ -10,8 +10,6 @@ import type { Folder } from './types';
  */
 export type KnowledgePick = { sources: string[]; folders: string[] };
 
-export const EMPTY_PICK: KnowledgePick = { sources: [], folders: [] };
-
 const FOLDER_ROW_PREFIX = 'folder:';
 
 /** A folder's row id in a picker list, apart from source ids. */

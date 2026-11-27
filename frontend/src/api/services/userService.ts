@@ -558,12 +558,6 @@ const userService = {
     ),
   getWorkflow: (id: string, token: string | null): Promise<any> =>
     apiClient.get(endpoints.USER.WORKFLOW(id), token),
-  createWorkflow: (data: any, token: string | null): Promise<any> =>
-    apiClient.post(endpoints.USER.WORKFLOWS, data, token),
-  updateWorkflow: (id: string, data: any, token: string | null): Promise<any> =>
-    apiClient.put(endpoints.USER.WORKFLOW(id), data, token),
-  deleteWorkflow: (id: string, token: string | null): Promise<any> =>
-    apiClient.delete(endpoints.USER.WORKFLOW(id), token),
 };
 
 export default userService;

@@ -1,10 +1,9 @@
 ---
 title: Chat Widget
+sidebarTitle: 💬 Chat Widget
 description: Embed the DocsGPT Widget in your React, HTML, or Nextra projects to provide AI-powered chat functionality to your users.
 lastUpdated: 2026-11-01
 ---
-import { Callout, Tabs } from 'nextra/components'
-
 # Chat Widget
 
 ## Introduction
@@ -15,7 +14,7 @@ Try out the interactive widget showcase and customize its parameters at the [Doc
 
 ## Setup
 <Tabs items={['React', 'HTML', 'Nextra']}>
-  <Tabs.Tab>
+  <Tab>
 
 ### Installation
 
@@ -33,7 +32,7 @@ In your React component file, import the `DocsGPTWidget` component:
 import { DocsGPTWidget } from "docsgpt";
 ```
 
-<Callout type="info" emoji="🔗">
+<Callout type="info">
   **Which `apiHost`?** It is the URL of the DocsGPT **API**, not the app you log
   into. For DocsGPT Cloud that is `https://gptcloud.arc53.com` — which is also the widget's
   built-in default, so you can omit the prop entirely. Self-hosting? Use your
@@ -59,8 +58,8 @@ Now, you can embed the widget within your React component's JSX:
   buttonBg="#222327"
 />
 ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
 
 <video
   autoPlay
@@ -83,7 +82,7 @@ Now, you can embed the widget within your React component's JSX:
 
 To use the DocsGPT Widget directly in HTML, include the widget script from a CDN in your HTML file:
 
-```html filename="html"
+```html title="html"
 <script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
 ```
 
@@ -93,13 +92,13 @@ The bundle defines `renderDocsGPTWidget` (and `renderSearchBar`) on `window`. `0
 
 In your HTML `<body>`, add a `<div>` element where you want to render the widget.  Set an `id` for easy targeting.
 
-```html filename="html"
+```html title="html"
 <div id="app"></div>
 ```
 
 Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidget` function to initialize the widget, passing the `id` of your `<div>` and a configuration object. To link the widget to your DocsGPT API and specific documents, pass the relevant parameters within the configuration object of `renderDocsGPTWidget`.
 
-```html filename="html"
+```html title="html"
 <!DOCTYPE html>
 <div id="app"></div>
 <script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>
@@ -121,8 +120,8 @@ Then, in a `<script>` block after the widget script, use the `renderDocsGPTWidge
 </script>
 ```
 
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
 
 ### Installation
 
@@ -136,7 +135,7 @@ npm install docsgpt
 
 To integrate the DocsGPT Widget into a [Nextra](https://nextra.site/) documentation site (built with Next.js and MDX), create or modify your `pages/_app.js` file as follows:
 
-```js filename="pages/_app.js"
+```js title="pages/_app.js"
 import { DocsGPTWidget } from "docsgpt";
 
 export default function MyApp({ Component, pageProps }) {
@@ -153,7 +152,7 @@ export default function MyApp({ Component, pageProps }) {
 ```
 
 `pages/_app.js` is the Next.js Pages Router pattern. With the App Router, render the widget from a client component (`'use client'`) included in your root layout.
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 ---
@@ -402,7 +401,7 @@ Your page can drive the widget and hear what happens in it, for example to open 
 
 With the script tag, `renderDocsGPTWidget` returns the controller:
 
-```html filename="html"
+```html title="html"
 <div id="app"></div>
 <button id="ask-pricing">Ask about pricing</button>
 <script src="https://unpkg.com/docsgpt@0.13.0/dist/legacy/browser.js"></script>

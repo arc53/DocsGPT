@@ -89,15 +89,6 @@ export interface UploadTask {
    */
   stage?: 'parsing' | 'embedding';
   /**
-   * Flipped when ``source.ingest.completed`` carries
-   * ``payload.limited === true`` (the worker hit a token cap during
-   * ingest). The slice routes such events to a failed status and
-   * sets this flag so ``UploadToast`` can surface a translated
-   * token-limit message instead of a generic error. Forward-looking:
-   * no worker code path sets ``limited: true`` today.
-   */
-  tokenLimitReached?: boolean;
-  /**
    * Files and folders a connector ingest could not download and left out,
    * from a ``partial`` ``source.ingest.completed``; unset when none were.
    */
@@ -238,16 +229,20 @@ export function ingestFailureMessage(payload: Record<string, unknown>): string {
 }
 
 /**
- * How many files and folders a partial connector download left out, from
- * its ``source.ingest.completed`` payload; 0 for a complete one.
+ * How many files (and, for a partial download, folders) a connector ingest
+ * or sync left out, from its ``source.ingest.completed`` payload: files that
+ * failed to download or to parse (``files_failed``), which the next sync
+ * retries. 0 when none were.
  */
 export function itemsNotDownloaded(payload: Record<string, unknown>): number {
-  if (payload.partial !== true) return 0;
   const count = (value: unknown) =>
     typeof value === 'number' && Number.isFinite(value) && value > 0
       ? value
       : 0;
-  return count(payload.files_failed) + count(payload.folders_failed);
+  const files = count(payload.files_failed);
+  return payload.partial === true
+    ? files + count(payload.folders_failed)
+    : files;
 }
 
 /**
@@ -486,7 +481,8 @@ export const uploadSlice = createSlice({
             if (dup.status === 'completed' || dup.status === 'failed') {
               row.status = dup.status;
               row.errorMessage = dup.errorMessage;
-              row.tokenLimitReached = dup.tokenLimitReached;
+              // Its unreadable files too; undefined clears an older count.
+              row.itemsNotDownloaded = dup.itemsNotDownloaded;
               if (!sourceWasDismissed) row.dismissed = false;
             }
             state.tasks.splice(dupIndex, 1);
@@ -612,26 +608,14 @@ export const uploadSlice = createSlice({
           break;
         }
         case 'source.ingest.completed':
-          if (payload.limited === true) {
-            // Token-cap reached during ingest — surface as a failure
-            // so the toast shows the translated limit message rather
-            // than a misleading success state.
-            task.status = 'failed';
-            task.progress = 100;
-            task.tokenLimitReached = true;
-            task.errorMessage = undefined;
-            // Only un-dismiss on the initial terminal transition;
-            // duplicate envelopes (StrictMode remount, reconnect
-            // overlap) must not re-pop a user-dismissed toast.
-            if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
-          } else {
-            task.status = 'completed';
-            task.progress = 100;
-            task.errorMessage = undefined;
-            task.tokenLimitReached = false;
-            task.itemsNotDownloaded = itemsNotDownloaded(payload) || undefined;
-            if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
-          }
+          task.status = 'completed';
+          task.progress = 100;
+          task.errorMessage = undefined;
+          task.itemsNotDownloaded = itemsNotDownloaded(payload) || undefined;
+          // Only un-dismiss on the initial terminal transition; duplicate
+          // envelopes (StrictMode remount, reconnect overlap) must not
+          // re-pop a user-dismissed toast.
+          if (!wasTerminal && !sourceWasDismissed) task.dismissed = false;
           break;
         case 'source.ingest.failed':
           task.status = 'failed';

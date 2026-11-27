@@ -338,7 +338,6 @@ describe('ConnectWizard', () => {
           enabled: true,
           catalog: [],
           connections,
-          loading: false,
           loaded: true,
           failed: false,
         },

@@ -332,7 +332,78 @@ def _assert_rows_match_documents(store):
 
 
 @pytest.mark.unit
+class TestFaissShortEmbeddings:
+    def test_a_short_embedding_answer_adds_nothing(self, populated):
+        before = (populated.index.ntotal, dict(populated.documents))
+        with patch.object(populated.embeddings, "embed_documents", side_effect=lambda texts: [[0.0] * populated.index.d]):
+            with pytest.raises(ValueError):
+                populated.add_texts(["one", "two"], [{}, {}])
+        assert (populated.index.ntotal, dict(populated.documents)) == before
+
+
+@pytest.mark.unit
+class TestFaissOffsettingBatches:
+    def test_a_short_batch_and_a_long_one_are_refused_though_the_total_matches(self, populated, monkeypatch):
+        d = populated.index.d
+        answers = iter([[[0.0] * d], [[0.0] * d] * 3])
+        monkeypatch.setattr("docsgpt.parser.embedding_pipeline._resolve_batch_size", lambda: 2)
+        before = populated.index.ntotal
+        with patch.object(populated.embeddings, "embed_documents", side_effect=lambda texts: next(answers)):
+            with pytest.raises(ValueError, match="1 embeddings for 2 texts"):
+                populated.add_texts(["a", "b", "c", "d"], [{}, {}, {}, {}])
+        assert populated.index.ntotal == before
+
+
+@pytest.mark.unit
+class TestFaissUpdateChunksMetadata:
+    def test_rewrites_metadata_without_embedding_and_saves_once(self, populated):
+        chunks = populated.get_chunks()
+        import numpy as np
+
+        target, other = chunks[0]["doc_id"], chunks[1]["doc_id"]
+        vectors = populated.index.reconstruct_n(0, populated.index.ntotal).copy()
+
+        with patch.object(populated.embeddings, "embed_documents") as embed, patch.object(
+            populated, "_save_to_storage",
+        ) as save:
+            count = populated.update_chunks_metadata({target: {"source": "moved.txt"}, "missing": {}})
+
+        assert count == 1
+        embed.assert_not_called()
+        save.assert_called_once()
+        assert populated.documents[target]["metadata"] == {"source": "moved.txt", "source_id": "src"}
+        assert populated.documents[target]["page_content"] == chunks[0]["text"]
+        assert populated.documents[other]["metadata"] == chunks[1]["metadata"]
+        assert np.allclose(populated.index.reconstruct_n(0, populated.index.ntotal), vectors)
+
+    def test_a_failed_save_puts_the_metadata_back(self, populated):
+        import copy
+
+        target = populated.get_chunks()[0]["doc_id"]
+        before = copy.deepcopy(populated.documents[target])
+        with patch.object(populated, "_save_to_storage", side_effect=OSError("disk full")):
+            with pytest.raises(OSError):
+                populated.update_chunks_metadata({target: {"source": "moved.txt"}})
+        assert populated.documents[target] == before
+
+
+@pytest.mark.unit
 class TestFaissUpdateChunk:
+    def test_clears_parent_metadata_without_embedding(self, make_store):
+        store = make_store(docs_init=[
+            _SeedDoc("first child", {"parent_text": "parent", "source": "doc.txt"}),
+            _SeedDoc("second child", {"parent_text": "parent", "source": "doc.txt"}),
+        ])
+        ids = [chunk["doc_id"] for chunk in store.get_chunks()]
+        embed = Mock(wraps=store.embeddings.embed_documents)
+        store.embeddings.embed_documents = embed
+
+        updated = store.clear_parent_text(ids)
+
+        assert updated == [(chunk_id, chunk_id) for chunk_id in ids]
+        assert all("parent_text" not in chunk["metadata"] for chunk in store.get_chunks())
+        embed.assert_not_called()
+
     def test_keeps_id_and_position(self, populated):
         before = [c["doc_id"] for c in populated.get_chunks()]
         target = before[1]

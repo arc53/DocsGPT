@@ -1,10 +1,9 @@
 ---
 title: Agent Guardrails
+sidebarTitle: 🛡️ Guardrails
 description: Scan user input, attached files, retrieved sources, tool results and answers with built-in checks — PII, secrets, banned terms, link policy, prompt injection (patterns, or a local model that withholds only the flagged document or file), groundedness and an LLM judge — and choose to flag, redact or block. Includes the audit journal, the rules every agent follows and the defaults for new agents (Admin), and the API reference.
 lastUpdated: 2026-10-26
 ---
-
-import { Callout, Tabs } from 'nextra/components';
 
 # Agent Guardrails
 
@@ -12,7 +11,7 @@ Guardrails are per-agent content controls that run **inside** an agent turn, at 
 
 They apply everywhere the agent runs — the chat UI, the [Agent API](/API/agent-api), the [OpenAI-compatible API](/API/openai-compatible), [webhooks](/API/webhooks), scheduled runs and the embeddable widget — and every decision is written to an audit journal you can review from the agent's logs page.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Guardrails are a defence-in-depth layer, not a replacement for a well-written prompt or for tool approvals. The pattern and heuristic checks are deterministic and fast; the LLM judge is semantic but costs a model call. Start in **monitor mode**, read the journal, then promote to enforcement.
 </Callout>
 
@@ -131,7 +130,7 @@ At least one of the two lists is required. Hosts are matched against the parsed 
 
 Matches the phrasings that appear in real indirect-injection payloads: instruction overrides ("ignore previous instructions"), role hijacks ("you are now…"), system-prompt exfiltration ("reveal your instructions"), fake conversation turns (`system:` at the start of a line) and tool coercion ("you must immediately call the tool…"). It is most valuable at the `retrieval` and `tool_result` stages, where text an attacker may have planted arrives with the user's authority.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 This check catches unobfuscated payloads only. A motivated attacker can evade it trivially. Pair it with the `policy` judge if you need semantic coverage.
 </Callout>
 
@@ -258,7 +257,7 @@ Open the agent in the builder and expand the **Guardrails** section.
 
 Checks that cannot run without settings (`denylist`, `url`, `policy`, and `pii` with no entities selected) are marked *Not configured* and block saving until they are filled in, so a half-configured control can never be published as if it were protecting you.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Guardrails, like the agent's limits, are policy that the owner and the agent's team **editors** can change. Viewers don't see the configuration. To keep a control that nobody who edits the agent can remove, require it in the [instance floor](#the-instance-floor): floor controls appear locked for everyone. See [Sharing agents and what they use](/Deploying/Access-Control#sharing-agents-and-what-they-use) for what else viewers and editors can do.
 </Callout>
 
@@ -299,7 +298,7 @@ Guardrails live under `guardrails` in the agent's `config` field. Send `config` 
 ```
 
 <Tabs items={['cURL', 'Python']}>
-  <Tabs.Tab>
+  <Tab>
     ```bash
     config=$(curl -s "http://localhost:7091/api/get_agent?id=<agent_id>" -H "Authorization: Bearer <token>" \
       | jq '.config + {guardrails: {enabled: true, mode: "monitor_only", controls: [{check: "secrets", stage: "output", action: "redact"}]}}')
@@ -307,8 +306,8 @@ Guardrails live under `guardrails` in the agent's `config` field. Send `config` 
       -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
       -d "{\"config\": $config}"
     ```
-  </Tabs.Tab>
-  <Tabs.Tab>
+  </Tab>
+  <Tab>
     ```python
     import requests
 
@@ -325,7 +324,7 @@ Guardrails live under `guardrails` in the agent's `config` field. Send `config` 
     }
     requests.put(f"{BASE}/api/update_agent/{agent_id}", headers=HEADERS, json={"config": config}).raise_for_status()
     ```
-  </Tabs.Tab>
+  </Tab>
 </Tabs>
 
 Each control accepts `check`, `stage`, `action` (default `flag`), `enabled` (default `true`) and `settings`. Omitted top-level fields take the defaults shown above; `enabled` defaults to `false`.
@@ -408,7 +407,7 @@ GUARDRAILS_CHECKS_ENABLED='["pii", "secrets", "denylist", "url", "injection", "g
 GUARDRAILS_CHECKS_ENABLED=pii,secrets,denylist,url,injection,groundedness
 ```
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Leaving `policy` out of `GUARDRAILS_CHECKS_ENABLED` is how an air-gapped or privacy-sensitive deployment guarantees that no user text is sent to a judge model, regardless of what agent owners configure.
 </Callout>
 
@@ -416,7 +415,7 @@ Leaving `policy` out of `GUARDRAILS_CHECKS_ENABLED` is how an air-gapped or priv
 
 The operator decides whether the model may score text at all; which agents, stages, actions and thresholds use it is set in the UI.
 
-```env
+```dotenv
 DECISION_INJECTION_ENABLED=true
 ```
 

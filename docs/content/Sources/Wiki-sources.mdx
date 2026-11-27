@@ -1,10 +1,9 @@
 ---
 title: Wiki Sources
+sidebarTitle: 📖 Wiki Sources
 description: Create a knowledge source that the agent can read and write — a living wiki it keeps up to date, with human edits, provenance stamps, and version safety.
 lastUpdated: 2026-10-23
 ---
-
-import { Callout } from 'nextra/components'
 
 # Wiki Sources
 
@@ -42,7 +41,7 @@ Two safety properties matter:
 
 After any edit, the affected page is **re-embedded asynchronously** so the wiki stays searchable and the new content is immediately retrievable.
 
-<Callout type="info" emoji="ℹ️">
+<Callout type="info">
 Each wiki page is capped at 1 MB (1,000,000 bytes). Pages are addressed by path (the home page is `/index.md`).
 </Callout>
 
@@ -78,7 +77,7 @@ curl -X POST https://your-docsgpt/api/sources/<source_id>/wiki/convert \
 - Conversion is rejected with `409` if the source is still ingesting — wait for it to finish first.
 - Conversion stops the source's sync schedule, because a sync would replace the wiki's pages with the original content. A wiki never syncs: `/api/manage_sync` refuses a schedule for it and `/api/sync_source` and `/api/connectors/sync` refuse to sync it (`400`).
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 Switching a source to (or from) wiki mode goes only through `POST /api/sources/<id>/wiki/convert`. It cannot be done through the [config PATCH endpoint](/Sources/Per-source-configuration#editing-the-config-via-api).
 </Callout>
 
@@ -110,7 +109,7 @@ Scheduled and webhook runs get the Wiki tool too, and run as the agent's owner:
 
 Nobody is there to approve anything in these runs, so no wiki edit waits for approval. An agent whose owner can only view the wiki gets no Wiki tool, as in a chat.
 
-<Callout type="warning" emoji="⚠️">
+<Callout type="warning">
 With authentication off (`AUTH_TYPE=None`, the default), every request, including one from the widget or the API, runs as the same `local` user who owns the agents. The switch then can't tell outside callers from you and has no effect, so turn authentication on if others can reach the widget or the API.
 </Callout>
 

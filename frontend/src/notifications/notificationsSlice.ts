@@ -40,12 +40,6 @@ interface NotificationsState {
   /** Bounded ring of recent events for the in-app notifications surface. */
   recentEvents: SSEEvent[];
   /**
-   * Wallclock ms of last received data-bearing event. SSE keepalives
-   * are comment lines (no ``id:``/``data:``) and do NOT update this —
-   * they're filtered out at the parser level.
-   */
-  lastEventReceivedAt: number | null;
-  /**
    * Event ids of ``tool.approval.required`` notifications the user
    * dismissed (close button or by navigating into the conversation),
    * each tagged with the wallclock ms at which it was dismissed.
@@ -80,7 +74,6 @@ const initialState: NotificationsState = {
   health: 'connecting',
   lastEventId: null,
   recentEvents: [],
-  lastEventReceivedAt: null,
   // Hydrate from localStorage: SSE backlog replay re-delivers the
   // originating ``tool.approval.required`` envelopes on reload.
   dismissedToolApprovals: loadDismissed(
@@ -113,18 +106,9 @@ export const notificationsSlice = createSlice({
         state.recentEvents.length = RECENT_EVENTS_CAP;
       }
       if (e.id) state.lastEventId = e.id;
-      state.lastEventReceivedAt = Date.now();
     },
     sseHealthChanged: (state, action: PayloadAction<PushHealth>) => {
       state.health = action.payload;
-    },
-    /**
-     * Lifecycle helper used by reconnect bookkeeping — does not record
-     * an event, just stamps "we heard from the server" so the polling
-     * fallback stays disabled while keepalives arrive.
-     */
-    sseHeartbeat: (state) => {
-      state.lastEventReceivedAt = Date.now();
     },
     sseLastEventIdReset: (state) => {
       // Backlog truncated — drop the cursor so the next reconnect
@@ -143,9 +127,6 @@ export const notificationsSlice = createSlice({
      */
     sseLastEventIdAdvanced: (state, action: PayloadAction<string>) => {
       state.lastEventId = action.payload;
-    },
-    clearRecentEvents: (state) => {
-      state.recentEvents = [];
     },
     /**
      * Suppress a ``tool.approval.required`` notification by the SSE
@@ -267,26 +248,18 @@ export const notificationsSlice = createSlice({
 export const {
   sseEventReceived,
   sseHealthChanged,
-  sseHeartbeat,
   sseLastEventIdReset,
   sseLastEventIdAdvanced,
-  clearRecentEvents,
   dismissToolApproval,
   dismissShareNotification,
   resolveToolApproval,
 } = notificationsSlice.actions;
-
-export const selectSseHealth = (state: RootState): PushHealth =>
-  state.notifications.health;
 
 export const selectPushChannelHealthy = (state: RootState): boolean =>
   state.notifications.health === 'healthy';
 
 export const selectLastEventId = (state: RootState): string | null =>
   state.notifications.lastEventId;
-
-export const selectLastEventReceivedAt = (state: RootState): number | null =>
-  state.notifications.lastEventReceivedAt;
 
 export const selectRecentEvents = (state: RootState): SSEEvent[] =>
   state.notifications.recentEvents;

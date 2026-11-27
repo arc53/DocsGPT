@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 // Builds public/llms.txt (https://llmstxt.org) from the docs sidebar.
 //
-// Sections and order come from the content/**/_meta.js files, the same files
-// that drive the sidebar; each link's text is the sidebar title and its note is
-// the page's frontmatter `description`. Entries with `display: "hidden"`,
-// separators and external links are skipped. A page that exists but is missing
-// from its folder's _meta.js is still listed, after the listed ones, because
-// Nextra shows it in the sidebar too.
+// Sections and order come from the content/**/meta.js files, the same files
+// that drive the sidebar: a folder's `title` and its `pages`. Each link's text
+// is the page's sidebar label (frontmatter `sidebarTitle`, else `title`) and its
+// note is the frontmatter `description`. `pages` is read the way Fumadocs reads
+// it: separators (`---Label---`) and links (`[Text](url)`) are skipped, `...`
+// lists the remaining pages by name where it stands, `!name` leaves one out,
+// and a page that `pages` doesn't reach is not listed (it isn't in the sidebar
+// either). The REST endpoint pages built from the Swagger snapshot are not
+// files, so they are not listed.
 //
 //   node scripts/generate-llms.mjs          write public/llms.txt
 //   node scripts/generate-llms.mjs --check  exit 1 if public/llms.txt is stale
 //   node scripts/generate-llms.mjs --print  print the result without writing it
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DOCS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,17 +35,21 @@ This file maps the DocsGPT documentation for LLMs and coding agents. It is gener
 `;
 
 /**
- * Loads a folder's _meta.js as a plain object.
+ * Loads a folder's meta.js as a plain object.
  *
- * The file is an ES module whose default export is an object literal. It is
- * imported from a data: URL so this works whatever module type package.json
- * declares.
+ * The file is an ES module whose default export is an object literal
+ * (`{ title, pages }`) with no imports. It is imported from a data: URL so this
+ * works whatever module type package.json declares. Fumadocs would also read a
+ * meta.json, meta.yaml or meta.ts; the docs keep to meta.js, so another one is
+ * an error rather than a sidebar this script silently disagrees with.
  *
  * @param {string} dir Absolute folder path.
- * @returns {Promise<Record<string, unknown>>} The exported object, or {} when there is no _meta.js.
+ * @returns {Promise<{title?: string, pages?: string[]}>} The exported object, or {} when there is no meta.js.
  */
 async function loadMeta(dir) {
-  const file = join(dir, '_meta.js');
+  const other = readdirSync(dir).find((name) => /^meta\.(json|ya?ml|ts|mjs|cjs)$/.test(name));
+  if (other) throw new Error(`${join(dir, other)}: write the folder's sidebar as meta.js, as every docs folder does.`);
+  const file = join(dir, 'meta.js');
   if (!existsSync(file)) return {};
   const source = readFileSync(file, 'utf8');
   const module = await import(`data:text/javascript;charset=utf-8,${encodeURIComponent(source)}`);
@@ -99,15 +106,14 @@ function plainTitle(title) {
 }
 
 /**
- * Normalizes a _meta.js entry to an object.
+ * The sidebar label of a page: its `sidebarTitle`, else its `title`.
  *
- * @param {unknown} value A string title or an entry object.
- * @returns {Record<string, unknown>} The entry as an object.
+ * @param {Record<string, string>} frontmatter The page's frontmatter.
+ * @param {string} key The file name, the last resort.
+ * @returns {string} The label as plain text.
  */
-function entryOf(value) {
-  if (typeof value === 'string') return { title: value };
-  if (value && typeof value === 'object') return value;
-  return {};
+function labelOf(frontmatter, key) {
+  return plainTitle(frontmatter.sidebarTitle ?? '') || plainTitle(frontmatter.title ?? '') || key;
 }
 
 /**
@@ -128,11 +134,12 @@ function pageFile(dir, key) {
 /**
  * Turns a page path into its public URL.
  *
+ * @param {string} contentDir Absolute path of content/.
  * @param {string} file Absolute page path under content/.
  * @returns {string} The page's URL on the docs site.
  */
-function pageUrl(file) {
-  const route = relative(CONTENT_DIR, file)
+function pageUrl(contentDir, file) {
+  const route = relative(contentDir, file)
     .split(/[\\/]/)
     .join('/')
     .replace(/\.(mdx|md)$/, '')
@@ -141,49 +148,68 @@ function pageUrl(file) {
 }
 
 /**
- * Lists a folder's children in sidebar order: the _meta.js keys first, then
- * any page or folder it doesn't mention, sorted by name (index first).
+ * The pages and folders in a folder, by name, index first.
  *
  * @param {string} dir Absolute folder path.
- * @param {Record<string, unknown>} meta The folder's _meta.js export.
- * @returns {string[]} Child keys in order.
+ * @returns {string[]} Child keys.
  */
-function orderedKeys(dir, meta) {
-  const keys = Object.keys(meta);
-  const unlisted = readdirSync(dir)
-    .filter((name) => !name.startsWith('_') && !name.startsWith('.'))
+function childKeys(dir) {
+  const keys = readdirSync(dir)
+    .filter((name) => !name.startsWith('_') && !name.startsWith('.') && name !== 'meta.js')
     .map((name) => {
       if (statSync(join(dir, name)).isDirectory()) return name;
       const ext = PAGE_EXTENSIONS.find((e) => name.endsWith(e));
       return ext ? name.slice(0, -ext.length) : null;
     })
-    .filter((key) => key && !keys.includes(key))
-    .sort((a, b) => (a === 'index' ? -1 : b === 'index' ? 1 : a.localeCompare(b)));
-  return [...keys, ...new Set(unlisted)];
+    .filter(Boolean);
+  return [...new Set(keys)].sort((a, b) => (a === 'index' ? -1 : b === 'index' ? 1 : a.localeCompare(b)));
 }
 
 /**
- * Collects the visible pages of a folder, recursing into subfolders.
+ * Lists a folder's children in sidebar order, reading meta.js `pages` as
+ * Fumadocs does: listed names in order, `...` (or `z...a`, reversed) for the
+ * ones not named elsewhere, `!name` to leave one out. Separators and links
+ * name no page. Without `pages`, every child is listed by name.
  *
+ * @param {string} dir Absolute folder path.
+ * @param {{pages?: string[]}} meta The folder's meta.js export.
+ * @returns {string[]} Child keys in order.
+ */
+export function orderedKeys(dir, meta) {
+  const children = childKeys(dir);
+  if (!Array.isArray(meta.pages)) return children;
+  const isName = (item) =>
+    !/^---.*---$/.test(item) && !/^(external:)?(\[.*?\])?\[.*\]\(.*\)$/.test(item) && !item.includes('...') && !item.startsWith('!');
+  const named = meta.pages.filter(isName).map((item) => item.replace(/^\.\//, ''));
+  const excluded = meta.pages.filter((item) => item.startsWith('!')).map((item) => item.slice(1));
+  const rest = children.filter((key) => !named.includes(key) && !excluded.includes(key));
+  const keys = [];
+  for (const item of meta.pages) {
+    if (item === '...') keys.push(...rest);
+    else if (item === 'z...a') keys.push(...[...rest].reverse());
+    else if (isName(item)) keys.push(item.replace(/^\.\//, ''));
+  }
+  return [...new Set(keys)];
+}
+
+/**
+ * Collects the pages of a folder, recursing into subfolders.
+ *
+ * @param {string} contentDir Absolute path of content/.
  * @param {string} dir Absolute folder path.
  * @returns {Promise<{title: string, url: string, description: string}[]>} Pages in sidebar order.
  */
-async function collectPages(dir) {
+async function collectPages(contentDir, dir) {
   const meta = await loadMeta(dir);
   const pages = [];
   for (const key of orderedKeys(dir, meta)) {
-    const entry = entryOf(meta[key]);
-    if (entry.display === 'hidden' || entry.type === 'separator') continue;
-    if (typeof entry.href === 'string' && /^[a-z]+:/i.test(entry.href)) continue;
     const file = pageFile(dir, key);
     if (file) {
       const frontmatter = readFrontmatter(file);
-      const title = plainTitle(String(entry.title ?? '')) || plainTitle(frontmatter.title ?? '') || key;
-      pages.push({ title, url: pageUrl(file), description: frontmatter.description ?? '' });
+      pages.push({ title: labelOf(frontmatter, key), url: pageUrl(contentDir, file), description: frontmatter.description ?? '' });
     } else if (existsSync(join(dir, key)) && statSync(join(dir, key)).isDirectory()) {
-      pages.push(...(await collectPages(join(dir, key))));
+      pages.push(...(await collectPages(contentDir, join(dir, key))));
     }
-    // Anything else is a link-only entry (an href to a page listed elsewhere).
   }
   return pages;
 }
@@ -201,30 +227,28 @@ function section(heading, pages) {
 }
 
 /**
- * Builds the full llms.txt text from content/.
+ * Builds the full llms.txt text from a content folder.
  *
  * Top-level pages go in an "Overview" section; each top-level folder becomes a
- * section titled as in the root _meta.js, with its subfolders flattened in.
+ * section titled with its meta.js `title`, with its subfolders flattened in.
  *
+ * @param {string} [contentDir] Absolute path of the content folder; docs/content by default.
  * @returns {Promise<string>} The file contents.
  */
-async function buildLlmsTxt() {
-  const rootMeta = await loadMeta(CONTENT_DIR);
+export async function buildLlmsTxt(contentDir = CONTENT_DIR) {
+  const rootMeta = await loadMeta(contentDir);
   const overview = [];
   const sections = [];
-  for (const key of orderedKeys(CONTENT_DIR, rootMeta)) {
-    const entry = entryOf(rootMeta[key]);
-    if (entry.display === 'hidden' || entry.type === 'separator') continue;
-    if (typeof entry.href === 'string' && /^[a-z]+:/i.test(entry.href)) continue;
-    const file = pageFile(CONTENT_DIR, key);
-    const folder = join(CONTENT_DIR, key);
+  for (const key of orderedKeys(contentDir, rootMeta)) {
+    const file = pageFile(contentDir, key);
+    const folder = join(contentDir, key);
     if (file) {
       const frontmatter = readFrontmatter(file);
-      const title = plainTitle(String(entry.title ?? '')) || plainTitle(frontmatter.title ?? '') || key;
-      overview.push({ title, url: pageUrl(file), description: frontmatter.description ?? '' });
+      overview.push({ title: labelOf(frontmatter, key), url: pageUrl(contentDir, file), description: frontmatter.description ?? '' });
     } else if (existsSync(folder) && statSync(folder).isDirectory()) {
-      const pages = await collectPages(folder);
-      if (pages.length) sections.push(section(plainTitle(String(entry.title ?? '')) || key, pages));
+      const pages = await collectPages(contentDir, folder);
+      const heading = plainTitle(String((await loadMeta(folder)).title ?? '')) || key;
+      if (pages.length) sections.push(section(heading, pages));
     }
   }
   const parts = [HEADER];
@@ -256,7 +280,10 @@ async function main() {
   console.log(`Wrote ${relative(DOCS_ROOT, OUTPUT)}.`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Run only as a script, not when the tests import it.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

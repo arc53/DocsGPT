@@ -46,7 +46,6 @@ vi.mock('react-redux', () => ({
             catalog: [],
             connections: store.team,
             loaded: true,
-            loading: false,
             failed: false,
             latestRequestId: null,
           },

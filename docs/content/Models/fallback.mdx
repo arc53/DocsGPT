@@ -1,10 +1,9 @@
 ---
 title: Fallback Models
+sidebarTitle: 🔁 Fallback Models
 description: Switch to another model automatically when the primary model fails, and keep each provider's API key with that provider.
 lastUpdated: 2026-10-06
 ---
-
-import { Callout } from 'nextra/components'
 
 # Fallback Models
 
@@ -36,7 +35,7 @@ If `FALLBACK_LLM_NAME` is a catalog model that carries its own key and endpoint,
 
 OpenAI answers; Anthropic takes over when it fails:
 
-```env
+```dotenv
 LLM_PROVIDER=openai
 API_KEY=sk-your-openai-key
 LLM_NAME=gpt-5.5

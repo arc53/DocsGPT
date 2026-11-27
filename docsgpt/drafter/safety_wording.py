@@ -247,7 +247,8 @@ def unbacked_claims(message: str, step: str, fields: dict, form: dict) -> list[s
     have = {
         "limits": "limits" in fields or form["limits"]["mode"] != "none",
         "analytics": "analytics" in fields or bool(form["analytics"]["topics"]),
-        "sources": "sources" in fields or bool(form["sources"]),
+        # A knowledge folder on the form feeds the agent sources: a message may speak of them.
+        "sources": "sources" in fields or "folders" in fields or bool(form["sources"]) or bool(form.get("folders")),
         "tools": "tools" in fields or bool(form["tools"]),
     }
     on = checks_on(form["guardrails"])

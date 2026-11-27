@@ -183,7 +183,7 @@ Issue、質問、プルリクエストを歓迎します。まず [CONTRIBUTING.
 - **バックエンド：** Starlette ASGI アプリ（uvicorn/gunicorn）上の Python、Flask、flask-restx、RedBeat を使用する Celery、Pydantic 設定。
 - **データ：** PostgreSQL（SQLAlchemy、Alembic）、Redis、およびベクター向けの FAISS、pgvector、Elasticsearch、Qdrant、Milvus、MongoDB。
 - **フロントエンド：** React、Vite、Redux Toolkit、Tailwind CSS、React Flow。
-- **ドキュメント：** Nextra を使用する Next.js。
+- **ドキュメント：** Fumadocs を使用する Next.js。
 
 プロジェクト構成：
 

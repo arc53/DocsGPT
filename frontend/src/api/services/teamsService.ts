@@ -435,8 +435,6 @@ const teamsService = {
     token: string | null,
   ): Promise<any> =>
     json(await apiClient.post(endpoints.USER.TEAMS, data, token)),
-  get: async (id: string, token: string | null): Promise<any> =>
-    json(await apiClient.get(endpoints.USER.TEAM(id), token)),
   update: async (
     id: string,
     data: { name?: string; description?: string },

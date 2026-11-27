@@ -453,6 +453,12 @@ class Trace:
                     total += int(value)
             return total
 
+        cost = sum(
+            float(value)
+            for s in llm
+            if isinstance(value := s.attributes.get("docsgpt.cost_usd"), (int, float))
+            and not isinstance(value, bool)
+        )
         summary = {
             "llm_calls": len(llm),
             "tool_calls": len(tools),
@@ -460,6 +466,7 @@ class Trace:
             "retrieval_ms": round(sum(s.duration_ms or 0 for s in retrieval), 1),
             "input_tokens": _tokens("gen_ai.usage.input_tokens"),
             "output_tokens": _tokens("gen_ai.usage.output_tokens"),
+            "cost_usd": round(cost, 6),
             "errors": sum(1 for s in self.spans if s.status == STATUS_ERROR),
         }
         # Only traces that asked the decision model carry its counters. A call

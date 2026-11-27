@@ -24,6 +24,7 @@ the docling extra gets working OCR from the tesseract binary alone, and one
 that does install it keeps today's behaviour unchanged.
 """
 import base64
+import hashlib
 import functools
 import io
 import logging
@@ -33,14 +34,16 @@ import shutil
 import subprocess
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Hashable, Iterable, List, Optional, Protocol, Tuple, TypeVar, Union
+from typing import Any, Dict, Hashable, Iterable, List, Optional, Protocol, Tuple, TypeVar, Union
 
 from docsgpt.parser.file.base_parser import (
     BaseParser,
     DocumentParseError,
+    TransientParseError,
     delegate_parse,
     module_available,
 )
@@ -121,6 +124,15 @@ _BLANK_LINES_RE = re.compile(r"\n{3,}")
 # punctuation); spaces next to Latin text, digits and line breaks stay.
 _CJK_CHAR = r"[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]"
 _CJK_SPACE_RE = re.compile(rf"(?<={_CJK_CHAR})[ \t]+(?={_CJK_CHAR})")
+
+
+class OcrRateLimitedError(TransientParseError):
+    """The OCR endpoint kept answering 429 for longer than ``OCR_RATE_LIMIT_MAX_WAIT``.
+
+    The file is fine; the quota is spent for now. ``SimpleDirectoryReader``
+    defers such a file and parses it again after the other files, and the
+    pages already recognised are kept, so only the missing ones are sent again.
+    """
 
 
 class OcrUnavailableError(DocumentParseError):
@@ -409,6 +421,16 @@ def _sleep(seconds: float) -> None:
     time.sleep(seconds)
 
 
+def _monotonic() -> float:
+    """The clock a request's rate-limit budget is measured on; a module attribute so tests can move it."""
+    return time.monotonic()
+
+
+def _wall_now() -> float:
+    """Wall-clock seconds, for an HTTP-date ``Retry-After``; a module attribute so tests can fix it."""
+    return time.time()
+
+
 @dataclass(frozen=True)
 class DeepseekEndpoint:
     """The DeepSeek-OCR endpoint the settings resolve to.
@@ -495,17 +517,57 @@ def resolve_deepseek_endpoint() -> DeepseekEndpoint:
     )
 
 
+def _header(response, name: str) -> Optional[str]:
+    """A response header by name, whatever its case (tests pass plain dicts)."""
+    headers = getattr(response, "headers", None) or {}
+    value = headers.get(name)
+    if value is not None:
+        return value
+    wanted = name.lower()
+    for key, candidate in headers.items():
+        if str(key).lower() == wanted:
+            return candidate
+    return None
+
+
 def _retry_after_seconds(response) -> Optional[float]:
-    """``Retry-After`` in seconds when the server sent a numeric one."""
-    value = (getattr(response, "headers", None) or {}).get("Retry-After")
+    """How long the server asked to wait: ``retry-after-ms`` (Azure), else ``Retry-After`` in seconds or as an HTTP date.
+
+    Returns:
+        Seconds, or None when the server sent neither (or something unreadable).
+    """
+    millis = _header(response, "retry-after-ms")
+    if millis is not None:
+        try:
+            return max(0.0, float(millis) / 1000.0)
+        except (TypeError, ValueError):
+            pass
+    value = _header(response, "Retry-After")
+    if value is None:
+        return None
     try:
-        return max(0.0, float(value)) if value is not None else None
+        return max(0.0, float(value))
     except (TypeError, ValueError):
-        return None  # an HTTP-date; fall back to exponential backoff
+        pass
+    try:
+        from email.utils import parsedate_to_datetime
+
+        when = parsedate_to_datetime(str(value))
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    return max(0.0, when.timestamp() - _wall_now())
 
 
 def _backoff_seconds(attempt: int) -> float:
     return min(_MAX_RETRY_WAIT_SECONDS, _BASE_RETRY_WAIT_SECONDS * 2**attempt + random.uniform(0, 0.5))
+
+
+def _rate_limit_wait(response, attempt: int) -> float:
+    """The wait before retrying a 429: the server's ask or the backoff, whichever is longer, capped."""
+    asked = _retry_after_seconds(response)
+    return min(_MAX_RETRY_WAIT_SECONDS, max(asked or 0.0, _backoff_seconds(attempt)))
 
 
 def _token_count(value) -> int:
@@ -567,6 +629,11 @@ class DeepseekOcrEngine:
         self._problem = None if (url and model) else resolved.problem
         self._usage_lock = threading.Lock()
         self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        self._rate_stats = _empty_rate_stats()
+        # Slots shared by every engine and worker process sending to this URL.
+        from docsgpt.parser.file.ocr_limiter import limiter_for
+
+        self.limiter = limiter_for(self.name, self.url, lease_seconds=self.timeout + 60)
 
     def payload(self, image) -> Dict:
         """The chat-completions request body for one page image."""
@@ -595,6 +662,16 @@ class DeepseekOcrEngine:
         """Start counting usage for a new file."""
         with self._usage_lock:
             self._usage = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0}
+            self._rate_stats = _empty_rate_stats()
+
+    def rate_limit_stats(self) -> Dict[str, Any]:
+        """Requests sent (``attempts``, retries included), 429s and seconds waited since the last ``reset_usage``."""
+        with self._usage_lock:
+            return dict(self._rate_stats)
+
+    def _count(self, key: str, amount: float = 1) -> None:
+        with self._usage_lock:
+            self._rate_stats[key] += amount
 
     def _record_usage(self, body: Dict) -> None:
         usage = body.get("usage") if isinstance(body, dict) else None
@@ -604,48 +681,104 @@ class DeepseekOcrEngine:
             for key in ("prompt_tokens", "completion_tokens"):
                 self._usage[key] += _token_count(usage.get(key))
 
-    def _post(self, body: Dict):
-        """POST one page, retrying rate limits, 5xx responses and refused connections.
+    def _send(self, body: Dict, headers: Dict[str, str], deadline: Optional[float] = None):
+        """One request, holding a slot of the endpoint's shared in-flight limit.
+
+        Args:
+            body: The request body.
+            headers: The request headers.
+            deadline: For a retry after a 429: the ``_monotonic()`` time the
+                rate-limit budget runs out; past it once a slot is free, nothing is sent.
 
         Raises:
-            OcrUnavailableError: The endpoint rejected the key or does not serve the model.
-            DocumentParseError: Any other failure, after the retries.
+            OcrRateLimitedError: The budget ran out while this waited for a slot.
         """
         import requests
 
+        from docsgpt.parser.file.ocr_limiter import SlotWaitExpired
+
+        expired = (lambda: _monotonic() >= deadline) if deadline is not None else None
+        try:
+            with self.limiter.slot(give_up=expired):
+                if expired is not None and expired():
+                    raise SlotWaitExpired("the budget ran out")
+                self._count("attempts")
+                return requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
+        except SlotWaitExpired as exc:
+            raise OcrRateLimitedError(
+                f"DeepSeek-OCR endpoint {self.url} rate-limit budget ran out while waiting for a request slot; "
+                "the page will be tried again later."
+            ) from exc
+
+    def _post(self, body: Dict):
+        """POST one page, retrying rate limits, 5xx responses and refused connections.
+
+        A 429 is retried until ``OCR_RATE_LIMIT_MAX_WAIT`` has passed since the
+        first try, each wait the longer of what the server asked for and the
+        backoff. Other transient failures are retried ``max_retries`` times.
+
+        Raises:
+            OcrUnavailableError: The endpoint rejected the key or does not serve the model.
+            OcrRateLimitedError: Still rate limited when the budget ran out.
+            TransientParseError: A 5xx, a refused connection or a timeout, after the retries.
+            DocumentParseError: Any other failure.
+        """
+        import requests
+
+        from docsgpt.core.settings import settings
+
         headers = self.endpoint.headers()
+        budget = max(0.0, float(settings.OCR_RATE_LIMIT_MAX_WAIT))
+        started = _monotonic()
         attempt = 0
+        rate_limited = 0
         while True:
             try:
-                response = requests.post(self.url, json=body, headers=headers, timeout=self.timeout)
+                # Only a retry after a 429 is bound by the budget; the first try always goes.
+                response = self._send(body, headers, deadline=started + budget if rate_limited else None)
             except requests.exceptions.ConnectionError as exc:
                 # ConnectTimeout lands here too; a read timeout does not.
                 if attempt < self.max_retries:
                     wait_s = _backoff_seconds(attempt)
-                    logger.warning(f"DeepSeek-OCR endpoint {self.url} unreachable ({exc}); retrying in {wait_s:.1f}s")
-                    _sleep(wait_s)
+                    logger.debug(f"DeepSeek-OCR endpoint {self.url} unreachable ({exc}); retrying in {wait_s:.1f}s")
+                    self._wait(wait_s)
                     attempt += 1
                     continue
-                raise DocumentParseError(
+                raise TransientParseError(
                     f"DeepSeek-OCR request to {self.url} failed: {exc}. Check OCR_DEEPSEEK_URL "
                     f"and that model {self.model!r} is served (e.g. `ollama pull {self.model}`)."
                 ) from exc
             except requests.exceptions.Timeout as exc:
-                raise DocumentParseError(
+                raise TransientParseError(
                     f"DeepSeek-OCR request to {self.url} timed out after {self.timeout:.0f}s on a page; "
                     "raise OCR_DEEPSEEK_TIMEOUT for a slow model server."
                 ) from exc
             except requests.RequestException as exc:
-                raise DocumentParseError(f"DeepSeek-OCR request to {self.url} failed: {exc}") from exc
+                raise TransientParseError(f"DeepSeek-OCR request to {self.url} failed: {exc}") from exc
 
             status = response.status_code
+            if status == 429:
+                self._count("rate_limited")
+                self.limiter.record_rate_limited()
+                left = budget - (_monotonic() - started)
+                wait_s = _rate_limit_wait(response, rate_limited)
+                if left <= 0 or wait_s >= left:
+                    # The wait would end past the budget: give the page up now
+                    # rather than sleep and send a request that can't count.
+                    raise OcrRateLimitedError(
+                        f"DeepSeek-OCR endpoint {self.url} was still rate limiting after "
+                        f"{budget - max(0.0, left):.0f}s of a {budget:.0f}s budget "
+                        f"({rate_limited + 1} rate-limited answers); the page will be tried again later. "
+                        "Lower OCR_MAX_IN_FLIGHT or raise the provider's quota."
+                    )
+                logger.debug(f"DeepSeek-OCR endpoint {self.url} returned 429; retrying in {wait_s:.1f}s")
+                self._wait(wait_s)
+                rate_limited += 1
+                continue
             if status in _RETRY_STATUSES and attempt < self.max_retries:
-                retry_after = _retry_after_seconds(response)
-                wait_s = min(_MAX_RETRY_WAIT_SECONDS, retry_after) if retry_after is not None else _backoff_seconds(
-                    attempt
-                )
-                logger.warning(f"DeepSeek-OCR endpoint {self.url} returned {status}; retrying in {wait_s:.1f}s")
-                _sleep(wait_s)
+                wait_s = _backoff_seconds(attempt)
+                logger.debug(f"DeepSeek-OCR endpoint {self.url} returned {status}; retrying in {wait_s:.1f}s")
+                self._wait(wait_s)
                 attempt += 1
                 continue
             if status in (401, 403):
@@ -662,10 +795,16 @@ class DeepseekOcrEngine:
             try:
                 response.raise_for_status()
             except requests.HTTPError as exc:
-                raise DocumentParseError(
+                error = TransientParseError if status in _RETRY_STATUSES else DocumentParseError
+                raise error(
                     f"DeepSeek-OCR endpoint {self.url} returned {status}: {_error_body(response)}"
                 ) from exc
+            self.limiter.record_success()
             return response
+
+    def _wait(self, seconds: float) -> None:
+        self._count("waited_seconds", seconds)
+        _sleep(seconds)
 
     def ocr_image(self, image) -> str:
         """OCR one PIL image through the endpoint.
@@ -695,6 +834,10 @@ class DeepseekOcrEngine:
         return clean_deepseek_output(str(content or ""))
 
 
+def _empty_rate_stats() -> Dict[str, Any]:
+    return {"attempts": 0, "rate_limited": 0, "waited_seconds": 0.0}
+
+
 def build_native_ocr_engine(engine: Optional[str] = None, languages: Optional[List[str]] = None) -> OcrEngine:
     """Instantiate the engine ``OCR_ENGINE`` (or ``engine``) resolves to for the native backend."""
     resolved = resolve_native_ocr_engine(engine)
@@ -706,7 +849,12 @@ def build_native_ocr_engine(engine: Optional[str] = None, languages: Optional[Li
 K = TypeVar("K", bound=Hashable)
 
 
-def ocr_images(engine: OcrEngine, items: Iterable[Tuple[K, object]], skip_failed: bool = False) -> Dict[K, str]:
+def ocr_images(
+    engine: OcrEngine,
+    items: Iterable[Tuple[K, object]],
+    skip_failed: bool = False,
+    failures: Optional[Dict[K, BaseException]] = None,
+) -> Dict[K, str]:
     """OCR ``(key, image)`` pairs, up to ``engine.concurrency`` requests at a time.
 
     ``items`` is consumed on the calling thread — PDF pages are rendered
@@ -720,22 +868,38 @@ def ocr_images(engine: OcrEngine, items: Iterable[Tuple[K, object]], skip_failed
         items: Page keys and PIL images, in page order.
         skip_failed: Log and leave out a page whose OCR failed instead of
             raising (mixed documents, where the text pages are already safe).
+        failures: When given, a failed page's error is stored here under its
+            key instead of being raised, so the caller keeps every page that
+            did come back. Once a page fails with ``OcrRateLimitedError`` or
+            ``OcrUnavailableError`` no further pages are sent: each would
+            fail the same way. The pages not sent are simply absent.
 
     Returns:
         Key -> stripped text, in the order ``items`` produced them.
 
     Raises:
-        Exception: The first page failure, unless ``skip_failed``.
+        Exception: The first page failure, unless ``skip_failed`` or ``failures``.
     """
     workers = max(1, int(getattr(engine, "concurrency", 1) or 1))
     order: List[K] = []
     results: Dict[K, str] = {}
+    stop = {"now": False}
 
     def _failed(key: K, exc: Exception) -> None:
+        if failures is not None:
+            failures[key] = exc
+            if isinstance(exc, (OcrRateLimitedError, OcrUnavailableError)):
+                stop["now"] = True
+            return
         if not skip_failed:
             raise exc
         label = key + 1 if isinstance(key, int) else key
         logger.warning(f"OCR of page {label} failed ({exc}); skipping that page")
+
+    def _close_items() -> None:
+        close = getattr(items, "close", None)
+        if callable(close):
+            close()
 
     if workers == 1:
         for key, image in items:
@@ -744,6 +908,9 @@ def ocr_images(engine: OcrEngine, items: Iterable[Tuple[K, object]], skip_failed
                 results[key] = (engine.ocr_image(image) or "").strip()
             except Exception as exc:  # noqa: BLE001 - re-raised unless skip_failed
                 _failed(key, exc)
+            if stop["now"]:
+                _close_items()
+                break
         return {key: results[key] for key in order if key in results}
 
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ocr")
@@ -764,7 +931,18 @@ def ocr_images(engine: OcrEngine, items: Iterable[Tuple[K, object]], skip_failed
             while len(pending) >= workers * 2:
                 done, _ = wait(pending, return_when=FIRST_COMPLETED)
                 _collect(done)
+            if stop["now"]:
+                _close_items()
+                break
         while pending:
+            if stop["now"]:
+                # A terminal failure (a spent rate-limit budget, a refused key):
+                # pages not yet sent stay missing for the retry instead of
+                # spending another budget now.
+                for future in [f for f in pending if f.cancel()]:
+                    pending.pop(future)
+                if not pending:
+                    break
             done, _ = wait(pending, return_when=FIRST_COMPLETED)
             _collect(done)
     except BaseException:
@@ -800,15 +978,74 @@ def usage_metadata(engine: OcrEngine) -> Dict[str, int]:
 
 
 def _log_usage(name: str, engine: OcrEngine, usage: Dict[str, int]) -> None:
-    if usage:
-        logger.info(
-            "OCR usage for %s (%s): %d request(s), %d prompt token(s), %d completion token(s)",
-            name,
-            engine.name,
-            usage["ocr_requests"],
-            usage["ocr_prompt_tokens"],
-            usage["ocr_completion_tokens"],
+    """One line per file: requests sent, 429s, time spent waiting, pages billed and tokens.
+
+    Replaces a warning per retry, which drowned a rate-limited ingest's log.
+    """
+    stats_fn = getattr(engine, "rate_limit_stats", None)
+    stats = stats_fn() if callable(stats_fn) else {}
+    if not usage and not stats.get("attempts"):
+        return
+    logger.info(
+        "OCR of %s (%s): %d request(s), %d rate limited (429), %.1fs waited, %d page(s) billed, "
+        "%d prompt token(s), %d completion token(s)",
+        name,
+        engine.name,
+        int(stats.get("attempts") or usage.get("ocr_requests", 0)),
+        int(stats.get("rate_limited") or 0),
+        float(stats.get("waited_seconds") or 0.0),
+        int(usage.get("ocr_requests", 0)),
+        int(usage.get("ocr_prompt_tokens", 0)),
+        int(usage.get("ocr_completion_tokens", 0)),
+    )
+
+
+#: Files whose recognised pages a parser keeps after a failed parse, for the retry.
+_KEPT_FILES = 256
+
+
+def _missing_pages_error(
+    path: Path,
+    engine_name: str,
+    failures: Dict[int, BaseException],
+    missing: int,
+    total: int,
+    rate_limit_first: bool = False,
+) -> DocumentParseError:
+    """The error for a parse that could not OCR every page it needed.
+
+    A page that failed for good (a misconfigured endpoint, a page the model
+    refuses) makes the file fail for good; otherwise a rate limit makes it a
+    file to try again later (``OcrRateLimitedError``), as does any other
+    transient failure.
+
+    Args:
+        rate_limit_first: A rate-limited page wins over one that failed for
+            good: a caller that skips failed pages (``ocr_pages(skip_failed=True)``)
+            still wants the file set aside and tried again after the cool-down.
+    """
+    errors = list(failures.values())
+    if rate_limit_first and any(isinstance(error, OcrRateLimitedError) for error in errors):
+        return OcrRateLimitedError(
+            f"{path.name}: {missing} of {total} scanned page(s) could not be OCR'd yet: the OCR endpoint is "
+            f"rate limiting. The {total - missing} page(s) recognised are kept for the retry."
         )
+    for error in errors:
+        if isinstance(error, OcrUnavailableError):
+            return error
+    for error in errors:
+        if not isinstance(error, TransientParseError):
+            if isinstance(error, DocumentParseError):
+                return error
+            return DocumentParseError(f"Failed to parse {path.name} with native OCR ({engine_name}): {error}")
+    if any(isinstance(error, OcrRateLimitedError) for error in errors):
+        return OcrRateLimitedError(
+            f"{path.name}: {missing} of {total} scanned page(s) could not be OCR'd yet: the OCR endpoint is "
+            f"rate limiting. The {total - missing} page(s) recognised are kept for the retry."
+        )
+    if errors:
+        return errors[0]  # a TransientParseError
+    return TransientParseError(f"{path.name}: {missing} of {total} scanned page(s) were not OCR'd")
 
 
 # ---------------------------------------------------------------------------
@@ -991,7 +1228,43 @@ class NativeOcrPdfParser(BaseParser):
         self.min_text_chars = max(1, int(min_text_chars))
         self.last_engine: Optional[str] = None
         self.last_ocr_usage: Dict[str, int] = {}
+        #: Pages ``ocr_pages(skip_failed=True)`` left out of its most recent result.
+        self.last_ocr_failed_pages = 0
         self._last_metadata: Dict = {}
+        # Pages recognised before a parse failed, so a retry of the same file
+        # (same bytes, engine and resolution) sends only the missing ones.
+        self._kept_pages: "OrderedDict[Tuple, Dict[int, str]]" = OrderedDict()
+        self._kept_lock = threading.Lock()
+
+    def _kept_key(self, path: Path, engine: OcrEngine, dpi: int) -> Optional[Tuple]:
+        """The key of a file's recognised pages: its path and its content, the engine and the DPI."""
+        try:
+            stat = path.stat()
+            digest = hashlib.sha256()
+            with open(path, "rb") as f:
+                for block in iter(lambda: f.read(1024 * 1024), b""):
+                    digest.update(block)
+            return (str(path.resolve()), stat.st_size, digest.hexdigest(), engine.name, dpi)
+        except OSError:
+            return None
+
+    def _kept(self, key: Optional[Tuple]) -> Dict[int, str]:
+        if key is None:
+            return {}
+        with self._kept_lock:
+            return dict(self._kept_pages.get(key) or {})
+
+    def _keep(self, key: Optional[Tuple], pages: Dict[int, str]) -> None:
+        if key is None:
+            return
+        with self._kept_lock:
+            if pages:
+                self._kept_pages[key] = dict(pages)
+                self._kept_pages.move_to_end(key)
+                while len(self._kept_pages) > _KEPT_FILES:
+                    self._kept_pages.popitem(last=False)
+            else:
+                self._kept_pages.pop(key, None)
 
     def _init_parser(self) -> Dict:
         try:
@@ -1035,12 +1308,17 @@ class NativeOcrPdfParser(BaseParser):
         Args:
             file: The PDF.
             indices: 0-based pages to OCR; out-of-range ones are ignored.
-            skip_failed: Leave out a page whose OCR failed instead of raising.
+            skip_failed: Leave out a page whose OCR failed instead of raising;
+                ``last_ocr_failed_pages`` then says how many were left out. A
+                rate limit still raises, so the file can be tried again.
 
         Returns:
             Page index -> recognised text, in the order requested.
 
         Raises:
+            OcrRateLimitedError: A page was still rate limited when its budget
+                ran out. The pages recognised are kept, and a retry of the same
+                file sends only the missing ones.
             DocumentParseError: The file cannot be opened or the engine failed.
         """
         import pypdfium2 as pdfium
@@ -1052,12 +1330,17 @@ class NativeOcrPdfParser(BaseParser):
         except Exception as exc:
             raise DocumentParseError(f"Failed to open {path.name} with pypdfium2: {exc}") from exc
         _reset_usage(engine)
+        self.last_ocr_failed_pages = 0
+        failures: Dict[int, BaseException] = {}
         try:
             dpi = render_dpi()
+            key = self._kept_key(path, engine, dpi)
+            kept = self._kept(key)
+            requested = [index for index in dict.fromkeys(indices) if 0 <= index < len(pdf)]
 
             def _pages():
-                for index in indices:
-                    if index < 0 or index >= len(pdf):
+                for index in requested:
+                    if index in kept:
                         continue
                     page = pdf[index]
                     try:
@@ -1066,7 +1349,7 @@ class NativeOcrPdfParser(BaseParser):
                         page.close()
                     yield index, image
 
-            texts = ocr_images(engine, _pages(), skip_failed=skip_failed)
+            kept.update(ocr_images(engine, _pages(), failures=failures))
         except DocumentParseError:
             raise
         except Exception as exc:
@@ -1076,7 +1359,19 @@ class NativeOcrPdfParser(BaseParser):
         self.last_engine = engine.name
         self.last_ocr_usage = usage_metadata(engine)
         _log_usage(path.name, engine, self.last_ocr_usage)
-        return texts
+        missing = [index for index in requested if index not in kept]
+        rate_limited = any(isinstance(error, OcrRateLimitedError) for error in failures.values())
+        if missing and (rate_limited or not skip_failed):
+            # Kept for the retry: only the missing pages are sent again.
+            self._keep(key, kept)
+            raise _missing_pages_error(
+                path, engine.name, failures, len(missing), len(requested), rate_limit_first=skip_failed,
+            )
+        self._keep(key, {})
+        for index, error in failures.items():
+            logger.warning(f"OCR of page {index + 1} of {path.name} failed ({error}); skipping that page")
+        self.last_ocr_failed_pages = len(missing)
+        return {index: kept[index] for index in requested if index in kept}
 
     def text_layer_delegate(self, file: Path) -> Optional[BaseParser]:
         """The ``text_parser`` that ``parse_file`` would hand ``file`` to, or None.
@@ -1120,7 +1415,14 @@ class NativeOcrPdfParser(BaseParser):
     def parse_file(self, file: Path, errors: str = "ignore") -> Union[str, List[str]]:
         """Parse a PDF, OCR-ing only the pages that need it.
 
+        A page whose request fails fails only itself: the other pages are
+        still recognised, and are kept on this parser, so parsing the same
+        file again (unchanged, same engine and resolution) sends only the
+        pages still missing. The text comes back only once every page has.
+
         Raises:
+            OcrRateLimitedError: Pages were still rate limited when their
+                budget ran out; the file can be parsed again later.
             DocumentParseError: The file cannot be opened, the engine failed,
                 or several pages OCR'd to nothing.
         """
@@ -1146,11 +1448,17 @@ class NativeOcrPdfParser(BaseParser):
                 return self._delegate_text(path, errors)
             dpi = render_dpi()
             pages_text = [""] * page_count
+            key = self._kept_key(path, engine, dpi)
+            kept = self._kept(key)
+            scanned = [index for index in range(page_count) if counts[index] < self.min_text_chars]
 
             def _scanned_pages():
                 # Reads text pages in place and yields renders of the rest, all
-                # on this thread; only the OCR requests run concurrently.
+                # on this thread; only the OCR requests run concurrently. Pages
+                # recognised by an earlier, failed parse of this file are kept.
                 for index in range(page_count):
+                    if index in kept:
+                        continue
                     page = pdf[index]
                     try:
                         if counts[index] >= self.min_text_chars:
@@ -1166,10 +1474,21 @@ class NativeOcrPdfParser(BaseParser):
                     yield index, image
 
             _reset_usage(engine)
-            ocr_texts = ocr_images(engine, _scanned_pages())
-            for index, text in ocr_texts.items():
-                pages_text[index] = text
-            ocr_pages = len(ocr_texts)
+            failures: Dict[int, BaseException] = {}
+            kept.update(ocr_images(engine, _scanned_pages(), failures=failures))
+            missing = [index for index in scanned if index not in kept]
+            if missing:
+                # A page that failed fails only itself: the rest are kept, and
+                # a retry of this file sends only what is missing. Never a
+                # partial text: the file is either whole or an error.
+                self._keep(key, kept)
+                self.last_ocr_usage = usage_metadata(engine)
+                _log_usage(path.name, engine, self.last_ocr_usage)
+                raise _missing_pages_error(path, engine.name, failures, len(missing), len(scanned))
+            self._keep(key, {})
+            for index in scanned:
+                pages_text[index] = kept[index]
+            ocr_pages = len(scanned)
         except DocumentParseError:
             raise
         except Exception as exc:

@@ -215,14 +215,6 @@ class TriggerLinksRepository:
         ).fetchall()
         return [row_to_dict(r) for r in rows]
 
-    def list_for_monitor(self, monitor_id: str) -> List[dict]:
-        """A monitor's links, oldest first."""
-        rows = self._conn.execute(
-            text("SELECT * FROM trigger_links WHERE monitor_id = CAST(:id AS uuid) ORDER BY created_at"),
-            {"id": str(monitor_id)},
-        ).fetchall()
-        return [row_to_dict(r) for r in rows]
-
     def list_for_monitors(self, monitor_ids: List[str]) -> Dict[str, List[dict]]:
         """Links of several monitors at once, keyed by monitor id (oldest first)."""
         ids = [str(i) for i in monitor_ids if looks_like_uuid(str(i))]

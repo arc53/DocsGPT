@@ -33,7 +33,6 @@ describe('ConnectionHealthDot', () => {
       preloadedState: {
         connectors: {
           enabled: true,
-          loading: false,
           loaded: true,
           failed: false,
           catalog: [],
