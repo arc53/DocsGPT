@@ -168,8 +168,9 @@ def reseal_for_owner(encrypted_data: Optional[str], old_owner: str, new_owner: s
 
     A blob is bound to its owner (v1 by the PBKDF2 password, v2 by the HKDF
     info and the GCM associated data), so moving an item to a team or out of
-    one needs its secrets re-sealed. The format is kept: a v1 blob comes back
-    as v1 under ``ENCRYPTION_SECRET_KEY``, a v2 envelope as v2.
+    one needs its secrets re-sealed. The result is always a v2 envelope under
+    ``ENCRYPTION_SECRET_KEY``: a legacy v1 blob is upgraded on the way, so a
+    move never writes a moved secret back to v1.
 
     Args:
         encrypted_data: A blob from :func:`encrypt_credentials` or :func:`encrypt_json`; empty means none.
@@ -202,7 +203,7 @@ def reseal_for_owner(encrypted_data: Optional[str], old_owner: str, new_owner: s
             continue
     if credentials is None:
         raise CredentialDecryptionError("Credential could not be decrypted")
-    resealed = encrypt_credentials(credentials, new_owner)
+    resealed = encrypt_json(credentials, new_owner)
     if not resealed:
         raise CredentialDecryptionError("Credential could not be re-encrypted")
     return resealed
