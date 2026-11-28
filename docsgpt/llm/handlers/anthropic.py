@@ -6,6 +6,7 @@ from docsgpt.llm.handlers.base import LLMHandler, LLMResponse, ToolCall
 _STOP_REASON_MAP = {
     "tool_use": "tool_calls",
     "max_tokens": "length",
+    "model_context_window_exceeded": "length",
 }
 
 

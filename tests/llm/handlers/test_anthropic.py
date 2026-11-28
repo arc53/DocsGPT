@@ -89,6 +89,11 @@ class TestParseMessage:
         parsed = handler.parse_response(message([text_block("x")], stop_reason="max_tokens"))
         assert parsed.finish_reason == "length"
 
+    def test_context_window_exceeded_stop_reason_maps_to_length(self, handler):
+        parsed = handler.parse_response(message([text_block("x")], stop_reason="model_context_window_exceeded"))
+        assert parsed.content == "x"
+        assert parsed.finish_reason == "length"
+
     def test_raw_response_preserved(self, handler):
         msg = message([text_block("x")])
         assert handler.parse_response(msg).raw_response is msg
