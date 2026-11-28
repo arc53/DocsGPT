@@ -45,8 +45,13 @@ const config = {
   reactStrictMode: true,
   poweredByHeader: false,
   // The search index and the OpenAPI document are data for the site's own pages, not pages.
+  // Header sources match regardless of case, so '/api/:path*' would also catch the /API/ pages.
   async headers() {
-    return [{ source: '/api/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] }];
+    const noindex = [{ key: 'X-Robots-Tag', value: 'noindex' }];
+    return [
+      { source: '/api/search', headers: noindex },
+      { source: '/api/openapi/:path*', headers: noindex },
+    ];
   },
   async redirects() {
     return movedPages.map(([source, destination]) => ({
