@@ -1,4 +1,4 @@
-<!-- Translated from README.md at commit 96e6e4a0d2ff45c1cffe0df1eec4338c5222fab9 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
+<!-- Translated from README.md at commit 4fa8aa7cd3eba4d46f32000eacc9b9f808eb0ee0 by .github/workflows/readme-translations.yml. Fix wording here; change structure in README.md. -->
 <h1 align="center">
   DocsGPT 🦖
 </h1>
@@ -200,6 +200,7 @@ docsgpt down       # остановка (данные и настройки со
 ## Лицензия
 
 DocsGPT распространяется по [лицензии MIT](../../LICENSE).
+
 
 
 
