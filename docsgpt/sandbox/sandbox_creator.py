@@ -52,12 +52,44 @@ def _make_daytona() -> CodeSandbox:
     )
 
 
+def _boxd_delete_after() -> int:
+    """Seconds of the boxd machines' delete-after timer; 0 when ``BOXD_DELETE_AFTER`` is 0.
+
+    The timer is pushed forward at most every quarter of its length, so it is
+    raised until three quarters of it outlast an idle session and the longest run.
+    """
+    minutes = int(settings.BOXD_DELETE_AFTER)
+    if minutes <= 0:
+        return 0
+    floor = max(int(settings.SANDBOX_MAX_TTL), int(settings.SANDBOX_EXEC_MAX_TIMEOUT)) * 4 // 3 + 60
+    return max(minutes * 60, floor)
+
+
+def _make_boxd() -> CodeSandbox:
+    """Build the boxd backend from ``BOXD_*``/``SANDBOX_*`` settings."""
+    from docsgpt.sandbox.boxd import BoxdSandbox
+
+    return BoxdSandbox(
+        api_key=settings.BOXD_API_KEY,
+        org=settings.BOXD_ORG,
+        region=settings.BOXD_REGION,
+        name_prefix=settings.BOXD_NAME_PREFIX,
+        default_timeout=float(settings.SANDBOX_EXEC_TIMEOUT),
+        create_timeout=float(settings.SANDBOX_HTTP_TIMEOUT) * 6,
+        max_output_bytes=int(settings.SANDBOX_MAX_OUTPUT_BYTES),
+        max_file_bytes=int(settings.SANDBOX_MAX_FILE_BYTES),
+        max_machines=int(settings.BOXD_MAX_MACHINES),
+        delete_after=_boxd_delete_after(),
+    )
+
+
 class SandboxCreator:
     """Resolves ``SANDBOX_BACKEND`` to a backend and caches a single manager."""
 
     backends: Dict[str, Callable[[], CodeSandbox]] = {
         "jupyter": _make_jupyter,
         "daytona": _make_daytona,
+        "boxd": _make_boxd,
     }
 
     _instance = None

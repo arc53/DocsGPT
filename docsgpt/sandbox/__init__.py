@@ -1,10 +1,14 @@
 """Pluggable code-execution sandbox abstraction for running untrusted LLM code."""
 
+#: Backends that run every ``exec`` in a new interpreter: only the sandbox
+#: filesystem (files, pip installs) carries over from one call to the next.
+FRESH_INTERPRETER_BACKENDS = frozenset({"daytona", "boxd"})
+
 
 def sandbox_configured() -> bool:
     """Whether the selected sandbox backend has what it needs to run code.
 
-    Only reads settings; nothing is contacted. Daytona needs an API key and
+    Only reads settings; nothing is contacted. Daytona and boxd need an API key and
     the Jupyter runner a gateway URL set explicitly (environment or ``.env``):
     the built-in ``http://localhost:8888`` default exists so the app imports
     unconfigured, not because a runner is listening there. The chat
@@ -20,6 +24,8 @@ def sandbox_configured() -> bool:
     backend = (settings.SANDBOX_BACKEND or "").lower()
     if backend == "daytona":
         return bool(settings.DAYTONA_API_KEY)
+    if backend == "boxd":
+        return bool(settings.BOXD_API_KEY)
     if backend == "jupyter":
         if "SANDBOX_GATEWAY_URL" not in settings.model_fields_set:
             return False
