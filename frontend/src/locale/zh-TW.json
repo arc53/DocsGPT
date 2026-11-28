@@ -3444,6 +3444,7 @@
         "mcp_context7": "查詢函式庫的最新文件與程式碼範例。",
         "mcp_drawio": "使用 draw.io 建立可編輯的流程圖和其他圖表。",
         "mcp_excalidraw": "繪製圖表並取得可在 Excalidraw 中編輯的連結。",
+        "mcp_fireflies": "搜尋 Fireflies 會議的文字記錄、摘要和行動項目。",
         "mcp_linear": "將議題和文件同步到知識庫，並讓代理尋找、建立和更新議題。",
         "mcp_miro": "尋找 Miro 白板、閱讀內容和留言、建立圖表並回覆留言。",
         "mcp_neon": "查看 Neon Postgres 專案、分支和結構描述，並執行 SQL。",

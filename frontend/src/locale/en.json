@@ -3492,6 +3492,7 @@
         "mcp_context7": "Look up up-to-date documentation and code examples for libraries.",
         "mcp_drawio": "Create editable flowcharts and other diagrams with draw.io.",
         "mcp_excalidraw": "Draw diagrams and get an editable Excalidraw link.",
+        "mcp_fireflies": "Search Fireflies meeting transcripts, summaries and action items.",
         "mcp_linear": "Sync issues and documents into Knowledge, and let agents find, create and update issues.",
         "mcp_miro": "Find Miro boards, read content and comments, create diagrams, and reply to comments.",
         "mcp_neon": "Explore Neon Postgres projects, branches and schemas, and run SQL.",
