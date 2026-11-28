@@ -17,11 +17,12 @@
 </p>
 
 <p align="center">
+  <a href="https://www.docsgpt.cloud/">🌐 Sitio web</a> •
   <a href="https://docs.docsgpt.cloud/quickstart">⚡️ Inicio rápido</a> •
   <a href="https://app.docsgpt.cloud/">☁️ Nube</a> •
   <a href="https://docs.docsgpt.cloud/">📖 Documentación</a> •
   <a href="https://discord.gg/vN7YFfdMpj">💬 Discord</a> •
-  <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
+  <a href="https://www.docsgpt.cloud/blog">🗞 Blog</a>
 </p>
 
 <!-- languages:start -->
