@@ -392,6 +392,34 @@ class TestErrorHandling:
             "API call redirect (not followed): 307 -> https://api.example.com/v2/orders/"
         )
 
+    @patch("docsgpt.agents.tools.api_tool.logger")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_drops_query_string_from_target(
+        self, mock_pinned, mock_logger
+    ):
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/data",
+                "method": "GET",
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 308
+        mock_resp.headers = {"Location": "/v1/orders/?api_key=topsecret"}
+        mock_pinned.return_value = mock_resp
+
+        result = tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 308
+        assert "api_key" not in result["message"]
+        assert "topsecret" not in result["message"]
+        assert (
+            "URL redirects to 'https://api.example.com/v1/orders/'" in result["message"]
+        )
+        mock_logger.error.assert_called_with(
+            "API call redirect (not followed): 308 -> https://api.example.com/v1/orders/"
+        )
+
     @patch("docsgpt.agents.tools.api_tool.pinned_request")
     def test_redirect_3xx_without_location(self, mock_pinned, get_tool):
         mock_resp = MagicMock()

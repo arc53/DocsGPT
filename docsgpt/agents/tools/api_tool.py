@@ -18,20 +18,22 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT = 90  # seconds
 
 
-def _strip_userinfo(url: str) -> str:
-    """Remove userinfo (username:password) from URL to prevent credential leakage in messages."""
+def _redirect_display_url(url: str) -> str:
+    """Reduce a redirect target to scheme://host[:port]/path for messages and logs.
+
+    Redirects commonly echo the original query string, so printing the full target
+    would leak credentials configured as query parameters (for example
+    ``Location: /v1/orders/?api_key=...``). Dropping userinfo, query and fragment
+    keeps only what identifies the target.
+    """
     parsed = urlsplit(url)
-    if parsed.username or parsed.password:
-        host = parsed.hostname or ""
-        if ":" in host and not host.startswith("["):
-            host = f"[{host}]"
-        netloc = host
-        if parsed.port:
-            netloc = f"{netloc}:{parsed.port}"
-        return urlunsplit(
-            (parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)
-        )
-    return url
+    host = parsed.hostname or ""
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    netloc = host
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
 
 
 class APITool(Tool):
@@ -156,7 +158,9 @@ class APITool(Tool):
             if 300 <= response.status_code < 400:
                 raw_location = response.headers.get("Location", "")
                 if raw_location:
-                    target_url = _strip_userinfo(urljoin(request_url, raw_location))
+                    target_url = _redirect_display_url(
+                        urljoin(request_url, raw_location)
+                    )
                     msg = (
                         f"URL redirects to '{target_url}'. "
                         "Call that URL directly instead."
