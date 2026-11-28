@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { findFreePosition } from './workflowHelpers';
+import { aiDecisionErrors, findFreePosition } from './workflowHelpers';
 
 const box = (id: string, x: number, y: number, width = 200, height = 60) => ({
   id,
@@ -35,5 +35,46 @@ describe('findFreePosition', () => {
       y: 10,
     });
     expect(spot.y).toBeGreaterThan(10);
+  });
+});
+
+describe('aiDecisionErrors', () => {
+  const t = ((key: string) => key) as unknown as Parameters<
+    typeof aiDecisionErrors
+  >[0];
+  const branch = (name: string, i: number) => ({
+    name,
+    expression: '',
+    sourceHandle: `case_${i}`,
+  });
+
+  it('accepts distinct names and a confidence from 0 to 1', () => {
+    expect(
+      aiDecisionErrors(
+        t,
+        'Route',
+        [branch('Billing', 0), branch('Support', 1)],
+        0.6,
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects other, a repeated name, too many branches and a bad confidence', () => {
+    const many = Array.from({ length: 16 }, (_, i) => branch(`b${i}`, i));
+    expect(
+      aiDecisionErrors(
+        t,
+        'Route',
+        [branch('Other', 0), branch('Billing', 1), branch('billing', 2)],
+        2,
+      ),
+    ).toEqual([
+      'agents.workflow.validation.aiReservedName',
+      'agents.workflow.validation.aiDuplicateName',
+      'agents.workflow.validation.aiMinConfidence',
+    ]);
+    expect(aiDecisionErrors(t, 'Route', many)).toEqual([
+      'agents.workflow.validation.aiTooManyBranches',
+    ]);
   });
 });

@@ -125,13 +125,29 @@ class ConditionCase(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
     name: Optional[str] = None
     expression: str = ""
+    # What the decision model reads to recognize this branch, in ``ai`` mode.
+    description: Optional[str] = None
     source_handle: str = Field(..., alias="sourceHandle")
 
 
 class ConditionNodeConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
-    mode: Literal["simple", "advanced"] = "simple"
+    # ``ai``: the decision model (arc-decide) picks the branch whose name and description fit the input.
+    mode: Literal["simple", "advanced", "ai"] = "simple"
     cases: List[ConditionCase] = Field(default_factory=list)
+    # What the decision model classifies; empty means the user's query.
+    prompt_template: str = ""
+    # The question asked; empty asks which branch the input belongs on.
+    instructions: str = ""
+    # Below this probability the top branch is not trusted and ``else`` is taken.
+    min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    output_variable: Optional[str] = None
+
+
+# The option an AI decision's model picks when no branch fits; it takes ``else``.
+AI_DECISION_NO_MATCH = "other"
+# Most branches an AI decision may have: the model takes 2 to 16 options, one of them ``other``.
+AI_DECISION_MAX_BRANCHES = 15
 
 
 class StateOperation(BaseModel):

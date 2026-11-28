@@ -217,3 +217,76 @@ export function findFreePosition(
   }
   return { x: wanted.x, y };
 }
+
+/** The option the decision model picks when no branch fits; it can't be a branch name. */
+export const AI_DECISION_NO_MATCH = 'other';
+/** Most branches an AI decision may have: the model takes 2 to 16 options, one of them `other`. */
+export const AI_DECISION_MAX_BRANCHES = 15;
+
+/**
+ * What is wrong with an AI decision's branch names and confidence floor.
+ *
+ * Args:
+ *   t: The i18next translate function.
+ *   title: The node's title.
+ *   cases: The node's branches.
+ *   minConfidence: The node's `min_confidence`, if set.
+ *
+ * Returns:
+ *   The translated errors; empty when there are none.
+ */
+export function aiDecisionErrors(
+  t: TFunction,
+  title: string,
+  cases: ConditionCase[],
+  minConfidence?: unknown,
+): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  cases.forEach((conditionCase) => {
+    const branch = (conditionCase.name || '').trim();
+    if (!branch) return;
+    const key = branch.toLowerCase();
+    if (key === AI_DECISION_NO_MATCH) {
+      errors.push(
+        t('agents.workflow.validation.aiReservedName', {
+          ...NO_ESCAPE,
+          name: title,
+          branch,
+        }),
+      );
+    } else if (seen.has(key)) {
+      errors.push(
+        t('agents.workflow.validation.aiDuplicateName', {
+          ...NO_ESCAPE,
+          name: title,
+          branch,
+        }),
+      );
+    }
+    seen.add(key);
+  });
+  if (seen.size > AI_DECISION_MAX_BRANCHES) {
+    errors.push(
+      t('agents.workflow.validation.aiTooManyBranches', {
+        ...NO_ESCAPE,
+        name: title,
+        max: AI_DECISION_MAX_BRANCHES,
+      }),
+    );
+  }
+  if (
+    minConfidence !== undefined &&
+    minConfidence !== null &&
+    (typeof minConfidence !== 'number' ||
+      !(minConfidence >= 0 && minConfidence <= 1))
+  ) {
+    errors.push(
+      t('agents.workflow.validation.aiMinConfidence', {
+        ...NO_ESCAPE,
+        name: title,
+      }),
+    );
+  }
+  return errors;
+}

@@ -39,7 +39,7 @@ describe('NodePalette', () => {
   it('renders each node type as a draggable button', () => {
     render();
     const buttons = container.querySelectorAll('button');
-    expect(buttons).toHaveLength(7);
+    expect(buttons).toHaveLength(8);
     buttons.forEach((button) => {
       expect(button.getAttribute('type')).toBe('button');
       expect(button.getAttribute('draggable')).toBe('true');
@@ -52,6 +52,17 @@ describe('NodePalette', () => {
     expect(onAdd).toHaveBeenCalledWith('condition');
     act(() => pill('agents.workflow.builder.aiAgent').click());
     expect(onAdd).toHaveBeenLastCalledWith('agent');
+  });
+
+  it('adds an AI decision as its own palette type', () => {
+    const { onAdd, onDragStart } = render();
+    const button = pill('agents.workflow.nodes.aiDecision');
+    act(() => button.click());
+    expect(onAdd).toHaveBeenCalledWith('decision');
+    act(() => {
+      button.dispatchEvent(new Event('dragstart', { bubbles: true }));
+    });
+    expect(onDragStart).toHaveBeenCalledWith(expect.anything(), 'decision');
   });
 
   it('starts a drag with the pill type', () => {

@@ -1,18 +1,18 @@
-import { GitBranch } from 'lucide-react';
+import { GitBranch, Sparkles } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Handle, NodeProps, Position } from 'reactflow';
 
 import { cn } from '@/lib/utils';
 
-import { ConditionCase } from '../../types/workflow';
+import { ConditionCase, type ConditionMode } from '../../types/workflow';
 import { nodeToneClass } from '../nodeTones';
 
 type ConditionNodeData = {
   label?: string;
   title?: string;
   config?: {
-    mode?: 'simple' | 'advanced';
+    mode?: ConditionMode;
     cases?: ConditionCase[];
   };
 };
@@ -39,6 +39,13 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
   const cases = data.config?.cases || [];
   const totalOutputs = cases.length + 1;
   const height = getNodeHeight(cases.length);
+  const isAi = data.config?.mode === 'ai';
+  const Icon = isAi ? Sparkles : GitBranch;
+  const subtitle = isAi
+    ? t('agents.workflow.nodes.aiDecision')
+    : data.config?.mode === 'advanced'
+      ? t('agents.workflow.builder.modeAdvanced')
+      : t('agents.workflow.builder.modeSimple');
 
   return (
     <div
@@ -64,7 +71,7 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
             nodeToneClass('condition'),
           )}
         >
-          <GitBranch className="size-3.5" />
+          <Icon className="size-3.5" />
         </div>
         <div className="min-w-0 flex-1 pr-2">
           <div
@@ -73,10 +80,11 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
           >
             {title}
           </div>
-          <div className="text-muted-foreground text-xs">
-            {data.config?.mode === 'advanced'
-              ? t('agents.workflow.builder.modeAdvanced')
-              : t('agents.workflow.builder.modeSimple')}
+          <div
+            className="text-muted-foreground truncate text-xs"
+            title={subtitle}
+          >
+            {subtitle}
           </div>
         </div>
       </div>
@@ -89,9 +97,11 @@ const ConditionNode = ({ data, selected }: NodeProps<ConditionNodeData>) => {
             style={{ height: ROW_HEIGHT }}
           >
             <span className="text-warning shrink-0 text-xs font-medium">
-              {i === 0
-                ? t('agents.workflow.nodes.if')
-                : t('agents.workflow.nodes.elseIf')}
+              {isAi
+                ? t('agents.workflow.nodes.branch', { index: i + 1 })
+                : i === 0
+                  ? t('agents.workflow.nodes.if')
+                  : t('agents.workflow.nodes.elseIf')}
             </span>
             {c.name && (
               <span

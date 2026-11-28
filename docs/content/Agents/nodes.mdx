@@ -34,6 +34,7 @@ DocsGPT workflows are composed of **Nodes** that are connected to form a process
 | [Note](#note-node) | Core Nodes | A comment on the canvas |
 | [Set State](#set-state-node) | Logic & Data | Writes variables with CEL expressions |
 | [If / Else](#condition-node) | Logic & Data | Branches on conditions |
+| [AI decision](#ai-decision) | Logic & Data | An If / Else node whose branch the decision model picks |
 | [Code](#code-node) | Logic & Data | Runs Python in the sandbox |
 | [Loop](#loop-node) | Logic & Data | Runs the nodes inside it once per item of a list |
 
@@ -266,7 +267,8 @@ The **Condition Node** (**If / Else** in the palette) branches the workflow.
 Each case pairs a condition with an outgoing branch; the first case whose
 condition is true wins, and execution follows that branch.
 
-The node has two modes:
+The node has three modes: **Simple** and **Advanced** run rules, and
+[**AI**](#ai-decision) lets the decision model pick the branch.
 
 - **Simple**: pick a **Variable**, an **Operator** (`=`, `!=`, `>`, `<`, `>=`,
   `<=`, **contains** or **starts**) and a **Value**. The builder turns each row
@@ -295,6 +297,34 @@ Both modes run the same way:
 A case whose expression fails to evaluate at run time is skipped and the next
 case is tried, so a workflow that always lands on **else** usually means an
 expression is referencing a variable that no earlier node writes.
+
+### AI decision
+
+**AI decision** in the palette adds an If / Else node in **AI** mode. Instead
+of rules, it asks the [decision model](/Models/decision-model) (arc-decide), a
+small classifier, which branch the input belongs on. The model returns a
+probability for each branch and writes no text, so routing costs no LLM tokens.
+
+- **Input**: what the model reads. Empty uses the user's message; a template
+  such as `{{ agent.node_classify_1_output }}` reads a previous node's output.
+- **Question**: what the model is asked. Empty asks which branch the input
+  belongs on.
+- **Branches**: each has a **Branch name** and a **Description** of what belongs
+  on it; a branch without a description is described by its name. A node takes
+  up to 15 branches, and no branch may be named `other`.
+- **Else** runs when the model answers that no branch fits, or when the most
+  likely branch's probability is under **Minimum confidence** (0 to 1). The
+  default, 0, turns the threshold off; Else still runs when no branch fits.
+- **Output Variable**: the decision, also stored as `node_<id>_output`:
+  `branch` (the branch taken, or null for Else), `confidence` (the top
+  probability) and `probabilities` (one per branch, plus `other`).
+
+The node waits up to 30 seconds for the model, its first load included. If the
+model does not answer in that time, the node fails; turn on
+[retries](#retrying-a-failed-node) for it to try again. Saving a workflow that
+has an AI decision starts loading the model, so the first run seldom waits. The
+node needs the decision model to be on: with `DECISION_MODE=none` it fails with
+a message saying so.
 
 ---
 
@@ -419,8 +449,10 @@ In the stored graph, a node inside a loop names the loop in its `data` as
 ## Retrying a failed node
 
 A temporary upstream failure, such as a 503 from the model provider or a
-dropped connection, fails a node and with it the run. AI Agent and Code nodes
-can retry such failures with a pause between attempts before they give up.
+dropped connection, fails a node and with it the run. AI Agent, Code and
+[AI decision](#ai-decision) nodes can retry such failures with a pause between
+attempts before they give up; an AI decision retries when the decision model
+did not answer in time.
 Retries are off by default.
 
 Set them in the workflow's details, under **Retries**, where every AI Agent and
@@ -509,7 +541,9 @@ them or none.
 - Every If / Else node has at least one case with an expression, an **Else**
   branch and at least two outgoing connections. Each case with an expression
   has exactly one connection, each connection comes from a known case, and in
-  Simple mode each case names a variable.
+  Simple mode each case names a variable. In AI mode a branch's name stands in
+  for its expression; names are unique, none is `other`, there are at most 15,
+  and **Minimum confidence** is from 0 to 1.
 - Every If / Else branch eventually reaches an End node, except inside a loop,
   where a branch ends the item.
 - Every Code node has code, and any JSON schema it has is valid.

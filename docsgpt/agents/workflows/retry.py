@@ -61,6 +61,10 @@ class EmptyCompletionError(ValueError):
     """A node's model returned no text."""
 
 
+class DecisionUnavailableError(RuntimeError):
+    """The decision model did not answer in time: still loading, busy or unreachable."""
+
+
 class SandboxInfrastructureError(RuntimeError):
     """The sandbox, not the node's code, failed: the runtime was gone or unreachable."""
 
@@ -252,6 +256,8 @@ def classify_failure(error: BaseException, node_type: str) -> Optional[str]:
     """
     if _never_retried(error):
         return None
+    if isinstance(error, DecisionUnavailableError):
+        return TRANSIENT
     if node_type == "code":
         return TRANSIENT if isinstance(error, SandboxInfrastructureError) else None
     if node_type != "agent":

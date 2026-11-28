@@ -47,12 +47,25 @@ export interface CodeNodeConfig {
 export interface ConditionCase {
   name?: string;
   expression: string;
+  /** What the model reads to recognize the branch, in `ai` mode. */
+  description?: string;
   sourceHandle: string;
 }
 
+/** `ai`: the decision model picks the branch whose name and description fit the input. */
+export type ConditionMode = 'simple' | 'advanced' | 'ai';
+
 export interface ConditionNodeConfig {
-  mode: 'simple' | 'advanced';
+  mode: ConditionMode;
   cases: ConditionCase[];
+  /** What the decision model classifies; empty means the user's query. */
+  prompt_template?: string;
+  /** The question asked; empty asks which branch the input belongs on. */
+  instructions?: string;
+  /** Below this probability (0 to 1) the top branch is not trusted and Else runs. */
+  min_confidence?: number;
+  output_variable?: string;
+  retry?: RetryConfig;
 }
 
 export interface StateOperationConfig {
