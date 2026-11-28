@@ -294,6 +294,158 @@ class TestErrorHandling:
         ):
             result = tool.execute_action("any", key="val")
             assert "serialization error" in result["message"].lower()
+            assert result["status"] == "error"
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_with_location(self, mock_pinned, get_tool):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "https://api.example.com/v2/data"}
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert result["data"] is None
+        assert "URL redirects to 'https://api.example.com/v2/data'" in result["message"]
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_with_relative_location(self, mock_pinned, get_tool):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "/v2/orders/"}
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert result["data"] is None
+        assert (
+            "URL redirects to 'https://api.example.com/v2/orders/'" in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_strips_credentials_from_target(self, mock_pinned):
+        tool = APITool(
+            config={
+                "url": "https://user:secret@api.example.com/data",
+                "method": "GET",
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {"Location": "/v2/orders/"}
+        mock_pinned.return_value = mock_resp
+
+        result = tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert "user" not in result["message"]
+        assert "secret" not in result["message"]
+        assert (
+            "URL redirects to 'https://api.example.com/v2/orders/'" in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_strips_credentials_with_ipv6(self, mock_pinned):
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/data",
+                "method": "GET",
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {
+            "Location": "https://user:secret@[2001:db8::1]:8080/v2/orders/"
+        }
+        mock_pinned.return_value = mock_resp
+
+        result = tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 307
+        assert "user" not in result["message"]
+        assert "secret" not in result["message"]
+        assert (
+            "URL redirects to 'https://[2001:db8::1]:8080/v2/orders/'"
+            in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.logger")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_log_sanitizes_credentials(self, mock_pinned, mock_logger):
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/data",
+                "method": "GET",
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 307
+        mock_resp.headers = {
+            "Location": "https://user:secret@api.example.com/v2/orders/"
+        }
+        mock_pinned.return_value = mock_resp
+
+        tool.execute_action("any")
+        mock_logger.error.assert_called_with(
+            "API call redirect (not followed): 307 -> https://api.example.com/v2/orders/"
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.logger")
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_drops_query_string_from_target(
+        self, mock_pinned, mock_logger
+    ):
+        tool = APITool(
+            config={
+                "url": "https://api.example.com/data",
+                "method": "GET",
+            }
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 308
+        mock_resp.headers = {"Location": "/v1/orders/?api_key=topsecret"}
+        mock_pinned.return_value = mock_resp
+
+        result = tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 308
+        assert "api_key" not in result["message"]
+        assert "topsecret" not in result["message"]
+        assert (
+            "URL redirects to 'https://api.example.com/v1/orders/'" in result["message"]
+        )
+        mock_logger.error.assert_called_with(
+            "API call redirect (not followed): 308 -> https://api.example.com/v1/orders/"
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_redirect_3xx_without_location(self, mock_pinned, get_tool):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 301
+        mock_resp.headers = {}
+        mock_pinned.return_value = mock_resp
+
+        result = get_tool.execute_action("any")
+        assert result["status"] == "error"
+        assert result["status_code"] == 301
+        assert result["data"] is None
+        assert (
+            "URL responded with a redirect but no target location" in result["message"]
+        )
+
+    @patch("docsgpt.agents.tools.api_tool.pinned_request")
+    def test_transport_failures_report_error_status(self, mock_pinned, get_tool):
+        for side_effect in (
+            requests.exceptions.Timeout(),
+            requests.exceptions.ConnectionError("conn refused"),
+            requests.exceptions.RequestException("failed"),
+            RuntimeError("boom"),
+        ):
+            mock_pinned.side_effect = side_effect
+            result = get_tool.execute_action("any")
+            assert result["status"] == "error"
 
 
 # =====================================================================
