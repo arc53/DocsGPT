@@ -392,10 +392,28 @@ def _needs_sign_in(exc: BaseException) -> bool:
 
 
 def _is_transient(exc: BaseException) -> bool:
+    """Identify transport failures in an exception chain.
+
+    Args:
+        exc: An exception that may wrap an underlying transport error.
+
+    Returns:
+        Whether the exception contains a transient connection failure.
+    """
     import httpx
+    import httpx2
 
     return any(
-        isinstance(error, (ConnectionError, TimeoutError, httpx.TransportError)) for error in _errors(exc)
+        isinstance(
+            error,
+            (
+                ConnectionError,
+                TimeoutError,
+                httpx.TransportError,
+                httpx2.TransportError,
+            ),
+        )
+        for error in _errors(exc)
     )
 
 
@@ -404,9 +422,14 @@ def _run_coroutine(coroutine: Awaitable[T]) -> T:
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(coroutine)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(asyncio.run, coroutine).result()
+        pass
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coroutine).result()
+
+    # Run outside the exception handler to preserve implicit
+    # exception chaining from the coroutine.
+    return asyncio.run(coroutine)
 
 
 def run_connection_session(
