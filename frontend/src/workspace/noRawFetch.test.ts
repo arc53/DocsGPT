@@ -28,7 +28,7 @@ const ALLOWED: Record<string, number> = {
   '../api/client.ts': 2,
   '../upload/Upload.tsx': 2,
   '../components/message-input/attachmentUpload.ts': 1,
-  '../conversation/conversationHandlers.ts': 2,
+  '../conversation/conversationHandlers.ts': 1,
   '../events/eventStreamClient.ts': 1,
   '../api/services/backgroundService.ts': 3,
   '../components/useArtifactBytes.ts': 1,

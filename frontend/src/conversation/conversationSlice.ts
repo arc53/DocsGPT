@@ -771,6 +771,23 @@ async function answerQuestion(
                   }),
                 );
               }
+            } else if (
+              data.type === 'error' &&
+              data.code === CONNECTION_LOST &&
+              data.message_id &&
+              currentConversationId
+            ) {
+              // Only this client lost the stream; the answer may still be
+              // running on the server. Follow it by polling, which shows it
+              // when it lands, rather than fail a turn the user would then
+              // resend, which supersedes the one still running.
+              dispatch(
+                tailInFlightMessage({
+                  messageId: data.message_id,
+                  index: targetIndex,
+                  conversationId: currentConversationId,
+                }),
+              );
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(conversationSlice.actions.setStatus('failed'));
@@ -965,6 +982,14 @@ export const tailInFlightMessage = createAsyncThunk<
       }
 
       const data = await resp.json();
+      // The user may have opened another chat, or a newer answer may own
+      // this row, while the request was out: leave their state alone.
+      const now = (getState() as RootState).conversation;
+      if (
+        now.conversationId !== conversationId ||
+        now.queries[index]?.messageId !== messageId
+      )
+        return;
       dispatch(
         conversationSlice.actions.applyMessageTail({ index, tail: data }),
       );
@@ -1408,6 +1433,20 @@ async function sendToolActions(
         // The approval is over (another tab moved on, decided it, or it
         // expired); nothing ran. Show the turn as it ended, not a failure.
         dispatch(loadConversation({ id: conversationId, force: true }));
+      } else if (
+        data.type === 'error' &&
+        data.code === CONNECTION_LOST &&
+        data.message_id
+      ) {
+        // The server took the decision and may still finish the turn;
+        // follow it by polling, as a lost chat stream does.
+        dispatch(
+          tailInFlightMessage({
+            messageId: data.message_id,
+            index: targetIndex,
+            conversationId,
+          }),
+        );
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(

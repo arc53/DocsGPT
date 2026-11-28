@@ -119,10 +119,12 @@ async def stream_message_events(request: Request) -> Response:
         return json_error("Not found", 404)
 
     # Per-user connection cap, shared with /api/events so it bounds a user's
-    # total live SSE footprint. Reserved before the response opens so an
-    # over-cap caller gets a clean 429 instead of a mid-stream cutoff.
+    # total live SSE footprint. Reserved before the response opens. Over the
+    # cap this reconnect evicts the user's oldest streams rather than take a
+    # 429: it follows an answer still running, and after a network drop the
+    # slots are held by the user's own dead connections until they time out.
     try:
-        lease = await acquire_stream_lease(await get_async_redis_instance(), user_id)
+        lease = await acquire_stream_lease(await get_async_redis_instance(), user_id, evict_oldest=True)
     except StreamCapExceeded:
         logger.warning("sse.reconnect.rejected user_id=%s (over cap)", user_id)
         return json_error("Too many concurrent SSE connections", 429)

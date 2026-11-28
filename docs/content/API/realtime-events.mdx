@@ -109,7 +109,9 @@ GET /api/messages/<message_id>/events
 
 Send the sequence number of the last event you processed (the `id:` line of each [`/stream` record](/API/agent-api#sse-event-types)) as the `Last-Event-ID` header or the `last_event_id` query parameter; without one, the replay starts at the beginning of the message. The route replays the message's events past that number and tails the rest live, with keepalive comments in between. It is backed by the Postgres `message_events` journal (retained for `MESSAGE_EVENTS_RETENTION_DAYS`, default 14).
 
-It takes a session token, or a personal access token with `conversations:read` or `chat:run` and no resource restrictions. Only the owner of the message can read it (others get `404`), and the connection counts toward the same per-user cap: over `SSE_MAX_CONCURRENT_PER_USER` it returns **HTTP 429**.
+It takes a session token, or a personal access token with `conversations:read` or `chat:run` and no resource restrictions. Only the owner of the message can read it (others get `404`), and the connection counts toward the same per-user cap. Over `SSE_MAX_CONCURRENT_PER_USER` it does not return 429: after a network drop the server keeps the user's dead connections until a write to them fails, so the reconnect evicts the user's oldest streams instead, and each evicted stream ends within a third of the lease lifetime (20 seconds by default). It returns **HTTP 429** only when no slot can be freed.
+
+The web app retries a dropped answer with backoff: it waits for the browser to come back online and treats 45 seconds without a byte (three missed keepalives) as a dead connection. If the answer still cannot be resumed, the app follows it by polling `GET /api/messages/<message_id>/tail` rather than showing an error, since the server keeps generating it.
 
 <Callout type="warning">
 Both channels need the API served through the ASGI app (`docsgpt.asgi:asgi_app`), as `docsgpt api`, `docsgpt dev` and the Docker images do. Under `flask run`, `GET /api/events` and `GET /api/messages/<message_id>/events` return 404. See [ASGI-only features](/Deploying/Development-Environment#asgi-only-features).

@@ -244,9 +244,31 @@ class TestLastEventIdParsing:
 
 @pytest.mark.unit
 class TestConnectionCap:
-    def test_429_when_user_already_holds_the_cap(self):
+    def test_over_the_cap_evicts_the_oldest_stream_instead_of_429(self):
+        # After a network drop the user's dead connections still hold their
+        # slots; the reconnect following a running answer takes the oldest.
+        redis = FakeAsyncRedis()
+        now = time.time()
+        redis.zsets[_LEASES] = {f"tab-{i}": now - 50 + i for i in range(8)}
+        with patch(_AUTH, return_value={"sub": "alice"}), patch(
+            _OWNS, return_value=True
+        ), patch(_STREAM, _fake_stream()), patch(
+            _AREDIS, AsyncMock(return_value=redis)
+        ):
+            r = _client().get(f"/api/messages/{VALID_UUID}/events")
+        assert r.status_code == 200
+        # The served stream released its own lease; only the oldest tab went.
+        assert set(redis.zsets[_LEASES]) == {f"tab-{i}" for i in range(1, 8)}
+        assert set(redis.zsets["user:alice:sse_evicted"]) == {"tab-0"}
+
+    def test_429_when_eviction_cannot_free_a_slot(self):
         redis = FakeAsyncRedis()
         redis.zsets[_LEASES] = {f"tab-{i}": time.time() for i in range(8)}
+
+        async def broken(*_args, **_kwargs):
+            raise ConnectionError("gone")
+
+        redis.zrange = broken
         with patch(_AUTH, return_value={"sub": "alice"}), patch(
             _OWNS, return_value=True
         ), patch(_STREAM, _fake_stream()), patch(
