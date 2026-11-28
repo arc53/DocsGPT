@@ -176,6 +176,7 @@ async function _drainSseBody(
   onData: (data: string) => void,
   onId: (id: number) => void,
   shouldStop?: () => boolean,
+  onActivity?: () => void,
 ): Promise<void> {
   const reader = body.getReader();
   const decoder = new TextDecoder('utf-8');
@@ -190,6 +191,9 @@ async function _drainSseBody(
       }
       const { done, value } = await reader.read();
       if (done) break;
+      // Any bytes count, keepalive comments included: the idle watchdog
+      // only has to tell a live stream from a dead socket.
+      onActivity?.();
       buffer += decoder.decode(value, { stream: true });
       // Normalise mixed line terminators so a stray CR can't smuggle
       // a record boundary inside a JSON payload.
@@ -248,6 +252,181 @@ async function _drainSseBody(
       // Already released.
     }
   }
+}
+
+/** Delays before each attempt to resume a dropped chat stream; the first is immediate. */
+const RESUME_BACKOFF_MS = [0, 1_000, 2_000, 4_000, 8_000, 15_000];
+/** Attempts in a row that deliver nothing before the client stops resuming. */
+const RESUME_MAX_ATTEMPTS = 8;
+/** How long one attempt waits for the browser to come back online. */
+const RESUME_OFFLINE_WAIT_MS = 60_000;
+/**
+ * Silence after which a chat stream counts as dead. The server writes a
+ * keepalive every 15 s (``SSE_KEEPALIVE_SECONDS``), so this is three missed
+ * ones. A socket that died without a FIN or RST (a phone that changed
+ * network, a laptop that slept) never errors on its own.
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 45_000;
+
+function _withJitter(delayMs: number): number {
+  return delayMs + Math.random() * delayMs * 0.2;
+}
+
+/**
+ * An abort signal that follows ``parent`` and also fires after ``idleMs``
+ * without ``heard()``. The timer starts at the first ``heard()`` unless
+ * ``armed`` is set, so a request still waiting for its response headers is
+ * not cut.
+ */
+function _idleWatchdog(
+  parent: AbortSignal,
+  idleMs: number,
+  armed = false,
+): { signal: AbortSignal; heard: () => void; stop: () => void } {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (parent.aborted) controller.abort();
+  else parent.addEventListener('abort', abort, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const heard = () => {
+    clearTimeout(timer);
+    timer = setTimeout(abort, idleMs);
+  };
+  if (armed) heard();
+  return {
+    signal: controller.signal,
+    heard,
+    stop: () => {
+      clearTimeout(timer);
+      parent.removeEventListener('abort', abort);
+    },
+  };
+}
+
+/**
+ * Resolves after ``ms``, or once ``signal`` aborts, or when the browser comes
+ * back online (no point waiting out a backoff once the network is back).
+ */
+function _pause(ms: number, signal: AbortSignal): Promise<void> {
+  if (ms <= 0 || signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      window.removeEventListener('online', done);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    window.addEventListener('online', done);
+    signal.addEventListener('abort', done, { once: true });
+  });
+}
+
+/** Resolves once the browser is online, after ``maxMs`` at most, or when ``signal`` aborts. */
+function _waitUntilOnline(signal: AbortSignal, maxMs: number): Promise<void> {
+  if (signal.aborted || typeof navigator === 'undefined' || navigator.onLine)
+    return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      window.removeEventListener('online', done);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, maxMs);
+    window.addEventListener('online', done);
+    signal.addEventListener('abort', done, { once: true });
+  });
+}
+
+/**
+ * Follow a chat answer whose stream dropped, through the journal replay at
+ * ``GET /api/messages/<id>/events``, until a terminal frame arrives.
+ *
+ * The answer keeps running on the server when the client's connection drops,
+ * so the stream is retried with backoff, waiting for the browser to come back
+ * online, and with an idle watchdog on each attempt. An attempt that delivered
+ * events resets the backoff; ``429`` (the per-user connection cap, held by
+ * connections that died with the network) and ``5xx`` are retried.
+ *
+ * Args:
+ *   opts.messageId: The answer's message id (from the ``message_id`` frame).
+ *   opts.token: Bearer token, or null without auth.
+ *   opts.signal: The caller's abort signal (Stop, navigation).
+ *   opts.dispatch: Receives each ``data`` payload, as the live stream's did.
+ *   opts.lastEventId: The cursor of the last event received.
+ *   opts.onId: Receives each new cursor.
+ *   opts.isDone: True once a terminal frame was dispatched.
+ *
+ * Returns:
+ *   ``ended`` when a terminal frame arrived (or the caller aborted),
+ *   ``gone`` when the server no longer has the message for this caller
+ *   (401, 403, 404), and ``gave_up`` after ``RESUME_MAX_ATTEMPTS`` attempts
+ *   in a row delivered nothing.
+ */
+async function _resumeMessageStream(opts: {
+  messageId: string;
+  token: string | null;
+  signal: AbortSignal;
+  dispatch: (data: string) => void;
+  lastEventId: () => number | null;
+  onId: (id: number) => void;
+  isDone: () => boolean;
+}): Promise<'ended' | 'gone' | 'gave_up'> {
+  const { signal } = opts;
+  let failures = 0;
+  while (failures < RESUME_MAX_ATTEMPTS) {
+    const backoff =
+      RESUME_BACKOFF_MS[Math.min(failures, RESUME_BACKOFF_MS.length - 1)];
+    await _pause(_withJitter(backoff), signal);
+    await _waitUntilOnline(signal, RESUME_OFFLINE_WAIT_MS);
+    if (signal.aborted || opts.isDone()) return 'ended';
+
+    const url = new URL(`${baseURL}/api/messages/${opts.messageId}/events`);
+    const cursor = opts.lastEventId();
+    if (cursor !== null) url.searchParams.set('last_event_id', String(cursor));
+    const headers: Record<string, string> = { Accept: 'text/event-stream' };
+    if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+
+    // Armed at once: the reconnect endpoint answers right away, and a
+    // request sent into a dead network may otherwise hang for minutes.
+    const watchdog = _idleWatchdog(signal, STREAM_IDLE_TIMEOUT_MS, true);
+    let progressed = false;
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers,
+        signal: watchdog.signal,
+        cache: 'no-store',
+      });
+      watchdog.heard();
+      if ([401, 403, 404].includes(response.status)) return 'gone';
+      if (response.ok && response.body) {
+        await _drainSseBody(
+          response.body,
+          watchdog.signal,
+          (data) => {
+            progressed = true;
+            opts.dispatch(data);
+          },
+          opts.onId,
+          opts.isDone,
+          watchdog.heard,
+        );
+      } else {
+        console.warn(
+          `Stream resume: HTTP ${response.status} ${response.statusText}`,
+        );
+      }
+    } catch (err) {
+      console.warn('Stream resume attempt failed:', err);
+    } finally {
+      watchdog.stop();
+    }
+    if (signal.aborted || opts.isDone()) return 'ended';
+    failures = progressed ? 0 : failures + 1;
+  }
+  return 'gave_up';
 }
 
 /**
@@ -440,12 +619,27 @@ export function handleFetchAnswerSteaming(
   const runInitialPost = async (): Promise<void> => {
     // The workspace a new chat is started in, as the request names it.
     const workspace = requestWorkspace();
+    // Cuts a stream gone silent (a dead socket never errors), so the
+    // resume below can take over. Armed once the response arrives.
+    const watchdog = _idleWatchdog(signal, STREAM_IDLE_TIMEOUT_MS);
+    try {
+      await runInitialPostWith(workspace, watchdog);
+    } finally {
+      watchdog.stop();
+    }
+  };
+
+  const runInitialPostWith = async (
+    workspace: string,
+    watchdog: ReturnType<typeof _idleWatchdog>,
+  ): Promise<void> => {
     const response = await conversationService.answerStream(
       payload,
       token,
-      signal,
+      watchdog.signal,
       headers,
     );
+    watchdog.heard();
     // Pre-stream HTTP failures with non-SSE bodies (e.g. ``check_usage``
     // returning a JSON 429) drain as zero events and would otherwise
     // be masked by the generic "Connection lost" synthetic. Convert
@@ -457,7 +651,7 @@ export function handleFetchAnswerSteaming(
     const refusal = response.ok ? null : response.status;
     await _drainSseBody(
       response.body,
-      signal,
+      watchdog.signal,
       (data) => {
         if (refusal !== null) _reportStreamRefusal(refusal, data, workspace);
         dispatch(data);
@@ -465,53 +659,23 @@ export function handleFetchAnswerSteaming(
       (id) => {
         lastEventId = id;
       },
+      undefined,
+      watchdog.heard,
     );
   };
 
-  // Reconnect's stop predicate: as soon as ``dispatch`` flips
-  // ``endReceived`` (typed ``end`` or ``error`` event seen — both
-  // are terminal per the backend's contract). Without this the
-  // live-tail endpoint would emit keepalives indefinitely and the
-  // await would never return.
-  const reconnectShouldStop = () => endReceived;
-
-  const runReconnect = async (): Promise<void> => {
-    if (!messageId) {
-      throw new Error('reconnect: no message_id captured');
-    }
-    const url = new URL(`${baseURL}/api/messages/${messageId}/events`);
-    if (lastEventId !== null) {
-      url.searchParams.set('last_event_id', String(lastEventId));
-    }
-    const reconnectHeaders: Record<string, string> = {
-      Accept: 'text/event-stream',
-    };
-    if (token) reconnectHeaders.Authorization = `Bearer ${token}`;
-    // NB: there is no slice consumer for a synthetic ``reconnecting``
-    // event yet — surface only the underlying network reality. The
-    // user-visible ``Reconnecting…`` affordance is a follow-up that
-    // needs ``conversationSlice`` to gain a status case.
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: reconnectHeaders,
-      signal,
-      cache: 'no-store',
-    });
-    if (!response.ok || !response.body) {
-      throw new Error(
-        `reconnect: HTTP ${response.status} ${response.statusText}`,
-      );
-    }
-    await _drainSseBody(
-      response.body,
+  const resume = (): Promise<'ended' | 'gone' | 'gave_up'> =>
+    _resumeMessageStream({
+      messageId: messageId as string,
+      token,
       signal,
       dispatch,
-      (id) => {
+      lastEventId: () => lastEventId,
+      onId: (id) => {
         lastEventId = id;
       },
-      reconnectShouldStop,
-    );
-  };
+      isDone: () => endReceived,
+    });
 
   return new Promise<Answer>((resolve, reject) => {
     (async () => {
@@ -533,29 +697,25 @@ export function handleFetchAnswerSteaming(
           );
         }
         // The backend ends the stream cleanly with a typed ``end``
-        // event. Anything else (network drop, gunicorn worker recycle,
-        // load-balancer timeout) is a "premature close" — try one
-        // reconnect via the GET /api/messages/<id>/events endpoint.
+        // event. Anything else (network drop, worker recycle, a socket
+        // gone silent) is a premature close: the answer is still running
+        // on the server, so follow it through the journal replay.
         if (!endReceived && !signal.aborted && messageId) {
-          try {
-            await runReconnect();
-          } catch (reconnectErr) {
-            console.warn('Stream reconnect failed:', reconnectErr);
-          }
+          await resume();
         }
-        // If we never observed a terminal frame (reconnect 4xx/5xx,
-        // network drop during reconnect, or live tail still silent),
-        // synthesize one through the same ``dispatch`` path the wire
-        // events use. Without this the caller's slice never transitions
-        // out of ``streaming`` and the UI stays in a loading spinner
-        // forever — the conversationSlice handles ``data.type === 'error'``
-        // by setting status=failed.
+        // No terminal frame: synthesize one through the same ``dispatch``
+        // path the wire events use, or the slice never leaves
+        // ``streaming``. The code and message id let the slice keep
+        // following the answer (the server may still finish it) instead of
+        // failing the turn.
         if (!endReceived && !signal.aborted) {
           dispatch(
             JSON.stringify({
               type: 'error',
               error:
                 'Connection lost. The response could not be resumed; please try again.',
+              code: CONNECTION_LOST,
+              ...(messageId ? { message_id: messageId } : {}),
             }),
           );
         }
@@ -644,62 +804,48 @@ export function handleSubmitToolActions(
   };
 
   const runInitial = async (): Promise<void> => {
-    const response = await conversationService.answerStream(
-      payload,
+    // Same idle watchdog as ``handleFetchAnswerSteaming``.
+    const watchdog = _idleWatchdog(signal, STREAM_IDLE_TIMEOUT_MS);
+    try {
+      const response = await conversationService.answerStream(
+        payload,
+        token,
+        watchdog.signal,
+        headers,
+      );
+      watchdog.heard();
+      // See ``handleFetchAnswerSteaming`` for the rationale: non-SSE
+      // HTTP failures (e.g. ``check_usage`` 429 JSON) need to be lifted
+      // into a typed ``error`` frame before they reach the drainer.
+      if (await _handlePreStreamHttpError(response, dispatch)) return;
+      if (!response.body) throw new Error('No response body');
+      await _drainSseBody(
+        response.body,
+        watchdog.signal,
+        dispatch,
+        (id) => {
+          lastEventId = id;
+        },
+        undefined,
+        watchdog.heard,
+      );
+    } finally {
+      watchdog.stop();
+    }
+  };
+
+  const resume = (): Promise<'ended' | 'gone' | 'gave_up'> =>
+    _resumeMessageStream({
+      messageId: messageId as string,
       token,
       signal,
-      headers,
-    );
-    // See ``handleFetchAnswerSteaming`` for the rationale: non-SSE
-    // HTTP failures (e.g. ``check_usage`` 429 JSON) need to be lifted
-    // into a typed ``error`` frame before they reach the drainer.
-    if (await _handlePreStreamHttpError(response, dispatch)) return;
-    if (!response.body) throw new Error('No response body');
-    await _drainSseBody(response.body, signal, dispatch, (id) => {
-      lastEventId = id;
-    });
-  };
-
-  // Reconnect's stop predicate: as soon as ``dispatch`` flips
-  // ``endReceived`` (typed ``end`` or ``error`` event seen — both
-  // are terminal per the backend's contract). Without this the
-  // live-tail endpoint would emit keepalives indefinitely and the
-  // await would never return.
-  const reconnectShouldStop = () => endReceived;
-
-  const runReconnect = async (): Promise<void> => {
-    if (!messageId) {
-      throw new Error('reconnect: no message_id captured');
-    }
-    const url = new URL(`${baseURL}/api/messages/${messageId}/events`);
-    if (lastEventId !== null) {
-      url.searchParams.set('last_event_id', String(lastEventId));
-    }
-    const reconnectHeaders: Record<string, string> = {
-      Accept: 'text/event-stream',
-    };
-    if (token) reconnectHeaders.Authorization = `Bearer ${token}`;
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: reconnectHeaders,
-      signal,
-      cache: 'no-store',
-    });
-    if (!response.ok || !response.body) {
-      throw new Error(
-        `reconnect: HTTP ${response.status} ${response.statusText}`,
-      );
-    }
-    await _drainSseBody(
-      response.body,
-      signal,
       dispatch,
-      (id) => {
+      lastEventId: () => lastEventId,
+      onId: (id) => {
         lastEventId = id;
       },
-      reconnectShouldStop,
-    );
-  };
+      isDone: () => endReceived,
+    });
 
   return new Promise<Answer>((resolve, reject) => {
     (async () => {
@@ -719,11 +865,7 @@ export function handleSubmitToolActions(
           );
         }
         if (!endReceived && !signal.aborted && messageId) {
-          try {
-            await runReconnect();
-          } catch (reconnectErr) {
-            console.warn('Tool-actions reconnect failed:', reconnectErr);
-          }
+          await resume();
         }
         // Synthesize a terminal error if reconnect couldn't deliver one
         // (4xx/5xx, network drop, silent live tail). Same reasoning as

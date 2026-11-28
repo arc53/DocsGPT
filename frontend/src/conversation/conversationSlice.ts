@@ -771,6 +771,23 @@ async function answerQuestion(
                   }),
                 );
               }
+            } else if (
+              data.type === 'error' &&
+              data.code === CONNECTION_LOST &&
+              data.message_id &&
+              currentConversationId
+            ) {
+              // Only this client lost the stream; the answer may still be
+              // running on the server. Follow it by polling, which shows it
+              // when it lands, rather than fail a turn the user would then
+              // resend, which supersedes the one still running.
+              dispatch(
+                tailInFlightMessage({
+                  messageId: data.message_id,
+                  index: targetIndex,
+                  conversationId: currentConversationId,
+                }),
+              );
             } else if (data.type === 'error') {
               // set status to 'failed'
               dispatch(conversationSlice.actions.setStatus('failed'));

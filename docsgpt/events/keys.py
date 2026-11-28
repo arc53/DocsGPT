@@ -23,6 +23,11 @@ def connection_leases_key(user_id: str) -> str:
     return f"user:{user_id}:sse_leases"
 
 
+def evicted_leases_key(user_id: str) -> str:
+    """Redis sorted set of ``user_id``'s SSE leases a newer chat reconnect evicted."""
+    return f"user:{user_id}:sse_evicted"
+
+
 def replay_budget_key(user_id: str) -> str:
     """Redis counter tracking snapshot replays for ``user_id`` in the
     rolling rate-limit window."""

@@ -151,6 +151,7 @@ class TestLlmReasons:
         assert [r.reason for r in _resets(caplog)] == ["previous_call_failed"]
 
     def test_a_previous_response_the_provider_lost_is_not_found(self, monkeypatch, caplog):
+        # The call is retried unchained on the same model instead of failing.
         llm = _make_llm(monkeypatch)
         lost = RuntimeError("Previous response with id 'resp_1' not found.")
         lost.code = "previous_response_not_found"
@@ -158,10 +159,9 @@ class TestLlmReasons:
         llm.note_chain_turn(None)
 
         with caplog.at_level(logging.INFO):
-            with pytest.raises(RuntimeError):
-                _call(llm, previous_response_id="resp_1")
-            _call(llm)
+            _call(llm, previous_response_id="resp_1")
 
+        assert llm._last_response_id == "resp_2"
         assert [r.reason for r in _resets(caplog)] == ["not_found"]
 
     def test_a_history_that_does_not_answer_the_chained_calls(self, monkeypatch, caplog):

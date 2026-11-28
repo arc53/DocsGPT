@@ -1302,6 +1302,44 @@ class TestLLMGenAdvanced:
         assert mock_llm._chain_system_hash == "sys-h"
         assert mock_llm._chain_tools_hash == "tools-h"
 
+    @pytest.mark.parametrize(
+        ("state", "known", "call_ids"),
+        [
+            # A finished answer waits on no call: known, and empty.
+            ({"call_ids": []}, True, set()),
+            ({"call_ids": ["call_a"]}, True, {"call_a"}),
+            # Rows from before ``call_ids`` was stored: left unknown.
+            ({}, False, {"untouched"}),
+        ],
+    )
+    def test_llm_gen_seeds_the_call_ids_the_chained_response_waits_on(
+        self,
+        agent_base_params,
+        mock_llm,
+        mock_llm_creator,
+        mock_llm_handler_creator,
+        monkeypatch,
+        state,
+        known,
+        call_ids,
+    ):
+        from docsgpt.agents import base as base_mod
+
+        monkeypatch.setattr(base_mod.settings, "OPENAI_RESPONSES_STORE", True)
+        mock_llm._uses_responses_api = Mock(return_value=True)
+        mock_llm._chain_system_hash = None
+        mock_llm._chain_tools_hash = None
+        mock_llm._chain_call_ids_known = False
+        mock_llm._last_response_call_ids = {"untouched"}
+        agent = ClassicAgent(**agent_base_params)
+        monkeypatch.setattr(agent, "_previous_response_choice", lambda: ("resp_1", None))
+        monkeypatch.setattr(agent, "_previous_responses_state", lambda: state)
+
+        agent._llm_gen([{"role": "user", "content": "test"}])
+
+        assert mock_llm._chain_call_ids_known is known
+        assert mock_llm._last_response_call_ids == call_ids
+
 
     def test_llm_gen_with_attachments(
         self,

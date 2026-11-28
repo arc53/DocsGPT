@@ -87,6 +87,15 @@ class FakeAsyncRedis:
             self.zsets.pop(key)
         return len(stale)
 
+    def _zrange(self, key, start, stop):
+        ordered = sorted(self.zsets.get(key, {}).items(), key=lambda item: (item[1], item[0]))
+        members = [member for member, _ in ordered]
+        stop = len(members) if stop == -1 else stop + 1
+        return [member.encode() for member in members[start:stop]]
+
+    def _zscore(self, key, member):
+        return self.zsets.get(key, {}).get(_member(member))
+
     def _set_ttl(self, key, seconds):
         self.key_ttls[key] = int(seconds)
         return True
@@ -107,6 +116,14 @@ class FakeAsyncRedis:
     async def zremrangebyscore(self, key, min, max):
         await self._gate()
         return self._zremrangebyscore(key, min, max)
+
+    async def zrange(self, key, start, stop):
+        await self._gate()
+        return self._zrange(key, start, stop)
+
+    async def zscore(self, key, member):
+        await self._gate()
+        return self._zscore(key, member)
 
     def pipeline(self, transaction=True):
         return FakePipeline(self)
@@ -140,6 +157,9 @@ class FakePipeline:
 
     def zremrangebyscore(self, key, min, max):
         return self._queue(self._redis._zremrangebyscore, key, min, max)
+
+    def zscore(self, key, member):
+        return self._queue(self._redis._zscore, key, member)
 
     def expire(self, key, seconds):
         return self._queue(self._redis._set_ttl, key, seconds)

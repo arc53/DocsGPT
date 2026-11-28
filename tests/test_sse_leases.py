@@ -182,6 +182,71 @@ class TestLeaseLifecycle:
         await lease.refresh_if_due()  # must not raise into the stream
 
 
+EVICTED = "user:alice:sse_evicted"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestEvictOldest:
+    """A chat reconnect over the cap evicts the user's oldest streams."""
+
+    async def test_evicts_only_the_oldest_lease(self, clock):
+        redis = FakeAsyncRedis()
+        redis.zsets[KEY] = {f"other-{i}": clock["t"] - 50 + i for i in range(8)}
+        lease = await acquire_stream_lease(redis, "alice", evict_oldest=True)
+        assert lease is not None
+        assert set(redis.zsets[KEY]) == {f"other-{i}" for i in range(1, 8)} | {lease.lease_id}
+        assert set(redis.zsets[EVICTED]) == {"other-0"}
+        assert redis.key_ttls[EVICTED] == 60
+
+    async def test_without_eviction_the_cap_still_refuses(self, clock):
+        redis = FakeAsyncRedis()
+        _fill(redis, 8, clock["t"] - 10)
+        with pytest.raises(StreamCapExceeded):
+            await acquire_stream_lease(redis, "alice")
+        assert EVICTED not in redis.zsets
+
+    async def test_evicted_stream_ends_at_its_next_refresh(self, clock):
+        redis = FakeAsyncRedis()
+        old = await acquire_stream_lease(redis, "alice")
+        clock["t"] += 1
+        redis.zsets[KEY].update({f"other-{i}": clock["t"] for i in range(7)})
+        clock["t"] += 1
+        await acquire_stream_lease(redis, "alice", evict_oldest=True)
+        state = {"closed": False, "sent": []}
+
+        async def inner():
+            try:
+                for i in range(5):
+                    clock["t"] += 25
+                    yield f"frame-{i}"
+            finally:
+                state["closed"] = True
+
+        frames = [frame async for frame in hold_lease(inner(), old)]
+        # The first refresh (after frame-0) sees the eviction and ends the stream.
+        assert frames == ["frame-0"]
+        assert state["closed"] is True
+
+    async def test_a_live_lease_keeps_streaming(self, clock):
+        redis = FakeAsyncRedis()
+        lease = await acquire_stream_lease(redis, "alice", evict_oldest=True)
+        clock["t"] += 30
+        assert await lease.refresh_if_due() is True
+
+    async def test_eviction_failure_refuses_and_leaves_no_lease(self, clock, monkeypatch):
+        redis = FakeAsyncRedis()
+        _fill(redis, 8, clock["t"] - 10)
+
+        async def broken(*_args, **_kwargs):
+            raise ConnectionError("gone")
+
+        monkeypatch.setattr(redis, "zrange", broken)
+        with pytest.raises(StreamCapExceeded):
+            await acquire_stream_lease(redis, "alice", evict_oldest=True)
+        assert set(redis.zsets[KEY]) == {f"other-{i}" for i in range(8)}
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestHoldLease:

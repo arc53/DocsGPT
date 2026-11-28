@@ -109,6 +109,19 @@ def _is_previous_response_not_found(error: Exception) -> bool:
     return "previous response" in text and "not found" in text
 
 
+def _is_chain_rejection(error: Exception) -> bool:
+    """The provider refused a chained request because its stored transcript disagrees with it.
+
+    Either the response it chains onto is gone, or the request answers a call
+    that transcript does not hold (or misses one it does). The same input sent
+    unchained, as the full local history, is accepted.
+    """
+    if _is_previous_response_not_found(error):
+        return True
+    text = str(error)
+    return "No tool call found for function call output" in text or "No tool output found for function call" in text
+
+
 def _data_url_mime(value) -> Optional[str]:
     """The MIME type of a ``data:`` URL, or None."""
     if isinstance(value, str) and value.startswith("data:"):
@@ -290,6 +303,14 @@ class OpenAILLM(BaseLLM):
         # call_ids the most recent response emitted; the chained-request
         # coverage guard checks the next turn answers all of them.
         self._last_response_call_ids = set()
+        # True when ``_last_response_call_ids`` is known to list every call of
+        # the response the next request chains onto, even when it is empty (a
+        # finished answer). The guard then also drops outputs that response
+        # never asked for; while unknown it only runs on a non-empty set.
+        self._chain_call_ids_known = False
+        # Whether the request in flight went out chained, so a rejection of
+        # the chain can be retried unchained.
+        self._request_chained = False
         self._last_reasoning_items = []
         self._last_usage = None
         # One-shot guard consumed by ``_prefer_provider_usage``: fresh
@@ -392,6 +413,7 @@ class OpenAILLM(BaseLLM):
         # Tolerant of rows persisted before ``call_ids`` existed: an empty
         # set keeps the guard disabled rather than rejecting the state.
         self._last_response_call_ids = set(state.get("call_ids") or ())
+        self._chain_call_ids_known = "call_ids" in state
         self._last_reasoning_items = list(state.get("reasoning_items") or [])
         self._reasoning_for_calls = dict(state.get("reasoning_for_calls") or {})
         self._call_rounds = [list(r) for r in state.get("call_rounds") or [] if isinstance(r, list)]
@@ -526,6 +548,35 @@ class OpenAILLM(BaseLLM):
         else:
             self._chain_reset_hint = "previous_call_failed"
 
+    def _unchain_after_rejection(self, error: Exception, model: Any) -> bool:
+        """Drop the chain when the provider refused it, so the call can be retried unchained.
+
+        A chained request is checked only against what this process knows of
+        the stored transcript; a rejection means the two disagree. The full
+        local history is accepted, so the same model retries once with it
+        rather than the turn moving to the fallback model.
+
+        Args:
+            error: What the chained request raised.
+            model: The model it went to.
+
+        Returns:
+            True when the request was chained and the error is a chain
+            rejection; the caller then retries without ``previous_response_id``.
+        """
+        if not (self._request_chained and _is_chain_rejection(error)):
+            return False
+        logger.warning(
+            "Chained Responses request rejected; retrying unchained on %s: %s",
+            model,
+            str(error)[:300],
+        )
+        self._request_chained = False
+        self._last_response_id = None
+        self._imported_response_id = None
+        self._chain_reset_hint = "not_found" if _is_previous_response_not_found(error) else "chain_rejected"
+        return True
+
     def start_responses_turn(self, reason: Optional[str] = None) -> None:
         """Reset continuity accumulated during the preceding user turn.
 
@@ -539,6 +590,7 @@ class OpenAILLM(BaseLLM):
         self._last_reasoning_items = []
         self._last_response_id = None
         self._last_response_call_ids = set()
+        self._chain_call_ids_known = False
         self._imported_response_id = None
         self._chain_system_hash = None
         self._pending_system_hash = None
@@ -1046,6 +1098,14 @@ class OpenAILLM(BaseLLM):
                     **kwargs,
                 )
             except Exception as error:
+                if not self._unchain_after_rejection(error, model):
+                    self._note_chain_failure(error, model)
+                    raise
+            try:
+                return self._responses_gen(
+                    model, messages, tools=tools, response_format=response_format, **kwargs
+                )
+            except Exception as error:
                 self._note_chain_failure(error, model)
                 raise
 
@@ -1112,14 +1172,26 @@ class OpenAILLM(BaseLLM):
 
         previous_response_id = kwargs.pop("previous_response_id", None)
         if self._uses_responses_api():
+            yielded = False
             try:
-                yield from self._responses_gen_stream(
+                for chunk in self._responses_gen_stream(
                     model,
                     messages,
                     tools=tools,
                     response_format=response_format,
                     previous_response_id=previous_response_id,
                     **kwargs,
+                ):
+                    yielded = True
+                    yield chunk
+                return
+            except Exception as error:
+                if yielded or not self._unchain_after_rejection(error, model):
+                    self._note_chain_failure(error, model)
+                    raise
+            try:
+                yield from self._responses_gen_stream(
+                    model, messages, tools=tools, response_format=response_format, **kwargs
                 )
             except Exception as error:
                 self._note_chain_failure(error, model)
@@ -1393,14 +1465,24 @@ class OpenAILLM(BaseLLM):
         the earlier turns, so only system context plus the tool results
         answering the chained response's calls need to be sent again.
 
-        The cut is the last assistant message. Any ``tool`` message inside the
-        trailing assistant/tool run *before* that cut is carried over too: a
-        batch written as one assistant message per call — instead of one
-        message carrying the whole batch — would otherwise lose every result
-        but the last, and the provider then rejects the request with "No tool
-        output found for function call <first unpaired call>". The assistant
-        messages in that run are not carried: the server already holds those
-        calls, and chained mode accepts bare ``function_call_output`` items.
+        The cut is the last assistant message. When that message made tool
+        calls, any ``tool`` message inside the trailing assistant/tool run
+        *before* the cut is carried over too: a batch written as one assistant
+        message per call — instead of one message carrying the whole batch —
+        would otherwise lose every result but the last, and the provider then
+        rejects the request with "No tool output found for function call
+        <first unpaired call>". The assistant messages in that run are not
+        carried: the server already holds those calls, and chained mode
+        accepts bare ``function_call_output`` items.
+
+        When the cut is an answer without calls (the previous turn's final
+        answer, as a later turn replays it), nothing is carried: that response
+        waits on no output. Carrying the turn's tool rounds re-sent every
+        result as a bare output, and when the stored transcript behind the
+        answer no longer held those calls (a compression during that turn
+        restarted it, or a fallback model answered some rounds) the provider
+        rejected the request with "No tool call found for function call
+        output".
         """
         last_assistant = -1
         for i, message in enumerate(messages):
@@ -1409,7 +1491,7 @@ class OpenAILLM(BaseLLM):
         if last_assistant < 0:
             return messages
         carried = []
-        i = last_assistant - 1
+        i = last_assistant - 1 if messages[last_assistant].get("tool_calls") else -1
         while i >= 0:
             role = messages[i].get("role")
             if role == "tool":
@@ -1516,7 +1598,7 @@ class OpenAILLM(BaseLLM):
             self._pending_system_hash = head_hash or self._chain_system_hash
         input_items = self._to_responses_input(trimmed, chained=True)
         expected = set(self._last_response_call_ids or ())
-        if expected:
+        if expected or self._chain_call_ids_known:
             kept, dropped = [], []
             for item in input_items:
                 if (
@@ -1778,6 +1860,7 @@ class OpenAILLM(BaseLLM):
             self._chain_tools_hash = self._pending_tools_hash
             self._pending_tools_hash = None
         self._last_response_call_ids = self._function_call_ids(response)
+        self._chain_call_ids_known = True
         usage = getattr(response, "usage", None)
         if usage is not None:
             prompt = int(getattr(usage, "input_tokens", 0) or 0)
@@ -1882,8 +1965,10 @@ class OpenAILLM(BaseLLM):
         # the call_ids the chained response emitted.
         input_items, previous_response_id = self._build_responses_input(messages, wanted)
         self._note_chain(wanted, previous_response_id, model)
+        self._request_chained = bool(previous_response_id)
         self._last_response_id = None
         self._last_response_call_ids = set()
+        self._chain_call_ids_known = False
         self._last_usage = None
         self._last_finish_reason = None
         params = self._build_responses_params(
@@ -1963,8 +2048,10 @@ class OpenAILLM(BaseLLM):
         # the call_ids the chained response emitted.
         input_items, previous_response_id = self._build_responses_input(messages, wanted)
         self._note_chain(wanted, previous_response_id, model)
+        self._request_chained = bool(previous_response_id)
         self._last_response_id = None
         self._last_response_call_ids = set()
+        self._chain_call_ids_known = False
         self._last_usage = None
         self._last_finish_reason = None
         self._stream_reached_finish = False
