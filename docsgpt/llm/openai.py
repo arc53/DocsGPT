@@ -566,15 +566,18 @@ class OpenAILLM(BaseLLM):
         """
         if not (self._request_chained and _is_chain_rejection(error)):
             return False
-        logger.warning(
-            "Chained Responses request rejected; retrying unchained on %s: %s",
-            model,
-            str(error)[:300],
-        )
-        self._request_chained = False
-        self._last_response_id = None
-        self._imported_response_id = None
-        self._chain_reset_hint = "not_found" if _is_previous_response_not_found(error) else "chain_rejected"
+        # A read the consumer abandoned (a stalled first token) stops here
+        # instead of resetting chain state that later calls rely on.
+        with stream_commit():
+            logger.warning(
+                "Chained Responses request rejected; retrying unchained on %s: %s",
+                model,
+                str(error)[:300],
+            )
+            self._request_chained = False
+            self._last_response_id = None
+            self._imported_response_id = None
+            self._chain_reset_hint = "not_found" if _is_previous_response_not_found(error) else "chain_rejected"
         return True
 
     def start_responses_turn(self, reason: Optional[str] = None) -> None:

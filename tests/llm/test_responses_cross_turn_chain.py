@@ -235,3 +235,26 @@ def test_a_rejection_after_output_was_streamed_is_not_retried(monkeypatch):
             out.append(chunk)
     assert out == ["partial"]
     assert create.call_count == 1
+
+
+@pytest.mark.unit
+def test_an_abandoned_read_does_not_reset_the_chain(monkeypatch):
+    """A rejection that lands after the consumer gave up (a stalled first token)
+    must not touch the chain state the next call relies on."""
+    from docsgpt.llm import deadlines
+
+    llm = _make_llm(monkeypatch, _responses_caps(), store_responses=True)
+    create = _RejectChainThenAccept(_completed("answer"))
+    llm.client.responses.create = create
+    state = deadlines._ReaderState()
+    state.done.set()
+    token = deadlines._reader.set(state)
+    try:
+        with pytest.raises(deadlines.StreamAbandoned):
+            list(llm._raw_gen_stream(llm, "m", _replayed_tool_turn(), previous_response_id="resp_answer"))
+    finally:
+        deadlines._reader.reset(token)
+
+    assert len(create.calls) == 1
+    assert llm._request_chained is True
+    assert llm._chain_reset_hint is None

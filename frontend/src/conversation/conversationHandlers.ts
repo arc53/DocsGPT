@@ -878,6 +878,7 @@ export function handleSubmitToolActions(
               error:
                 'Connection lost. The tool response could not be resumed; please try again.',
               code: CONNECTION_LOST,
+              ...(messageId ? { message_id: messageId } : {}),
             }),
           );
         }

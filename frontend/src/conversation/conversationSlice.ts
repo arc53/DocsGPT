@@ -982,6 +982,14 @@ export const tailInFlightMessage = createAsyncThunk<
       }
 
       const data = await resp.json();
+      // The user may have opened another chat, or a newer answer may own
+      // this row, while the request was out: leave their state alone.
+      const now = (getState() as RootState).conversation;
+      if (
+        now.conversationId !== conversationId ||
+        now.queries[index]?.messageId !== messageId
+      )
+        return;
       dispatch(
         conversationSlice.actions.applyMessageTail({ index, tail: data }),
       );
@@ -1425,6 +1433,20 @@ async function sendToolActions(
         // The approval is over (another tab moved on, decided it, or it
         // expired); nothing ran. Show the turn as it ended, not a failure.
         dispatch(loadConversation({ id: conversationId, force: true }));
+      } else if (
+        data.type === 'error' &&
+        data.code === CONNECTION_LOST &&
+        data.message_id
+      ) {
+        // The server took the decision and may still finish the turn;
+        // follow it by polling, as a lost chat stream does.
+        dispatch(
+          tailInFlightMessage({
+            messageId: data.message_id,
+            index: targetIndex,
+            conversationId,
+          }),
+        );
       } else if (data.type === 'error') {
         dispatch(conversationSlice.actions.setStatus('failed'));
         dispatch(

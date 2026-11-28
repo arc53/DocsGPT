@@ -16,8 +16,19 @@ import { configureStore } from '@reduxjs/toolkit';
 
 import conversationService from '../api/services/conversationService';
 import uploadReducer from '../upload/uploadSlice';
-import { handleFetchAnswerSteaming } from './conversationHandlers';
-import reducer, { addQuery, fetchAnswer } from './conversationSlice';
+import {
+  handleFetchAnswerSteaming,
+  handleSubmitToolActions,
+} from './conversationHandlers';
+import reducer, {
+  addQuery,
+  fetchAnswer,
+  setConversation,
+  setConversationId,
+  setStatus,
+  submitToolActions,
+  tailInFlightMessage,
+} from './conversationSlice';
 
 const preference = {
   token: 'tok',
@@ -99,6 +110,96 @@ describe('a chat stream this client lost', () => {
     expect(store.getState().conversation.queries[0].error).toBe(
       'Connection lost.',
     );
+    tail.mockRestore();
+  });
+});
+
+describe('a tool-actions stream this client lost', () => {
+  it('follows the resumed turn instead of failing it', async () => {
+    vi.mocked(handleSubmitToolActions).mockImplementation(
+      async (_conversationId, _actions, _token, _signal, onEvent) => {
+        onEvent(event({ type: 'message_id', message_id: 'm-1' }));
+        onEvent(event({ type: 'answer', answer: 'Sent' }));
+        onEvent(
+          event({
+            type: 'error',
+            error: 'Connection lost.',
+            code: 'connection_lost',
+            message_id: 'm-1',
+          }),
+        );
+        return undefined as never;
+      },
+    );
+    const tail = vi
+      .spyOn(conversationService, 'tailMessage')
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          message_id: 'm-1',
+          status: 'complete',
+          response: 'Sent the email.',
+        }),
+      } as Response);
+    const store = makeStore();
+    store.dispatch(setConversation([{ prompt: 'send it', messageId: 'm-1' }]));
+    store.dispatch(setConversationId('c-1'));
+    store.dispatch(setStatus('awaiting_tool_actions'));
+
+    await store.dispatch(
+      submitToolActions({
+        toolActions: [{ call_id: 'call-1', decision: 'approved' }],
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(store.getState().conversation.status).toBe('idle'),
+    );
+
+    expect(tail).toHaveBeenCalledWith('m-1', 'tok');
+    const turn = store.getState().conversation.queries[0];
+    expect(turn.response).toBe('Sent the email.');
+    expect(turn.error).toBeUndefined();
+    tail.mockRestore();
+  });
+});
+
+describe('following a message by polling', () => {
+  it('leaves another chat alone when the user opened it during the request', async () => {
+    const store = makeStore();
+    store.dispatch(setConversation([{ prompt: 'q', messageId: 'm-1' }]));
+    store.dispatch(setConversationId('c-1'));
+    const tail = vi
+      .spyOn(conversationService, 'tailMessage')
+      .mockImplementationOnce(async () => {
+        // The user switches chats while the request is out.
+        store.dispatch(
+          setConversation([{ prompt: 'other', messageId: 'm-2' }]),
+        );
+        store.dispatch(setConversationId('c-2'));
+        store.dispatch(setStatus('loading'));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            message_id: 'm-1',
+            status: 'complete',
+            response: 'stale',
+          }),
+        } as Response;
+      });
+
+    await store.dispatch(
+      tailInFlightMessage({
+        messageId: 'm-1',
+        index: 0,
+        conversationId: 'c-1',
+      }),
+    );
+
+    const { queries, status } = store.getState().conversation;
+    expect(queries[0].response).toBeUndefined();
+    expect(status).toBe('loading');
     tail.mockRestore();
   });
 });
