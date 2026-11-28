@@ -976,6 +976,43 @@
       }
     }
   },
+  "webrouter.webrouter_read_pages": {
+    "type": "object",
+    "required": [
+      "urls"
+    ],
+    "properties": {
+      "urls": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "max_chars": {
+        "type": "integer"
+      }
+    }
+  },
+  "webrouter.webrouter_web_search": {
+    "type": "object",
+    "required": [
+      "query"
+    ],
+    "properties": {
+      "query": {
+        "type": "string"
+      },
+      "max_results": {
+        "type": "integer"
+      },
+      "include_domains": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  },
   "wiki.wiki_create": {
     "type": "object",
     "required": [
